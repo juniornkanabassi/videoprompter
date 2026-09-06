@@ -1,0 +1,182 @@
+import XCTest
+@testable import JuniorPrompter
+import PrompterCore
+
+@MainActor
+final class AppStoreTests: XCTestCase {
+  func testFlushPendingSavePersistsImmediateEdit() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Draft", markdown: "first")
+    await store.reload()
+    let id = try XCTUnwrap(store.selectedID)
+    store.updateMarkdown("latest", for: id)
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    let saved = try await store.library!.read(id)
+    XCTAssertEqual(saved.markdown, "latest")
+  }
+
+  func testFlushPendingSaveUsesLatestOfRapidEdits() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Draft", markdown: "first")
+    await store.reload()
+    let id = try XCTUnwrap(store.selectedID)
+    store.updateMarkdown("second", for: id)
+    store.updateMarkdown("final", for: id)
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    let saved = try await store.library!.read(id)
+    XCTAssertEqual(saved.markdown, "final")
+  }
+
+  func testFailedSaveBlocksQuitUntilFixtureIsRepairedAndRetried() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Draft", markdown: "first")
+    await store.reload()
+    let record = try XCTUnwrap(store.selected)
+    let script = root.appendingPathComponent("Scripts").appendingPathComponent(record.metadata.fileName)
+    let backup = script.appendingPathExtension("backup")
+    try FileManager.default.moveItem(at: script, to: backup)
+    try FileManager.default.createDirectory(at: script, withIntermediateDirectories: false)
+    store.updateMarkdown("recovered draft", for: record.id)
+    let failed = await store.flushPendingSaves()
+    XCTAssertFalse(failed)
+    store.errorMessage = nil
+    let stillFailed = await store.flushPendingSaves()
+    XCTAssertFalse(stillFailed)
+    try FileManager.default.removeItem(at: script)
+    try FileManager.default.moveItem(at: backup, to: script)
+    await store.retryFailedSaves()
+    let recovered = await store.flushPendingSaves()
+    XCTAssertTrue(recovered)
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "recovered draft")
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  func testImmediateEditThenDeleteRestoresLatestDraft() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Draft", markdown: "first")
+    await store.reload()
+    let record = try XCTUnwrap(store.selected)
+    store.updateMarkdown("latest before delete", for: record.id)
+    store.delete([record.id])
+    try await Task.sleep(for: .milliseconds(700))
+    let trash = await store.library!.listTrash()
+    XCTAssertEqual(trash.count, 1)
+    _ = try await store.library!.restore(record.id)
+    let restored = try await store.library!.read(record.id)
+    XCTAssertEqual(restored.markdown, "latest before delete")
+  }
+
+  func testFailedSaveSurvivesExternalRefresh() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Draft", markdown: "first")
+    await store.reload()
+    let record = try XCTUnwrap(store.selected)
+    let script = root.appendingPathComponent("Scripts").appendingPathComponent(record.metadata.fileName)
+    let backup = script.appendingPathExtension("backup")
+    try FileManager.default.moveItem(at: script, to: backup)
+    try FileManager.default.createDirectory(at: script, withIntermediateDirectories: false)
+    store.updateMarkdown("keep this draft", for: record.id)
+    let failed = await store.flushPendingSaves()
+    XCTAssertFalse(failed)
+    try FileManager.default.removeItem(at: script)
+    try FileManager.default.moveItem(at: backup, to: script)
+    try Data("external edit".utf8).write(to: script)
+    await store.refreshExternalChanges()
+    XCTAssertEqual(store.selected?.markdown, "keep this draft")
+    try? FileManager.default.removeItem(at: root)
+  }
+
+  func testFolderFilterAndDeletionPreserveScript() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    let folder = try await library.createFolder(name: "Work")
+    let record = try await library.create(title: "Draft", markdown: "keep", folderID: folder.id)
+    let before = try Data(contentsOf: try await library.scriptURL(for: record.id))
+    try await library.deleteFolder(folder.id)
+    let after = try Data(contentsOf: try await library.scriptURL(for: record.id))
+    XCTAssertEqual(before, after)
+    let restored = try await library.read(record.id)
+    XCTAssertNil(restored.metadata.folderID)
+  }
+
+  func testSchemaOneMigrationBacksUpAndReopensAsSchemaTwo() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let index = root.appendingPathComponent("LibraryIndex.json")
+    try Data("{\"schemaVersion\":1,\"scripts\":[],\"trash\":[]}".utf8).write(to: index)
+    _ = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    let files = try FileManager.default.contentsOfDirectory(atPath: root.path)
+    XCTAssertTrue(files.contains { $0.hasPrefix("LibraryIndex.schema1-") })
+    let migrated = try Data(contentsOf: index)
+    XCTAssertEqual((try JSONSerialization.jsonObject(with: migrated) as? [String: Any])?["schemaVersion"] as? Int, 2)
+    _ = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+  }
+
+  func testFolderSelectionFiltersAndNewScriptInheritsFolder() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let folder = try await store.library!.createFolder(name: "Work")
+    _ = try await store.library!.create(title: "Existing", markdown: "one", folderID: folder.id)
+    await store.reload()
+    store.selectFolder(folder.id)
+    XCTAssertEqual(store.visible.count, 1)
+    XCTAssertEqual(store.selectedID, store.visible.first?.id)
+    store.selectFolder(UUID())
+    XCTAssertNil(store.selectedID)
+    store.selectFolder(folder.id)
+    store.create(title: "New", markdown: "two")
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertTrue(store.visible.contains { $0.metadata.title == "New" })
+    store.moveSelectedScripts(Set(store.visible.map(\.id)), to: nil)
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertNil(store.selectedID)
+  }
+
+  func testPresetLifecyclePreservesIdentityAndSettings() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)"))
+    store.savePreset(named: "Camera")
+    let original = store.presets[0]
+    store.settings.fontSize = 72
+    store.updatePreset(original.id)
+    XCTAssertEqual(store.presets[0].id, original.id)
+    XCTAssertEqual(store.presets[0].fontSize, 72)
+    store.duplicatePreset(original.id)
+    XCTAssertEqual(store.presets.count, 2)
+    XCTAssertNotEqual(store.presets[1].id, original.id)
+    store.renamePreset(original.id, name: "Renamed")
+    XCTAssertEqual(store.presets[0].name, "Renamed")
+    store.deletePreset(store.presets[1].id)
+    XCTAssertEqual(store.presets.count, 1)
+  }
+
+  func testDataDirectoryDefaultsAreIsolated() async throws {
+    let first = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let a = AppStore(arguments: ["test", "--data-directory", first.path])
+    a.settings.fontSize = 91
+    let b = AppStore(arguments: ["test", "--data-directory", second.path])
+    XCTAssertNotEqual(b.settings.fontSize, 91)
+    let reopened = AppStore(arguments: ["test", "--data-directory", first.path])
+    XCTAssertEqual(reopened.settings.fontSize, 91)
+    let injected = UserDefaults(suiteName: "JuniorPrompterTests.injected.\(UUID().uuidString)")!
+    let explicit = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
+    explicit.settings.fontSize = 37
+    let explicitReopened = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
+    XCTAssertEqual(explicitReopened.settings.fontSize, 37)
+  }
+}

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDisplayName</key><string>JuniorPrompter</string>
+<key>CFBundleIdentifier</key><string>com.juniornkanabassi.JuniorPrompter</string>
+<key>CFBundleName</key><string>JuniorPrompter</string>
+<key>CFBundleExecutable</key><string>JuniorPrompter</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleShortVersionString</key><string>0.1.1</string>
+<key>CFBundleVersion</key><string>2</string>
+<key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>NSMicrophoneUsageDescription</key><string>JuniorPrompter uses your selected microphone for voice tracking.</string>
+<key>NSSpeechRecognitionUsageDescription</key><string>JuniorPrompter uses on-device speech recognition to follow your script.</string>
+<key>CFBundleIconFile</key><string>AppIcon</string>
+</dict></plist>
