@@ -17,6 +17,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var document = PrompterDocument(markdown: "")
   @Published private(set) var anchor: ReadingAnchor?
   @Published private(set) var tokenIndex = 0
+  @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var acceptedWords = 0
   @Published private(set) var activeDuration: TimeInterval = 0
@@ -152,8 +153,12 @@ final class SessionStore: ObservableObject {
   }
 
   func seek(to index: Int) {
+    move(to: index, incrementSeekRevision: true)
+  }
+  private func move(to index: Int, incrementSeekRevision: Bool) {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
+    if incrementSeekRevision { seekRevision &+= 1 }
     anchor = ReadingAnchorRemapper.makeAnchor(
       scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
@@ -165,7 +170,9 @@ final class SessionStore: ObservableObject {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
   }
   func previousPassage() { seek(to: passageBoundary(before: tokenIndex) ?? 0) }
-  func advanceOneToken() { seek(to: min(tokenIndex + 1, max(0, document.spokenTokens.count - 1))) }
+  func advanceOneToken() {
+    move(to: min(tokenIndex + 1, max(0, document.spokenTokens.count - 1)), incrementSeekRevision: false)
+  }
 
   func acceptSoundLevel(
     _ level: Float, at time: TimeInterval = ProcessInfo.processInfo.systemUptime
@@ -190,9 +197,9 @@ final class SessionStore: ObservableObject {
         && $0.replacementID == candidate.replacementID
     }
     candidateBuffer.append(candidate)
-    candidateFlush?.cancel()
+    guard candidateFlush == nil else { return }
     candidateFlush = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(75))
+      try? await Task.sleep(for: .milliseconds(25))
       guard !Task.isCancelled else { return }
       self?.flushCandidates()
     }

@@ -89,4 +89,57 @@ final class PresenterControllerTests: XCTestCase {
     coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
     XCTAssertEqual(view.textContainerInset.width, 64, accuracy: 0.1)
   }
+
+  func testReadStateMovesBackWithoutLeavingWordsDimmed() {
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    coordinator.render(document: PrompterDocument(markdown: "one two three"), fontName: "Helvetica", fontSize: 24, textOpacity: 0.8)
+    coordinator.tokenIndex = 2
+    coordinator.updateReadState()
+    coordinator.tokenIndex = 1
+    coordinator.updateReadState()
+    let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
+    let second = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
+    let third = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[2].0.location, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(first?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(second?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
+    XCTAssertEqual(third?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
+  }
+
+  func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))
+    scroll.documentView = text
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(
+      document: PrompterDocument(markdown: (1...30).map { "Line \($0) with words." }.joined(separator: "\n\n")),
+      fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    coordinator.isActivelyRunning = true
+    coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
+    let start = scroll.contentView.bounds.origin.y
+
+    func target(for index: Int) -> CGFloat {
+      let mapping = coordinator.mappings.first { $0.1 == index }!
+      let manager = text.layoutManager!
+      manager.ensureLayout(for: text.textContainer!)
+      let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+      let rect = manager.boundingRect(forGlyphRange: glyph, in: text.textContainer!)
+      let guideY = max(54, (scroll.contentView.bounds.height + 52) * 0.35) - 52
+      return max(0, rect.midY + text.textContainerInset.height - guideY)
+    }
+
+    coordinator.align(scroll: scroll, tokenIndex: 5, guideFraction: 0.35)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+    let intermediate = scroll.contentView.bounds.origin.y
+    let target = target(for: 5)
+    XCTAssertTrue(min(start, target) < intermediate && intermediate < max(start, target))
+    coordinator.align(scroll: scroll, tokenIndex: 10, guideFraction: 0.35)
+    coordinator.snapNextAlignment = true
+    coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.24))
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
+  }
 }

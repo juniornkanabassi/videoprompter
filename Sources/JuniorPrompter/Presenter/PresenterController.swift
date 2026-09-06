@@ -80,6 +80,7 @@ private struct PresenterView: View {
         Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).opacity(store.settings.backgroundOpacity)
         ScriptTextView(
           document: session.document, tokenIndex: session.tokenIndex,
+          isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
           guideFraction: store.settings.guideFraction, fontName: store.settings.fontName,
           fontSize: store.settings.fontSize, textOpacity: store.settings.textOpacity,
           fontWeight: store.settings.fontWeight, textColorHex: store.settings.textColorHex,
@@ -138,6 +139,8 @@ private struct PresenterView: View {
 struct ScriptTextView: NSViewRepresentable {
   let document: PrompterDocument
   let tokenIndex: Int
+  let isActivelyRunning: Bool
+  let seekRevision: Int
   let guideFraction: Double
   let fontName: String
   let fontSize: Double
@@ -151,8 +154,8 @@ struct ScriptTextView: NSViewRepresentable {
   let showCues: Bool
   let highlightActiveWord: Bool
   let onSeek: (Int) -> Void
-  init(document: PrompterDocument, tokenIndex: Int, guideFraction: Double, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
-    self.document = document; self.tokenIndex = tokenIndex; self.guideFraction = guideFraction; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
+  init(document: PrompterDocument, tokenIndex: Int, isActivelyRunning: Bool = false, seekRevision: Int = 0, guideFraction: Double, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
+    self.document = document; self.tokenIndex = tokenIndex; self.isActivelyRunning = isActivelyRunning; self.seekRevision = seekRevision; self.guideFraction = guideFraction; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
   }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   func makeNSView(context: Context) -> NSScrollView {
@@ -183,6 +186,12 @@ struct ScriptTextView: NSViewRepresentable {
     context.coordinator.onSeek = onSeek
     context.coordinator.tokenIndex = tokenIndex
     context.coordinator.guideFraction = guideFraction
+    if context.coordinator.seekRevision != seekRevision {
+      context.coordinator.seekRevision = seekRevision
+      context.coordinator.invalidateAlignment()
+      context.coordinator.snapNextAlignment = true
+    }
+    context.coordinator.isActivelyRunning = isActivelyRunning
     let signature = "\(document.hashValue)|\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)|\(alignment)|\(showCues)|\(highlightActiveWord)"
     if context.coordinator.signature != signature {
       context.coordinator.signature = signature
@@ -192,7 +201,10 @@ struct ScriptTextView: NSViewRepresentable {
         paragraphSpacing: paragraphSpacing, horizontalMargin: horizontalMargin,
         alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord)
     }
+    context.coordinator.updateGeneration &+= 1
+    let generation = context.coordinator.updateGeneration
     DispatchQueue.main.async {
+      guard context.coordinator.updateGeneration == generation else { return }
       context.coordinator.updateReadState()
       context.coordinator.align(
         scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction)
@@ -210,6 +222,11 @@ struct ScriptTextView: NSViewRepresentable {
     private var textColour = NSColor.white
     private var lastAligned: Int?
     private var lastGuideFraction: Double?
+    private var lastReadTokenIndex: Int?
+    var updateGeneration = 0
+    var seekRevision = 0
+    var isActivelyRunning = false
+    var snapNextAlignment = false
     init(onSeek: @escaping (Int) -> Void) { self.onSeek = onSeek }
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
@@ -269,6 +286,7 @@ struct ScriptTextView: NSViewRepresentable {
         attributed.addAttribute(.foregroundColor, value: showCues ? textColour.withAlphaComponent(textOpacity * 0.42) : .clear, range: range)
       }
       textView.textStorage?.setAttributedString(attributed)
+      lastReadTokenIndex = nil
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
         var found = NSRange(location: NSNotFound, length: 0)
@@ -294,11 +312,20 @@ struct ScriptTextView: NSViewRepresentable {
     }
     func updateReadState() {
       guard let textView else { return }
-      for (range, index) in mappings {
+      let affected: ClosedRange<Int>
+      if let previous = lastReadTokenIndex {
+        guard previous != tokenIndex else { return }
+        affected = min(previous, tokenIndex)...max(previous, tokenIndex)
+      } else {
+        guard let first = mappings.first?.1, let last = mappings.last?.1 else { return }
+        affected = first...last
+      }
+      for (range, index) in mappings where affected.contains(index) {
         let alpha = index < tokenIndex ? textOpacity * 0.38 : textOpacity
         let color: NSColor = index == tokenIndex && highlightActiveWord ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
         textView.textStorage?.addAttribute(.foregroundColor, value: color, range: range)
       }
+      lastReadTokenIndex = tokenIndex
     }
     func seek(_ character: Int) {
       guard
@@ -322,10 +349,23 @@ struct ScriptTextView: NSViewRepresentable {
       let target = max(
         0,
         rect.midY + textView.textContainerInset.height - guideY)
-      scroll.contentView.scroll(to: NSPoint(x: 0, y: target))
+      let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
+        && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+      let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
+      if animate {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0.16
+          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+          scroll.contentView.animator().setBoundsOrigin(destination)
+        }
+      } else {
+        scroll.contentView.layer?.removeAllAnimations()
+        scroll.contentView.setBoundsOrigin(destination)
+      }
       scroll.reflectScrolledClipView(scroll.contentView)
       lastAligned = tokenIndex
       lastGuideFraction = guideFraction
+      snapNextAlignment = false
     }
     private func cueRanges(in plain: NSString, document: PrompterDocument) -> [NSRange] {
       var result: [NSRange] = []

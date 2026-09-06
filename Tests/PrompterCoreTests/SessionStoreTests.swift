@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 
 @testable import JuniorPrompter
@@ -111,6 +112,38 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 1)
     session.acceptSoundLevel(0.3, at: 1.11)
     XCTAssertEqual(session.tokenIndex, 2)
+  }
+
+  func testContinuousInterimCandidatesFlushBeforeStreamStops() async {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    let initialRevision = session.seekRevision
+    for index in 0..<5 {
+      session.acceptSpeechCandidate(
+        SpeechCandidate(
+          replacementID: "revision-\(index)", generation: 1, locale: Locale(identifier: "en-GB"),
+          text: "One two three", range: CMTimeRange(
+            start: CMTime(seconds: Double(index), preferredTimescale: 1000),
+            duration: CMTime(seconds: 1, preferredTimescale: 1000)), isFinal: false))
+      try? await Task.sleep(for: .milliseconds(10))
+      if index == 3 { XCTAssertGreaterThan(session.tokenIndex, 0) }
+    }
+    XCTAssertGreaterThan(session.tokenIndex, 0)
+    XCTAssertEqual(session.seekRevision, initialRevision)
+    session.pause()
+  }
+
+  func testExplicitSeekIncrementsRevisionButAutomaticAdvanceDoesNot() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Timed"
+    session.present(record: record(), settings: settings)
+    let initialRevision = session.seekRevision
+    session.seek(to: 1)
+    XCTAssertEqual(session.seekRevision, initialRevision + 1)
+    session.advanceOneToken()
+    XCTAssertEqual(session.seekRevision, initialRevision + 1)
   }
 
   func testLanguageChangePreservesReadingAnchor() {
