@@ -403,9 +403,11 @@ final class SessionStore: ObservableObject {
               guard let self else { return }
               guard self.lifecycleGeneration == generation else { return }
               self.audioCapture = nil
-              if error == .deviceLost {
-                self.pause()
-                self.anchorNotice = "The selected microphone was disconnected. Tracking paused."
+              if let error {
+                let message = error == .deviceLost
+                  ? "The selected microphone was disconnected. Tracking paused."
+                  : "Audio tracking stopped: \(error)"
+                self.failAudio(message)
               }
             }
           })

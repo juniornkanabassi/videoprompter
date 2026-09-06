@@ -77,14 +77,21 @@ struct InspectorView: View {
         }
       }
       Section("Audio input") {
-        Picker(
-          "Microphone",
-          selection: Binding(
-            get: { store.settings.audioDeviceUID ?? "" },
-            set: { store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
-        ) {
-          Text("Choose a microphone").tag("")
-          ForEach(devices) { device in Text(device.name).tag(device.uid) }
+        HStack {
+          Picker(
+            "Microphone",
+            selection: Binding(
+              get: { store.settings.audioDeviceUID ?? "" },
+              set: { store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
+          ) {
+            Text("Choose a microphone").tag("")
+            ForEach(devices) { device in Text(device.name).tag(device.uid) }
+          }
+          Button { devices = AudioCapture.inputDevices() } label: {
+            Image(systemName: "arrow.clockwise")
+          }
+          .buttonStyle(.borderless)
+          .accessibilityLabel("Refresh microphones")
         }
         LabeledContent("Input gain") { Slider(value: $store.settings.inputGain, in: 0.25...4) }
         ProgressView(value: Double(session.audioLevel), total: 1).tint(

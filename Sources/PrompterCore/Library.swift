@@ -179,24 +179,35 @@ public actor MarkdownLibrary {
     }
     let url = try validatedURL(index.scripts[position].fileName, in: scriptsURL)
     try validateManagedDirectories()
-    let disk = try Self.coordinatedRead(url, coordinated: coordinatesExternalChanges)
-    let diskFingerprint = Self.fingerprint(disk)
-    guard diskFingerprint == expectedFingerprint else {
-      let conflictURL = conflictsURL.appendingPathComponent(
-        "\(index.scripts[position].fileName.dropLast(3))-local-\(UUID().uuidString.lowercased()).md"
-      )
-      try Self.writeAtomic(markdown, to: conflictURL, coordinated: coordinatesExternalChanges)
-      throw PrompterCoreError.externalConflict(conflictFile: conflictURL.lastPathComponent)
-    }
     let oldMetadata = index.scripts[position]
-    try Self.writeAtomic(markdown, to: url, coordinated: coordinatesExternalChanges)
-    index.scripts[position].modifiedAt = Date()
-    index.scripts[position].revision &+= 1
-    index.scripts[position].contentFingerprint = Self.fingerprint(markdown)
-    do { try persistIndex() } catch {
-      try? Self.writeAtomic(disk, to: url, coordinated: coordinatesExternalChanges)
-      index.scripts[position] = oldMetadata
-      throw error
+    func saveWithinAccess(_ target: URL) throws {
+      let disk = try String(contentsOf: target, encoding: .utf8)
+      guard Self.fingerprint(disk) == expectedFingerprint else {
+        let conflictURL = conflictsURL.appendingPathComponent(
+          "\(oldMetadata.fileName.dropLast(3))-local-\(UUID().uuidString.lowercased()).md")
+        try Self.writeAtomic(markdown, to: conflictURL, coordinated: false)
+        throw PrompterCoreError.externalConflict(conflictFile: conflictURL.lastPathComponent)
+      }
+      try Data(markdown.utf8).write(to: target, options: .atomic)
+      index.scripts[position].modifiedAt = Date()
+      index.scripts[position].revision &+= 1
+      index.scripts[position].contentFingerprint = Self.fingerprint(markdown)
+      do { try persistIndex() } catch {
+        try? Data(disk.utf8).write(to: target, options: .atomic)
+        index.scripts[position] = oldMetadata
+        throw error
+      }
+    }
+    if coordinatesExternalChanges {
+      var result: Result<Void, Error>!
+      var coordinationError: NSError?
+      NSFileCoordinator().coordinate(
+        writingItemAt: url, options: .forReplacing, error: &coordinationError
+      ) { target in result = Result { try saveWithinAccess(target) } }
+      if let coordinationError { throw coordinationError }
+      try result.get()
+    } else {
+      try saveWithinAccess(url)
     }
     return ScriptRecord(metadata: index.scripts[position], markdown: markdown)
   }

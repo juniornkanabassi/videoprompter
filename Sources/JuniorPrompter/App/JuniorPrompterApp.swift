@@ -244,7 +244,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   }
   func retryFailedSaves() async {
     guard let library else { return }
-    for id in failedSaveIDs {
+    for id in Array(failedSaveIDs) {
       guard let draft = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) else { continue }
       do {
         let saved = try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint)
@@ -255,6 +255,40 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
         pendingDrafts[id] = nil
       } catch { hasFailedSaves = true; errorMessage = "The edit was preserved but could not replace the file. \(error)" }
     }
+  }
+  func keepBothFailedSaves() async {
+    guard let library else { return }
+    for id in Array(failedSaveIDs) {
+      guard let draft = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) else { continue }
+      do {
+        let local = try await library.create(
+          title: "\(current.metadata.title) (Local Draft)", markdown: draft,
+          folderID: current.metadata.folderID, tags: current.metadata.tags)
+        scripts.insert(local, at: 0)
+        guard pendingDrafts[id] == draft,
+          scripts.first(where: { $0.id == id })?.markdown == draft
+        else { continue }
+        let external: ScriptRecord
+        if let changed = try await library.externalChange(for: id) {
+          external = changed
+        } else {
+          external = try await library.read(id)
+        }
+        guard pendingDrafts[id] == draft,
+          scripts.first(where: { $0.id == id })?.markdown == draft
+        else { continue }
+        if let index = scripts.firstIndex(where: { $0.id == id }) {
+          scripts[index] = external
+          session.applyEditedRecord(external)
+        }
+        selectedID = local.id
+        failedSaveIDs.remove(id)
+        pendingDrafts[id] = nil
+      } catch {
+        errorMessage = "The local draft could not be preserved as a separate script. \(error)"
+      }
+    }
+    hasFailedSaves = !failedSaveIDs.isEmpty
   }
   func rename(_ value: String, for id: UUID) {
     guard let library else { return }

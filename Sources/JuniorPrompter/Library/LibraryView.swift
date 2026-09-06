@@ -151,6 +151,7 @@ struct LibraryView: View {
     ) {
       if store.hasFailedSaves {
         Button("Retry Save") { Task { await store.retryFailedSaves() } }
+        Button("Keep Both") { Task { await store.keepBothFailedSaves() } }
       }
       Button("OK") { store.errorMessage = nil }
     } message: {

@@ -204,4 +204,48 @@ final class AppStoreTests: XCTestCase {
     await reopened.reload()
     XCTAssertEqual(reopened.scriptsTracked, 3)
   }
+
+  func testExternalConflictCanKeepExternalAndLocalDraft() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Draft", markdown: "original")
+    await store.reload()
+    store.updateMarkdown("local draft", for: record.id)
+    let url = try await store.library!.scriptURL(for: record.id)
+    try Data("external edit".utf8).write(to: url)
+    let failed = await store.flushPendingSaves()
+    XCTAssertFalse(failed)
+    await store.keepBothFailedSaves()
+    XCTAssertFalse(store.hasFailedSaves)
+    XCTAssertEqual(store.scripts.count, 2)
+    XCTAssertEqual(store.selected?.markdown, "local draft")
+    XCTAssertEqual(store.selected?.metadata.title, "Draft (Local Draft)")
+    let original = try await store.library!.read(record.id)
+    XCTAssertEqual(original.markdown, "external edit")
+    XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, "external edit")
+    store.updateMarkdown("continued external draft", for: record.id)
+    let recovered = await store.flushPendingSaves()
+    XCTAssertTrue(recovered)
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "continued external draft")
+  }
+
+  func testExternalEditRetainsActiveAnchorAndPausesSession() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Reading", markdown: "one two three four")
+    await store.reload()
+    var settings = PrompterSettings(); settings.mode = "Timed"
+    store.session.present(record: record, settings: settings)
+    store.session.seek(to: 1)
+    store.session.play()
+    let url = try await store.library!.scriptURL(for: record.id)
+    try Data("prefix one two changed three four".utf8).write(to: url)
+    await store.refreshExternalChanges()
+    XCTAssertEqual(store.session.state, .paused)
+    XCTAssertEqual(store.session.activeToken?.text, "two")
+    XCTAssertEqual(store.selected?.markdown, "prefix one two changed three four")
+  }
 }

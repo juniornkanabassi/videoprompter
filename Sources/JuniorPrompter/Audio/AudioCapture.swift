@@ -110,17 +110,24 @@ public final class AudioCapture: @unchecked Sendable {
       stateLock.withLock { running = false }
       node.removeTap(onBus: 0)
       engine.stop()
-      self.converter = nil
-      bufferHandler = nil
-      stopHandler = nil
+      processingQueue.sync {
+        self.converter = nil
+        self.bufferHandler = nil
+        self.stopHandler = nil
+      }
       throw AudioCaptureError.engineFailure(error.localizedDescription)
     }
     observer = NotificationCenter.default.addObserver(
       forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
     ) { [weak self] _ in
-      guard let self, !Self.inputDevices().contains(where: { $0.uid == self.selectedDevice.uid })
-      else { return }
-      self.stop(reason: .deviceLost)
+      guard let self else { return }
+      guard Self.inputDevices().contains(where: { $0.uid == self.selectedDevice.uid }) else {
+        self.stop(reason: .deviceLost)
+        return
+      }
+      if !self.engine.isRunning {
+        self.stop(reason: .engineFailure("Audio engine stopped after configuration change"))
+      }
     }
   }
 
