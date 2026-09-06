@@ -105,8 +105,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       if view.undoManager?.isUndoing == true || view.undoManager?.isRedoing == true { return }
       // This is only a recovery path for an AppKit mutation that did not take the
       // delegate route. Normal undo/redo restores its exact registered source snapshot.
-      if view.string != model.rendered(fontName: fontName, fontSize: fontSize).string {
-        guard let edit = Self.visibleEdit(from: model.rendered(fontName: fontName, fontSize: fontSize).string,
+      let rendered = model.rendered(fontName: fontName, fontSize: fontSize)
+      if view.string != rendered.string {
+        guard let edit = Self.visibleEdit(from: rendered.string,
           to: view.string), let next = model.replacing(edit.range, with: edit.replacement)
         else {
           render(view, keeping: view.selectedRange())
@@ -115,6 +116,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
         }
         model = next
       }
+      reconcileAttributes(in: view)
       parent.markdown = model.markdown
     }
 
@@ -136,6 +138,20 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     private func applyEmptyTypingAttributes(to view: NSTextView) {
       guard view.string.isEmpty else { return }
       view.typingAttributes = [.font: FormattedMarkdownEditModel.font(name: fontName, size: fontSize), .foregroundColor: NSColor.labelColor]
+    }
+
+    private func reconcileAttributes(in view: NSTextView) {
+      guard let storage = view.textStorage, storage.length > 0 else { return }
+      let rendered = model.rendered(fontName: fontName, fontSize: fontSize)
+      guard storage.string == rendered.string, !storage.isEqual(to: rendered) else { return }
+      updating = true
+      storage.beginEditing()
+      rendered.enumerateAttributes(in: NSRange(location: 0, length: rendered.length)) { attributes, range, _ in
+        guard !storage.attributedSubstring(from: range).isEqual(to: rendered.attributedSubstring(from: range)) else { return }
+        storage.setAttributes(attributes, range: range)
+      }
+      storage.endEditing()
+      updating = false
     }
 
     private static func visibleEdit(from old: String, to new: String) -> (range: NSRange, replacement: String)? {
@@ -206,6 +222,10 @@ struct FormattedMarkdownEditModel {
           options: .init(interpretedSyntax: .full, appliesSourcePositionAttributes: true)))
           ?? AttributedString(raw)
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rich))
+        if block.kind == .listItem, let marker = Self.listMarker(in: raw) {
+          output.append(NSAttributedString(string: marker))
+          offsets += Array(repeating: nil, count: (marker as NSString).length)
+        }
         for run in rich.runs {
           let intent = run.inlinePresentationIntent ?? []
           var traits: NSFontTraitMask = []
@@ -257,14 +277,16 @@ struct FormattedMarkdownEditModel {
       let bold = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
       output.addAttribute(.font, value: NSFontManager.shared.convert(bold, toSize: fontSize * 1.35), range: range)
     }
+    output.addAttribute(.foregroundColor, value: NSColor.labelColor, range: full)
     return output
   }
 
   func replacing(_ range: NSRange, with replacement: String) -> FormattedMarkdownEditModel? {
     guard range.location >= 0, NSMaxRange(range) <= sourceOffsets.count else { return nil }
     if range.length == 0 {
-      guard let offset = insertionOffset(at: range.location) else { return nil }
-      return replacing([NSRange(location: offset, length: 0)], visibleRange: range, with: replacement)
+      return insertionOffsets(at: range.location).lazy.compactMap {
+        replacing([NSRange(location: $0, length: 0)], visibleRange: range, with: replacement)
+      }.first
     }
     let selected = sourceOffsets[range.location..<NSMaxRange(range)]
     guard selected.allSatisfy({ $0 != nil }) else { return nil }
@@ -295,11 +317,13 @@ struct FormattedMarkdownEditModel {
     return next.renderedSource.string == expected as String ? next : nil
   }
 
-  private func insertionOffset(at index: Int) -> Int? {
-    if index == sourceOffsets.count { return (markdown as NSString).length }
-    guard let next = sourceOffsets[index] else { return nil }
-    if index > 0, let previous = sourceOffsets[index - 1], previous + 1 <= next { return previous + 1 }
-    return next
+  private func insertionOffsets(at index: Int) -> [Int] {
+    if index == sourceOffsets.count { return [(markdown as NSString).length] }
+    guard let next = sourceOffsets[index] else { return [] }
+    if index > 0, let previous = sourceOffsets[index - 1], previous + 1 <= next {
+      return previous + 1 == next ? [next] : [previous + 1, next]
+    }
+    return [next]
   }
 
   private static func sourceOffsets(for rendered: NSAttributedString, source: String, base: Int) -> [Int?] {
@@ -332,6 +356,11 @@ struct FormattedMarkdownEditModel {
       cursor += 1
     }
     return result
+  }
+
+  private static func listMarker(in line: String) -> String? {
+    guard let range = line.range(of: #"^\s*(?:[-+*]|\d+[.)])\s+"#, options: .regularExpression) else { return nil }
+    return String(line[range])
   }
 
   private static func literalMarkdown(_ text: String, inCode: Bool) -> String? {

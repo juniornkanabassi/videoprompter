@@ -39,6 +39,22 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(list.rendered().string, "1. item")
   }
 
+  func testMarkdownListMarkersStayVisibleWhileItemTextRemainsEditable() {
+    let model = FormattedMarkdownEditModel(markdown: "- First point\n2. Deuxième point")
+    XCTAssertEqual(model.rendered().string, "- First point\n2. Deuxième point")
+    XCTAssertNil(model.replacing(NSRange(location: 0, length: 1), with: "+"))
+
+    let first = NSRange(model.rendered().string.range(of: "First")!, in: model.rendered().string)
+    let afterFirst = try! XCTUnwrap(model.replacing(first, with: "Updated"))
+    XCTAssertEqual(afterFirst.markdown, "- Updated point\n2. Deuxième point")
+    XCTAssertEqual(afterFirst.rendered().string, "- Updated point\n2. Deuxième point")
+
+    let second = NSRange(afterFirst.rendered().string.range(of: "Deuxième")!, in: afterFirst.rendered().string)
+    let afterSecond = try! XCTUnwrap(afterFirst.replacing(second, with: "French"))
+    XCTAssertEqual(afterSecond.markdown, "- Updated point\n2. French point")
+    XCTAssertEqual(afterSecond.rendered().string, "- Updated point\n2. French point")
+  }
+
   func testCodeDoesNotInterpretMarkdownDelimiters() {
     let inline = FormattedMarkdownEditModel(markdown: "before `**text**` after")
     XCTAssertEqual(inline.rendered().string, "before **text** after")
@@ -46,6 +62,98 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(block.rendered().string, "**text**")
     XCTAssertEqual(block.replacing(NSRange(location: 2, length: 4), with: "plain")?.markdown,
       "```\n**plain**\n```")
+  }
+
+  func testIncrementalTypingAtFormattedRunBoundariesKeepsMarkdownValid() {
+    func type(_ text: String, into model: FormattedMarkdownEditModel, at location: inout Int) -> FormattedMarkdownEditModel {
+      var result = model
+      for character in text {
+        result = try! XCTUnwrap(result.replacing(NSRange(location: location, length: 0), with: String(character)))
+        location += String(character).utf16.count
+      }
+      return result
+    }
+
+    var bold = FormattedMarkdownEditModel(markdown: "**Junior** test")
+    var location = 6
+    bold = type(" Junior", into: bold, at: &location)
+    XCTAssertEqual(bold.markdown, "**Junior** Junior test")
+    XCTAssertEqual(bold.rendered().string, "Junior Junior test")
+
+    var italic = FormattedMarkdownEditModel(markdown: "*bonjour* monde")
+    location = 7
+    italic = type(" français", into: italic, at: &location)
+    XCTAssertEqual(italic.markdown, "*bonjour* français monde")
+    XCTAssertEqual(italic.rendered().string, "bonjour français monde")
+  }
+
+  func testRenderedTextUsesSemanticForegroundColour() {
+    let rendered = FormattedMarkdownEditModel(markdown: "# Heading\n\n**bold**").rendered()
+    XCTAssertEqual(rendered.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .labelColor)
+    XCTAssertEqual(rendered.attribute(.foregroundColor, at: rendered.length - 1, effectiveRange: nil) as? NSColor, .labelColor)
+  }
+
+  @MainActor func testNativeIncrementalTypingAfterFormattedRuns() {
+    var value = "**Junior** test"
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "System Serif", fontSize: 17)
+    let coordinator = FormattedMarkdownEditor.Coordinator(editor)
+    let view = NSTextView(frame: .zero)
+    view.delegate = coordinator
+    coordinator.configure(view, markdown: value, fontName: "System Serif", fontSize: 17)
+
+    view.setSelectedRange(NSRange(location: 6, length: 0))
+    for character in " Junior" {
+      view.insertText(String(character), replacementRange: view.selectedRange())
+    }
+    XCTAssertEqual(value, "**Junior** Junior test")
+    XCTAssertEqual(view.string, "Junior Junior test")
+
+    value = "*bonjour* monde"
+    coordinator.configure(view, markdown: value, fontName: "System Serif", fontSize: 17)
+    view.setSelectedRange(NSRange(location: 7, length: 0))
+    for character in " français" {
+      view.insertText(String(character), replacementRange: view.selectedRange())
+    }
+    XCTAssertEqual(value, "*bonjour* français monde")
+    XCTAssertEqual(view.string, "bonjour français monde")
+  }
+
+  @MainActor func testNativeBoundaryFallbackReconcilesFormattingThroughUndoRedo() {
+    let original = "**Junior**"
+    let edited = "**Junior** test"
+    var value = original
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "System Serif", fontSize: 17)
+    let coordinator = FormattedMarkdownEditor.Coordinator(editor)
+    let view = NSTextView(frame: .zero)
+    view.allowsUndo = true
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [], backing: .buffered, defer: true)
+    window.contentView = view
+    window.makeFirstResponder(view)
+    view.delegate = coordinator
+    coordinator.configure(view, markdown: value, fontName: "System Serif", fontSize: 17)
+
+    view.undoManager?.groupsByEvent = false
+    view.undoManager?.beginUndoGrouping()
+    view.setSelectedRange(NSRange(location: 0, length: 6))
+    view.insertText("Junior", replacementRange: view.selectedRange())
+    view.setSelectedRange(NSRange(location: 6, length: 0))
+    view.insertText(" test", replacementRange: view.selectedRange())
+    view.undoManager?.endUndoGrouping()
+    XCTAssertEqual(value, edited)
+    XCTAssertEqual(view.string, "Junior test")
+    XCTAssertTrue((view.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?
+      .fontDescriptor.symbolicTraits.contains(.bold) == true)
+    XCTAssertFalse((view.textStorage?.attribute(.font, at: 7, effectiveRange: nil) as? NSFont)?
+      .fontDescriptor.symbolicTraits.contains(.bold) == true)
+
+    view.undoManager?.undo()
+    XCTAssertEqual(value, original)
+    view.undoManager?.redo()
+    XCTAssertEqual(value, edited)
+    XCTAssertFalse((view.textStorage?.attribute(.font, at: 7, effectiveRange: nil) as? NSFont)?
+      .fontDescriptor.symbolicTraits.contains(.bold) == true)
   }
 
   @MainActor func testNativeEditUndoRedoUpdateBinding() {

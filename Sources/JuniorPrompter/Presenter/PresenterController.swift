@@ -241,10 +241,19 @@ struct ScriptTextView: NSViewRepresentable {
       let textColour = NSColor(hex: textColorHex) ?? .white
       var headingRanges: [NSRange] = []
       for (index, block) in document.blocks.enumerated() {
-        let rendered =
-          (try? AttributedString(
+        let rendered: AttributedString
+        if block.kind == .listItem {
+          var lines = AttributedString()
+          for (lineIndex, line) in block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+            if lineIndex > 0 { lines.append(AttributedString("\n")) }
+            lines.append((try? AttributedString(markdown: String(line), options: .init(interpretedSyntax: .full))) ?? AttributedString(String(line)))
+          }
+          rendered = lines
+        } else {
+          rendered = (try? AttributedString(
             markdown: block.rawMarkdown, options: .init(interpretedSyntax: .full)))
-          ?? AttributedString(block.rawMarkdown)
+            ?? AttributedString(block.rawMarkdown)
+        }
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rendered))
         part.addAttribute(.foregroundColor, value: textColour.withAlphaComponent(textOpacity), range: NSRange(location: 0, length: part.length))
         if block.kind == .heading {

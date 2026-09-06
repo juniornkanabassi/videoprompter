@@ -107,6 +107,20 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(third?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
   }
 
+  func testConsecutiveListItemsKeepLineBreaksAndWordMappings() {
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    let document = PrompterDocument(markdown: "- First point\n- Deuxième point\n\n1. One\n2. Two")
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+
+    XCTAssertEqual(view.string, "First point\nDeuxième point\n\nOne\nTwo")
+    XCTAssertEqual(coordinator.mappings.map { document.spokenTokens[$0.1].text },
+      ["First", "point", "Deuxième", "point", "One", "Two"])
+    XCTAssertEqual(coordinator.mappings.map { (view.string as NSString).substring(with: $0.0) },
+      ["First", "point", "Deuxième", "point", "One", "Two"])
+  }
+
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))
