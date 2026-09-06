@@ -40,6 +40,13 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   }
 }
 
+private struct EditorTypographyPreferences: Codable {
+  var sourceFontName = "System Serif"
+  var sourceFontSize = 17.0
+  var previewFontName = "System"
+  var previewFontSize = 18.0
+}
+
 @MainActor final class AppStore: ObservableObject {
   @Published var scripts: [ScriptRecord] = []
   @Published var folders: [ScriptFolder] = []
@@ -50,6 +57,10 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   @Published var inspector = true
   @Published var settings = PrompterSettings() { didSet { persistSettings() } }
   @Published var presets: [PrompterSettings] = []
+  @Published var sourceFontName = "System Serif" { didSet { persistSettings() } }
+  @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
+  @Published var previewFontName = "System" { didSet { persistSettings() } }
+  @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
   @Published var errorMessage: String?
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
@@ -78,12 +89,23 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
       ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
       : .standard)
     self.defaults = isolatedDefaults
-    if let data = isolatedDefaults.data(forKey: "presets"),
+    let savedPresets = isolatedDefaults.data(forKey: "presets")
+    let savedTypography = isolatedDefaults.data(forKey: "editorTypography")
+    let savedSettings = isolatedDefaults.data(forKey: "settings")
+    if let data = savedPresets,
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     {
       presets = saved
     }
-    if let data = isolatedDefaults.data(forKey: "settings"),
+    if let data = savedTypography,
+      let saved = try? JSONDecoder().decode(EditorTypographyPreferences.self, from: data)
+    {
+      sourceFontName = saved.sourceFontName
+      sourceFontSize = saved.sourceFontSize
+      previewFontName = saved.previewFontName
+      previewFontSize = saved.previewFontSize
+    }
+    if let data = savedSettings,
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
     {
       settings = saved
@@ -370,9 +392,11 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
     persistSettings()
   }
   func applyPreset(_ preset: PrompterSettings) {
-    let currentName = settings.name
-    settings = preset
-    settings.name = currentName
+    var applied = preset
+    applied.name = settings.name
+    applied.audioDeviceUID = settings.audioDeviceUID
+    applied.speechLanguage = settings.speechLanguage
+    settings = applied
   }
   func deletePreset(_ id: UUID) {
     presets.removeAll { $0.id == id }
@@ -381,9 +405,16 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   private func persistSettings() {
     if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "settings") }
     if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: "presets") }
+    let typography = EditorTypographyPreferences(
+      sourceFontName: sourceFontName, sourceFontSize: sourceFontSize,
+      previewFontName: previewFontName, previewFontSize: previewFontSize)
+    if let data = try? JSONEncoder().encode(typography) { defaults.set(data, forKey: "editorTypography") }
   }
   func refreshExternalChanges() async {
     guard let library else { return }
+    do {
+      if !(try await library.discoverExternalScripts()).isEmpty { await reload() }
+    } catch { errorMessage = "New script files could not be added. \(error)" }
     for metadata in await library.listScripts()
     where (saveTasks[metadata.id] == nil || saveTasks[metadata.id]?.isCancelled == true)
       && !failedSaveIDs.contains(metadata.id) {

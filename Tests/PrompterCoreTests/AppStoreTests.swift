@@ -146,6 +146,25 @@ final class AppStoreTests: XCTestCase {
     XCTAssertNil(store.selectedID)
   }
 
+  func testRefreshDiscoversExternalMarkdownAndPreservesPendingDraft() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let created = try await store.library!.create(title: "Draft", markdown: "original")
+    await store.reload()
+    store.updateMarkdown("unsaved local", for: created.id)
+    let external = root.appendingPathComponent("Scripts", isDirectory: true)
+      .appendingPathComponent("external.md")
+    try Data("external script".utf8).write(to: external)
+
+    await store.refreshExternalChanges()
+    XCTAssertTrue(store.scripts.contains { $0.metadata.fileName == "external.md" })
+    XCTAssertEqual(store.scripts.first { $0.id == created.id }?.markdown, "unsaved local")
+    await store.refreshExternalChanges()
+    XCTAssertEqual(store.scripts.filter { $0.metadata.fileName == "external.md" }.count, 1)
+  }
+
   func testPresetLifecyclePreservesIdentityAndSettings() {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)"))
@@ -160,6 +179,12 @@ final class AppStoreTests: XCTestCase {
     XCTAssertNotEqual(store.presets[1].id, original.id)
     store.renamePreset(original.id, name: "Renamed")
     XCTAssertEqual(store.presets[0].name, "Renamed")
+    store.settings.audioDeviceUID = "selected-zoom-input"
+    store.settings.speechLanguage = "French"
+    store.applyPreset(store.presets[0])
+    XCTAssertEqual(store.settings.fontSize, 72)
+    XCTAssertEqual(store.settings.audioDeviceUID, "selected-zoom-input")
+    XCTAssertEqual(store.settings.speechLanguage, "French")
     store.deletePreset(store.presets[1].id)
     XCTAssertEqual(store.presets.count, 1)
   }
@@ -168,6 +193,7 @@ final class AppStoreTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
     let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(first.sourceFontName, "System Serif")
     first.settings.fontSize = 83
     first.savePreset(named: "Camera")
     first.settings.fontSize = 27
@@ -180,6 +206,29 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(reopened.presets, expected)
     let reopenedAgain = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(reopenedAgain.presets, expected)
+  }
+
+  func testEditorTypographyPersistsIndependentlyOfPresenterSettings() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await first.library!.create(title: "Typography", markdown: "# Bonjour\n\n*accent*")
+    let before = try Data(contentsOf: try await first.library!.scriptURL(for: record.id))
+    first.sourceFontName = "Georgia"
+    first.sourceFontSize = 22
+    first.previewFontName = "Monospaced"
+    first.previewFontSize = 31
+    first.settings.fontSize = 67
+
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await reopened.reload()
+    XCTAssertEqual(reopened.sourceFontName, "Georgia")
+    XCTAssertEqual(reopened.sourceFontSize, 22)
+    XCTAssertEqual(reopened.previewFontName, "Monospaced")
+    XCTAssertEqual(reopened.previewFontSize, 31)
+    XCTAssertEqual(reopened.settings.fontSize, 67)
+    let reopenedURL = try await reopened.library!.scriptURL(for: record.id)
+    XCTAssertEqual(try Data(contentsOf: reopenedURL), before)
   }
 
   func testDataDirectoryDefaultsAreIsolated() async throws {

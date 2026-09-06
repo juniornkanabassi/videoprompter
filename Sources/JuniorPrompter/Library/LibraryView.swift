@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
   @ObservedObject var store: AppStore
   @State private var selection = Set<UUID>()
-  @State private var preview = false
+  @State private var preview = true
   @State private var importing = false
   @State private var importPreview: ImportPreview?
   @State private var importError: String?
@@ -70,7 +70,7 @@ struct LibraryView: View {
       }
     } detail: {
       if let script = store.selected {
-        EditorView(store: store, script: script, preview: preview)
+        EditorView(store: store, script: script, preview: $preview)
       } else {
         ContentUnavailableView("Select a script", systemImage: "doc.text")
       }
@@ -129,7 +129,7 @@ struct LibraryView: View {
           preview.toggle()
         } label: {
           Label(
-            preview ? "Edit Source" : "Preview",
+            preview ? "Edit Source" : "Formatted Editor",
             systemImage: preview ? "chevron.left.forwardslash.chevron.right" : "doc.richtext")
         }.disabled(store.selected == nil)
         Button {
@@ -215,10 +215,11 @@ private struct ScriptRow: View {
 private struct EditorView: View {
   @ObservedObject var store: AppStore
   let script: ScriptRecord
-  let preview: Bool
+  @Binding var preview: Bool
   @State private var text = ""
   @State private var title = ""
   @State private var tags = ""
+  @State private var editNotice: String?
 
   var body: some View {
     VStack(spacing: 0) {
@@ -228,32 +229,43 @@ private struct EditorView: View {
         Spacer()
         TextField("Tags", text: $tags).textFieldStyle(.roundedBorder).frame(maxWidth: 190).onSubmit
         { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
-        Text(preview ? "Formatted preview" : "Markdown source").font(.caption).foregroundStyle(
+        Text(preview ? "Formatted editor" : "Markdown source").font(.caption).foregroundStyle(
           .secondary)
       }.padding(24)
       Divider()
+      HStack(spacing: 10) {
+        Text(preview ? "Formatted text" : "Source text").font(.caption).foregroundStyle(.secondary)
+        Picker("Editor font", selection: fontNameBinding) {
+          ForEach(Self.fontChoices, id: \.self) { Text($0).tag($0) }
+        }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
+        Stepper(value: fontSizeBinding, in: 12...40, step: 1) {
+          Text("\(Int(fontSizeBinding.wrappedValue)) pt").monospacedDigit()
+        }.accessibilityLabel("Editor font size")
+        Spacer()
+      }.padding(.horizontal, 24).padding(.vertical, 8)
+      if let editNotice {
+        Text(editNotice).font(.callout).foregroundStyle(.secondary)
+          .padding(.horizontal, 24).padding(.vertical, 8)
+      }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
         Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
           .font(.callout).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, 24).padding(.vertical, 10)
       }
       if preview {
-        ScrollView {
-          if let value = try? AttributedString(
-            markdown: text, options: .init(interpretedSyntax: .full))
-          {
-            Text(value).font(.system(size: 18)).frame(maxWidth: .infinity, alignment: .leading)
-              .padding(28).textSelection(.enabled)
-          }
-        }
+        FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
+          fontSize: store.previewFontSize, onUnsupportedEdit: {
+            editNotice = "That edit could not safely preserve the Markdown formatting. It was not applied. Make it in the source view instead."
+            preview = false
+          }).padding(24)
       } else {
-        TextEditor(text: $text).font(.system(size: 17, design: .serif)).scrollContentBackground(
+        TextEditor(text: $text).font(editorFont(name: store.sourceFontName, size: store.sourceFontSize)).scrollContentBackground(
           .hidden
-        ).padding(24).onChange(of: text) { _, value in
-          store.updateMarkdown(value, for: script.metadata.id)
-        }
+        ).padding(24)
       }
     }
+    .onChange(of: text) { _, value in store.updateMarkdown(value, for: script.metadata.id) }
+    .onChange(of: preview) { _, value in if value { editNotice = nil } }
     .onAppear {
       text = script.markdown
       title = script.metadata.title
@@ -262,5 +274,25 @@ private struct EditorView: View {
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
     .id(script.metadata.id)
+  }
+
+  private static let fontChoices = ["System Serif", "System", "Georgia", "Avenir Next", "Helvetica Neue", "Monospaced"]
+  private var fontNameBinding: Binding<String> {
+    Binding(
+      get: { preview ? store.previewFontName : store.sourceFontName },
+      set: { if preview { store.previewFontName = $0 } else { store.sourceFontName = $0 } })
+  }
+  private var fontSizeBinding: Binding<Double> {
+    Binding(
+      get: { preview ? store.previewFontSize : store.sourceFontSize },
+      set: { if preview { store.previewFontSize = $0 } else { store.sourceFontSize = $0 } })
+  }
+  private func editorFont(name: String, size: Double) -> Font {
+    switch name {
+    case "Monospaced": return .system(size: size, design: .monospaced)
+    case "System Serif": return .system(size: size, design: .serif)
+    case "System": return .system(size: size)
+    default: return .custom(name, size: size)
+    }
   }
 }

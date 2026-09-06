@@ -75,17 +75,7 @@ public actor MarkdownLibrary {
     }
     var known = Set(index.scripts.map(\.fileName))
     known.formUnion(index.trash.map { $0.metadata.fileName })
-    for url in try fm.contentsOfDirectory(
-      at: scriptsURL, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
-    where url.pathExtension.lowercased() == "md" && !known.contains(url.lastPathComponent) {
-      guard !Self.isSymbolicLink(url) else { continue }
-      let markdown = try String(contentsOf: url, encoding: .utf8)
-      let now = Date()
-      index.scripts.append(
-        .init(
-          title: url.deletingPathExtension().lastPathComponent, fileName: url.lastPathComponent,
-          createdAt: now, modifiedAt: now, contentFingerprint: Self.fingerprint(markdown)))
-    }
+    index.scripts.append(contentsOf: try Self.discoverScripts(in: scriptsURL, known: &known))
     for url in try fm.contentsOfDirectory(
       at: trashURL, includingPropertiesForKeys: [.isSymbolicLinkKey])
     where url.pathExtension.lowercased() == "md" && !known.contains(url.lastPathComponent) {
@@ -104,6 +94,21 @@ public actor MarkdownLibrary {
 
   public func listScripts() -> [ScriptMetadata] {
     index.scripts.sorted { $0.modifiedAt > $1.modifiedAt }
+  }
+  public func discoverExternalScripts() throws -> [ScriptMetadata] {
+    try validateManagedDirectories()
+    var known = Set(index.scripts.map(\.fileName))
+    known.formUnion(index.trash.map { $0.metadata.fileName })
+    let discovered = try Self.discoverScripts(in: scriptsURL, known: &known)
+    guard !discovered.isEmpty else { return [] }
+    index.scripts.append(contentsOf: discovered)
+    do {
+      try persistIndex()
+    } catch {
+      index.scripts.removeLast(discovered.count)
+      throw error
+    }
+    return discovered
   }
   public func listFolders() -> [ScriptFolder] { index.folders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
   public func createFolder(name: String) throws -> ScriptFolder {
@@ -321,6 +326,23 @@ public actor MarkdownLibrary {
   private func persistIndex() throws {
     try validateManagedDirectories()
     try Self.writeAtomic(index, to: indexURL, coordinated: coordinatesExternalChanges)
+  }
+  private static func discoverScripts(in directory: URL, known: inout Set<String>) throws -> [ScriptMetadata] {
+    var discovered: [ScriptMetadata] = []
+    for url in try FileManager.default.contentsOfDirectory(
+      at: directory, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+    where url.pathExtension.lowercased() == "md" && !known.contains(url.lastPathComponent) {
+      guard !isSymbolicLink(url),
+        (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+        let markdown = try? String(contentsOf: url, encoding: .utf8)
+      else { continue }
+      let now = Date()
+      discovered.append(.init(
+        title: url.deletingPathExtension().lastPathComponent, fileName: url.lastPathComponent,
+        createdAt: now, modifiedAt: now, contentFingerprint: fingerprint(markdown)))
+      known.insert(url.lastPathComponent)
+    }
+    return discovered
   }
   private func safeStem(_ value: String) -> String {
     String(value.lowercased().map { $0.isLetter || $0.isNumber ? $0 : "-" }).split(separator: "-")

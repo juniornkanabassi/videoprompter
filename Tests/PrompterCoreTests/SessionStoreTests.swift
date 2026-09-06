@@ -146,6 +146,22 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.seekRevision, initialRevision + 1)
   }
 
+  func testPauseCancelsBufferedSpeechCandidateFlush() async {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    session.acceptSpeechCandidate(
+      SpeechCandidate(
+        replacementID: "pending", generation: 1, locale: Locale(identifier: "en-GB"),
+        text: "One two three", range: CMTimeRange(
+          start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1000)), isFinal: false))
+    session.pause()
+    try? await Task.sleep(for: .milliseconds(50))
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.tokenIndex, 0)
+  }
+
   func testLanguageChangePreservesReadingAnchor() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Timed"
