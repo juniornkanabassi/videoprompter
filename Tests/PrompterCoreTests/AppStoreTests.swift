@@ -283,5 +283,15 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.scripts.count, 1)
     XCTAssertEqual(store.scripts.first?.markdown, "still here")
     XCTAssertTrue(store.unavailableScriptIDs.contains(missing.id))
+    let url = try await library.scriptURL(for: missing.id)
+    try Data("gone".utf8).write(to: url)
+    await store.refreshExternalChanges()
+    XCTAssertEqual(store.scripts.count, 2)
+    XCTAssertFalse(store.unavailableScriptIDs.contains(missing.id))
+    store.updateMarkdown("pending local edit", for: missing.id)
+    await store.reload()
+    XCTAssertEqual(store.scripts.first(where: { $0.id == missing.id })?.markdown, "pending local edit")
+    let saved = await store.flushPendingSaves()
+    XCTAssertTrue(saved)
   }
 }
