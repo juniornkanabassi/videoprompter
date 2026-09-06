@@ -70,6 +70,12 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(value.soundThreshold, 0.055)
   }
 
+  func testSessionStatsStartAtZeroWithNextHundredWordMilestone() {
+    let session = SessionStore()
+    XCTAssertEqual(session.estimatedWPM, 0)
+    XCTAssertEqual(session.sessionMilestone, 100)
+  }
+
   func testSoundModeUsesThresholdAndConfiguredSpeed() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Sound"; settings.speed = 600; settings.soundThreshold = 0.2

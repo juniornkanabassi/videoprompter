@@ -179,4 +179,29 @@ final class AppStoreTests: XCTestCase {
     let explicitReopened = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
     XCTAssertEqual(explicitReopened.settings.fontSize, 37)
   }
+
+  func testScriptsTrackedCountsCreatedAndDuplicatedScripts() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.library!.create(title: "Existing", markdown: "one")
+    await store.reload()
+    XCTAssertEqual(store.scriptsTracked, 1)
+
+    store.create(title: "Created", markdown: "two")
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(store.scriptsTracked, 2)
+    store.duplicate()
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(store.scriptsTracked, 3)
+    let duplicatedID = try XCTUnwrap(store.selectedID)
+    store.delete([duplicatedID])
+    try await Task.sleep(for: .milliseconds(300))
+    XCTAssertEqual(store.scriptsTracked, 3)
+    store.restore(duplicatedID)
+    try await Task.sleep(for: .milliseconds(100))
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await reopened.reload()
+    XCTAssertEqual(reopened.scriptsTracked, 3)
+  }
 }

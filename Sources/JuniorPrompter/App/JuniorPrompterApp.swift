@@ -53,6 +53,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   @Published var errorMessage: String?
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
+  var scriptsTracked: Int { Set(scripts.map(\.id)).union(trash.map(\.id)).count }
 
   private(set) var library: MarkdownLibrary?
   let session = SessionStore()

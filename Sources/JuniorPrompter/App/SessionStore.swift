@@ -23,6 +23,8 @@ final class SessionStore: ObservableObject {
   @Published private(set) var anchorNotice: String?
   @Published private(set) var audioLevel: Float = 0
   @Published private(set) var isClipping = false
+  var estimatedWPM: Int { activeDuration > 0 ? Int((Double(acceptedWords) / activeDuration * 60).rounded()) : 0 }
+  var sessionMilestone: Int { ((acceptedWords / 100) + 1) * 100 }
   @Published private(set) var settings = PrompterSettings()
   @Published private(set) var obsURL: URL?
   @Published private(set) var obsStatus = "Stopped"

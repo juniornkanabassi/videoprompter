@@ -121,6 +121,16 @@ struct InspectorView: View {
       }
       Section("Session") {
         LabeledContent("Words accepted", value: "\(session.acceptedWords)")
+        if store.settings.mode == "Voice" { LabeledContent("Estimated WPM", value: "\(session.estimatedWPM)") }
+        LabeledContent("Session milestone", value: "Next \(session.sessionMilestone) words")
+        LabeledContent("Scripts tracked") {
+          VStack(alignment: .trailing, spacing: 2) {
+            Text("\(store.scriptsTracked)")
+            Text("Includes recently deleted")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
         LabeledContent(
           "Active time",
           value: Duration.seconds(session.activeDuration).formatted(

@@ -102,7 +102,7 @@ struct LibraryView: View {
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
             catch { importError = "Could not export the script. \(error.localizedDescription)" }
-          }
+          }.disabled(store.selected == nil)
           Button("Reveal in Finder") {
             guard let id = store.selectedID else { return }
             Task {
@@ -111,9 +111,9 @@ struct LibraryView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
               } catch { importError = "Could not reveal the script. \(error.localizedDescription)" }
             }
-          }
+          }.disabled(store.selected == nil)
         } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Script actions")
-          .disabled(store.selected == nil)
+          .disabled(!store.libraryAvailable)
         Button {
           store.duplicate()
         } label: {
