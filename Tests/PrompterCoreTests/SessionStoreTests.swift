@@ -173,4 +173,35 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.anchor, before)
     XCTAssertEqual(session.tokenIndex, 1)
   }
+
+  func testPeakDecibelsUseFullScale() {
+    XCTAssertEqual(AudioCapture.decibels(fullScalePeak: 1), 0, accuracy: 0.001)
+    XCTAssertEqual(AudioCapture.decibels(fullScalePeak: 0.5), -6.0206, accuracy: 0.001)
+    XCTAssertEqual(AudioCapture.decibels(fullScalePeak: 0), -.infinity)
+  }
+
+  func testMeterMeasurementHandlesInterleavedStereo() throws {
+    let format = try XCTUnwrap(AVAudioFormat(
+      commonFormat: .pcmFormatFloat32, sampleRate: 48_000, channels: 2, interleaved: true))
+    let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 2))
+    buffer.frameLength = 2
+    let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+    samples[0] = 0.5; samples[1] = -0.25; samples[2] = 0.25; samples[3] = -0.5
+    let levels = AudioCapture.applyGainAndMeasure(buffer, gain: 1)
+    XCTAssertEqual(levels.peak, 0.5, accuracy: 0.001)
+    XCTAssertEqual(levels.rms, 0.3953, accuracy: 0.001)
+  }
+
+  func testMicrophoneTestWithoutDeviceDoesNotChangeSession() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Timed"
+    session.present(record: record(), settings: settings)
+    let anchor = session.anchor
+    session.startMicrophoneTest(deviceUID: nil, gain: 1)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.anchor, anchor)
+    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertEqual(session.acceptedWords, 0)
+    XCTAssertEqual(session.microphoneTestNotice, "Choose an available microphone to test.")
+  }
 }

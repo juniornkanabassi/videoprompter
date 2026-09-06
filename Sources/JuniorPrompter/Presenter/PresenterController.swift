@@ -44,7 +44,7 @@ import SwiftUI
     )
     value.delegate = self
     value.level = .floating
-    value.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    value.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]
     value.sharingType = CommandLine.arguments.contains("--capture-visible") ? .readOnly : .none
     value.hidesOnDeactivate = false
     value.isReleasedWhenClosed = false

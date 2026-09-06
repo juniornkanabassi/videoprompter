@@ -23,7 +23,10 @@ final class SessionStore: ObservableObject {
   @Published private(set) var activeDuration: TimeInterval = 0
   @Published private(set) var anchorNotice: String?
   @Published private(set) var audioLevel: Float = 0
+  @Published private(set) var audioPeakDBFS: Float = -.infinity
   @Published private(set) var isClipping = false
+  @Published private(set) var isTestingMicrophone = false
+  @Published private(set) var microphoneTestNotice: String?
   var estimatedWPM: Int { activeDuration > 0 ? Int((Double(acceptedWords) / activeDuration * 60).rounded()) : 0 }
   var sessionMilestone: Int { ((acceptedWords / 100) + 1) * 100 }
   @Published private(set) var settings = PrompterSettings()
@@ -46,6 +49,7 @@ final class SessionStore: ObservableObject {
   private let speechProvider = SpeechProvider()
   private var audioCapture: AudioCapture?
   private var speechTask: Task<Void, Never>?
+  private var microphoneTestTask: Task<Void, Never>?
   private var analyzerContinuation: AsyncStream<AnalyzerInput>.Continuation?
   private var lifecycleGeneration: UInt64 = 0
   private var providerStopTask: Task<Void, Never>?
@@ -125,6 +129,7 @@ final class SessionStore: ObservableObject {
 
   func play(captureAudio: Bool = true) {
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    stopMicrophoneTest()
     anchorNotice = nil
     state = .running
     startDurationClock()
@@ -182,6 +187,101 @@ final class SessionStore: ObservableObject {
     else { return }
     lastSoundAdvance = time
     advanceOneToken()
+  }
+
+  func startMicrophoneTest(deviceUID: String?, gain: Double) {
+    guard !isActivelyRunning else {
+      microphoneTestNotice = "Pause the presenter before testing the microphone."
+      return
+    }
+    stopMicrophoneTest()
+    guard let deviceUID,
+      let device = AudioCapture.inputDevices().first(where: { $0.uid == deviceUID })
+    else {
+      microphoneTestNotice = "Choose an available microphone to test."
+      return
+    }
+    microphoneTestNotice = nil
+    isTestingMicrophone = true
+    let generation = lifecycleGeneration
+    microphoneTestTask = Task { [weak self] in
+      guard let self else { return }
+      guard await AudioCapture.requestPermission() else {
+        guard self.lifecycleGeneration == generation else { return }
+        self.isTestingMicrophone = false
+        self.microphoneTestTask = nil
+        self.microphoneTestNotice = "Microphone permission is required."
+        return
+      }
+      guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning else {
+        return
+      }
+      do {
+        guard let format = AVAudioFormat(
+          commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
+        else { throw AudioCaptureError.conversionUnavailable }
+        let capture = AudioCapture(device: device, outputFormat: format, gain: Float(gain))
+        self.audioCapture = capture
+        try capture.start(
+          onBuffer: { [weak self] _, _, _, peak, clipping in
+            Task { @MainActor in
+              guard let self, self.lifecycleGeneration == generation else { return }
+              self.audioPeakDBFS = AudioCapture.decibels(fullScalePeak: peak)
+              self.isClipping = clipping
+            }
+          },
+          onStop: { [weak self] error in
+            Task { @MainActor in
+              guard let self, self.lifecycleGeneration == generation else { return }
+              self.audioCapture = nil
+              self.microphoneTestTask = nil
+              self.isTestingMicrophone = false
+              if let error {
+                self.audioPeakDBFS = -.infinity
+                self.isClipping = false
+                self.microphoneTestNotice = error == .deviceLost
+                  ? "The selected microphone was disconnected."
+                  : "Microphone test stopped: \(error)"
+              }
+            }
+          })
+        guard !Task.isCancelled, self.lifecycleGeneration == generation else {
+          capture.stop()
+          return
+        }
+      } catch is CancellationError {} catch {
+        guard self.lifecycleGeneration == generation else { return }
+        self.audioCapture = nil
+        self.microphoneTestTask = nil
+        self.isTestingMicrophone = false
+        self.microphoneTestNotice = "Could not test the microphone: \(error)"
+      }
+    }
+  }
+
+  func stopMicrophoneTest() {
+    guard microphoneTestTask != nil || isTestingMicrophone else { return }
+    lifecycleGeneration &+= 1
+    microphoneTestTask?.cancel()
+    microphoneTestTask = nil
+    audioCapture?.stop()
+    audioCapture = nil
+    isTestingMicrophone = false
+    audioLevel = 0
+    audioPeakDBFS = -.infinity
+    isClipping = false
+  }
+
+  func setMicrophoneTestGain(_ gain: Double) {
+    guard isTestingMicrophone else { return }
+    audioCapture?.setGain(Float(gain))
+  }
+
+  func microphoneDevicesDidChange(_ devices: [AudioInputDevice]) {
+    guard isTestingMicrophone, let audioCapture,
+      !devices.contains(where: { $0.uid == audioCapture.selectedDevice.uid })
+    else { return }
+    audioCapture.stop(reason: .deviceLost)
   }
 
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
@@ -314,6 +414,8 @@ final class SessionStore: ObservableObject {
     candidateBuffer.removeAll()
     analyzerContinuation?.finish()
     analyzerContinuation = nil
+    microphoneTestTask?.cancel()
+    microphoneTestTask = nil
     audioCapture?.stop()
     audioCapture = nil
     speechTask?.cancel()
@@ -324,7 +426,9 @@ final class SessionStore: ObservableObject {
       await speechProvider.stop()
     }
     audioLevel = 0
+    audioPeakDBFS = -.infinity
     isClipping = false
+    isTestingMicrophone = false
   }
   private func passageBoundary(after index: Int) -> Int? {
     guard document.spokenTokens.indices.contains(index) else { return nil }
@@ -392,7 +496,7 @@ final class SessionStore: ObservableObject {
         if mode == "Voice" { self.analyzerContinuation = pair.continuation }
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
-          onBuffer: { [weak self] buffer, _, level, clipping in
+          onBuffer: { [weak self] buffer, _, level, peak, clipping in
             if mode == "Voice" {
               pair.continuation.yield(
                 AnalyzerInput(buffer: buffer, bufferStartTime: counter.next(buffer.frameLength)))
@@ -400,6 +504,7 @@ final class SessionStore: ObservableObject {
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
               self.audioLevel = level
+              self.audioPeakDBFS = AudioCapture.decibels(fullScalePeak: peak)
               self.isClipping = clipping
               if mode == "Sound" { self.acceptSoundLevel(level) }
             }

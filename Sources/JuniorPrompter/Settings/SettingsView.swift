@@ -7,6 +7,7 @@ struct InspectorView: View {
   @ObservedObject private var session: SessionStore
   @State private var presetName = ""
   @State private var devices: [AudioInputDevice] = []
+  @State private var deviceObserver: AudioInputDeviceObserver?
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
   @State private var supportedSpeechLocales: [Locale] = []
@@ -82,9 +83,17 @@ struct InspectorView: View {
             "Microphone",
             selection: Binding(
               get: { store.settings.audioDeviceUID ?? "" },
-              set: { store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
+              set: {
+                session.stopMicrophoneTest()
+                store.settings.audioDeviceUID = $0.isEmpty ? nil : $0
+              })
           ) {
             Text("Choose a microphone").tag("")
+            if let uid = store.settings.audioDeviceUID,
+              !devices.contains(where: { $0.uid == uid })
+            {
+              Text("Selected microphone unavailable").tag(uid)
+            }
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
           Button { devices = AudioCapture.inputDevices() } label: {
@@ -93,12 +102,42 @@ struct InspectorView: View {
           .buttonStyle(.borderless)
           .accessibilityLabel("Refresh microphones")
         }
-        LabeledContent("Input gain") { Slider(value: $store.settings.inputGain, in: 0.25...4) }
-        ProgressView(value: Double(session.audioLevel), total: 1).tint(
-          session.isClipping ? .red : .accentColor)
+        LabeledContent("Input gain") {
+          Slider(
+            value: Binding(
+              get: { store.settings.inputGain },
+              set: {
+                store.settings.inputGain = $0
+                session.setMicrophoneTestGain($0)
+              }), in: 0.25...4)
+        }
+        HStack {
+          Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
+            if session.isTestingMicrophone {
+              session.stopMicrophoneTest()
+            } else {
+              session.startMicrophoneTest(
+                deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
+            }
+          }
+          .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
+          if session.isTestingMicrophone {
+            Label("Testing. Speak normally.", systemImage: "mic.fill")
+              .foregroundStyle(.secondary)
+          }
+        }
+        InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping)
+        LabeledContent("Peak level", value: Self.decibelText(session.audioPeakDBFS))
+        Text("Green below −12 dBFS. Yellow from −12 to −6 dBFS. Red above −6 dBFS.")
+          .font(.caption)
+          .foregroundStyle(.secondary)
         if session.isClipping {
           Label("Input is clipping", systemImage: "exclamationmark.triangle.fill").foregroundStyle(
             .red)
+        }
+        if let notice = session.microphoneTestNotice {
+          Label(notice, systemImage: "exclamationmark.triangle.fill")
+            .foregroundStyle(.secondary)
         }
       }
       Section("Presets") {
@@ -147,11 +186,69 @@ struct InspectorView: View {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
     }.onAppear {
       devices = AudioCapture.inputDevices()
+      deviceObserver = AudioCapture.inputDeviceObserver {
+        let available = AudioCapture.inputDevices()
+        devices = available
+        session.microphoneDevicesDidChange(available)
+      }
+    }.onDisappear {
+      deviceObserver = nil
+      session.stopMicrophoneTest()
     }.alert("Rename Preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
       TextField("Preset name", text: $renameValue)
       Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
       Button("Cancel", role: .cancel) { renamePreset = nil }
     }
+  }
+
+  private static func decibelText(_ value: Float) -> String {
+    value.isFinite ? String(format: "%.1f dBFS", value) : "−∞ dBFS"
+  }
+}
+
+private struct InputLevelMeter: View {
+  let peakDBFS: Float
+  let isClipping: Bool
+
+  private var fill: CGFloat {
+    guard peakDBFS.isFinite else { return 0 }
+    return CGFloat(min(1, max(0, (peakDBFS + 60) / 60)))
+  }
+
+  var body: some View {
+    GeometryReader { geometry in
+      ZStack(alignment: .topLeading) {
+        ZStack(alignment: .leading) {
+          Capsule().fill(.quaternary)
+          LinearGradient(
+            stops: [
+              .init(color: .green, location: 0), .init(color: .green, location: 0.8),
+              .init(color: .yellow, location: 0.8), .init(color: .yellow, location: 0.9),
+              .init(color: .red, location: 0.9)
+            ], startPoint: .leading, endPoint: .trailing
+          ).mask(alignment: .leading) {
+            Rectangle().frame(width: geometry.size.width * fill)
+          }
+          ForEach([0.8, 0.9, 1.0], id: \.self) { position in
+            Rectangle().fill(.primary.opacity(0.65)).frame(width: 1).offset(
+              x: geometry.size.width * position - 1)
+          }
+        }
+        .frame(height: 12)
+        ForEach([(0.8, "−12"), (0.9, "−6"), (1.0, "0")], id: \.0) { position, label in
+          Text(label)
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .position(x: min(geometry.size.width - 4, geometry.size.width * position), y: 22)
+        }
+      }
+    }
+    .frame(height: 30)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("Microphone peak level")
+    .accessibilityValue(
+      peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
+    .accessibilityHint(isClipping ? "Input is clipping." : "Marks at minus 12, minus 6 and 0 dBFS.")
   }
 }
 

@@ -29,7 +29,7 @@ public final class AudioCapture: @unchecked Sendable {
   private var pendingBuffers = 0
   private var observer: NSObjectProtocol?
   private var converter: AVAudioConverter?
-  private var bufferHandler: ((AVAudioPCMBuffer, AVAudioTime, Float, Bool) -> Void)?
+  private var bufferHandler: ((AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void)?
   private var stopHandler: ((AudioCaptureError?) -> Void)?
   private var gain: Float
 
@@ -73,10 +73,21 @@ public final class AudioCapture: @unchecked Sendable {
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
+  public static func inputDeviceObserver(
+    onChange: @escaping () -> Void
+  ) -> AudioInputDeviceObserver {
+    AudioInputDeviceObserver(onChange: onChange)
+  }
+
+  public static func decibels(fullScalePeak peak: Float) -> Float {
+    guard peak > 0 else { return -.infinity }
+    return 20 * log10(peak)
+  }
+
   public func setGain(_ value: Float) { stateLock.withLock { gain = max(0, value) } }
 
   public func start(
-    onBuffer: @escaping (AVAudioPCMBuffer, AVAudioTime, Float, Bool) -> Void,
+    onBuffer: @escaping (AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void,
     onStop: @escaping (AudioCaptureError?) -> Void
   ) throws {
     guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
@@ -190,7 +201,7 @@ public final class AudioCapture: @unchecked Sendable {
     guard error == nil, output.frameLength > 0 else { return }
     let currentGain = stateLock.withLock { gain }
     let levels = Self.applyGainAndMeasure(output, gain: currentGain)
-    bufferHandler?(output, time, levels.rms, levels.peak >= 0.98)
+    bufferHandler?(output, time, levels.rms, levels.peak, levels.peak >= 0.98)
   }
 
   private static func deepCopy(_ source: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
@@ -208,28 +219,31 @@ public final class AudioCapture: @unchecked Sendable {
     return copy
   }
 
-  private static func applyGainAndMeasure(_ buffer: AVAudioPCMBuffer, gain: Float) -> (
+  static func applyGainAndMeasure(_ buffer: AVAudioPCMBuffer, gain: Float) -> (
     rms: Float, peak: Float
   ) {
     var sum: Double = 0
     var peak: Float = 0
     var count = 0
+    let planes = buffer.format.isInterleaved ? 1 : Int(buffer.format.channelCount)
+    let samplesPerPlane = Int(buffer.frameLength) * (buffer.format.isInterleaved
+      ? Int(buffer.format.channelCount) : 1)
     if let channels = buffer.floatChannelData {
-      for channel in 0..<Int(buffer.format.channelCount) {
-        for frame in 0..<Int(buffer.frameLength) {
-          let value = channels[channel][frame] * gain
-          channels[channel][frame] = value
+      for channel in 0..<planes {
+        for sample in 0..<samplesPerPlane {
+          let value = channels[channel][sample] * gain
+          channels[channel][sample] = value
           sum += Double(value * value)
           peak = max(peak, abs(value))
           count += 1
         }
       }
     } else if let channels = buffer.int16ChannelData {
-      for channel in 0..<Int(buffer.format.channelCount) {
-        for frame in 0..<Int(buffer.frameLength) {
-          let scaled = Float(channels[channel][frame]) * gain
+      for channel in 0..<planes {
+        for sample in 0..<samplesPerPlane {
+          let scaled = Float(channels[channel][sample]) * gain
           let clamped = max(Float(Int16.min), min(Float(Int16.max), scaled))
-          channels[channel][frame] = Int16(clamped)
+          channels[channel][sample] = Int16(clamped)
           let normal = clamped / Float(Int16.max)
           sum += Double(normal * normal)
           peak = max(peak, abs(normal))
@@ -266,3 +280,26 @@ extension NSLock {
 }
 
 private final class InputSupply: @unchecked Sendable { var supplied = false }
+
+public final class AudioInputDeviceObserver: @unchecked Sendable {
+  private var address = AudioObjectPropertyAddress(
+    mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+    mElement: kAudioObjectPropertyElementMain)
+  private let queue = DispatchQueue.main
+  private var listener: AudioObjectPropertyListenerBlock?
+  private var isObserving = false
+
+  fileprivate init(onChange: @escaping () -> Void) {
+    let listener: AudioObjectPropertyListenerBlock = { _, _ in onChange() }
+    self.listener = listener
+    isObserving = AudioObjectAddPropertyListenerBlock(
+      AudioObjectID(kAudioObjectSystemObject), &address, queue, listener) == noErr
+    if !isObserving { self.listener = nil }
+  }
+
+  deinit {
+    guard isObserving, let listener else { return }
+    AudioObjectRemovePropertyListenerBlock(
+      AudioObjectID(kAudioObjectSystemObject), &address, queue, listener)
+  }
+}
