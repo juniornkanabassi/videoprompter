@@ -232,6 +232,11 @@ private struct EditorView: View {
           .secondary)
       }.padding(24)
       Divider()
+      if store.unavailableScriptIDs.contains(script.metadata.id) {
+        Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
+          .font(.callout).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
+          .padding(.horizontal, 24).padding(.vertical, 10)
+      }
       if preview {
         ScrollView {
           if let value = try? AttributedString(

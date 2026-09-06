@@ -248,4 +248,40 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.session.activeToken?.text, "two")
     XCTAssertEqual(store.selected?.markdown, "prefix one two changed three four")
   }
+
+  func testMissingExternalFilePreservesDraftAndRecoversWhenRestored() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Missing", markdown: "keep me")
+    await store.reload()
+    let url = try await store.library!.scriptURL(for: record.id)
+    let original = try Data(contentsOf: url)
+    try FileManager.default.removeItem(at: url)
+    await store.refreshExternalChanges()
+    XCTAssertTrue(store.unavailableScriptIDs.contains(record.id))
+    XCTAssertEqual(store.selected?.markdown, "keep me")
+    XCTAssertNotNil(store.errorMessage)
+    store.errorMessage = nil
+    await store.refreshExternalChanges()
+    XCTAssertNil(store.errorMessage)
+    try original.write(to: url)
+    await store.refreshExternalChanges()
+    XCTAssertFalse(store.unavailableScriptIDs.contains(record.id))
+    XCTAssertEqual(store.selected?.markdown, "keep me")
+  }
+
+  func testColdReloadKeepsOtherScriptsWhenOneFileIsMissing() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    let missing = try await library.create(title: "Missing", markdown: "gone")
+    _ = try await library.create(title: "Valid", markdown: "still here")
+    try FileManager.default.removeItem(at: try await library.scriptURL(for: missing.id))
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await store.reload()
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertEqual(store.scripts.first?.markdown, "still here")
+    XCTAssertTrue(store.unavailableScriptIDs.contains(missing.id))
+  }
 }

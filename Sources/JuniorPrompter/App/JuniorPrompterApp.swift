@@ -53,6 +53,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   @Published var errorMessage: String?
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
+  @Published private(set) var unavailableScriptIDs = Set<UUID>()
   var scriptsTracked: Int { Set(scripts.map(\.id)).union(trash.map(\.id)).count }
 
   private(set) var library: MarkdownLibrary?
@@ -116,7 +117,15 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
     do {
       var loaded: [ScriptRecord] = []
       for metadata in await library.listScripts() {
-        loaded.append(try await library.read(metadata.id))
+        do {
+          loaded.append(try await library.read(metadata.id))
+          unavailableScriptIDs.remove(metadata.id)
+        } catch {
+          if let cached = scripts.first(where: { $0.id == metadata.id }) {
+            loaded.append(cached)
+          }
+          unavailableScriptIDs.insert(metadata.id)
+        }
       }
       scripts = loaded
       trash = await library.listTrash()
@@ -359,19 +368,46 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   }
   func refreshExternalChanges() async {
     guard let library else { return }
-    for item in scripts
+    let indexed = await library.listScripts()
+    let items = indexed.compactMap { metadata in
+      scripts.first(where: { $0.id == metadata.id }) ?? ScriptRecord(metadata: metadata, markdown: "")
+    }
+    for item in items
     where (saveTasks[item.metadata.id] == nil || saveTasks[item.metadata.id]?.isCancelled == true)
       && !failedSaveIDs.contains(item.metadata.id) {
       do {
-        if let changed = try await library.externalChange(for: item.metadata.id),
-          !failedSaveIDs.contains(item.metadata.id),
-          saveTasks[item.metadata.id] == nil,
-          let i = scripts.firstIndex(where: { $0.metadata.id == item.metadata.id })
-        {
-          scripts[i] = changed
+        let changed = try await library.externalChange(for: item.metadata.id)
+        if let changed {
+          guard !failedSaveIDs.contains(item.metadata.id), saveTasks[item.metadata.id] == nil else { continue }
+          if let i = scripts.firstIndex(where: { $0.id == item.metadata.id }) {
+            scripts[i] = changed
+          } else {
+            scripts.insert(changed, at: 0)
+          }
           session.applyEditedRecord(changed)
+          unavailableScriptIDs.remove(item.metadata.id)
+        } else if unavailableScriptIDs.contains(item.metadata.id) {
+          let restored = try await library.read(item.metadata.id)
+          guard !failedSaveIDs.contains(item.metadata.id), saveTasks[item.metadata.id] == nil else { continue }
+          if let i = scripts.firstIndex(where: { $0.id == item.metadata.id }) {
+            scripts[i] = restored
+          } else {
+            scripts.insert(restored, at: 0)
+          }
+          session.applyEditedRecord(restored)
+          unavailableScriptIDs.remove(item.metadata.id)
         }
-      } catch { errorMessage = String(describing: error) }
+      } catch {
+        let nsError = error as NSError
+        let missing = (nsError.domain == NSCocoaErrorDomain && (nsError.code == CocoaError.Code.fileNoSuchFile.rawValue || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue))
+          || (nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT)
+        if missing, unavailableScriptIDs.insert(item.metadata.id).inserted {
+          if session.activeScriptID == item.metadata.id { session.pause() }
+          errorMessage = "The script file is unavailable. Restore the original file, or export and import a copy."
+        } else if !missing {
+          errorMessage = String(describing: error)
+        }
+      }
     }
   }
 }
