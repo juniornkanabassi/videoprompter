@@ -164,6 +164,24 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.presets.count, 1)
   }
 
+  func testSettingsAndMultiplePresetsSurviveNewStoreInstance() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    first.settings.fontSize = 83
+    first.savePreset(named: "Camera")
+    first.settings.fontSize = 27
+    first.savePreset(named: "Desk")
+    let expected = first.presets
+    first.settings.fontSize = 83
+
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(reopened.settings.fontSize, 83)
+    XCTAssertEqual(reopened.presets, expected)
+    let reopenedAgain = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(reopenedAgain.presets, expected)
+  }
+
   func testDataDirectoryDefaultsAreIsolated() async throws {
     let first = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

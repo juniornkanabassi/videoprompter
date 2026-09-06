@@ -78,15 +78,15 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
       ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
       : .standard)
     self.defaults = isolatedDefaults
-    if let data = isolatedDefaults.data(forKey: "settings"),
-      let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
-    {
-      settings = saved
-    }
     if let data = isolatedDefaults.data(forKey: "presets"),
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     {
       presets = saved
+    }
+    if let data = isolatedDefaults.data(forKey: "settings"),
+      let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
+    {
+      settings = saved
     }
     do {
       library = try MarkdownLibrary(rootURL: root)
