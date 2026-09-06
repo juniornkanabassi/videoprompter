@@ -122,12 +122,13 @@ final class SessionStore: ObservableObject {
     refreshOBSSnapshot()
   }
 
-  func play() {
+  func play(captureAudio: Bool = true) {
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    anchorNotice = nil
     state = .running
     startDurationClock()
     restartModeTask()
-    if settings.mode == "Voice" || settings.mode == "Sound" { startAudioMode() }
+    if captureAudio && (settings.mode == "Voice" || settings.mode == "Sound") { startAudioMode() }
     refreshOBSSnapshot()
   }
   func pause() {
@@ -288,6 +289,7 @@ final class SessionStore: ObservableObject {
       var previous = ProcessInfo.processInfo.systemUptime
       while !Task.isCancelled {
         try? await Task.sleep(for: .milliseconds(250))
+        guard !Task.isCancelled else { return }
         let now = ProcessInfo.processInfo.systemUptime
         if self?.isActivelyRunning == true { self?.activeDuration += now - previous }
         previous = now
@@ -346,7 +348,7 @@ final class SessionStore: ObservableObject {
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
-      state = .uncertain("Choose an audio input in the inspector")
+      failAudio("Choose an audio input in the inspector")
       return
     }
     let generation = lifecycleGeneration
@@ -357,7 +359,7 @@ final class SessionStore: ObservableObject {
         self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       guard await AudioCapture.requestPermission() else {
         guard self.lifecycleGeneration == generation, !Task.isCancelled else { return }
-        self.state = .uncertain("Microphone permission is required")
+        self.failAudio("Microphone permission is required")
         return
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
@@ -421,13 +423,15 @@ final class SessionStore: ObservableObject {
         }
       } catch is CancellationError {} catch {
         guard self.lifecycleGeneration == generation else { return }
-        self.analyzerContinuation?.finish()
-        self.analyzerContinuation = nil
-        self.audioCapture?.stop()
-        self.audioCapture = nil
-        self.state = .uncertain("Audio tracking stopped: \(error)")
+        self.failAudio("Audio tracking stopped: \(error)")
       }
     }
+  }
+
+  private func failAudio(_ message: String) {
+    pause()
+    anchorNotice = message
+    refreshOBSSnapshot()
   }
 
   private func speechLocales() async throws -> [Locale] {

@@ -10,17 +10,39 @@ final class SessionStoreTests: XCTestCase {
       metadata: ScriptMetadata(title: "Test", fileName: "test.md"), markdown: "One two three")
   }
 
-  func testTogglePausesAnUncertainActiveSession() {
+  func testMissingAudioInputPausesAndPreservesAnchor() {
+    let session = SessionStore()
+    session.present(record: record(), settings: PrompterSettings())
+    let anchor = session.anchor
+    session.play()
+
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.anchor, anchor)
+    XCTAssertEqual(session.anchorNotice, "Choose an audio input in the inspector")
+    session.play(captureAudio: false)
+    XCTAssertEqual(session.state, .running)
+    XCTAssertNil(session.anchorNotice)
+    session.pause()
+  }
+
+  func testMissingAudioInputDoesNotAccumulateDuration() async {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())
     session.play()
+    try? await Task.sleep(for: .milliseconds(350))
+    XCTAssertEqual(session.activeDuration, 0, accuracy: 0.01)
+  }
 
-    if case .uncertain = session.state {
-      session.toggle()
-      XCTAssertEqual(session.state, .paused)
-    } else {
-      XCTFail("Voice mode without a selected device should be uncertain")
-    }
+  func testPausingCancelsDurationClock() async {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Timed"
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    try? await Task.sleep(for: .milliseconds(20))
+    session.pause()
+    let duration = session.activeDuration
+    try? await Task.sleep(for: .milliseconds(350))
+    XCTAssertEqual(session.activeDuration, duration, accuracy: 0.01)
   }
 
   func testTogglePausesAndResumesTimedSession() {
@@ -54,7 +76,7 @@ final class SessionStoreTests: XCTestCase {
   func testSwitchingToTimedKeepsAnActiveSessionRunning() async {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())
-    session.play()
+    session.play(captureAudio: false)
     var settings = PrompterSettings(); settings.mode = "Timed"; settings.speed = 600
     session.updateSettings(settings)
     XCTAssertEqual(session.state, .running)
@@ -80,7 +102,7 @@ final class SessionStoreTests: XCTestCase {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Sound"; settings.speed = 600; settings.soundThreshold = 0.2
     session.present(record: record(), settings: settings)
-    session.play()
+    session.play(captureAudio: false)
     session.acceptSoundLevel(0.1, at: 1)
     XCTAssertEqual(session.tokenIndex, 0)
     session.acceptSoundLevel(0.3, at: 1)

@@ -109,6 +109,10 @@ public final class AudioCapture: @unchecked Sendable {
     do { try engine.start() } catch {
       stateLock.withLock { running = false }
       node.removeTap(onBus: 0)
+      engine.stop()
+      self.converter = nil
+      bufferHandler = nil
+      stopHandler = nil
       throw AudioCaptureError.engineFailure(error.localizedDescription)
     }
     observer = NotificationCenter.default.addObserver(

@@ -15,7 +15,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let record = ScriptRecord(metadata: .init(title: "Fixture", fileName: "fixture.md"), markdown: expected)
     var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(record: record, settings: settings)
-    session.play()
+    session.play(captureAudio: false)
     defer { session.pause() }
     let provider = SpeechProvider()
     let audio = try AVAudioFile(forReading: root.appendingPathComponent("bilingual.wav"))
