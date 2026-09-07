@@ -5,6 +5,38 @@ import PrompterCore
 
 @MainActor
 final class PresenterControllerTests: XCTestCase {
+  func testPresenterDraftRefreshesItsSnapshotAfterCancelAndReopen() {
+    let first = ScriptRecord(metadata: .init(title: "First", fileName: "first.md", revision: 2,
+      contentFingerprint: "first"), markdown: "first text")
+    var second = first
+    second.metadata.revision = 3
+    second.metadata.contentFingerprint = "second"
+    second.markdown = "second text"
+    let session = SessionStore()
+    session.present(record: first, settings: PrompterSettings())
+    let draft = PresenterDraft(record: first)
+    draft.begin(session: session)
+    draft.markdown = "abandoned local text"
+    draft.cancel()
+    session.applyEditedRecord(second)
+    draft.begin(session: session)
+    XCTAssertEqual(draft.markdown, "second text")
+    XCTAssertEqual(draft.expectedFingerprint, "second")
+    XCTAssertEqual(draft.expectedRevision, 3)
+  }
+
+  func testOnePixelScreenIntersectionDoesNotMakePresenterReachable() {
+    XCTAssertFalse(PresenterController.hasReachableTitleBar(
+      NSRect(x: 1919, y: 100, width: 760, height: 520),
+      visibleFrames: [NSRect(x: 0, y: 0, width: 1920, height: 1080)]))
+    XCTAssertTrue(PresenterController.hasReachableTitleBar(
+      NSRect(x: 1800, y: 100, width: 760, height: 520),
+      visibleFrames: [NSRect(x: 0, y: 0, width: 1920, height: 1080)]))
+    XCTAssertFalse(PresenterController.hasReachableTitleBar(
+      NSRect(x: 100, y: -500, width: 760, height: 520),
+      visibleFrames: [NSRect(x: 0, y: 0, width: 1920, height: 1080)]))
+  }
+
   func testCueIsNotMappedAsSpokenAndOpacityIsPreserved() {
     let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 200))
     let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
@@ -49,7 +81,7 @@ final class PresenterControllerTests: XCTestCase {
         let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
         let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
         let viewportY = rect.midY + text.textContainerInset.height - scroll.contentView.bounds.origin.y
-        let guideY = max(54, (size.height + 52) * 0.35) - 52
+        let guideY = max(54, size.height * 0.35)
         XCTAssertEqual(viewportY, guideY, accuracy: 2, "size=\(size), index=\(index)")
       }
     }
@@ -140,7 +172,7 @@ final class PresenterControllerTests: XCTestCase {
       manager.ensureLayout(for: text.textContainer!)
       let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
       let rect = manager.boundingRect(forGlyphRange: glyph, in: text.textContainer!)
-      let guideY = max(54, (scroll.contentView.bounds.height + 52) * 0.35) - 52
+      let guideY = max(54, scroll.contentView.bounds.height * 0.35)
       return max(0, rect.midY + text.textContainerInset.height - guideY)
     }
 

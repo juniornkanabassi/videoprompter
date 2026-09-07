@@ -47,6 +47,16 @@ private struct EditorTypographyPreferences: Codable {
   var previewFontSize = 18.0
 }
 
+private enum PresenterSaveError: LocalizedError {
+  case changedBeforeSave, changedDuringSave
+  var errorDescription: String? {
+    switch self {
+    case .changedBeforeSave: return "A newer library edit is waiting to be saved."
+    case .changedDuringSave: return "A newer library edit arrived while this draft was saving."
+    }
+  }
+}
+
 @MainActor final class AppStore: ObservableObject {
   @Published var scripts: [ScriptRecord] = []
   @Published var folders: [ScriptFolder] = []
@@ -71,6 +81,10 @@ private struct EditorTypographyPreferences: Codable {
   let session = SessionStore()
   private var saveTasks: [UUID: Task<Void, Never>] = [:]
   private var saveTaskTokens: [UUID: UUID] = [:]
+  private var presenterSaveIDs = Set<UUID>()
+  var presenterSaveReservationHook: (() -> Void)?
+  var presenterSaveReservationGate: (() async -> Void)?
+  private var presenterSaveWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
@@ -155,7 +169,7 @@ private struct EditorTypographyPreferences: Codable {
         }
       }
     }
-    let protectedIDs = Set(saveTasks.keys).union(failedSaveIDs)
+    let protectedIDs = Set(saveTasks.keys).union(failedSaveIDs).union(presenterSaveIDs)
     for id in protectedIDs {
       if !loaded.contains(where: { $0.id == id }), let cached = scripts.first(where: { $0.id == id }) {
         loaded.append(cached)
@@ -252,11 +266,14 @@ private struct EditorTypographyPreferences: Codable {
     var draft = scripts[position]
     draft.metadata.revision &+= 1
     session.applyEditedRecord(draft)
+    pendingDrafts[id] = value
+    guard !presenterSaveIDs.contains(id) else { return }
+    scheduleMarkdownSave(value, for: id, expectedFingerprint: scripts[position].metadata.contentFingerprint)
+  }
+  private func scheduleMarkdownSave(_ value: String, for id: UUID, expectedFingerprint: String) {
     saveTasks[id]?.cancel()
     let taskToken = UUID()
     saveTaskTokens[id] = taskToken
-    let expected = scripts[position].metadata.contentFingerprint
-    pendingDrafts[id] = value
     saveTasks[id] = Task { [weak self] in
       defer {
         if self?.saveTaskTokens[id] == taskToken {
@@ -267,7 +284,7 @@ private struct EditorTypographyPreferences: Codable {
       do {
         try await Task.sleep(for: .milliseconds(450))
         guard !Task.isCancelled, let self, let library = self.library else { return }
-        let saved = try await library.save(id, markdown: value, expectedFingerprint: expected)
+        let saved = try await library.save(id, markdown: value, expectedFingerprint: expectedFingerprint)
         guard !Task.isCancelled,
           let current = self.scripts.firstIndex(where: { $0.metadata.id == id }),
           self.scripts[current].markdown == value
@@ -284,14 +301,76 @@ private struct EditorTypographyPreferences: Codable {
       }
     }
   }
+  func savePresentedMarkdown(
+    _ value: String, for id: UUID, expectedFingerprint: String, expectedRevision: UInt64
+  ) async throws {
+    while let task = saveTasks[id] { await task.value }
+    guard !failedSaveIDs.contains(id) else { throw CocoaError(.fileWriteUnknown) }
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    guard let baseline = scripts.first(where: { $0.id == id }),
+      baseline.metadata.contentFingerprint == expectedFingerprint,
+      baseline.metadata.revision == expectedRevision,
+      pendingDrafts[id] == nil
+    else { throw PresenterSaveError.changedBeforeSave }
+    guard !presenterSaveIDs.contains(id) else { throw PresenterSaveError.changedDuringSave }
+    presenterSaveIDs.insert(id)
+    presenterSaveReservationHook?()
+    if let gate = presenterSaveReservationGate { await gate() }
+    do {
+      let saved = try await library.save(id, markdown: value, expectedFingerprint: expectedFingerprint)
+      guard let index = scripts.firstIndex(where: { $0.id == id }) else {
+        throw PresenterSaveError.changedDuringSave
+      }
+      if let queued = pendingDrafts[id], scripts[index].markdown == queued {
+        var latest = saved
+        latest.markdown = queued
+        scripts[index] = latest
+        session.applyEditedRecord(latest)
+        scheduleMarkdownSave(queued, for: id, expectedFingerprint: saved.metadata.contentFingerprint)
+      } else if scripts[index] == baseline {
+        scripts[index] = saved
+        session.applyEditedRecord(saved)
+      } else {
+        throw PresenterSaveError.changedDuringSave
+      }
+    } catch {
+      if let queued = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) {
+        scheduleMarkdownSave(queued, for: id, expectedFingerprint: current.metadata.contentFingerprint)
+      }
+      finishPresenterSave(id)
+      throw error
+    }
+    finishPresenterSave(id)
+  }
+  func savePresentedDraftAsCopy(_ value: String, for id: UUID) async throws {
+    guard let library, let source = scripts.first(where: { $0.id == id }) else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+    let copy = try await library.create(
+      title: "\(source.metadata.title) (Presenter Draft)", markdown: value,
+      folderID: source.metadata.folderID, tags: source.metadata.tags)
+    scripts.insert(copy, at: 0)
+    selectedID = copy.id
+  }
   func flushPendingSaves() async -> Bool {
-    let pending = Array(saveTasks.values)
-    for task in pending { await task.value }
-    return failedSaveIDs.isEmpty && saveTasks.isEmpty
+    while true {
+      for task in Array(saveTasks.values) { await task.value }
+      if let id = presenterSaveIDs.first {
+        await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
+        continue
+      }
+      return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
+    }
+  }
+  private func finishPresenterSave(_ id: UUID) {
+    presenterSaveIDs.remove(id)
+    let waiters = presenterSaveWaiters.removeValue(forKey: id) ?? []
+    for waiter in waiters { waiter.resume() }
   }
   func retryFailedSaves() async {
     guard let library else { return }
     for id in Array(failedSaveIDs) {
+      guard !presenterSaveIDs.contains(id) else { continue }
       guard let draft = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) else { continue }
       do {
         let saved = try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint)
@@ -306,6 +385,7 @@ private struct EditorTypographyPreferences: Codable {
   func keepBothFailedSaves() async {
     guard let library else { return }
     for id in Array(failedSaveIDs) {
+      guard !presenterSaveIDs.contains(id) else { continue }
       guard let draft = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) else { continue }
       do {
         let local = try await library.create(
@@ -417,11 +497,12 @@ private struct EditorTypographyPreferences: Codable {
     } catch { errorMessage = "New script files could not be added. \(error)" }
     for metadata in await library.listScripts()
     where (saveTasks[metadata.id] == nil || saveTasks[metadata.id]?.isCancelled == true)
-      && !failedSaveIDs.contains(metadata.id) {
+      && !failedSaveIDs.contains(metadata.id) && !presenterSaveIDs.contains(metadata.id) {
       do {
         let changed = try await library.externalChange(for: metadata.id)
         if let changed {
-          guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil else { continue }
+          guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
+            !presenterSaveIDs.contains(metadata.id) else { continue }
           if let i = scripts.firstIndex(where: { $0.id == metadata.id }) {
             scripts[i] = changed
           } else {
@@ -431,7 +512,8 @@ private struct EditorTypographyPreferences: Codable {
           unavailableScriptIDs.remove(metadata.id)
         } else if unavailableScriptIDs.contains(metadata.id) {
           let restored = try await library.read(metadata.id)
-          guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil else { continue }
+          guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
+            !presenterSaveIDs.contains(metadata.id) else { continue }
           if let i = scripts.firstIndex(where: { $0.id == metadata.id }) {
             scripts[i] = restored
           } else {
@@ -510,7 +592,7 @@ private struct MainWindowConfigurator: NSViewRepresentable {
     guard CommandLine.arguments.contains("--agent-screen"), !context.coordinator.placed else { return }
     DispatchQueue.main.async {
       guard let window = view.window else { return }
-      guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }) else {
+      guard let screen = (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" })) else {
         window.orderOut(nil)
         context.coordinator.placed = true
         return

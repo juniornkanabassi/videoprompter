@@ -7,17 +7,29 @@ import SwiftUI
   private var panel: NSPanel?
   private var screenObserver: NSObjectProtocol?
   private weak var activeSession: SessionStore?
-  func windowWillClose(_ notification: Notification) { activeSession?.pause() }
+  private var draft: PresenterDraft?
+  func windowShouldClose(_ sender: NSWindow) -> Bool {
+    guard let draft, draft.isEditing else { activeSession?.pause(); return true }
+    draft.requestClose()
+    return false
+  }
   func present(store: AppStore) {
+    guard draft?.isEditing != true else {
+      draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
+      panel?.makeKeyAndOrderFront(nil)
+      return
+    }
     guard let script = store.selected else { return }
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
+    let draft = PresenterDraft(record: store.session.activeRecord ?? script)
+    self.draft = draft
     let panel = self.panel ?? makePanel()
     panel.title = "JuniorPrompter · \(script.metadata.title)"
-    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session))
+    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
     self.panel = panel
     if CommandLine.arguments.contains("--agent-screen"),
-      let screen = NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" })
+      let screen = (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
     {
       let area = screen.visibleFrame
       let size = NSSize(width: min(760, area.width), height: min(520, area.height))
@@ -34,13 +46,14 @@ import SwiftUI
     }
   }
   func close() {
-    activeSession?.pause()
-    panel?.orderOut(nil)
+    guard let draft, draft.isEditing else { closeNow(); return }
+    draft.requestClose()
   }
+  func closeNow() { activeSession?.pause(); panel?.orderOut(nil) }
   private func makePanel() -> NSPanel {
     let value = NSPanel(
       contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
-      styleMask: [.titled, .closable, .resizable, .miniaturizable], backing: .buffered, defer: false
+      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false
     )
     value.delegate = self
     value.level = .floating
@@ -50,6 +63,8 @@ import SwiftUI
     value.isReleasedWhenClosed = false
     value.isOpaque = false
     value.backgroundColor = .clear
+    value.titleVisibility = .hidden
+    value.titlebarAppearsTransparent = true
     value.minSize = NSSize(width: 360, height: 220)
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -59,7 +74,7 @@ import SwiftUI
     return value
   }
   private func recoverVisibleFrame(_ panel: NSPanel) {
-    guard !NSScreen.screens.contains(where: { $0.frame.intersects(panel.frame) }),
+    guard !Self.hasReachableTitleBar(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)),
       let target = NSScreen.main ?? NSScreen.screens.first
     else { return }
     var frame = panel.frame
@@ -69,11 +84,93 @@ import SwiftUI
       x: target.visibleFrame.midX - frame.width / 2, y: target.visibleFrame.midY - frame.height / 2)
     panel.setFrame(frame, display: true)
   }
+  static func hasReachableTitleBar(_ frame: NSRect, visibleFrames: [NSRect]) -> Bool {
+    let titleBar = NSRect(x: frame.minX, y: frame.maxY - 44, width: frame.width, height: 44)
+    return visibleFrames.contains {
+      let overlap = titleBar.intersection($0)
+      return overlap.width >= 120 && overlap.height >= 24
+    }
+  }
+}
+
+@MainActor final class PresenterDraft: ObservableObject {
+  private(set) var recordID: UUID
+  private(set) var expectedFingerprint: String
+  private(set) var expectedRevision: UInt64
+  @Published var markdown: String
+  @Published var isEditing = false
+  @Published var isSaving = false
+  @Published var closeRequested = false
+  @Published var errorMessage: String?
+  @Published var noticeMessage: String?
+
+  init(record: ScriptRecord) {
+    recordID = record.id
+    expectedFingerprint = record.metadata.contentFingerprint
+    expectedRevision = record.metadata.revision
+    markdown = record.markdown
+  }
+  func begin(session: SessionStore) {
+    guard let record = session.activeRecord else { return }
+    recordID = record.id
+    expectedFingerprint = record.metadata.contentFingerprint
+    expectedRevision = record.metadata.revision
+    markdown = record.markdown
+    session.pause()
+    isEditing = true
+    errorMessage = nil
+    noticeMessage = nil
+  }
+  func cancel() { isEditing = false; closeRequested = false; errorMessage = nil }
+  func requestClose() {
+    guard !isSaving else {
+      errorMessage = "Wait for the save to finish before closing the presenter."
+      return
+    }
+    closeRequested = true
+  }
+  func confirm(store: AppStore) async {
+    isSaving = true
+    defer { isSaving = false }
+    do {
+      try await store.savePresentedMarkdown(
+        markdown, for: recordID, expectedFingerprint: expectedFingerprint,
+        expectedRevision: expectedRevision)
+      if let saved = store.scripts.first(where: { $0.id == recordID }) {
+        expectedFingerprint = saved.metadata.contentFingerprint
+        expectedRevision = saved.metadata.revision
+      }
+      isEditing = false
+      closeRequested = false
+      errorMessage = nil
+    } catch {
+      errorMessage = "The script changed or could not be saved. Your presenter draft is still open. \(error)"
+    }
+  }
+  func saveAsCopy(store: AppStore) async {
+    isSaving = true
+    defer { isSaving = false }
+    do {
+      try await store.savePresentedDraftAsCopy(markdown, for: recordID)
+      isEditing = false
+      closeRequested = false
+      errorMessage = nil
+      noticeMessage = "Draft saved as a separate script. The presenter remains on the original script."
+    } catch {
+      errorMessage = "The draft could not be saved as a separate script. \(error)"
+    }
+  }
+  func hasExternalChange(in store: AppStore) -> Bool {
+    guard let metadata = store.scripts.first(where: { $0.id == recordID })?.metadata else { return true }
+    return metadata.contentFingerprint != expectedFingerprint || metadata.revision != expectedRevision
+  }
 }
 
 private struct PresenterView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
+  @ObservedObject var draft: PresenterDraft
+  @FocusState private var editorFocused: Bool
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .top) {
@@ -91,47 +188,101 @@ private struct PresenterView: View {
         )
         .scaleEffect(
           x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
-        ).rotationEffect(.degrees(Double(store.settings.rotation))).padding(.top, 52)
+        ).rotationEffect(.degrees(Double(store.settings.rotation)))
+        .allowsHitTesting(!draft.isEditing)
+        .accessibilityHidden(draft.isEditing)
         Rectangle().fill(.cyan.opacity(0.82)).frame(height: 2).offset(
           y: max(54, geometry.size.height * store.settings.guideFraction)
         ).allowsHitTesting(false)
-        HStack(spacing: 10) {
-          Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
-            .accessibilityLabel("Previous passage")
-          Button(action: session.toggle) {
-            Image(systemName: session.isActivelyRunning ? "pause.fill" : "play.fill")
-          }.buttonStyle(.borderedProminent).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Play")
-          Button(action: session.nextPassage) { Image(systemName: "forward.end.fill") }
-            .accessibilityLabel("Next passage")
-          Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
-            .accessibilityLabel("Restart")
-          Spacer()
-          Text(statusText).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-          Button {
-            PresenterController.shared.close()
-          } label: {
-            Image(systemName: "xmark")
-          }.accessibilityLabel("Close presenter")
-        }
-        .buttonStyle(.bordered).padding(10).background(.ultraThinMaterial)
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
     .overlay(alignment: .bottom) {
-      if let notice = session.anchorNotice {
-        Text(notice).font(.caption).padding(8).background(.regularMaterial, in: Capsule()).padding()
+      HStack(spacing: 8) {
+        Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
+          .accessibilityLabel("Previous passage")
+        Button(action: session.toggle) {
+          Image(systemName: session.isActivelyRunning ? "pause.fill" : "play.fill")
+        }.buttonStyle(.borderedProminent).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Play")
+        Button(action: session.nextPassage) { Image(systemName: "forward.end.fill") }
+          .accessibilityLabel("Next passage")
+        Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
+          .accessibilityLabel("Restart")
+        Button {
+          if draft.isEditing { draft.cancel() } else { draft.begin(session: session) }
+        } label: {
+          Image(systemName: draft.isEditing ? "xmark" : "pencil")
+        }.accessibilityLabel(draft.isEditing ? "Cancel script edit" : "Edit script")
+        Button { PresenterController.shared.close() } label: { Image(systemName: "xmark") }
+          .accessibilityLabel("Close presenter")
+      }
+      .buttonStyle(.bordered).padding(8)
+      .background(.ultraThinMaterial, in: Capsule()).padding(10)
+      .disabled(draft.isEditing)
+      .accessibilityHidden(draft.isEditing)
+    }
+    .overlay {
+      if draft.isEditing {
+        VStack(alignment: .leading, spacing: 12) {
+          HStack {
+            Text("Edit script").font(.headline)
+            Spacer()
+            Text("Markdown").foregroundStyle(.secondary)
+          }
+          TextEditor(text: $draft.markdown)
+            .font(sourceEditorFont)
+            .frame(maxHeight: .infinity)
+            .focused($editorFocused)
+            .onAppear { DispatchQueue.main.async { editorFocused = true } }
+          if draft.hasExternalChange(in: store) {
+            Text("This script changed outside JuniorPrompter. Confirming will keep this draft and show a conflict instead of overwriting it.")
+              .foregroundStyle(.orange)
+          }
+          if let error = draft.errorMessage {
+            Text(error).foregroundStyle(.red)
+            Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
+              .disabled(draft.isSaving)
+          }
+          HStack {
+            Button("Cancel") { draft.cancel() }
+              .keyboardShortcut(.cancelAction).disabled(draft.isSaving)
+            Spacer()
+            Button("Confirm edit") { Task { await draft.confirm(store: store) } }
+              .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
+              .disabled(draft.isSaving)
+          }
+        }
+        .padding(16).frame(maxWidth: 720, maxHeight: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding()
+      }
+    }
+    .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
+      Button("Discard Draft and Close", role: .destructive) {
+        draft.cancel()
+        PresenterController.shared.closeNow()
+      }
+      Button("Keep Editing", role: .cancel) {}
+    } message: {
+      Text("The draft has not been saved to the script library.")
+    }
+    .onChange(of: draft.isEditing) { _, isEditing in
+      if isEditing { DispatchQueue.main.async { editorFocused = true } }
+    }
+    .overlay(alignment: .bottom) {
+      if let notice = session.anchorNotice ?? draft.noticeMessage {
+        Text(notice).font(.caption).padding(8).background(.regularMaterial, in: Capsule())
+          .padding(.bottom, 58)
       }
     }
   }
-  private var statusText: String {
-    switch session.state {
-    case .running:
-      return
-        "\(store.settings.mode) · \(session.tokenIndex+1)/\(max(1,session.document.spokenTokens.count))"
-    case .uncertain(let text): return text
-    case .paused: return "Paused"
-    case .stopped: return "Stopped"
+  private var sourceEditorFont: Font {
+    switch store.sourceFontName {
+    case "Monospaced": return .system(size: store.sourceFontSize, design: .monospaced)
+    case "System Serif": return .system(size: store.sourceFontSize, design: .serif)
+    case "System": return .system(size: store.sourceFontSize)
+    default: return .custom(store.sourceFontName, size: store.sourceFontSize)
     }
   }
 }
@@ -349,7 +500,7 @@ struct ScriptTextView: NSViewRepresentable {
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
       let height = scroll.contentView.bounds.height
-      let guideY = max(54, (height + 52) * guideFraction) - 52
+      let guideY = max(54, height * guideFraction)
       let edgeInset = max(80, max(guideY, height - guideY))
       textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       manager.ensureLayout(for: container)

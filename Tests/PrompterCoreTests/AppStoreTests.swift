@@ -2,6 +2,32 @@ import XCTest
 @testable import JuniorPrompter
 import PrompterCore
 
+private actor PresenterSaveGate {
+  private var entered = false
+  private var released = false
+  private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+  private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+  func wait() async {
+    entered = true
+    let waiters = entryWaiters
+    entryWaiters.removeAll()
+    for waiter in waiters { waiter.resume() }
+    guard !released else { return }
+    await withCheckedContinuation { releaseWaiters.append($0) }
+  }
+  func waitUntilEntered() async {
+    guard !entered else { return }
+    await withCheckedContinuation { entryWaiters.append($0) }
+  }
+  func release() {
+    released = true
+    let waiters = releaseWaiters
+    releaseWaiters.removeAll()
+    for waiter in waiters { waiter.resume() }
+  }
+}
+
 @MainActor
 final class AppStoreTests: XCTestCase {
   func testFlushPendingSavePersistsImmediateEdit() async throws {
@@ -314,6 +340,125 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.session.state, .paused)
     XCTAssertEqual(store.session.activeToken?.text, "two")
     XCTAssertEqual(store.selected?.markdown, "prefix one two changed three four")
+  }
+
+  func testPresenterSaveUsesPresentedRecordAndOpeningFingerprint() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let presented = try await store.library!.create(title: "Presented", markdown: "one two three")
+    let other = try await store.library!.create(title: "Selected", markdown: "other")
+    await store.reload()
+    store.selectedID = other.id
+    store.session.present(record: presented, settings: PrompterSettings())
+    try await store.savePresentedMarkdown(
+      "one changed three", for: presented.id,
+      expectedFingerprint: presented.metadata.contentFingerprint,
+      expectedRevision: presented.metadata.revision)
+    XCTAssertEqual(store.selectedID, other.id)
+    XCTAssertEqual(store.session.activeRecord?.markdown, "one changed three")
+    let saved = try await store.library!.read(presented.id)
+    XCTAssertEqual(saved.markdown, "one changed three")
+  }
+
+  func testPresenterSaveWaitsForPendingLibraryEdit() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Presented", markdown: "original")
+    await store.reload()
+    store.updateMarkdown("library edit", for: record.id)
+    do {
+      try await store.savePresentedMarkdown(
+        "presenter draft", for: record.id, expectedFingerprint: record.metadata.contentFingerprint,
+        expectedRevision: record.metadata.revision)
+      XCTFail("Expected the pending library edit to win the fingerprint check")
+    } catch {}
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "library edit")
+  }
+
+  func testLibraryEditQueuedDuringPresenterSavePersistsAfterPresenterDraft() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Presented", markdown: "original")
+    await store.reload()
+    store.presenterSaveReservationHook = { store.updateMarkdown("newer library edit", for: record.id) }
+    try await store.savePresentedMarkdown(
+      "presenter draft", for: record.id, expectedFingerprint: record.metadata.contentFingerprint,
+      expectedRevision: record.metadata.revision)
+    store.presenterSaveReservationHook = nil
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "newer library edit")
+  }
+
+  func testLibraryEditQueuedDuringFailedPresenterSaveEntersRecovery() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Presented", markdown: "original")
+    let url = try await store.library!.scriptURL(for: record.id)
+    await store.reload()
+    store.presenterSaveReservationHook = {
+      store.updateMarkdown("queued library edit", for: record.id)
+      try? Data("external".utf8).write(to: url)
+    }
+    do {
+      try await store.savePresentedMarkdown(
+        "presenter draft", for: record.id, expectedFingerprint: record.metadata.contentFingerprint,
+        expectedRevision: record.metadata.revision)
+      XCTFail("Expected the external write to reject the presenter save")
+    } catch {}
+    store.presenterSaveReservationHook = nil
+    let flushed = await store.flushPendingSaves()
+    XCTAssertFalse(flushed)
+    XCTAssertTrue(store.hasFailedSaves)
+    XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, "queued library edit")
+  }
+
+  func testFlushWaitsForReservedPresenterSave() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Presented", markdown: "original")
+    await store.reload()
+    let gate = PresenterSaveGate()
+    store.presenterSaveReservationGate = { await gate.wait() }
+    let presenterSave = Task { try await store.savePresentedMarkdown(
+      "presenter draft", for: record.id, expectedFingerprint: record.metadata.contentFingerprint,
+      expectedRevision: record.metadata.revision) }
+    await gate.waitUntilEntered()
+    let flush = Task { await store.flushPendingSaves() }
+    await Task.yield()
+    await gate.release()
+    try await presenterSave.value
+    let flushed = await flush.value
+    XCTAssertTrue(flushed)
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "presenter draft")
+  }
+
+  func testPresenterSavePreservesDraftWhenExternalEditChangedFingerprint() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(title: "Presented", markdown: "original")
+    await store.reload()
+    let url = try await store.library!.scriptURL(for: record.id)
+    try Data("external".utf8).write(to: url)
+    await store.refreshExternalChanges()
+    do {
+      try await store.savePresentedMarkdown(
+        "presenter draft", for: record.id, expectedFingerprint: record.metadata.contentFingerprint,
+        expectedRevision: record.metadata.revision)
+      XCTFail("Expected an external conflict")
+    } catch {}
+    XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, "external")
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "external")
   }
 
   func testMissingExternalFilePreservesDraftAndRecoversWhenRestored() async throws {
