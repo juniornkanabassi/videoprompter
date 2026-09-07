@@ -25,6 +25,16 @@ public actor SpeechProvider {
   private var resultTasks: [Task<Void, Swift.Error>] = []
   public init() {}
   public var currentGeneration: UInt64 { generation }
+  public static func contextualPhrases(from script: String) -> [String] {
+    let words = script.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+    var phrases: [String] = []
+    for (first, second) in zip(words, words.dropFirst()) where first.first?.isUppercase == true || second.first?.isUppercase == true {
+      let phrase = "\(first) \(second)"
+      if !phrases.contains(phrase) { phrases.append(phrase) }
+      if phrases.count == 100 { break }
+    }
+    return phrases
+  }
   public func prepare(
     locales requested: [Locale] = [.init(identifier: "en-GB"), .init(identifier: "fr-FR")],
     naturalFormat: AVAudioFormat? = nil, contextualStrings: [String] = [], engine: Engine = .transcription

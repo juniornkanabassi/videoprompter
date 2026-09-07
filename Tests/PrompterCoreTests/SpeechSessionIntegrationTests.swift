@@ -44,17 +44,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     return view.subviews.lazy.compactMap { self.scrollView(in: $0) }.first
   }
 
-  private func contextualPhrases(from script: String) -> [String] {
-    let words = script.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
-    var phrases: [String] = []
-    for (first, second) in zip(words, words.dropFirst()) where first.first?.isUppercase == true || second.first?.isUppercase == true {
-      let phrase = "\(first) \(second)"
-      if !phrases.contains(phrase) { phrases.append(phrase) }
-      if phrases.count == 100 { break }
-    }
-    return phrases
-  }
-
   func testBilingualFixtureThroughProductionProviderAndSession() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_SPEECH_INTEGRATION"] == "1")
     let root = URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/speech-fixtures")
@@ -67,7 +56,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     defer { session.pause() }
     let provider = SpeechProvider()
     let audio = try AVAudioFile(forReading: root.appendingPathComponent("bilingual.wav"))
-    let format = try await provider.prepare(naturalFormat: audio.processingFormat)
+    let engine: SpeechProvider.Engine = ProcessInfo.processInfo.environment[
+      "JUNIORPROMPTER_SPEECH_REPLAY_ENGINE"
+    ] == "dictation" ? .dictation : .transcription
+    let format = try await provider.prepare(
+      naturalFormat: audio.processingFormat,
+      contextualStrings: engine == .dictation ? SpeechProvider.contextualPhrases(from: expected) : [], engine: engine)
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let producer = Task {
       let converter = try XCTUnwrap(AVAudioConverter(from: audio.processingFormat, to: format))
@@ -196,7 +190,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let actualStartOffset = Double(startFrame) / audio.processingFormat.sampleRate
     let format = try await provider.prepare(
       naturalFormat: audio.processingFormat,
-      contextualStrings: engine == .dictation ? contextualPhrases(from: script) : [], engine: engine)
+      contextualStrings: engine == .dictation ? SpeechProvider.contextualPhrases(from: script) : [], engine: engine)
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let monitor = Task { @MainActor in
       var previousToken = session.tokenIndex

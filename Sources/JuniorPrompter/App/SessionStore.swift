@@ -485,7 +485,9 @@ final class SessionStore: ObservableObject {
         let format: AVAudioFormat
         if mode == "Voice" {
           self.state = .uncertain("Preparing on-device English and French speech models")
-          format = try await self.speechProvider.prepare(locales: try await self.speechLocales())
+          format = try await self.speechProvider.prepare(
+            locales: try await self.speechLocales(),
+            contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
           guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
           self.state = .running
         } else {
