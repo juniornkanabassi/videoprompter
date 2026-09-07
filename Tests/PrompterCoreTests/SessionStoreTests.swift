@@ -228,4 +228,49 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.acceptedWords, 0)
     XCTAssertEqual(session.microphoneTestNotice, "Choose an available microphone to test.")
   }
+
+  func testLiveSoundCapturePausesWhenSelectedDeviceDisappears() async throws {
+    try XCTSkipUnless(
+      ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_LIVE_MIC_DEVICE_LOSS"] == "1")
+    try XCTSkipUnless(AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
+                      "Live microphone regression requires existing audio permission.")
+    let requestedUID = ProcessInfo.processInfo.environment["JUNIORPROMPTER_LIVE_MIC_DEVICE_UID"]
+    guard let device = AudioCapture.inputDevices().first(where: { $0.uid == requestedUID })
+      ?? AudioCapture.inputDevices().first else {
+      throw XCTSkip("Live microphone regression requires an available input device.")
+    }
+
+    let session = SessionStore()
+    var settings = PrompterSettings()
+    settings.mode = "Sound"
+    settings.audioDeviceUID = device.uid
+    settings.soundThreshold = 0
+    settings.speed = 600
+    session.present(record: record(), settings: settings)
+    session.play()
+    defer { session.pause() }
+
+    let deadline = ContinuousClock.now + .seconds(5)
+    while session.tokenIndex == 0 && ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    guard session.tokenIndex > 0 else {
+      XCTFail("Live capture did not deliver a buffer.")
+      return
+    }
+
+    let anchor = try XCTUnwrap(session.anchor)
+    session.microphoneDevicesDidChange([])
+    let pauseDeadline = ContinuousClock.now + .seconds(2)
+    while session.anchorNotice == nil && ContinuousClock.now < pauseDeadline {
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.anchor, anchor)
+    XCTAssertEqual(session.settings.audioDeviceUID, device.uid)
+    XCTAssertEqual(session.anchorNotice, "The selected microphone was disconnected. Tracking paused.")
+    let pausedIndex = session.tokenIndex
+    try await Task.sleep(for: .milliseconds(250))
+    XCTAssertEqual(session.tokenIndex, pausedIndex)
+  }
 }
