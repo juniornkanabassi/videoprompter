@@ -133,9 +133,14 @@ public struct RecognitionUpdate: Equatable, Sendable {
   public var tokenIndex: Int
 }
 public struct RecognitionTracker: Sendable {
+  private struct Revision: Sendable {
+    var words: [String]
+    var isFinal: Bool
+    var advanced: Bool
+  }
   public private(set) var generation: UInt64
   public private(set) var tokenIndex: Int
-  private var revisions: [String: (String, Bool)] = [:]
+  private var revisions: [String: Revision] = [:]
   private var acceptedAudio: [ClosedRange<TimeInterval>] = []
   private var matcher: PhraseMatcher
   public init(generation: UInt64 = 0, tokenIndex: Int = 0, matcher: PhraseMatcher = .init()) {
@@ -166,12 +171,17 @@ public struct RecognitionTracker: Sendable {
     var sawFresh = false
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
-      let signature = (event.text, event.isFinal)
-      if let old = revisions[key], old.0 == signature.0 && old.1 == signature.1 { continue }
-      revisions[key] = signature
-      sawFresh = true
       let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
-      if let match = matcher.match(recognised: words, script: script, currentIndex: tokenIndex) {
+      let old = revisions[key]
+      if old?.words == words && old?.isFinal == event.isFinal { continue }
+      let appended = old.map {
+        words.starts(with: $0.words) && words.count >= $0.words.count + matcher.minimumBackwardTokens
+      } ?? false
+      revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)
+      sawFresh = true
+      if let match = matcher.match(recognised: words, script: script, currentIndex: tokenIndex),
+        !(match.direction == .backward && old?.advanced == true && !appended)
+      {
         candidates.append((event, match))
       }
     }
@@ -183,6 +193,10 @@ public struct RecognitionTracker: Sendable {
       $0.1.score == $1.1.score ? $0.1.tokenIndex > $1.1.tokenIndex : $0.1.score > $1.1.score
     }
     guard let winner = candidates.first else { return .init(status: .held, tokenIndex: tokenIndex) }
+    if winner.1.direction == .forward && winner.1.tokenIndex > tokenIndex {
+      let key = "\(winner.0.localeIdentifier)|\(winner.0.replacementID)"
+      revisions[key]?.advanced = true
+    }
     if winner.0.audioEnd > winner.0.audioStart {
       let range = winner.0.audioStart...winner.0.audioEnd
       if acceptedAudio.contains(where: { existing in

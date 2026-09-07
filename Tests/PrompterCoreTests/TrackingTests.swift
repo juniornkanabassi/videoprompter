@@ -197,6 +197,49 @@ final class RecognitionTests: XCTestCase {
       ).status, .staleGeneration)
     XCTAssertEqual(tracker.tokenIndex, 3)
   }
+
+  func testVolatileRevisionCannotRewindAfterItAdvanced() {
+    let script = PrompterDocument(markdown: "one two three four five six seven eight").spokenTokens
+    var tracker = RecognitionTracker(generation: 1)
+    let advancing = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "one two three four five six",
+      isFinal: false, timestamp: 1, audioStart: 0, audioEnd: 1)
+    XCTAssertEqual(tracker.consume(advancing, script: script).tokenIndex, 5)
+    let revision = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "one two three four",
+      isFinal: false, timestamp: 2, audioStart: 0, audioEnd: 2)
+    XCTAssertEqual(tracker.consume(revision, script: script).status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+  }
+
+  func testNewRevisionCanRewindToAnIntentionalRepeatedPhrase() {
+    let script = PrompterDocument(markdown: "one two three four five six seven eight").spokenTokens
+    var tracker = RecognitionTracker(generation: 1)
+    let advancing = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "one two three four five six",
+      isFinal: false, timestamp: 1, audioStart: 0, audioEnd: 1)
+    XCTAssertEqual(tracker.consume(advancing, script: script).tokenIndex, 5)
+    let repeated = RecognitionEvent(
+      replacementID: "range-5", generation: 1, text: "one two three four",
+      isFinal: false, timestamp: 6, audioStart: 5, audioEnd: 6)
+    XCTAssertEqual(tracker.consume(repeated, script: script).tokenIndex, 3)
+  }
+
+  func testSameRevisionCanRewindAfterAnAppendedRepeatedPhrase() {
+    let script = PrompterDocument(
+      markdown: "one unique earlier phrase lives here then many later words continue onward ending"
+    ).spokenTokens
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 6)
+    let advancing = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "many later words continue onward ending",
+      isFinal: false, timestamp: 1, audioStart: 0, audioEnd: 1)
+    XCTAssertEqual(tracker.consume(advancing, script: script).tokenIndex, 12)
+    let repeated = RecognitionEvent(
+      replacementID: "range-0", generation: 1,
+      text: "many later words continue onward ending one unique earlier phrase lives here then many later words",
+      isFinal: false, timestamp: 2, audioStart: 0, audioEnd: 2)
+    XCTAssertEqual(tracker.consume(repeated, script: script).tokenIndex, 9)
+  }
   func testCumulativePhraseAndDualLocaleCandidatesArbitrateTogether() {
     let script = PrompterDocument(
       markdown:
