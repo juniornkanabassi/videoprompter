@@ -13,7 +13,7 @@ import SwiftUI
     draft.requestClose()
     return false
   }
-  func present(store: AppStore) {
+  func present(store: AppStore, on screen: NSScreen? = nil) {
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
       panel?.makeKeyAndOrderFront(nil)
@@ -28,16 +28,17 @@ import SwiftUI
     panel.title = "JuniorPrompter · \(script.metadata.title)"
     panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
     self.panel = panel
-    if CommandLine.arguments.contains("--agent-screen"),
-      let screen = (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
-    {
-      let area = screen.visibleFrame
+    let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen")
+      ? (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
+      : nil)
+    if let targetScreen {
+      let area = targetScreen.visibleFrame
       let size = NSSize(width: min(760, area.width), height: min(520, area.height))
       panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
                             width: size.width, height: size.height), display: true)
     }
     recoverVisibleFrame(panel)
-    if CommandLine.arguments.contains("--agent-screen") {
+    if screen != nil || CommandLine.arguments.contains("--agent-screen") {
       panel.orderFrontRegardless()
       panel.makeKey()
     } else {

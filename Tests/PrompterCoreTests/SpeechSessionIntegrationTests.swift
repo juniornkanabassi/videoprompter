@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import AppKit
 import Foundation
 import Speech
 import XCTest
@@ -26,6 +27,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let text: String?
     var progressEvents: Int? = nil
     var largestProgressHoldSeconds: Double? = nil
+    var renderedOffsetY: Double? = nil
+    var renderedOffsetSource: String? = nil
   }
 
   @MainActor private final class ReplayLedger {
@@ -33,6 +36,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var firstAudioWall: TimeInterval?
     var submittedBuffers = 0
     var droppedBuffers = 0
+  }
+
+  private func scrollView(in view: NSView?) -> NSScrollView? {
+    guard let view else { return nil }
+    if let scrollView = view as? NSScrollView { return scrollView }
+    return view.subviews.lazy.compactMap { self.scrollView(in: $0) }.first
   }
 
   private func contextualPhrases(from script: String) -> [String] {
@@ -113,12 +122,55 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
     let engine: SpeechProvider.Engine = environment["JUNIORPROMPTER_SPEECH_REPLAY_ENGINE"] == "dictation"
       ? .dictation : .transcription
-    let session = SessionStore()
-    let record = ScriptRecord(metadata: .init(title: "Actual replay", fileName: "actual-replay.md"), markdown: script)
-    var settings = PrompterSettings(); settings.mode = "Voice"
-    session.present(record: record, settings: settings)
+    let rendersPresenter = environment["JUNIORPROMPTER_RENDERED_REPLAY"] == "1"
+    let session: SessionStore
+    var renderedPanel: NSPanel?
+    var renderedStore: AppStore?
+    var renderedDirectory: URL?
+    var renderedDefaults: (suiteName: String, defaults: UserDefaults)?
+    var presenterStayedVisible = true
+    if rendersPresenter {
+      guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) else {
+        throw XCTSkip("Rendered replay requires the Prompter XL display.")
+      }
+      let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("juniorprompter-rendered-replay-\(UUID().uuidString)", isDirectory: true)
+      let suiteName = "JuniorPrompter.rendered-replay.\(UUID().uuidString)"
+      let defaults = UserDefaults(suiteName: suiteName)!
+      defaults.removePersistentDomain(forName: suiteName)
+      let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
+      guard let library = store.library else {
+        return XCTFail("Rendered replay could not create its disposable library.")
+      }
+      let record = try await library.create(title: "Rendered replay", markdown: script)
+      await store.reload()
+      store.selectedID = record.id
+      store.settings.mode = "Voice"
+      PresenterController.shared.present(store: store, on: screen)
+      guard let panel = NSApp.windows.first(where: { $0.title == "JuniorPrompter · Rendered replay" }) as? NSPanel else {
+        return XCTFail("Rendered replay presenter panel was not created.")
+      }
+      panel.sharingType = .readOnly
+      renderedPanel = panel
+      renderedStore = store
+      renderedDirectory = directory
+      renderedDefaults = (suiteName, defaults)
+      session = store.session
+    } else {
+      session = SessionStore()
+      let record = ScriptRecord(metadata: .init(title: "Actual replay", fileName: "actual-replay.md"), markdown: script)
+      var settings = PrompterSettings(); settings.mode = "Voice"
+      session.present(record: record, settings: settings)
+    }
+    defer {
+      session.pause()
+      renderedPanel?.contentView = nil
+      PresenterController.shared.closeNow()
+      renderedStore = nil
+      if let renderedDirectory { try? FileManager.default.removeItem(at: renderedDirectory) }
+      if let renderedDefaults { renderedDefaults.defaults.removePersistentDomain(forName: renderedDefaults.suiteName) }
+    }
     session.play(captureAudio: false)
-    defer { session.pause() }
 
     let ledger = ReplayLedger()
     defer {
@@ -148,9 +200,27 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let monitor = Task { @MainActor in
       var previousToken = session.tokenIndex
+      var previousRenderedOffset: Double?
       while !Task.isCancelled {
+        let elapsed = ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 }
+        if let renderedPanel, let scrollView = scrollView(in: renderedPanel.contentView) {
+          presenterStayedVisible = presenterStayedVisible && renderedPanel.isVisible
+          let presentationOffset = scrollView.contentView.layer?.presentation()?.bounds.origin.y
+          let offset = Double(presentationOffset ?? scrollView.contentView.bounds.origin.y)
+          if previousRenderedOffset != offset {
+            ledger.events.append(.init(
+              type: "rendered_scroll_offset", generation: nil, replacementID: nil,
+              wallSecondsSinceFirstAudio: elapsed,
+              audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
+              tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
+              droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
+              text: "Observed presenter scroll movement; this is UI cadence evidence, not ASR-to-render latency.",
+              renderedOffsetY: offset,
+              renderedOffsetSource: presentationOffset == nil ? "model_clip_bounds" : "presentation_layer_bounds"))
+            previousRenderedOffset = offset
+          }
+        }
         if session.tokenIndex != previousToken {
-          let elapsed = ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 }
           ledger.events.append(.init(
             type: "session_token_progress", generation: nil, replacementID: nil,
             wallSecondsSinceFirstAudio: elapsed,
@@ -243,6 +313,15 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let largestHold = zip(progress, progress.dropFirst()).map {
       ($1.wallSecondsSinceFirstAudio ?? 0) - ($0.wallSecondsSinceFirstAudio ?? 0)
     }.max() ?? 0
+    if rendersPresenter {
+      XCTAssertTrue(presenterStayedVisible, "Rendered presenter was not visible throughout sampling. See \(logURL.path).")
+      let renderedOffsets = Set(ledger.events.compactMap { event in
+        event.type == "rendered_scroll_offset" ? event.renderedOffsetY : nil
+      })
+      XCTAssertGreaterThan(
+        renderedOffsets.count, 1,
+        "Rendered replay did not observe presenter scroll movement. See \(logURL.path).")
+    }
     ledger.events.append(.init(
       type: "summary", generation: nil, replacementID: nil,
       wallSecondsSinceFirstAudio: ledger.firstAudioWall.map {
@@ -251,7 +330,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       recognitionDeliveryLag: nil, tokenIndex: session.tokenIndex,
       acceptedWords: session.acceptedWords, droppedBuffers: ledger.droppedBuffers,
       submittedBuffers: ledger.submittedBuffers, isFinal: nil, locale: nil,
-      text: "\(engine == .dictation ? "DictationTranscriber contextual" : "SpeechTranscriber") replay. Recognition delivery lag and session token progress are measured separately; rendered UI latency is not measured by this test.",
+      text: "\(engine == .dictation ? "DictationTranscriber contextual" : "SpeechTranscriber") replay. \(rendersPresenter ? "Rendered scroll offsets record UI cadence only, not ASR-to-render latency." : "Recognition delivery lag and session token progress are measured separately; rendered UI latency is not measured by this test.")",
       progressEvents: progress.count, largestProgressHoldSeconds: largestHold))
     XCTAssertEqual(
       session.tokenIndex, session.document.spokenTokens.count - 1,
