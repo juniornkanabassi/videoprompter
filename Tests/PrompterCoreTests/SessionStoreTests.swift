@@ -235,8 +235,7 @@ final class SessionStoreTests: XCTestCase {
     try XCTSkipUnless(AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
                       "Live microphone regression requires existing audio permission.")
     let requestedUID = ProcessInfo.processInfo.environment["JUNIORPROMPTER_LIVE_MIC_DEVICE_UID"]
-    guard let device = AudioCapture.inputDevices().first(where: { $0.uid == requestedUID })
-      ?? AudioCapture.inputDevices().first else {
+    guard let device = AudioCapture.inputDevices().first(where: { requestedUID == nil || $0.uid == requestedUID }) else {
       throw XCTSkip("Live microphone regression requires an available input device.")
     }
 
