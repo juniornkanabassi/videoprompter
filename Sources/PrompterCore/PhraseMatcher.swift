@@ -15,6 +15,10 @@ public struct PhraseMatcher: Sendable {
     self.forwardWindow = forwardWindow
     self.minimumBackwardTokens = minimumBackwardTokens
   }
+  private let common: Set<String> = [
+    "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
+    "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
+  ]
   public func match(recognised: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
   {
@@ -22,15 +26,12 @@ public struct PhraseMatcher: Sendable {
     let target = script.map(\.normalised)
     guard !words.isEmpty && !target.isEmpty else { return nil }
     let current = min(max(0, currentIndex), target.count - 1)
-    let common: Set<String> = [
-      "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
-      "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
-    ]
     if words.count >= minimumBackwardTokens {
       let phrase = Array(words.suffix(min(words.count, 10)))
       let informative = phrase.filter { $0.count > 2 && !common.contains($0) }
       guard informative.count >= minimumBackwardTokens else {
-        return forwardMatch(words: words, target: target, current: current)
+        if let match = localForwardMatch(words: words, script: script, current: current) { return match }
+        return forwardMatch(words: words, script: script, current: current)
       }
       let lo = max(0, current - backwardWindow)
       let hi = min(target.count, current + forwardWindow + 1)
@@ -45,15 +46,43 @@ public struct PhraseMatcher: Sendable {
         return PhraseMatch(tokenIndex: behind[0] + phrase.count - 1, score: 1, direction: .backward)
       }
     }
-    return forwardMatch(words: words, target: target, current: current)
+    if let match = localForwardMatch(words: words, script: script, current: current) { return match }
+    return forwardMatch(words: words, script: script, current: current)
   }
-  private func forwardMatch(words: [String], target: [String], current: Int) -> PhraseMatch? {
+  private func localForwardMatch(
+    words: [String], script: [DocumentToken], current: Int
+  ) -> PhraseMatch? {
+    let target = script.map(\.normalised)
+    let start = current + 1
+    guard start < target.count else { return nil }
+    for wordStart in words.indices {
+      var source = wordStart
+      var targetIndex = start
+      var sourceCount = 0
+      var informative = 0
+      while source < words.count, targetIndex < target.count {
+        let components = contractionComponents(words[source])
+        guard target[targetIndex...].starts(with: components) else { break }
+        sourceCount += 1
+        informative += components.filter { $0.count > 2 && !common.contains($0) }.count
+        targetIndex += components.count
+        source += 1
+      }
+      if sourceCount >= 3, informative >= 2 {
+        return PhraseMatch(tokenIndex: targetIndex - 1, score: 1, direction: .forward)
+      }
+    }
+    return nil
+  }
+  private func forwardMatch(words: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
+    let target = script.map(\.normalised)
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
     for recognisedStart in 0..<words.count {
       let evidence = Array(words[recognisedStart...])
       guard evidence.count >= min(2, words.count) else { continue }
+      guard evidence.contains(where: { $0.count > 2 && !common.contains($0) }) else { continue }
       for start in lo..<hi where target[start] == evidence[0] {
         var ti = start
         var matched = 0
@@ -83,6 +112,16 @@ public struct PhraseMatcher: Sendable {
       best.score - runner >= (words.count == 1 ? 0.2 : 0.05)
     else { return nil }
     return PhraseMatch(tokenIndex: best.index, score: best.score, direction: .forward)
+  }
+  private func contractionComponents(_ word: String) -> [String] {
+    switch word {
+    case "i'm": return ["i", "am"]
+    case "he's": return ["he", "is"]
+    case "she's": return ["she", "is"]
+    case "we're": return ["we", "are"]
+    case "they're": return ["they", "are"]
+    default: return [word]
+    }
   }
 }
 

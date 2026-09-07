@@ -132,6 +132,54 @@ final class RecognitionTests: XCTestCase {
         recognised: ["the", "and", "this", "that"], script: script, currentIndex: 8))
   }
 
+  func testLocalAnchorAdvancesBeforeAContractionBreaksTheLongInterim() {
+    let script = PrompterDocument(
+      markdown: "I am not saying he is a better player than Yamal. I am simply saying that he is a better Champions League player."
+    ).spokenTokens
+    let current = try! XCTUnwrap(script.firstIndex { $0.normalised == "yamal" })
+    let match = PhraseMatcher().match(
+      recognised: ["I'm", "simply", "saying", "he's", "a", "better"],
+      script: script, currentIndex: current)
+    XCTAssertEqual(
+      match?.tokenIndex,
+      script.indices.first { $0 > current && script[$0].normalised == "saying" })
+  }
+
+  func testZeroLookaheadLocalAnchorDoesNotSkipAnUnmatchedName() {
+    let script = PrompterDocument(
+      markdown: "Start Désiré Doué is a better Champions League player."
+    ).spokenTokens
+    XCTAssertNil(
+      PhraseMatcher(forwardWindow: 0).match(
+        recognised: ["is", "a", "better", "Champions", "League", "player"],
+        script: script, currentIndex: 0))
+  }
+
+  func testLocalAnchorRejectsCommonAndUnrelatedPhrases() {
+    let common = PrompterDocument(markdown: "Start the and this that follows.").spokenTokens
+    XCTAssertNil(
+      PhraseMatcher().match(recognised: ["the", "and", "this", "that"], script: common, currentIndex: 0))
+    let unrelated = PrompterDocument(
+      markdown: "Start Désiré Doué. I am simply saying that he is right."
+    ).spokenTokens
+    XCTAssertNil(
+      PhraseMatcher(forwardWindow: 0).match(
+        recognised: ["I", "am", "simply", "saying"], script: unrelated, currentIndex: 0))
+  }
+
+  func testLocalAnchorAcceptsCapitalisedSentenceAndHeading() {
+    let sentence = PrompterDocument(markdown: "Start. This Sentence Continues.").spokenTokens
+    XCTAssertEqual(
+      PhraseMatcher().match(
+        recognised: ["This", "Sentence", "Continues"], script: sentence, currentIndex: 0)?.tokenIndex,
+      3)
+    let heading = PrompterDocument(markdown: "Start\n\n# This Heading Continues").spokenTokens
+    XCTAssertEqual(
+      PhraseMatcher().match(
+        recognised: ["This", "Heading", "Continues"], script: heading, currentIndex: 0)?.tokenIndex,
+      3)
+  }
+
   func testReplacementDedupAndGenerationInvalidation() {
     let script = PrompterDocument(markdown: "alpha beta gamma delta epsilon zeta").spokenTokens
     var tracker = RecognitionTracker(generation: 7, tokenIndex: 0)
