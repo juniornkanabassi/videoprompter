@@ -1,5 +1,10 @@
 import Foundation
 
+private let commonWords: Set<String> = [
+  "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
+  "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
+]
+
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
   public var score: Double
@@ -15,10 +20,7 @@ public struct PhraseMatcher: Sendable {
     self.forwardWindow = forwardWindow
     self.minimumBackwardTokens = minimumBackwardTokens
   }
-  private let common: Set<String> = [
-    "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
-    "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
-  ]
+  private let common = commonWords
   public func match(recognised: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
   {
@@ -174,13 +176,16 @@ public struct RecognitionTracker: Sendable {
       let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
       let old = revisions[key]
       if old?.words == words && old?.isFinal == event.isFinal { continue }
-      let appended = old.map {
-        words.starts(with: $0.words) && words.count >= $0.words.count + matcher.minimumBackwardTokens
-      } ?? false
+      let appendedWords = old.flatMap { words.starts(with: $0.words) ? Array(words.dropFirst($0.words.count)) : nil }
+      let appended = appendedWords.map { $0.count >= matcher.minimumBackwardTokens } ?? false
       revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)
       sawFresh = true
       if let match = matcher.match(recognised: words, script: script, currentIndex: tokenIndex),
         !(match.direction == .backward && old?.advanced == true && !appended)
+          && !(match.direction == .forward && old?.advanced == true
+            && appendedWords?.isEmpty == false
+            && appendedWords?.allSatisfy { commonWords.contains($0) } == true
+            && match.tokenIndex - tokenIndex > (appendedWords?.count ?? 0))
       {
         candidates.append((event, match))
       }

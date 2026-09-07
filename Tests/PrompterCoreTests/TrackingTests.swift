@@ -132,6 +132,40 @@ final class RecognitionTests: XCTestCase {
         recognised: ["the", "and", "this", "that"], script: script, currentIndex: 8))
   }
 
+  func testSameRevisionCommonSuffixCannotJumpToARepeatedPhrase() {
+    let script = PrompterDocument(
+      markdown: "start alpha beta gamma delta omega different alpha beta gamma delta and finish"
+    ).spokenTokens
+    var tracker = RecognitionTracker(generation: 1)
+    XCTAssertEqual(tracker.consume(
+      .init(
+        replacementID: "volatile-range", generation: 1, text: "start alpha beta gamma delta omega",
+        isFinal: false, timestamp: 0, audioStart: 0, audioEnd: 0), script: script).tokenIndex, 5)
+    let update = tracker.consume(
+      .init(
+        replacementID: "volatile-range", generation: 1,
+        text: "start alpha beta gamma delta omega and",
+        isFinal: false, timestamp: 1, audioStart: 0, audioEnd: 1), script: script)
+    XCTAssertEqual(update.status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+  }
+
+  func testNewRevisionCanSkipToTheSameRepeatedPhrase() {
+    let script = PrompterDocument(
+      markdown: "start alpha beta gamma delta omega different alpha beta gamma delta and finish"
+    ).spokenTokens
+    var tracker = RecognitionTracker(generation: 1)
+    XCTAssertEqual(tracker.consume(
+      .init(
+        replacementID: "volatile-range", generation: 1, text: "start alpha beta gamma delta omega",
+        isFinal: false, timestamp: 0, audioStart: 0, audioEnd: 0), script: script).tokenIndex, 5)
+    XCTAssertEqual(tracker.consume(
+      .init(
+        replacementID: "new-range", generation: 1,
+        text: "start alpha beta gamma delta omega and",
+        isFinal: false, timestamp: 1, audioStart: 1, audioEnd: 2), script: script).tokenIndex, 11)
+  }
+
   func testLocalAnchorAdvancesBeforeAContractionBreaksTheLongInterim() {
     let script = PrompterDocument(
       markdown: "I am not saying he is a better player than Yamal. I am simply saying that he is a better Champions League player."
