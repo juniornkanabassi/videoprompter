@@ -53,6 +53,7 @@ final class SessionStore: ObservableObject {
   private var analyzerContinuation: AsyncStream<AnalyzerInput>.Continuation?
   private var lifecycleGeneration: UInt64 = 0
   private var providerStopTask: Task<Void, Never>?
+  private var audioDeviceObserver: AudioInputDeviceObserver?
   private let obsServer = OBSServer()
 
   func present(record: ScriptRecord, settings: PrompterSettings) {
@@ -278,9 +279,8 @@ final class SessionStore: ObservableObject {
   }
 
   func microphoneDevicesDidChange(_ devices: [AudioInputDevice]) {
-    guard isTestingMicrophone, let audioCapture,
-      !devices.contains(where: { $0.uid == audioCapture.selectedDevice.uid })
-    else { return }
+    guard let audioCapture else { return }
+    guard !devices.contains(where: { $0.uid == audioCapture.selectedDevice.uid }) else { return }
     audioCapture.stop(reason: .deviceLost)
   }
 
@@ -299,7 +299,7 @@ final class SessionStore: ObservableObject {
     candidateBuffer.append(candidate)
     guard candidateFlush == nil else { return }
     candidateFlush = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(25))
+      try? await Task.sleep(for: .milliseconds(16))
       guard !Task.isCancelled else { return }
       self?.flushCandidates()
     }
@@ -435,6 +435,7 @@ final class SessionStore: ObservableObject {
     audioPeakDBFS = -.infinity
     isClipping = false
     isTestingMicrophone = false
+    audioDeviceObserver = nil
   }
   private func passageBoundary(after index: Int) -> Int? {
     guard document.spokenTokens.indices.contains(index) else { return nil }
@@ -462,6 +463,12 @@ final class SessionStore: ObservableObject {
 
   private func startAudioMode() {
     guard audioCapture == nil else { return }
+    if audioDeviceObserver == nil {
+      audioDeviceObserver = AudioCapture.inputDeviceObserver { [weak self] in
+        guard let self else { return }
+        self.microphoneDevicesDidChange(AudioCapture.inputDevices())
+      }
+    }
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
