@@ -66,6 +66,7 @@ struct InspectorView: View {
           Text("Advances while sound is above threshold; does not match words.").font(.caption).foregroundStyle(.secondary)
         }
         if store.settings.mode == "Voice" {
+          Toggle("Allow backward voice tracking", isOn: $store.settings.allowsBackwardVoiceTracking)
           Picker("Speech languages", selection: $store.settings.speechLanguage) {
             Text("Mixed English & French").tag("Mixed")
             Text("Automatic (script language)").tag("Automatic")

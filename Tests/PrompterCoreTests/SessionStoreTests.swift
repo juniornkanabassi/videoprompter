@@ -91,6 +91,30 @@ final class SessionStoreTests: XCTestCase {
     let value = try JSONDecoder().decode(PrompterSettings.self, from: Data(#"{"mode":"Voice","speed":120}"#.utf8))
     XCTAssertEqual(value.speechLanguage, "Mixed")
     XCTAssertEqual(value.soundThreshold, 0.055)
+    XCTAssertTrue(value.allowsBackwardVoiceTracking)
+  }
+
+  func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {
+    let session = SessionStore()
+    var settings = PrompterSettings()
+    settings.mode = "Voice"
+    settings.allowsBackwardVoiceTracking = false
+    let script = ScriptRecord(
+      metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
+      markdown: "one two three four five six seven eight nine ten")
+    session.present(record: script, settings: settings)
+    session.seek(to: 7)
+    session.play(captureAudio: false)
+    func candidate(_ id: String, _ text: String) -> SpeechCandidate {
+      SpeechCandidate(replacementID: id, generation: 1, locale: Locale(identifier: "en-GB"), text: text,
+        range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: true)
+    }
+    session.acceptSpeechCandidate(candidate("backward", "one two three four"))
+    try? await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(session.tokenIndex, 7)
+    session.acceptSpeechCandidate(candidate("forward", "eight nine ten"))
+    try? await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(session.tokenIndex, 9)
   }
 
   func testSessionStatsStartAtZeroWithNextHundredWordMilestone() {

@@ -318,9 +318,15 @@ final class SessionStore: ObservableObject {
         audioEnd: value.range.end.seconds)
     }
     let old = tokenIndex
+    let trackerBeforeMatch = tracker
     let update = tracker.consumeCandidates(events, script: document.spokenTokens)
     switch update.status {
     case .advanced:
+      guard settings.allowsBackwardVoiceTracking || update.tokenIndex >= old else {
+        tracker = trackerBeforeMatch
+        state = .uncertain("Backward voice tracking is off")
+        return
+      }
       state = .running
       tokenIndex = update.tokenIndex
       if update.tokenIndex > old { acceptedWords += update.tokenIndex - old }
