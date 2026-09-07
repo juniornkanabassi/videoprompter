@@ -535,7 +535,7 @@ struct ScriptTextView: NSViewRepresentable {
       let target = max(
         0,
         rect.midY + textView.textContainerInset.height - guideY)
-      let animate = lastAligned != nil && tokenIndex > lastAligned! && isActivelyRunning && !snapNextAlignment
+      let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
         && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       if animate {

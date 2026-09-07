@@ -299,7 +299,7 @@ final class SessionStore: ObservableObject {
     candidateBuffer.append(candidate)
     guard candidateFlush == nil else { return }
     candidateFlush = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(16))
+      try? await Task.sleep(for: .milliseconds(25))
       guard !Task.isCancelled else { return }
       self?.flushCandidates()
     }
