@@ -53,7 +53,7 @@ import SwiftUI
   private func makePanel() -> NSPanel {
     let value = NSPanel(
       contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
-      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false
+      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false
     )
     value.delegate = self
     value.level = .floating
