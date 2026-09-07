@@ -61,6 +61,7 @@ import SwiftUI
     value.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]
     value.sharingType = CommandLine.arguments.contains("--capture-visible") ? .readOnly : .none
     value.hidesOnDeactivate = false
+    value.isMovableByWindowBackground = true
     value.isReleasedWhenClosed = false
     value.isOpaque = false
     value.backgroundColor = .clear
@@ -199,6 +200,21 @@ private struct PresenterView: View {
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
+    .overlay(alignment: .top) {
+      ZStack {
+        Image(systemName: "line.3.horizontal")
+          .font(.caption.weight(.semibold))
+          .foregroundStyle(.primary)
+        WindowDragHandle()
+      }
+      .frame(width: 72, height: 24)
+      .background(.ultraThinMaterial, in: Capsule())
+      .padding(.top, 4)
+      .accessibilityLabel("Drag presenter window")
+      .accessibilityHint("Drag to move the presenter window")
+      .allowsHitTesting(!draft.isEditing)
+      .accessibilityHidden(draft.isEditing)
+    }
     .overlay(alignment: .bottom) {
       HStack(spacing: 8) {
         Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
@@ -285,6 +301,15 @@ private struct PresenterView: View {
     case "System": return .system(size: store.sourceFontSize)
     default: return .custom(store.sourceFontName, size: store.sourceFontSize)
     }
+  }
+}
+
+private struct WindowDragHandle: NSViewRepresentable {
+  func makeNSView(context: Context) -> NSView { DragView() }
+  func updateNSView(_ view: NSView, context: Context) {}
+  private final class DragView: NSView {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
   }
 }
 
