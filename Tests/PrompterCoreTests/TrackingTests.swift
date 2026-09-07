@@ -329,6 +329,60 @@ final class RecognitionTests: XCTestCase {
     XCTAssertEqual(tracker.tokenIndex, 260)
   }
 
+  func testDualLocaleHallucinatedTailCannotJumpFromEarlierPrefix() {
+    let script = PrompterDocument(markdown: """
+      Doué is a better Champions League player than Yamal
+
+      As of the 28th of August 2026, Désiré Doué is a better Champions League player than Lamine Yamal.
+
+      Now, get what I'm not saying. I am not saying he's a better player than Yamal; I am simply saying that he is a better Champions League player.
+
+      And this should be fairly uncontroversial.
+
+      Doué’s played fewer seasons, fewer games in the Champions League, and has fewer minutes in the Champions League.
+
+      Yet, despite that, using UEFA’s own stats, Yamal’s only got 1 more G/A than Doué. And that’s only because he takes penalties.
+
+      Only counting non-penalty G/A, Doué’s actually got more G/A than Yamal.
+
+      And before you try to say that Doué’s only stat-padding against small teams.
+
+      Over 70% of Doué's G/A in the Champions League are in the knockout stages.
+
+      Not to mention the fact that Doué has played against better opposition and performed better in big Champions League games.
+
+      So, with all this evidence presented, if one is to be intellectually honest, one ought to conclude that Désiré Doué is a better Champions League player than Lamine Yamal
+
+      Conceding this does not mean that Doué is a better player than Yamal, in the same way that conceding that Ronaldo is a better Champions League player than Messi doesn’t make Ronaldo better than Messi
+
+      If you are unable to admit this fact, then I'm sorry to say, you're just being dogmatic.
+
+      And if you try to use the excuse that Doué plays for a better team, then I'm sorry, you just have got confirmation bias. You're just looking for points that suit your narrative without actually addressing the main points of the argument.
+      """).spokenTokens
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 24)
+    _ = tracker.consume(.init(
+      replacementID: "1-dictation-0-0-16000", generation: 1,
+      text: "Duet is a better Champions League player than Yamal As of the 28th of August 2026. Doué is a better Champions League player then", isFinal: false,
+      timestamp: 14.739, localeIdentifier: "en_GB", audioStart: 0, audioEnd: 14.739), script: script)
+    let update = tracker.consume(.init(
+      replacementID: "1-dictation-1-0-16000", generation: 1,
+      text: "Tu es ici better Champions the Play, le mot Azov, Twenty, Twenty, Twenty, Sex Desire, the Better, the Player and",
+      isFinal: false, timestamp: 14.784, localeIdentifier: "fr_FR", audioStart: 0, audioEnd: 14.784), script: script)
+    XCTAssertEqual(update.status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 24)
+  }
+
+  func testImmediateSingleAndWeakTwoWordForwardMatchesRemainEligible() {
+    let single = PrompterDocument(markdown: "alpha beta").spokenTokens
+    XCTAssertEqual(
+      PhraseMatcher().match(recognised: ["beta"], script: single, currentIndex: 0)?.tokenIndex,
+      1)
+    let near = PrompterDocument(markdown: "start the planet").spokenTokens
+    XCTAssertEqual(
+      PhraseMatcher().match(recognised: ["the", "planet"], script: near, currentIndex: 0)?.tokenIndex,
+      2)
+  }
+
   func testCumulativePhraseAndDualLocaleCandidatesArbitrateTogether() {
     let script = PrompterDocument(
       markdown:

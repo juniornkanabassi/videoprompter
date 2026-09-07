@@ -84,7 +84,8 @@ public struct PhraseMatcher: Sendable {
     for recognisedStart in 0..<words.count {
       let evidence = Array(words[recognisedStart...])
       guard evidence.count >= min(2, words.count) else { continue }
-      guard evidence.contains(where: { $0.count > 2 && !common.contains($0) }) else { continue }
+      let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
+      guard informativeCount > 0 else { continue }
       for start in lo..<hi where target[start] == evidence[0] {
         var ti = start
         var matched = 0
@@ -104,6 +105,7 @@ public struct PhraseMatcher: Sendable {
         let gaps = Double(max(0, last - start + 1 - matched))
         // ponytail: a lone post-gap word is weak evidence; require more tail context for local forward jumps.
         guard gaps == 0 || trailingMatches >= 2 || start + 1 < current else { continue }
+        guard words.count == 1 || informativeCount >= 2 || start <= current + 1 else { continue }
         let distance = Double(max(0, start - current))
         let score =
           coverage - gaps * 0.035 - distance * 0.002 - min(0.18, Double(recognisedStart) * 0.025)
