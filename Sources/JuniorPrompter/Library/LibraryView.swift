@@ -170,7 +170,9 @@ struct LibraryView: View {
       if let value = importPreview {
       VStack(alignment: .leading, spacing: 12) {
         Text("Import \(value.sourceURL.lastPathComponent)").font(.headline)
-        TextEditor(text: .constant(value.markdown)).font(.system(.body, design: .serif))
+        ScrollView {
+          Text(value.markdown).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+        }.font(Font(FormattedMarkdownEditModel.font(name: store.previewFontName, size: store.previewFontSize)))
           .frame(minWidth: 600, minHeight: 400)
         ForEach(value.warnings, id: \.self) { Text($0).foregroundStyle(.orange) }
         HStack {
