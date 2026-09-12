@@ -6,6 +6,17 @@ import PrompterCore
 
 @MainActor
 final class TypographyTests: XCTestCase {
+  func testPeakHoldDecaysCapturesLowerPeakAndExpires() {
+    var hold = PeakHold()
+    hold.ingest(-6, at: 10)
+    XCTAssertEqual(hold.value(at: 10), -6)
+    XCTAssertEqual(hold.value(at: 10.4 + 6 / 11.76)!, -12, accuracy: 0.01)
+    hold.ingest(-30, at: 20)
+    XCTAssertEqual(hold.value(at: 20), -30)
+    hold.expire()
+    XCTAssertNil(hold.value(at: 20))
+  }
+
   func testMarkdownTraitsAndHeadingScaleReachTextView() {
     let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 300))
     let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })

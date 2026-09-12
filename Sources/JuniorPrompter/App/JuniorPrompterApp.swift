@@ -550,6 +550,11 @@ private enum PresenterSaveError: LocalizedError {
       .defaultSize(width: 1100, height: 750)
       .windowResizability(.contentSize)
       .commands {
+        CommandGroup(after: .textEditing) {
+          Button("Find…") {
+            NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: nil)
+          }.keyboardShortcut("f", modifiers: .command)
+        }
         CommandMenu("Prompter") {
           Button("Present Script") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("P", modifiers: [.command, .option])

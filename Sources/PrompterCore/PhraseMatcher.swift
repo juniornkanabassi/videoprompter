@@ -150,6 +150,8 @@ public struct RecognitionTracker: Sendable {
   public private(set) var generation: UInt64
   public private(set) var tokenIndex: Int
   private var revisions: [String: Revision] = [:]
+  private var seekBaselines: [String: [String]] = [:]
+  private var minimumSeekAudioStart: TimeInterval?
   private var acceptedAudio: [ClosedRange<TimeInterval>] = []
   private var matcher: PhraseMatcher
   public init(generation: UInt64 = 0, tokenIndex: Int = 0, matcher: PhraseMatcher = .init()) {
@@ -160,12 +162,28 @@ public struct RecognitionTracker: Sendable {
   public mutating func invalidate(startingAt index: Int? = nil) {
     generation &+= 1
     revisions.removeAll()
+    seekBaselines.removeAll()
+    minimumSeekAudioStart = nil
     acceptedAudio.removeAll()
     if let index { tokenIndex = max(0, index) }
   }
   public mutating func seek(to index: Int) {
     tokenIndex = max(0, index)
     invalidate(startingAt: tokenIndex)
+  }
+  public mutating func reanchor(
+    to index: Int, minimumAudioStart: TimeInterval, baselining events: [RecognitionEvent] = []
+  ) {
+    tokenIndex = max(0, index)
+    acceptedAudio.removeAll()
+    minimumSeekAudioStart = minimumAudioStart
+    seekBaselines = revisions.mapValues(\.words)
+    for event in events where event.generation == generation {
+      let key = "\(event.localeIdentifier)|\(event.replacementID)"
+      let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
+      revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
+      seekBaselines[key] = words
+    }
   }
   public mutating func consume(_ event: RecognitionEvent, script: [DocumentToken])
     -> RecognitionUpdate
@@ -183,11 +201,32 @@ public struct RecognitionTracker: Sendable {
       let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
       let old = revisions[key]
       if old?.words == words && old?.isFinal == event.isFinal { continue }
+      var wordsToMatch = words
+      if let baseline = seekBaselines[key] {
+        guard event.audioEnd > minimumSeekAudioStart! else {
+          revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
+          seekBaselines[key] = words
+          sawFresh = true
+          continue
+        }
+        guard words.starts(with: baseline) else {
+          revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
+          seekBaselines[key] = words
+          sawFresh = true
+          continue
+        }
+        wordsToMatch = Array(words.dropFirst(baseline.count))
+      } else if let minimumSeekAudioStart, event.audioStart < minimumSeekAudioStart {
+        revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
+        seekBaselines[key] = words
+        sawFresh = true
+        continue
+      }
       let appendedWords = old.flatMap { words.starts(with: $0.words) ? Array(words.dropFirst($0.words.count)) : nil }
       let appended = appendedWords.map { $0.count >= matcher.minimumBackwardTokens } ?? false
       revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)
       sawFresh = true
-      if let match = matcher.match(recognised: words, script: script, currentIndex: tokenIndex),
+      if let match = matcher.match(recognised: wordsToMatch, script: script, currentIndex: tokenIndex),
         !(match.direction == .backward && old?.advanced == true && !appended)
           && !(match.direction == .forward && old?.advanced == true
             && appendedWords?.isEmpty == false

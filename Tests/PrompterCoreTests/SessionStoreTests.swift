@@ -186,6 +186,31 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 0)
   }
 
+  func testSeekDropsQueuedSpeechAndKeepsVoiceSessionRunning() async {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    let script = ScriptRecord(
+      metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
+      markdown: "one two three four five")
+    session.present(record: script, settings: settings)
+    session.play(captureAudio: false)
+    func candidate(_ id: String, _ text: String) -> SpeechCandidate {
+      SpeechCandidate(replacementID: id, generation: 1, locale: Locale(identifier: "en-GB"), text: text,
+        range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false)
+    }
+    session.acceptSpeechCandidate(candidate("queued", "one two three"))
+    session.seek(to: 2)
+    try? await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(session.tokenIndex, 2)
+    XCTAssertNil(session.lastConfirmedTokenIndex)
+    XCTAssertEqual(session.state, .running)
+    session.acceptSpeechCandidate(candidate("stale", "one two three"))
+    session.acceptSpeechCandidate(candidate("current", "three four"))
+    try? await Task.sleep(for: .milliseconds(40))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 3)
+    XCTAssertEqual(session.tokenIndex, 4)
+  }
+
   func testLanguageChangePreservesReadingAnchor() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Timed"

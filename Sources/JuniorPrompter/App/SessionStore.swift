@@ -16,6 +16,8 @@ final class SessionStore: ObservableObject {
   @Published private(set) var activeRecord: ScriptRecord?
   @Published private(set) var document = PrompterDocument(markdown: "")
   @Published private(set) var anchor: ReadingAnchor?
+  /// The most recent word consumed by recognition or automatic playback.
+  @Published private(set) var lastConfirmedTokenIndex: Int?
   @Published private(set) var tokenIndex = 0
   @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
@@ -42,7 +44,9 @@ final class SessionStore: ObservableObject {
   private var runTask: Task<Void, Never>?
   private var durationTask: Task<Void, Never>?
   private var candidateBuffer: [SpeechCandidate] = []
+  private var bufferedCandidateSeekRevision = 0
   private var candidateFlush: Task<Void, Never>?
+  private var latestAudioEnd: TimeInterval = 0
   private var lastSoundAdvance: TimeInterval = 0
   private var speechGeneration: UInt64?
   private var minimumSpeechGeneration: UInt64 = 0
@@ -62,6 +66,7 @@ final class SessionStore: ObservableObject {
       self.settings = settings
       activeRecord = record
       document = PrompterDocument(markdown: record.markdown)
+      lastConfirmedTokenIndex = nil
       tokenIndex = 0
       anchor = ReadingAnchorRemapper.makeAnchor(
         scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
@@ -121,6 +126,7 @@ final class SessionStore: ObservableObject {
     }
     document = new
     activeRecord = record
+    lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
     tracker.invalidate(startingAt: tokenIndex)
     if let speechGeneration { minimumSpeechGeneration = speechGeneration + 1 }
     speechGeneration = nil
@@ -153,6 +159,7 @@ final class SessionStore: ObservableObject {
     activeRecord = nil
     document = PrompterDocument(markdown: "")
     anchor = nil
+    lastConfirmedTokenIndex = nil
     tokenIndex = 0
     state = .stopped
     refreshOBSSnapshot()
@@ -164,11 +171,29 @@ final class SessionStore: ObservableObject {
   private func move(to index: Int, incrementSeekRevision: Bool) {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
-    if incrementSeekRevision { seekRevision &+= 1 }
+    if incrementSeekRevision {
+      seekRevision &+= 1
+      lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
+      let queued = candidateBuffer.map { value in
+        RecognitionEvent(
+          replacementID: value.replacementID, generation: value.generation, text: value.text,
+          isFinal: value.isFinal, timestamp: value.range.end.seconds,
+          localeIdentifier: value.locale.identifier, audioStart: value.range.start.seconds,
+          audioEnd: value.range.end.seconds)
+      }
+      candidateBuffer.removeAll()
+      candidateFlush?.cancel()
+      candidateFlush = nil
+      if isActivelyRunning, settings.mode == "Voice" {
+        tracker.reanchor(to: tokenIndex, minimumAudioStart: latestAudioEnd, baselining: queued)
+      } else {
+        tracker.seek(to: tokenIndex)
+      }
+    }
     anchor = ReadingAnchorRemapper.makeAnchor(
       scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
-    tracker.seek(to: tokenIndex)
+    if !incrementSeekRevision { tracker.seek(to: tokenIndex) }
     anchorNotice = nil
     refreshOBSSnapshot()
   }
@@ -177,6 +202,7 @@ final class SessionStore: ObservableObject {
   }
   func previousPassage() { seek(to: passageBoundary(before: tokenIndex) ?? 0) }
   func advanceOneToken() {
+    lastConfirmedTokenIndex = tokenIndex
     move(to: min(tokenIndex + 1, max(0, document.spokenTokens.count - 1)), incrementSeekRevision: false)
   }
 
@@ -292,6 +318,7 @@ final class SessionStore: ObservableObject {
       speechGeneration = candidate.generation
       tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex)
     }
+    bufferedCandidateSeekRevision = seekRevision
     candidateBuffer.removeAll {
       $0.locale.identifier == candidate.locale.identifier
         && $0.replacementID == candidate.replacementID
@@ -306,10 +333,11 @@ final class SessionStore: ObservableObject {
   }
 
   private func flushCandidates() {
+    let seekRevision = bufferedCandidateSeekRevision
     let candidates = candidateBuffer
     candidateBuffer.removeAll()
     candidateFlush = nil
-    guard !candidates.isEmpty else { return }
+    guard seekRevision == self.seekRevision, !candidates.isEmpty else { return }
     let events = candidates.map { value in
       RecognitionEvent(
         replacementID: value.replacementID, generation: value.generation, text: value.text,
@@ -317,7 +345,7 @@ final class SessionStore: ObservableObject {
         localeIdentifier: value.locale.identifier, audioStart: value.range.start.seconds,
         audioEnd: value.range.end.seconds)
     }
-    let old = tokenIndex
+    let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
     let trackerBeforeMatch = tracker
     let update = tracker.consumeCandidates(events, script: document.spokenTokens)
     switch update.status {
@@ -328,7 +356,8 @@ final class SessionStore: ObservableObject {
         return
       }
       state = .running
-      tokenIndex = update.tokenIndex
+      lastConfirmedTokenIndex = update.tokenIndex
+      tokenIndex = min(update.tokenIndex + 1, document.spokenTokens.count - 1)
       if update.tokenIndex > old { acceptedWords += update.tokenIndex - old }
       if let record = activeRecord {
         anchor = ReadingAnchorRemapper.makeAnchor(
@@ -418,6 +447,7 @@ final class SessionStore: ObservableObject {
     candidateFlush?.cancel()
     candidateFlush = nil
     candidateBuffer.removeAll()
+    latestAudioEnd = 0
     analyzerContinuation?.finish()
     analyzerContinuation = nil
     microphoneTestTask?.cancel()
@@ -513,8 +543,13 @@ final class SessionStore: ObservableObject {
         try capture.start(
           onBuffer: { [weak self] buffer, _, level, peak, clipping in
             if mode == "Voice" {
-              pair.continuation.yield(
-                AnalyzerInput(buffer: buffer, bufferStartTime: counter.next(buffer.frameLength)))
+              let start = counter.next(buffer.frameLength)
+              pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
+              let end = start.seconds + Double(buffer.frameLength) / format.sampleRate
+              Task { @MainActor in
+                guard let self, self.lifecycleGeneration == generation else { return }
+                self.latestAudioEnd = max(self.latestAudioEnd, end)
+              }
             }
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }

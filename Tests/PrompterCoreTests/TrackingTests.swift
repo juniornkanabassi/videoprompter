@@ -232,6 +232,49 @@ final class RecognitionTests: XCTestCase {
     XCTAssertEqual(tracker.tokenIndex, 3)
   }
 
+  func testSeekReanchorsCumulativeRevisionsWithoutAcceptingStaleOrCorrectedPrefixes() {
+    let script = PrompterDocument(markdown: "alpha beta gamma delta epsilon zeta eta theta").spokenTokens
+    var tracker = RecognitionTracker(generation: 1)
+    let initial = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "alpha beta gamma", isFinal: false,
+      timestamp: 3, audioStart: 0, audioEnd: 3)
+    XCTAssertEqual(tracker.consume(initial, script: script).tokenIndex, 2)
+    tracker.reanchor(to: 5, minimumAudioStart: 5)
+
+    XCTAssertEqual(tracker.consume(initial, script: script).status, .duplicateRevision)
+    let corrected = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "alpha bravo gamma", isFinal: false,
+      timestamp: 4, audioStart: 0, audioEnd: 4)
+    XCTAssertEqual(tracker.consume(corrected, script: script).status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+    let continued = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "alpha bravo gamma zeta eta", isFinal: false,
+      timestamp: 6, audioStart: 0, audioEnd: 6)
+    XCTAssertEqual(tracker.consume(continued, script: script).tokenIndex, 6)
+
+    tracker.reanchor(to: 5, minimumAudioStart: 5)
+    let crossingOldAudio = RecognitionEvent(
+      replacementID: "old-segment", generation: 1, text: "zeta eta", isFinal: false,
+      timestamp: 6, audioStart: 4, audioEnd: 6)
+    XCTAssertEqual(tracker.consume(crossingOldAudio, script: script).status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+    let newAudio = RecognitionEvent(
+      replacementID: "new-segment", generation: 1, text: "zeta eta", isFinal: false,
+      timestamp: 6, audioStart: 5, audioEnd: 6)
+    XCTAssertEqual(tracker.consume(newAudio, script: script).tokenIndex, 6)
+
+    var beforeFirstCandidate = RecognitionTracker(generation: 2, tokenIndex: 5)
+    beforeFirstCandidate.reanchor(to: 5, minimumAudioStart: 5)
+    let preSeekSegment = RecognitionEvent(
+      replacementID: "range-0", generation: 2, text: "alpha beta gamma", isFinal: false,
+      timestamp: 4, audioStart: 0, audioEnd: 4)
+    XCTAssertEqual(beforeFirstCandidate.consume(preSeekSegment, script: script).status, .held)
+    let postSeekExtension = RecognitionEvent(
+      replacementID: "range-0", generation: 2, text: "alpha beta gamma zeta eta", isFinal: false,
+      timestamp: 6, audioStart: 0, audioEnd: 6)
+    XCTAssertEqual(beforeFirstCandidate.consume(postSeekExtension, script: script).tokenIndex, 6)
+  }
+
   func testVolatileRevisionCannotRewindAfterItAdvanced() {
     let script = PrompterDocument(markdown: "one two three four five six seven eight").spokenTokens
     var tracker = RecognitionTracker(generation: 1)

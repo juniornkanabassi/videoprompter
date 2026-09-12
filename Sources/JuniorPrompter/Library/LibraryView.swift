@@ -65,6 +65,7 @@ struct LibraryView: View {
         }.padding(10)
       }
       .onChange(of: selection) { _, value in if let id = value.first { store.selectedID = id } }
+      .onDeleteCommand { store.delete(selection) }
       .onChange(of: store.selectedID) { _, id in
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
@@ -276,7 +277,7 @@ private struct EditorView: View {
     .id(script.metadata.id)
   }
 
-  private static let fontChoices = ["System Serif", "System", "Georgia", "Avenir Next", "Helvetica Neue", "Monospaced"]
+  private static let fontChoices = AvailableFonts.editor
   private var fontNameBinding: Binding<String> {
     Binding(
       get: { preview ? store.previewFontName : store.sourceFontName },

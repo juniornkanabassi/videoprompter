@@ -1,6 +1,7 @@
 import SwiftUI
 import Speech
 import AppKit
+import CoreText
 
 struct InspectorView: View {
   @ObservedObject var store: AppStore
@@ -16,8 +17,7 @@ struct InspectorView: View {
     Form {
       Section("Appearance") {
         Picker("Font", selection: $store.settings.fontName) {
-          ForEach(
-            ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"], id: \.self, content: Text.init)
+          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
         }
         Slider(value: $store.settings.fontSize, in: 18...120)
         LabeledContent("Text size", value: "\(Int(store.settings.fontSize)) pt")
@@ -207,9 +207,29 @@ struct InspectorView: View {
   }
 }
 
+enum AvailableFonts {
+  private static let installed: Set<String> = {
+    registerBundledFonts(missingFrom: Set(NSFontManager.shared.availableFontFamilies))
+    return Set(NSFontManager.shared.availableFontFamilies)
+  }()
+  private static let supportedInstalled = ["Poppins", "Lexend", "Lexend Deca"].filter { installed.contains($0) }
+
+  static let presenter = ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"] + supportedInstalled
+  static let editor = ["System Serif", "System", "Georgia", "Avenir Next", "Helvetica Neue", "Monospaced"] + supportedInstalled
+
+  private static func registerBundledFonts(missingFrom families: Set<String>) {
+    for (file, family) in [("Lexend-Variable.ttf", "Lexend"), ("LexendDeca-Variable.ttf", "Lexend Deca")] where !families.contains(family) {
+      guard let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Fonts") else { continue }
+      CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+  }
+}
+
 private struct InputLevelMeter: View {
   let peakDBFS: Float
   let isClipping: Bool
+  @State private var peakHold = PeakHold()
+  private let ticks: [(Double, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-20, "−20"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
 
   private var fill: CGFloat {
     guard peakDBFS.isFinite else { return 0 }
@@ -223,34 +243,73 @@ private struct InputLevelMeter: View {
           Capsule().fill(.quaternary)
           LinearGradient(
             stops: [
-              .init(color: .green, location: 0), .init(color: .green, location: 0.8),
-              .init(color: .yellow, location: 0.8), .init(color: .yellow, location: 0.9),
-              .init(color: .red, location: 0.9)
+              .init(color: .green, location: 0), .init(color: .green, location: 2.0 / 3.0),
+              .init(color: .yellow, location: 2.0 / 3.0), .init(color: .yellow, location: 0.85),
+              .init(color: .red, location: 0.85)
             ], startPoint: .leading, endPoint: .trailing
           ).mask(alignment: .leading) {
             Rectangle().frame(width: geometry.size.width * fill)
           }
-          ForEach([0.8, 0.9, 1.0], id: \.self) { position in
+          ForEach(ticks, id: \.0) { value, _ in
+            let position = CGFloat((value + 60) / 60)
             Rectangle().fill(.primary.opacity(0.65)).frame(width: 1).offset(
               x: geometry.size.width * position - 1)
           }
+          if peakHold.value(at: ProcessInfo.processInfo.systemUptime) != nil {
+            TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+              if let marker = peakHold.value(at: ProcessInfo.processInfo.systemUptime) {
+                Rectangle().fill(.white).frame(width: 2).offset(x: geometry.size.width * markerPosition(marker) - 1)
+              }
+            }
+          }
         }
         .frame(height: 12)
-        ForEach([(0.8, "−12"), (0.9, "−6"), (1.0, "0")], id: \.0) { position, label in
-          Text(label)
+        ForEach(Array(ticks.enumerated()), id: \.offset) { index, tick in
+          let position = CGFloat((tick.0 + 60) / 60)
+          Text(tick.1)
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.secondary)
-            .position(x: min(geometry.size.width - 4, geometry.size.width * position), y: 22)
+            .position(x: min(geometry.size.width - 8, max(8, geometry.size.width * position)), y: index.isMultiple(of: 2) ? 21 : 31)
         }
       }
     }
-    .frame(height: 30)
+    .frame(height: 40)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Microphone peak level")
     .accessibilityValue(
       peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
-    .accessibilityHint(isClipping ? "Input is clipping." : "Marks at minus 12, minus 6 and 0 dBFS.")
+    .accessibilityHint(isClipping ? "Input is clipping." : "Marks from minus 60 to 0 dBFS, with warning zones at minus 20 and minus 9.")
+    .onChange(of: peakDBFS) { _, value in
+      guard value.isFinite else { return }
+      let uptime = ProcessInfo.processInfo.systemUptime
+      peakHold.ingest(value, at: uptime)
+    }
+    .task(id: peakHold.generation) {
+      guard peakHold.value(at: ProcessInfo.processInfo.systemUptime) != nil else { return }
+      try? await Task.sleep(for: .seconds(6))
+      if !Task.isCancelled { peakHold.expire() }
+    }
   }
+
+  private func markerPosition(_ value: Float) -> CGFloat {
+    CGFloat(min(1, max(0, (value + 60) / 60)))
+  }
+}
+
+struct PeakHold {
+  private(set) var peak: Float?
+  private(set) var at = 0.0
+  private(set) var generation = 0
+  mutating func ingest(_ value: Float, at now: TimeInterval) {
+    guard value.isFinite, value >= (self.value(at: now) ?? -.infinity) else { return }
+    peak = value; at = now; generation += 1
+  }
+  func value(at now: TimeInterval) -> Float? {
+    guard let peak else { return nil }
+    let result = peak - Float(max(0, now - at - 0.4) * 11.76)
+    return result >= -60 ? result : nil
+  }
+  mutating func expire() { peak = nil; generation += 1 }
 }
 
 private extension Color {

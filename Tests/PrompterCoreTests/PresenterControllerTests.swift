@@ -52,6 +52,7 @@ final class PresenterControllerTests: XCTestCase {
     let cueColour = view.textStorage?.attribute(.foregroundColor, at: cue.location + 1, effectiveRange: nil) as? NSColor
     XCTAssertEqual(cueColour?.alphaComponent ?? 0, 0.6 * 0.42, accuracy: 0.02)
     coordinator.tokenIndex = 1
+    coordinator.lastConfirmedTokenIndex = 0
     coordinator.updateReadState()
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let second = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
@@ -109,6 +110,7 @@ final class PresenterControllerTests: XCTestCase {
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     XCTAssertEqual(first?.greenComponent ?? 0, 1, accuracy: 0.01)
     coordinator.tokenIndex = 1
+    coordinator.lastConfirmedTokenIndex = 0
     coordinator.updateReadState()
     let dimmed = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let current = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
@@ -128,8 +130,10 @@ final class PresenterControllerTests: XCTestCase {
     coordinator.textView = view
     coordinator.render(document: PrompterDocument(markdown: "one two three"), fontName: "Helvetica", fontSize: 24, textOpacity: 0.8)
     coordinator.tokenIndex = 2
+    coordinator.lastConfirmedTokenIndex = 1
     coordinator.updateReadState()
     coordinator.tokenIndex = 1
+    coordinator.lastConfirmedTokenIndex = 0
     coordinator.updateReadState()
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let second = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
@@ -137,6 +141,32 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(first?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
     XCTAssertEqual(second?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
     XCTAssertEqual(third?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
+  }
+
+  func testConfirmedWordDimsTrailingPunctuationButInitialAndSeekWordsStayUnread() {
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    coordinator.render(document: PrompterDocument(markdown: "Hello, world!"), fontName: "Helvetica", fontSize: 24, textOpacity: 0.8)
+    coordinator.tokenIndex = 0
+    coordinator.updateReadState()
+    let comma = (view.string as NSString).range(of: ",").location
+    let initial = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(initial?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
+    coordinator.tokenIndex = 1
+    coordinator.lastConfirmedTokenIndex = 0
+    coordinator.updateReadState()
+    let word = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
+    let punctuation = view.textStorage?.attribute(.foregroundColor, at: comma, effectiveRange: nil) as? NSColor
+    let next = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(word?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(punctuation?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(next?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
+    coordinator.tokenIndex = 1
+    coordinator.lastConfirmedTokenIndex = nil
+    coordinator.updateReadState()
+    let seekWord = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(seekWord?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
   }
 
   func testConsecutiveListItemsKeepLineBreaksAndWordMappings() {
