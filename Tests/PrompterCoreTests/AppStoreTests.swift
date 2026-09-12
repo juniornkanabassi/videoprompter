@@ -219,7 +219,9 @@ final class AppStoreTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
     let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
-    XCTAssertEqual(first.sourceFontName, "System Serif")
+    XCTAssertEqual(first.settings.fontName, "Lexend Deca")
+    XCTAssertEqual(first.sourceFontName, "Lexend Deca")
+    XCTAssertEqual(first.previewFontName, "Lexend Deca")
     first.settings.fontSize = 83
     first.savePreset(named: "Camera")
     first.settings.fontSize = 27
