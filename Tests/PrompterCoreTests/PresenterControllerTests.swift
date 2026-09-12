@@ -37,6 +37,43 @@ final class PresenterControllerTests: XCTestCase {
       visibleFrames: [NSRect(x: 0, y: 0, width: 1920, height: 1080)]))
   }
 
+  func testPresenterSnapsToCentreEdgesAndHalvesOnRelevantNegativeOriginScreen() {
+    let left = NSRect(x: -1920, y: 0, width: 1920, height: 1080)
+    let right = NSRect(x: 0, y: 24, width: 2560, height: 1416)
+    let frame = NSRect(x: -1_810, y: 280, width: 760, height: 520)
+    let half = PresenterController.snappedFrame(frame, visibleFrames: [right, left])
+    XCTAssertEqual(half.minX, left.minX + left.width / 4 - frame.width / 2, accuracy: 0.1)
+    let edge = PresenterController.snappedFrame(
+      NSRect(x: -1_900, y: 18, width: 760, height: 520), visibleFrames: [left])
+    XCTAssertEqual(edge.minX, left.minX, accuracy: 0.1)
+    XCTAssertEqual(edge.minY, left.minY, accuracy: 0.1)
+    let centre = PresenterController.snappedFrame(
+      NSRect(x: -1_350, y: 280, width: 760, height: 520), visibleFrames: [left])
+    XCTAssertEqual(centre.midX, left.midX, accuracy: 0.1)
+  }
+
+  func testLiveFontSizeRenderPreservesMappedAnchorAtGuide() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2_400))
+    scroll.documentView = text
+    let document = PrompterDocument(markdown: (1...20).map { "Line \($0) with useful words." }.joined(separator: "\n\n"))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    coordinator.align(scroll: scroll, tokenIndex: 12, guideFraction: 0.35)
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 52, textOpacity: 1)
+    coordinator.align(scroll: scroll, tokenIndex: 12, guideFraction: 0.35)
+    let mapping = try! XCTUnwrap(coordinator.mappings.first { $0.1 == 12 })
+    let manager = text.layoutManager!
+    manager.ensureLayout(for: text.textContainer!)
+    let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+    let rect = manager.boundingRect(forGlyphRange: glyph, in: text.textContainer!)
+    XCTAssertEqual(rect.midY + text.textContainerInset.height - scroll.contentView.bounds.origin.y,
+      max(54, scroll.contentView.bounds.height * 0.35), accuracy: 2)
+    let font = text.textStorage?.attribute(.font, at: mapping.0.location, effectiveRange: nil) as? NSFont
+    XCTAssertEqual(font?.pointSize ?? 0, 52, accuracy: 0.1)
+  }
+
   func testCueIsNotMappedAsSpokenAndOpacityIsPreserved() {
     let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 200))
     let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
@@ -229,16 +266,39 @@ final class PresenterControllerTests: XCTestCase {
       return max(0, rect.midY + text.textContainerInset.height - guideY)
     }
 
+    let sameLinePair = (1..<coordinator.mappings.count).first { index in
+      let previous = target(for: index - 1)
+      let current = target(for: index)
+      return current > start + 20 && abs(current - previous) < 0.5
+    }
+    let sameLineIndex = try! XCTUnwrap(sameLinePair)
+    let sameLineTarget = target(for: sameLineIndex)
+    coordinator.align(scroll: scroll, tokenIndex: sameLineIndex - 1, guideFraction: 0.35)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.10))
+    coordinator.align(scroll: scroll, tokenIndex: sameLineIndex, guideFraction: 0.35)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.19))
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, sameLineTarget, accuracy: 2,
+      "A same-line token update must not restart the existing alignment")
+    coordinator.snapNextAlignment = true
+    coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
+
     coordinator.align(scroll: scroll, tokenIndex: 5, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
     let intermediate = scroll.contentView.bounds.origin.y
-    let target = target(for: 5)
-    XCTAssertTrue(min(start, target) < intermediate && intermediate < max(start, target))
+    let firstTarget = target(for: 5)
+    XCTAssertTrue(min(start, firstTarget) < intermediate && intermediate < max(start, firstTarget))
+
     coordinator.align(scroll: scroll, tokenIndex: 10, guideFraction: 0.35)
+    XCTAssertEqual(scroll.contentView.bounds.origin.y, intermediate, accuracy: 1)
+    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
+    let retargeted = scroll.contentView.bounds.origin.y
+    let secondTarget = target(for: 10)
+    XCTAssertTrue(min(intermediate, secondTarget) < retargeted && retargeted < max(intermediate, secondTarget))
+
     coordinator.snapNextAlignment = true
     coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
     XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.24))
+    RunLoop.main.run(until: Date().addingTimeInterval(0.34))
     XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
   }
 }

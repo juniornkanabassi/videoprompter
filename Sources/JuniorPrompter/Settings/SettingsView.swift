@@ -39,6 +39,7 @@ struct InspectorView: View {
           Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }
           Slider(value: $store.settings.horizontalMargin, in: 0...120) { Text("Horizontal margin") }
           Toggle("Show stage directions", isOn: $store.settings.showCues)
+          Toggle("Snap presenter window", isOn: $store.settings.presenterSnappingEnabled)
           Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
           ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = $0.nsColor.hex }), supportsOpacity: false)
           ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = $0.nsColor.hex }), supportsOpacity: false)

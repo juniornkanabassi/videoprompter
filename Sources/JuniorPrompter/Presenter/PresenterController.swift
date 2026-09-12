@@ -93,7 +93,23 @@ import SwiftUI
       return overlap.width >= 120 && overlap.height >= 24
     }
   }
+  static func snappedFrame(_ frame: NSRect, visibleFrames: [NSRect], threshold: CGFloat = 36) -> NSRect {
+    guard let visible = visibleFrames.max(by: { $0.intersection(frame).area < $1.intersection(frame).area }) else { return frame }
+    var result = frame
+    let xTargets = [visible.minX, visible.midX - frame.width / 2, visible.maxX - frame.width,
+                    visible.minX + visible.width / 4 - frame.width / 2,
+                    visible.minX + visible.width * 3 / 4 - frame.width / 2]
+    let yTargets = [visible.minY, visible.midY - frame.height / 2, visible.maxY - frame.height]
+    if let x = xTargets.min(by: { abs($0 - frame.minX) < abs($1 - frame.minX) }), abs(x - frame.minX) <= threshold { result.origin.x = x }
+    if let y = yTargets.min(by: { abs($0 - frame.minY) < abs($1 - frame.minY) }), abs(y - frame.minY) <= threshold { result.origin.y = y }
+    return result
+  }
+  func snapAfterDrag(_ panel: NSWindow) {
+    panel.setFrame(Self.snappedFrame(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)), display: true)
+  }
 }
+
+private extension NSRect { var area: CGFloat { width * height } }
 
 @MainActor final class PresenterDraft: ObservableObject {
   private(set) var recordID: UUID
@@ -206,7 +222,10 @@ private struct PresenterView: View {
         Image(systemName: "line.3.horizontal")
           .font(.caption.weight(.semibold))
           .foregroundStyle(.primary)
-        WindowDragHandle()
+        WindowDragHandle { window in
+          guard store.settings.presenterSnappingEnabled else { return }
+          PresenterController.shared.snapAfterDrag(window)
+        }
       }
       .frame(width: 72, height: 24)
       .background(.ultraThinMaterial, in: Capsule())
@@ -306,11 +325,21 @@ private struct PresenterView: View {
 }
 
 private struct WindowDragHandle: NSViewRepresentable {
-  func makeNSView(context: Context) -> NSView { DragView() }
+  let onDragEnded: (NSWindow) -> Void
+  func makeNSView(context: Context) -> NSView {
+    let view = DragView()
+    view.onDragEnded = onDragEnded
+    return view
+  }
   func updateNSView(_ view: NSView, context: Context) {}
   private final class DragView: NSView {
+    var onDragEnded: ((NSWindow) -> Void)?
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+    override func mouseDown(with event: NSEvent) {
+      guard let window else { return }
+      window.performDrag(with: event)
+      onDragEnded?(window)
+    }
   }
 }
 
@@ -407,6 +436,7 @@ struct ScriptTextView: NSViewRepresentable {
     private var textColour = NSColor.white
     private var lastAligned: Int?
     private var lastGuideFraction: Double?
+    private var lastAlignmentDestination: NSPoint?
     private var lastReadTokenIndex: Int?
     private var lastReadConfirmedTokenIndex: Int?
     var updateGeneration = 0
@@ -528,6 +558,7 @@ struct ScriptTextView: NSViewRepresentable {
       textView.needsLayout = true
       lastAligned = nil
       lastGuideFraction = nil
+      lastAlignmentDestination = nil
     }
     func updateReadState() {
       guard let textView else { return }
@@ -568,7 +599,11 @@ struct ScriptTextView: NSViewRepresentable {
       lastConfirmedTokenIndex = nil
       onSeek(nearest.1)
     }
-    func invalidateAlignment() { lastAligned = nil; lastGuideFraction = nil }
+    func invalidateAlignment() {
+      lastAligned = nil
+      lastGuideFraction = nil
+      lastAlignmentDestination = nil
+    }
     func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double) {
       guard (lastAligned != tokenIndex || lastGuideFraction != guideFraction), let textView,
         let mapping = mappings.first(where: { $0.1 == tokenIndex }),
@@ -587,19 +622,23 @@ struct ScriptTextView: NSViewRepresentable {
       let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
         && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
-      if animate {
+      let isSameDestination = lastAlignmentDestination.map {
+        abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
+      } ?? false
+      if animate && !isSameDestination {
         NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.16
-          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+          context.duration = 0.30
+          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
           scroll.contentView.animator().setBoundsOrigin(destination)
         }
-      } else {
+      } else if !animate {
         scroll.contentView.layer?.removeAllAnimations()
         scroll.contentView.setBoundsOrigin(destination)
       }
-      scroll.reflectScrolledClipView(scroll.contentView)
+      if !animate || !isSameDestination { scroll.reflectScrolledClipView(scroll.contentView) }
       lastAligned = tokenIndex
       lastGuideFraction = guideFraction
+      lastAlignmentDestination = destination
       snapNextAlignment = false
     }
     private func cueRanges(in plain: NSString, document: PrompterDocument) -> [NSRange] {
