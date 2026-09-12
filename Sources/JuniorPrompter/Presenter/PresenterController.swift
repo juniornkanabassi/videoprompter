@@ -188,7 +188,7 @@ private struct PresenterView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
-  @FocusState private var editorFocused: Bool
+  @State private var editorNotice: String?
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .top) {
@@ -264,16 +264,17 @@ private struct PresenterView: View {
     .overlay {
       if draft.isEditing {
         VStack(alignment: .leading, spacing: 12) {
-          HStack {
-            Text("Edit script").font(.headline)
-            Spacer()
-            Text("Markdown").foregroundStyle(.secondary)
+          Text("Edit script").font(.headline)
+          FormattedMarkdownEditor(
+            markdown: $draft.markdown, fontName: store.previewFontName,
+            fontSize: store.previewFontSize, onUnsupportedEdit: {
+              editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+            }, focusesOnAppear: true
+          )
+          .frame(maxHeight: .infinity)
+          if let editorNotice {
+            Text(editorNotice).font(.callout).foregroundStyle(.secondary)
           }
-          TextEditor(text: $draft.markdown)
-            .font(sourceEditorFont)
-            .frame(maxHeight: .infinity)
-            .focused($editorFocused)
-            .onAppear { DispatchQueue.main.async { editorFocused = true } }
           if draft.hasExternalChange(in: store) {
             Text("This script changed outside JuniorPrompter. Confirming will keep this draft and show a conflict instead of overwriting it.")
               .foregroundStyle(.orange)
@@ -306,22 +307,15 @@ private struct PresenterView: View {
     } message: {
       Text("The draft has not been saved to the script library.")
     }
+    .onChange(of: draft.markdown) { _, _ in editorNotice = nil }
     .onChange(of: draft.isEditing) { _, isEditing in
-      if isEditing { DispatchQueue.main.async { editorFocused = true } }
+      if isEditing { editorNotice = nil }
     }
     .overlay(alignment: .bottom) {
       if let notice = session.anchorNotice ?? draft.noticeMessage {
         Text(notice).font(.caption).padding(8).background(.regularMaterial, in: Capsule())
           .padding(.bottom, 58)
       }
-    }
-  }
-  private var sourceEditorFont: Font {
-    switch store.sourceFontName {
-    case "Monospaced": return .system(size: store.sourceFontSize, design: .monospaced)
-    case "System Serif": return .system(size: store.sourceFontSize, design: .serif)
-    case "System": return .system(size: store.sourceFontSize)
-    default: return .custom(store.sourceFontName, size: store.sourceFontSize)
     }
   }
 }

@@ -42,7 +42,13 @@ final class FormattedMarkdownEditorTests: XCTestCase {
   func testMarkdownListMarkersStayVisibleWhileItemTextRemainsEditable() {
     let model = FormattedMarkdownEditModel(markdown: "- First point\n2. Deuxième point")
     XCTAssertEqual(model.rendered().string, "- First point\n2. Deuxième point")
-    XCTAssertNil(model.replacing(NSRange(location: 0, length: 1), with: "+"))
+    let changedMarker = try! XCTUnwrap(model.replacing(NSRange(location: 0, length: 1), with: "+"))
+    XCTAssertEqual(changedMarker.markdown, "+ First point\n2. Deuxième point")
+    XCTAssertEqual(changedMarker.rendered().string, "+ First point\n2. Deuxième point")
+    let all = NSRange(location: 0, length: model.rendered().length)
+    let replacement = try! XCTUnwrap(model.replacing(all, with: "Replacement"))
+    XCTAssertEqual(replacement.markdown, "Replacement")
+    XCTAssertEqual(replacement.rendered().string, "Replacement")
 
     let first = NSRange(model.rendered().string.range(of: "First")!, in: model.rendered().string)
     let afterFirst = try! XCTUnwrap(model.replacing(first, with: "Updated"))
@@ -87,6 +93,47 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(italic.rendered().string, "bonjour français monde")
   }
 
+  func testFormattingActionsPreserveVisibleTextAndUpdateCanonicalMarkdown() {
+    let plain = FormattedMarkdownEditModel(markdown: "Say hello")
+    let hello = NSRange(location: 4, length: 5)
+    let bold = try! XCTUnwrap(plain.applyingStyle("**", to: hello))
+    XCTAssertEqual(bold.markdown, "Say **hello**")
+    XCTAssertEqual(bold.rendered().string, plain.rendered().string)
+    XCTAssertTrue((bold.rendered().attribute(.font, at: hello.location, effectiveRange: nil) as? NSFont)?
+      .fontDescriptor.symbolicTraits.contains(.bold) == true)
+    XCTAssertEqual(bold.applyingStyle("**", to: hello)?.markdown, plain.markdown)
+    let italic = try! XCTUnwrap(plain.applyingStyle("*", to: hello))
+    XCTAssertEqual(italic.markdown, "Say *hello*")
+    XCTAssertEqual(italic.applyingStyle("*", to: hello)?.markdown, plain.markdown)
+    let boldItalic = try! XCTUnwrap(bold.applyingStyle("*", to: hello))
+    XCTAssertEqual(boldItalic.markdown, "Say ***hello***")
+    XCTAssertEqual(boldItalic.applyingStyle("*", to: hello)?.markdown, bold.markdown)
+    let paragraph = FormattedMarkdownEditModel(markdown: "hello\n")
+    let allParagraph = NSRange(location: 0, length: paragraph.rendered().length)
+    XCTAssertEqual(paragraph.applyingStyle("**", to: allParagraph)?.markdown, "**hello**\n")
+
+    let heading = try! XCTUnwrap(plain.applyingHeading(to: hello))
+    XCTAssertEqual(heading.markdown, "# Say hello")
+    XCTAssertEqual(heading.rendered().string, plain.rendered().string)
+    XCTAssertEqual(heading.applyingHeading(to: hello)?.markdown, plain.markdown)
+
+    let linked = try! XCTUnwrap(plain.applyingLink(to: hello, destination: "https://example.com"))
+    XCTAssertEqual(linked.markdown, "Say [hello](https://example.com)")
+    XCTAssertEqual(linked.rendered().string, plain.rendered().string)
+
+    let existing = FormattedMarkdownEditModel(markdown: "Read [this page](https://old.example)")
+    let label = NSRange(location: 5, length: 9)
+    XCTAssertEqual(existing.linkDestination(for: label), "https://old.example")
+    let updated = try! XCTUnwrap(existing.applyingLink(to: label, destination: "https://new.example"))
+    XCTAssertEqual(updated.markdown, "Read [this page](https://new.example)")
+    XCTAssertEqual(updated.rendered().string, existing.rendered().string)
+    XCTAssertEqual(updated.removingLink(to: label)?.markdown, "Read this page")
+    let titled = FormattedMarkdownEditModel(markdown: "Read [this page](https://old.example \"Old\")")
+    XCTAssertNil(titled.linkDestination(for: label))
+    XCTAssertNil(titled.applyingLink(to: label, destination: "https://new.example"))
+    XCTAssertEqual(titled.removingLink(to: label)?.markdown, "Read this page")
+  }
+
   func testRenderedTextUsesSemanticForegroundColour() {
     let rendered = FormattedMarkdownEditModel(markdown: "# Heading\n\n**bold**").rendered()
     XCTAssertEqual(rendered.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .labelColor)
@@ -117,6 +164,32 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     }
     XCTAssertEqual(value, "*bonjour* français monde")
     XCTAssertEqual(view.string, "bonjour français monde")
+  }
+
+  @MainActor func testProgrammaticFormattingUndoThenNativeTypingUndoRedo() {
+    var value = "hello"
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "System Serif", fontSize: 17)
+    let coordinator = FormattedMarkdownEditor.Coordinator(editor)
+    let view = NSTextView(frame: .zero)
+    view.allowsUndo = true
+    view.delegate = coordinator
+    coordinator.configure(view, markdown: value, fontName: "System Serif", fontSize: 17)
+
+    view.setSelectedRange(NSRange(location: 0, length: 5))
+    coordinator.apply(.bold, in: view)
+    XCTAssertEqual(value, "**hello**")
+    view.undoManager?.undo()
+    XCTAssertEqual(value, "hello")
+    XCTAssertEqual(view.string, "hello")
+
+    view.setSelectedRange(NSRange(location: 5, length: 0))
+    view.insertText("!", replacementRange: view.selectedRange())
+    XCTAssertEqual(value, "hello!")
+    view.undoManager?.undo()
+    XCTAssertEqual(value, "hello")
+    view.undoManager?.redo()
+    XCTAssertEqual(value, "hello!")
   }
 
   @MainActor func testNativeBoundaryFallbackReconcilesFormattingThroughUndoRedo() {

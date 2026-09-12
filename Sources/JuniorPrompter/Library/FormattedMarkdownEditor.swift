@@ -2,12 +2,53 @@ import AppKit
 import SwiftUI
 import PrompterCore
 
+enum EditorFormatAction {
+  case bold, italic, heading, link
+}
+
+private final class FormattingTextView: NSTextView {
+  var onFormat: ((EditorFormatAction) -> Void)?
+
+  @objc func showFormatMenu(_ sender: NSButton) {
+    formatMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
+  }
+
+  override func menu(for event: NSEvent) -> NSMenu? {
+    let menu = super.menu(for: event) ?? NSMenu()
+    menu.addItem(.separator())
+    for item in formatMenu().items { menu.addItem(item.copy() as! NSMenuItem) }
+    return menu
+  }
+
+  private func formatMenu() -> NSMenu {
+    let menu = NSMenu(title: "Format")
+    for (title, action) in [
+      ("Bold", EditorFormatAction.bold),
+      ("Italic", EditorFormatAction.italic),
+      ("Heading", EditorFormatAction.heading),
+      ("Add or Edit Link…", EditorFormatAction.link)
+    ] {
+      let item = NSMenuItem(title: title, action: #selector(applyFormat(_:)), keyEquivalent: "")
+      item.target = self
+      item.representedObject = action
+      menu.addItem(item)
+    }
+    return menu
+  }
+
+  @objc private func applyFormat(_ sender: NSMenuItem) {
+    guard let action = sender.representedObject as? EditorFormatAction else { return }
+    onFormat?(action)
+  }
+}
+
 /// A formatted editor which changes only the visible source characters the user selected.
 struct FormattedMarkdownEditor: NSViewRepresentable {
   @Binding var markdown: String
   var fontName: String
   var fontSize: Double
   var onUnsupportedEdit: (() -> Void)? = nil
+  var focusesOnAppear = false
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -16,13 +57,14 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     scroll.drawsBackground = false
+    scroll.contentInsets = NSEdgeInsets(top: 32, left: 0, bottom: 0, right: 0)
     let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
     container.widthTracksTextView = true
     let layout = NSLayoutManager()
     let storage = NSTextStorage()
     storage.addLayoutManager(layout)
     layout.addTextContainer(container)
-    let view = NSTextView(frame: NSRect.zero, textContainer: container)
+    let view = FormattingTextView(frame: NSRect.zero, textContainer: container)
     view.minSize = NSSize.zero
     view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     view.isVerticallyResizable = true
@@ -33,8 +75,24 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     view.drawsBackground = false
     view.textContainerInset = NSSize(width: 0, height: 8)
     view.delegate = context.coordinator
+    view.onFormat = { [weak coordinator = context.coordinator, weak view] action in
+      guard let coordinator, let view else { return }
+      coordinator.apply(action, in: view)
+    }
     scroll.documentView = view
+    let formatButton = NSButton(title: "Format", target: view, action: #selector(FormattingTextView.showFormatMenu(_:)))
+    formatButton.bezelStyle = .rounded
+    formatButton.setAccessibilityLabel("Format selected text")
+    formatButton.translatesAutoresizingMaskIntoConstraints = false
+    scroll.addSubview(formatButton)
+    NSLayoutConstraint.activate([
+      formatButton.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 4),
+      formatButton.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -8)
+    ])
     context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize)
+    if focusesOnAppear {
+      DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+    }
     return scroll
   }
 
@@ -121,6 +179,83 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       parent.markdown = model.markdown
     }
 
+    func apply(_ action: EditorFormatAction, in view: NSTextView) {
+      switch action {
+      case .bold:
+        apply(model.applyingStyle("**", to: view.selectedRange()), in: view)
+      case .italic:
+        apply(model.applyingStyle("*", to: view.selectedRange()), in: view)
+      case .heading:
+        apply(model.applyingHeading(to: view.selectedRange()), in: view)
+      case .link:
+        applyLink(in: view)
+      }
+    }
+
+    private func applyLink(in view: NSTextView) {
+      let selection = view.selectedRange()
+      let original = model.markdown
+      let existing = model.isExistingLink(for: selection)
+      let existingDestination = model.linkDestination(for: selection)
+      guard existing || selection.length > 0 else {
+        parent.onUnsupportedEdit?()
+        return
+      }
+      let editable = !existing || existingDestination != nil
+      let alert = NSAlert()
+      alert.messageText = "Link destination"
+      alert.informativeText = editable
+        ? "Enter the web address for the selected text."
+        : "This link has a title and cannot be edited here. You can remove it safely."
+      let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
+      field.stringValue = existingDestination ?? ""
+      field.placeholderString = "https://example.com"
+      field.isEditable = editable
+      field.setAccessibilityLabel("Link destination")
+      alert.accessoryView = field
+      let applyButton = alert.addButton(withTitle: "Apply Link")
+      applyButton.isEnabled = editable
+      if existing { alert.addButton(withTitle: "Remove Link") }
+      alert.addButton(withTitle: "Cancel")
+      let complete: (NSApplication.ModalResponse) -> Void = { [weak self, weak view] response in
+        guard let self, let view else { return }
+        guard self.model.markdown == original else {
+          self.parent.onUnsupportedEdit?()
+          return
+        }
+        if response == .alertFirstButtonReturn {
+          self.apply(self.model.applyingLink(to: selection, destination: field.stringValue), in: view)
+        } else if existing, response == .alertSecondButtonReturn {
+          self.apply(self.model.removingLink(to: selection), in: view)
+        }
+      }
+      if let window = view.window {
+        alert.beginSheetModal(for: window, completionHandler: complete)
+      } else {
+        complete(alert.runModal())
+      }
+    }
+
+    private func apply(_ next: FormattedMarkdownEditModel?, in view: NSTextView) {
+      guard let next else {
+        parent.onUnsupportedEdit?()
+        return
+      }
+      let previous = model
+      model = next
+      view.undoManager?.registerUndo(withTarget: self) { target in target.restoreFormatted(previous) }
+      render(view, keeping: view.selectedRange())
+      parent.markdown = next.markdown
+    }
+
+    private func restoreFormatted(_ snapshot: FormattedMarkdownEditModel) {
+      let current = model
+      model = snapshot
+      textView?.undoManager?.registerUndo(withTarget: self) { target in target.restoreFormatted(current) }
+      if let textView { render(textView, keeping: textView.selectedRange()) }
+      parent.markdown = snapshot.markdown
+    }
+
     private func restore(_ snapshot: FormattedMarkdownEditModel) {
       let current = model
       model = snapshot
@@ -179,6 +314,7 @@ struct FormattedMarkdownEditModel {
   private let renderedSource: NSAttributedString
   private let sourceOffsets: [Int?]
   private let headingRanges: [NSRange]
+  private static let linkRegex = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\n]*)\)"#)
 
   init(markdown: String) {
     self.markdown = markdown
@@ -231,8 +367,8 @@ struct FormattedMarkdownEditModel {
           part.append(NSAttributedString(string: String(raw.suffix(rawTrailingSpaces - renderedTrailingSpaces))))
         }
         if block.kind == .listItem, let marker = Self.listMarker(in: raw) {
-          output.append(NSAttributedString(string: marker))
-          offsets += Array(repeating: nil, count: (marker as NSString).length)
+          output.append(NSAttributedString(string: marker.text))
+          offsets += (marker.sourceRange.location..<NSMaxRange(marker.sourceRange)).map { lineOffset + $0 }
         }
         for run in rich.runs {
           let intent = run.inlinePresentationIntent ?? []
@@ -264,6 +400,120 @@ struct FormattedMarkdownEditModel {
     renderedSource = output
     sourceOffsets = offsets
     headingRanges = headings
+  }
+
+  func applyingStyle(_ delimiter: String, to visibleRange: NSRange) -> FormattedMarkdownEditModel? {
+    guard let visibleRange = trimmedStyleRange(visibleRange), let range = sourceRange(for: visibleRange) else { return nil }
+    let source = markdown as NSString
+    let delimiterLength = (delimiter as NSString).length
+    if hasStyle(delimiter, in: visibleRange),
+      range.location >= delimiterLength,
+      source.substring(with: NSRange(location: range.location - delimiterLength, length: delimiterLength)) == delimiter,
+      NSMaxRange(range) + delimiterLength <= source.length,
+      source.substring(with: NSRange(location: NSMaxRange(range), length: delimiterLength)) == delimiter
+    {
+      return replacingSource(
+        NSRange(location: range.location - delimiterLength, length: range.length + delimiterLength * 2),
+        with: source.substring(with: range))
+    }
+    return replacingSource(range, with: delimiter + source.substring(with: range) + delimiter)
+  }
+
+  private func trimmedStyleRange(_ range: NSRange) -> NSRange? {
+    let text = renderedSource.string as NSString
+    guard range.location >= 0, range.length >= 0, range.location <= text.length,
+      range.length <= text.length - range.location else { return nil }
+    var start = range.location
+    var end = NSMaxRange(range)
+    while start < end, let scalar = UnicodeScalar(text.character(at: start)),
+      CharacterSet.whitespacesAndNewlines.contains(scalar)
+    { start += 1 }
+    while end > start, let scalar = UnicodeScalar(text.character(at: end - 1)),
+      CharacterSet.whitespacesAndNewlines.contains(scalar)
+    { end -= 1 }
+    return start < end ? NSRange(location: start, length: end - start) : nil
+  }
+
+  private func hasStyle(_ delimiter: String, in visibleRange: NSRange) -> Bool {
+    let trait: NSFontTraitMask = delimiter == "**" ? .boldFontMask : .italicFontMask
+    var hasStyle = true
+    renderedSource.enumerateAttribute(.font, in: visibleRange) { value, _, _ in
+      hasStyle = hasStyle && ((value as? NSFont).map { NSFontManager.shared.traits(of: $0).contains(trait) } ?? false)
+    }
+    return hasStyle
+  }
+
+  func applyingHeading(to visibleRange: NSRange) -> FormattedMarkdownEditModel? {
+    guard let range = sourceRange(for: visibleRange) else { return nil }
+    let source = markdown as NSString
+    let line = source.lineRange(for: range)
+    let raw = source.substring(with: line)
+    if let marker = raw.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+      return replacingSource(NSRange(location: line.location + NSRange(marker, in: raw).location, length: NSRange(marker, in: raw).length), with: "")
+    }
+    return replacingSource(NSRange(location: line.location, length: 0), with: "# ")
+  }
+
+  func isExistingLink(for visibleRange: NSRange) -> Bool {
+    guard let range = sourceRange(for: visibleRange) else { return false }
+    return linkMatch(containing: range) != nil
+  }
+
+  func linkDestination(for visibleRange: NSRange) -> String? {
+    guard let range = sourceRange(for: visibleRange), let match = linkMatch(containing: range) else { return nil }
+    let destination = (markdown as NSString).substring(with: match.range(at: 2))
+    return Self.isSimpleDestination(destination) ? destination : nil
+  }
+
+  func applyingLink(to visibleRange: NSRange, destination: String) -> FormattedMarkdownEditModel? {
+    let destination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard Self.isSimpleDestination(destination), let selected = sourceRange(for: visibleRange) else { return nil }
+    let source = markdown as NSString
+    if let match = linkMatch(containing: selected) {
+      guard Self.isSimpleDestination(source.substring(with: match.range(at: 2))) else { return nil }
+      let label = source.substring(with: match.range(at: 1))
+      return replacingSource(match.range, with: "[\(label)](\(destination))")
+    }
+    return replacingSource(selected, with: "[\(source.substring(with: selected))](\(destination))")
+  }
+
+  func removingLink(to visibleRange: NSRange) -> FormattedMarkdownEditModel? {
+    guard let selected = sourceRange(for: visibleRange), let match = linkMatch(containing: selected) else { return nil }
+    return replacingSource(match.range, with: (markdown as NSString).substring(with: match.range(at: 1)))
+  }
+
+  private static func isSimpleDestination(_ value: String) -> Bool {
+    !value.contains(where: { $0.isWhitespace || $0.isNewline })
+      && URL(string: value)?.scheme != nil
+  }
+
+  private func sourceRange(for visibleRange: NSRange) -> NSRange? {
+    guard visibleRange.location >= 0, NSMaxRange(visibleRange) <= sourceOffsets.count else { return nil }
+    if visibleRange.length == 0 {
+      guard let offset = insertionOffsets(at: visibleRange.location).first else { return nil }
+      return NSRange(location: offset, length: 0)
+    }
+    let selected = sourceOffsets[visibleRange.location..<NSMaxRange(visibleRange)]
+    guard let first = selected.first ?? nil, selected.allSatisfy({ $0 != nil }),
+      let last = selected.last ?? nil, last - first + 1 == selected.count
+    else { return nil }
+    return NSRange(location: first, length: selected.count)
+  }
+
+  private func replacingSource(_ range: NSRange, with replacement: String) -> FormattedMarkdownEditModel? {
+    let source = NSMutableString(string: markdown)
+    source.replaceCharacters(in: range, with: replacement)
+    let next = FormattedMarkdownEditModel(markdown: source as String)
+    return next.renderedSource.string == renderedSource.string ? next : nil
+  }
+
+  private func linkMatch(containing selection: NSRange) -> NSTextCheckingResult? {
+    let source = markdown as NSString
+    let full = NSRange(location: 0, length: source.length)
+    return Self.linkRegex.matches(in: markdown, range: full).first { match in
+      let label = match.range(at: 1)
+      return selection.location >= label.location && NSMaxRange(selection) <= NSMaxRange(label)
+    }
   }
 
   func rendered(fontName: String = "System Serif", fontSize: Double = 14) -> NSAttributedString {
@@ -313,7 +563,14 @@ struct FormattedMarkdownEditModel {
   private func replacing(_ runs: [NSRange], visibleRange: NSRange, with replacement: String) -> FormattedMarkdownEditModel? {
     let inCode = visibleRange.location < renderedSource.length
       && ((renderedSource.attribute(.font, at: visibleRange.location, effectiveRange: nil) as? NSFont)?.fontName.lowercased().contains("mono") == true)
-    guard let literal = Self.literalMarkdown(replacement, inCode: inCode) else { return nil }
+    let literal: String
+    if isListMarkerEdit(runs, replacement: replacement) {
+      literal = replacement
+    } else if let escaped = Self.literalMarkdown(replacement, inCode: inCode) {
+      literal = escaped
+    } else {
+      return nil
+    }
     let source = NSMutableString(string: markdown)
     for run in runs.dropFirst().reversed() { source.replaceCharacters(in: run, with: "") }
     source.replaceCharacters(in: runs[0], with: literal)
@@ -323,6 +580,21 @@ struct FormattedMarkdownEditModel {
     // Source positions may be absent from literal runs. Accept a fallback alignment
     // only when re-rendering proves it changed exactly the requested visible text.
     return next.renderedSource.string == expected as String ? next : nil
+  }
+
+  private func isListMarkerEdit(_ runs: [NSRange], replacement: String) -> Bool {
+    guard runs.count == 1 else { return false }
+    let source = markdown as NSString
+    let lineRange = source.lineRange(for: runs[0])
+    let line = source.substring(with: lineRange)
+    guard let marker = Self.listMarker(in: line) else { return false }
+    let local = NSRange(location: runs[0].location - lineRange.location, length: runs[0].length)
+    guard local.location >= marker.sourceRange.location, NSMaxRange(local) <= NSMaxRange(marker.sourceRange) else {
+      return false
+    }
+    let amended = NSMutableString(string: line)
+    amended.replaceCharacters(in: local, with: replacement)
+    return Self.listMarker(in: amended as String) != nil
   }
 
   private func insertionOffsets(at index: Int) -> [Int] {
@@ -366,9 +638,9 @@ struct FormattedMarkdownEditModel {
     return result
   }
 
-  private static func listMarker(in line: String) -> String? {
+  private static func listMarker(in line: String) -> (text: String, sourceRange: NSRange)? {
     guard let range = line.range(of: #"^\s*(?:[-+*]|\d+[.)])\s+"#, options: .regularExpression) else { return nil }
-    return String(line[range])
+    return (String(line[range]), NSRange(range, in: line))
   }
 
   private static func literalMarkdown(_ text: String, inCode: Bool) -> String? {
