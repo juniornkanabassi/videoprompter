@@ -203,7 +203,7 @@ public struct RecognitionTracker: Sendable {
       if old?.words == words && old?.isFinal == event.isFinal { continue }
       var wordsToMatch = words
       if let baseline = seekBaselines[key] {
-        guard event.audioEnd > minimumSeekAudioStart! else {
+        if let minimumSeekAudioStart, event.audioEnd <= minimumSeekAudioStart {
           revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
           seekBaselines[key] = words
           sawFresh = true

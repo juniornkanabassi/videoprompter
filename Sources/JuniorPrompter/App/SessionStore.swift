@@ -405,8 +405,9 @@ final class SessionStore: ObservableObject {
       return .init(
         text: text, spokenTokenStart: offset, spokenTokenCount: block.spokenTokens.count, tokenRanges: ranges)
     }
+    let activeTokenIndex = settings.mode == "Voice" ? lastConfirmedTokenIndex ?? tokenIndex : tokenIndex
     obsServer.update(snapshot: .init(
-      runs: runs, activeTokenIndex: tokenIndex, fontSize: settings.fontSize,
+      runs: runs, activeTokenIndex: activeTokenIndex, fontSize: settings.fontSize,
       textOpacity: settings.textOpacity, backgroundOpacity: settings.backgroundOpacity,
       mirrorX: settings.horizontalMirror, mirrorY: settings.verticalMirror,
       rotation: settings.rotation, guideFraction: settings.guideFraction, fontName: settings.fontName))
