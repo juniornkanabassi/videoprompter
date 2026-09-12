@@ -117,12 +117,22 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let engine: SpeechProvider.Engine = environment["JUNIORPROMPTER_SPEECH_REPLAY_ENGINE"] == "dictation"
       ? .dictation : .transcription
     let rendersPresenter = environment["JUNIORPROMPTER_RENDERED_REPLAY"] == "1"
+    let replayScrollBack = environment["JUNIORPROMPTER_REPLAY_SCROLL_BACK"] == "1"
+    try XCTSkipUnless(!replayScrollBack || rendersPresenter,
+      "Scroll-back replay requires JUNIORPROMPTER_RENDERED_REPLAY=1.")
+    XCTAssertFalse(replayScrollBack && startOffset != 0,
+      "Scroll-back replay must use the full recording from offset 0.")
     let session: SessionStore
     var renderedPanel: NSPanel?
     var renderedStore: AppStore?
     var renderedDirectory: URL?
     var renderedDefaults: (suiteName: String, defaults: UserDefaults)?
     var presenterStayedVisible = true
+    var scrollBackTriggered = false
+    var intentionalSeekRevision: Int?
+    var acceptedWordsAtScrollBack: Int?
+    var providerGenerationAtScrollBack: UInt64?
+    var progressedAfterScrollBack = false
     if rendersPresenter {
       guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) else {
         throw XCTSkip("Rendered replay requires the Prompter XL display.")
@@ -215,6 +225,33 @@ final class SpeechSessionIntegrationTests: XCTestCase {
             previousRenderedOffset = offset
           }
         }
+        if replayScrollBack, !scrollBackTriggered, elapsed ?? 0 >= 35,
+          let renderedPanel, let scrollView = scrollView(in: renderedPanel.contentView),
+          scrollView.contentView.bounds.origin.y > 24, session.acceptedWords > 0
+        {
+          providerGenerationAtScrollBack = ledger.events.reversed().first(where: { $0.type == "candidate" })?.generation
+          acceptedWordsAtScrollBack = session.acceptedWords
+          let tokenBeforeScroll = session.tokenIndex
+          let origin = scrollView.contentView.bounds.origin
+          NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scrollView)
+          scrollView.contentView.setBoundsOrigin(NSPoint(x: origin.x, y: max(0, origin.y - 100)))
+          scrollView.reflectScrolledClipView(scrollView.contentView)
+          NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scrollView)
+          NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scrollView)
+          XCTAssertLessThan(session.tokenIndex, tokenBeforeScroll, "Scroll-back must actually move the reading anchor backwards.")
+          intentionalSeekRevision = session.seekRevision
+          scrollBackTriggered = true
+          ledger.events.append(.init(
+            type: "intentional_scroll_seek", generation: providerGenerationAtScrollBack, replacementID: nil,
+            wallSecondsSinceFirstAudio: elapsed, audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
+            tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
+            droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
+            text: "Programmatic native live-scroll lifecycle exercised the presenter reanchor; not hardware wheel evidence."))
+          previousSeekRevision = session.seekRevision
+        }
+        if scrollBackTriggered, let acceptedWordsAtScrollBack,
+          session.acceptedWords > acceptedWordsAtScrollBack
+        { progressedAfterScrollBack = true }
         if session.tokenIndex != previousToken {
           ledger.events.append(.init(
             type: "session_token_progress", generation: nil, replacementID: nil,
@@ -315,7 +352,27 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     }
     try await Task.sleep(for: .milliseconds(200))
     let progress = ledger.events.filter { $0.type == "session_token_progress" }
-    XCTAssertEqual(session.seekRevision, 0, "Untouched replay changed the presenter seek revision. See \(logURL.path).")
+    if replayScrollBack {
+      XCTAssertTrue(scrollBackTriggered, "Replay did not reach the intentional live scroll. See \(logURL.path).")
+      XCTAssertGreaterThan(intentionalSeekRevision ?? 0, 0,
+        "Live-scroll notification did not reanchor the session. See \(logURL.path).")
+      XCTAssertEqual(session.seekRevision, intentionalSeekRevision,
+        "Replay changed the seek revision after the intentional reanchor. See \(logURL.path).")
+      XCTAssertTrue(progressedAfterScrollBack,
+        "Production recognition did not advance after the intentional reanchor. See \(logURL.path).")
+      if let providerGenerationAtScrollBack,
+        let scrollTime = ledger.events.first(where: { $0.type == "intentional_scroll_seek" })?.wallSecondsSinceFirstAudio
+      {
+        let candidateGenerationsAfterScroll = Set(ledger.events.compactMap { event -> UInt64? in
+          guard event.type == "candidate", (event.wallSecondsSinceFirstAudio ?? 0) > scrollTime else { return nil }
+          return event.generation
+        })
+        XCTAssertEqual(candidateGenerationsAfterScroll, [providerGenerationAtScrollBack],
+          "Provider generation changed or stopped after the intentional reanchor. See \(logURL.path).")
+      }
+    } else {
+      XCTAssertEqual(session.seekRevision, 0, "Untouched replay changed the presenter seek revision. See \(logURL.path).")
+    }
     let largestHold = zip(progress, progress.dropFirst()).map {
       ($1.wallSecondsSinceFirstAudio ?? 0) - ($0.wallSecondsSinceFirstAudio ?? 0)
     }.max() ?? 0
