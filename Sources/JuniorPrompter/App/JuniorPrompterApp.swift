@@ -553,7 +553,11 @@ private enum PresenterSaveError: LocalizedError {
       .commands {
         CommandGroup(after: .textEditing) {
           Button("Find…") {
-            NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: nil, from: nil)
+            let item = NSMenuItem()
+            item.tag = NSTextFinder.Action.showFindInterface.rawValue
+            let responder = NSApp.keyWindow?.firstResponder
+            if let textView = responder as? NSTextView { textView.usesFindBar = true }
+            NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: responder, from: item)
           }.keyboardShortcut("f", modifiers: .command)
         }
         CommandMenu("Prompter") {

@@ -237,6 +237,26 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(value, edited)
   }
 
+  @MainActor func testNativeIncrementalTypingInEmptyParagraphPreservesSpaces() {
+    var value = ""
+    var unsupportedEdits = 0
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "Lexend Deca", fontSize: 18, onUnsupportedEdit: { unsupportedEdits += 1 })
+    let coordinator = FormattedMarkdownEditor.Coordinator(editor)
+    let view = NSTextView(frame: .zero)
+    view.delegate = coordinator
+    coordinator.configure(view, markdown: value, fontName: "Lexend Deca", fontSize: 18)
+
+    var expected = ""
+    for character in "Native editing test." {
+      expected.append(character)
+      view.insertText(String(character), replacementRange: view.selectedRange())
+      XCTAssertEqual(view.string, expected)
+      XCTAssertEqual(value, expected)
+    }
+    XCTAssertEqual(unsupportedEdits, 0)
+  }
+
   @MainActor func testEmptyDocumentUsesSelectedTypingFont() {
     var value = ""
     let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),

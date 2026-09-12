@@ -81,6 +81,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     func textView(_ textView: NSTextView, shouldChangeTextIn range: NSRange,
       replacementString text: String?) -> Bool
     {
+      if textView.hasMarkedText() { return true }
       if textView.undoManager?.isUndoing == true || textView.undoManager?.isRedoing == true { return true }
       guard !updating, let text, let next = model.replacing(range, with: text) else {
         if !updating { parent.onUnsupportedEdit?() }
@@ -222,6 +223,13 @@ struct FormattedMarkdownEditModel {
           options: .init(interpretedSyntax: .full, appliesSourcePositionAttributes: true)))
           ?? AttributedString(raw)
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rich))
+        // Foundation Markdown omits trailing spaces from a paragraph's rendered text.
+        // Keep any omitted literal spaces visible and source-mapped while the user is typing.
+        let rawTrailingSpaces = raw.reversed().prefix { $0 == " " || $0 == "\t" }.count
+        let renderedTrailingSpaces = part.string.reversed().prefix { $0 == " " || $0 == "\t" }.count
+        if rawTrailingSpaces > renderedTrailingSpaces {
+          part.append(NSAttributedString(string: String(raw.suffix(rawTrailingSpaces - renderedTrailingSpaces))))
+        }
         if block.kind == .listItem, let marker = Self.listMarker(in: raw) {
           output.append(NSAttributedString(string: marker))
           offsets += Array(repeating: nil, count: (marker as NSString).length)
