@@ -74,6 +74,34 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(font?.pointSize ?? 0, 52, accuracy: 0.1)
   }
 
+  func testHiddenCueCollapsesLayoutWithoutChangingSourceOrMappings() {
+    func rendered(_ markdown: String, showCues: Bool, width: CGFloat) -> (NSTextView, ScriptTextView.Coordinator) {
+      let view = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 400))
+      view.textContainer?.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+      view.textContainer?.widthTracksTextView = true
+      let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+      coordinator.textView = view
+      coordinator.render(document: PrompterDocument(markdown: markdown), fontName: "Helvetica", fontSize: 36,
+        textOpacity: 1, showCues: showCues)
+      view.layoutManager?.ensureLayout(for: view.textContainer!)
+      return (view, coordinator)
+    }
+    func rect(of token: String, in value: (NSTextView, ScriptTextView.Coordinator)) -> NSRect {
+      let mapping = value.1.mappings.first { (value.0.string as NSString).substring(with: $0.0) == token }!
+      let glyph = value.0.layoutManager!.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+      return value.0.layoutManager!.boundingRect(forGlyphRange: glyph, in: value.0.textContainer!)
+    }
+
+    let plain = rendered("Hello world", showCues: false, width: 220)
+    let hidden = rendered("Hello [pause] world", showCues: false, width: 220)
+    let visible = rendered("Hello [pause] world", showCues: true, width: 220)
+    XCTAssertEqual(hidden.0.string, "Hello [pause] world")
+    XCTAssertEqual(hidden.1.mappings.count, 2)
+    XCTAssertEqual(rect(of: "world", in: hidden).minX, rect(of: "world", in: plain).minX, accuracy: 1)
+    XCTAssertEqual(rect(of: "world", in: hidden).minY, rect(of: "world", in: plain).minY, accuracy: 1)
+    XCTAssertGreaterThan(rect(of: "world", in: visible).minY, rect(of: "world", in: hidden).minY + 1)
+  }
+
   func testCueIsNotMappedAsSpokenAndOpacityIsPreserved() {
     let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 500, height: 200))
     let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })

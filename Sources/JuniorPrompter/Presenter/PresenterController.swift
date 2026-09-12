@@ -532,6 +532,18 @@ struct ScriptTextView: NSViewRepresentable {
       for range in cueRanges {
         attributed.addAttribute(.foregroundColor, value: showCues ? textColour.withAlphaComponent(textOpacity * 0.42) : .clear, range: range)
       }
+      if !showCues {
+        // ponytail: retain character ranges with subpixel cue width; use glyph suppression if long cues measurably affect wrapping.
+        for range in cueRanges {
+          var hiddenRange = range
+          let end = NSMaxRange(range)
+          if end < plain.length, let scalar = UnicodeScalar(plain.character(at: end)),
+            CharacterSet.whitespaces.contains(scalar)
+          { hiddenRange.length += 1 }
+          attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: hiddenRange)
+          attributed.addAttribute(.kern, value: CGFloat(0), range: hiddenRange)
+        }
+      }
       textView.textStorage?.setAttributedString(attributed)
       lastReadTokenIndex = nil
       lastReadConfirmedTokenIndex = nil
