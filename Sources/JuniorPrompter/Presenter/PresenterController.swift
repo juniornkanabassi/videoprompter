@@ -197,7 +197,8 @@ private struct PresenterView: View {
           document: session.document, tokenIndex: session.tokenIndex,
           lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
           isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
-          guideFraction: store.settings.guideFraction, fontName: store.settings.fontName,
+          guideFraction: store.settings.guideFraction, verticalMirror: store.settings.verticalMirror,
+          fontName: store.settings.fontName,
           fontSize: store.settings.fontSize, textOpacity: store.settings.textOpacity,
           fontWeight: store.settings.fontWeight, textColorHex: store.settings.textColorHex,
           lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
@@ -211,7 +212,7 @@ private struct PresenterView: View {
         .allowsHitTesting(!draft.isEditing)
         .accessibilityHidden(draft.isEditing)
         Rectangle().fill(.cyan.opacity(0.82)).frame(height: 2).offset(
-          y: max(54, geometry.size.height * store.settings.guideFraction)
+          y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction)
         ).allowsHitTesting(false)
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
@@ -350,6 +351,7 @@ struct ScriptTextView: NSViewRepresentable {
   let isActivelyRunning: Bool
   let seekRevision: Int
   let guideFraction: Double
+  let verticalMirror: Bool
   let fontName: String
   let fontSize: Double
   let textOpacity: Double
@@ -362,8 +364,11 @@ struct ScriptTextView: NSViewRepresentable {
   let showCues: Bool
   let highlightActiveWord: Bool
   let onSeek: (Int) -> Void
-  init(document: PrompterDocument, tokenIndex: Int, lastConfirmedTokenIndex: Int? = nil, isActivelyRunning: Bool = false, seekRevision: Int = 0, guideFraction: Double, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
-    self.document = document; self.tokenIndex = tokenIndex; self.lastConfirmedTokenIndex = lastConfirmedTokenIndex; self.isActivelyRunning = isActivelyRunning; self.seekRevision = seekRevision; self.guideFraction = guideFraction; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
+  init(document: PrompterDocument, tokenIndex: Int, lastConfirmedTokenIndex: Int? = nil, isActivelyRunning: Bool = false, seekRevision: Int = 0, guideFraction: Double, verticalMirror: Bool = false, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
+    self.document = document; self.tokenIndex = tokenIndex; self.lastConfirmedTokenIndex = lastConfirmedTokenIndex; self.isActivelyRunning = isActivelyRunning; self.seekRevision = seekRevision; self.guideFraction = guideFraction; self.verticalMirror = verticalMirror; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
+  }
+  static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
+    min(height, max(54, height * fraction))
   }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -390,6 +395,7 @@ struct ScriptTextView: NSViewRepresentable {
         }
     scroll.documentView = text
     context.coordinator.textView = text
+    context.coordinator.verticalMirror = verticalMirror
     context.coordinator.observeUserScrolls(in: scroll)
     return scroll
   }
@@ -399,6 +405,11 @@ struct ScriptTextView: NSViewRepresentable {
     context.coordinator.tokenIndex = tokenIndex
     context.coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
     context.coordinator.guideFraction = guideFraction
+    if context.coordinator.verticalMirror != verticalMirror {
+      context.coordinator.verticalMirror = verticalMirror
+      context.coordinator.invalidateAlignment()
+      context.coordinator.snapNextAlignment = true
+    }
     if context.coordinator.seekRevision != seekRevision {
       context.coordinator.seekRevision = seekRevision
       context.coordinator.invalidateAlignment()
@@ -431,6 +442,7 @@ struct ScriptTextView: NSViewRepresentable {
     var tokenIndex = 0
     var lastConfirmedTokenIndex: Int?
     var guideFraction = 0.35
+    var verticalMirror = false
     private var textOpacity = 1.0
     private var highlightActiveWord = false
     private var textColour = NSColor.white
@@ -600,7 +612,7 @@ struct ScriptTextView: NSViewRepresentable {
       else { return }
       manager.ensureLayout(for: container)
       let guide = scroll.contentView.bounds.origin.y
-        + max(54, scroll.contentView.bounds.height * guideFraction) - textView.textContainerInset.height
+        + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
       guard let nearest = mappings.min(by: { left, right in
         let leftGlyph = manager.glyphRange(forCharacterRange: left.0, actualCharacterRange: nil)
         let rightGlyph = manager.glyphRange(forCharacterRange: right.0, actualCharacterRange: nil)
@@ -610,6 +622,10 @@ struct ScriptTextView: NSViewRepresentable {
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
       onSeek(nearest.1)
+    }
+    private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
+      let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
+      return verticalMirror ? height - visual : visual
     }
     func invalidateAlignment() {
       lastAligned = nil
@@ -622,7 +638,7 @@ struct ScriptTextView: NSViewRepresentable {
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
       let height = scroll.contentView.bounds.height
-      let guideY = max(54, height * guideFraction)
+      let guideY = layoutGuideY(height: height, fraction: guideFraction)
       let edgeInset = max(80, max(guideY, height - guideY))
       textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       manager.ensureLayout(for: container)

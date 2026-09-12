@@ -125,6 +125,35 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(second?.alphaComponent ?? 0, 0.6, accuracy: 0.02)
   }
 
+  func testVerticalMirrorKeepsCurrentTokenOnVisualGuideAtClampedExtremes() {
+    let document = PrompterDocument(markdown: (1...50).map { "Paragraph \($0) with useful words." }.joined(separator: "\n\n"))
+    for size in [NSSize(width: 760, height: 468), NSSize(width: 360, height: 220), NSSize(width: 360, height: 80), NSSize(width: 360, height: 48)] {
+      for fraction in [0.05, 0.35, 0.95] {
+        for mirrored in [false, true] {
+          let scroll = NSScrollView(frame: NSRect(origin: .zero, size: size))
+          scroll.contentView.bounds = NSRect(origin: .zero, size: size)
+          let text = NSTextView(frame: NSRect(x: 0, y: 0, width: size.width, height: 8_000))
+          text.textContainer?.widthTracksTextView = true
+          scroll.documentView = text
+          let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+          coordinator.textView = text
+          coordinator.verticalMirror = mirrored
+          coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+          coordinator.align(scroll: scroll, tokenIndex: 24, guideFraction: fraction)
+          let mapping = try! XCTUnwrap(coordinator.mappings.first { $0.1 == 24 })
+          let manager = text.layoutManager!
+          manager.ensureLayout(for: text.textContainer!)
+          let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+          let logicalY = manager.boundingRect(forGlyphRange: glyph, in: text.textContainer!).midY
+            + text.textContainerInset.height - scroll.contentView.bounds.origin.y
+          let visualY = mirrored ? size.height - logicalY : logicalY
+          XCTAssertEqual(visualY, ScriptTextView.visualGuideY(height: size.height, fraction: fraction), accuracy: 2,
+            "size=\(size), fraction=\(fraction), mirrored=\(mirrored)")
+        }
+      }
+    }
+  }
+
   func testFirstAndLastTokensAlignToGuideAtPresenterSizes() {
     let document = PrompterDocument(markdown: (1...40).map { "Paragraph \($0) with useful words." }.joined(separator: "\n\n"))
     for size in [NSSize(width: 760, height: 468), NSSize(width: 360, height: 228)] {
