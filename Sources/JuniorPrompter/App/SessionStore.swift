@@ -32,9 +32,6 @@ final class SessionStore: ObservableObject {
   var estimatedWPM: Int { activeDuration > 0 ? Int((Double(acceptedWords) / activeDuration * 60).rounded()) : 0 }
   var sessionMilestone: Int { ((acceptedWords / 100) + 1) * 100 }
   @Published private(set) var settings = PrompterSettings()
-  @Published private(set) var obsURL: URL?
-  @Published private(set) var obsStatus = "Stopped"
-
   var activeScriptID: UUID? { activeRecord?.metadata.id }
   var activeToken: DocumentToken? {
     document.spokenTokens.indices.contains(tokenIndex) ? document.spokenTokens[tokenIndex] : nil
@@ -58,7 +55,6 @@ final class SessionStore: ObservableObject {
   private var lifecycleGeneration: UInt64 = 0
   private var providerStopTask: Task<Void, Never>?
   private var audioDeviceObserver: AudioInputDeviceObserver?
-  private let obsServer = OBSServer()
 
   func present(record: ScriptRecord, settings: PrompterSettings) {
     if activeRecord?.metadata.id != record.metadata.id {
@@ -77,7 +73,6 @@ final class SessionStore: ObservableObject {
       acceptedWords = 0
       activeDuration = 0
       state = .paused
-      refreshOBSSnapshot()
     } else {
       updateSettings(settings)
     }
@@ -87,7 +82,6 @@ final class SessionStore: ObservableObject {
     let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
     let speedChanged = settings.speed != value.speed
     settings = value
-    refreshOBSSnapshot()
     audioCapture?.setGain(Float(value.inputGain))
     if var current = anchor {
       current.guideFraction = value.guideFraction
@@ -131,7 +125,6 @@ final class SessionStore: ObservableObject {
     if let speechGeneration { minimumSpeechGeneration = speechGeneration + 1 }
     speechGeneration = nil
     if wasRunning { state = .paused }
-    refreshOBSSnapshot()
   }
 
   func play(captureAudio: Bool = true) {
@@ -142,12 +135,10 @@ final class SessionStore: ObservableObject {
     startDurationClock()
     restartModeTask()
     if captureAudio && (settings.mode == "Voice" || settings.mode == "Sound") { startAudioMode() }
-    refreshOBSSnapshot()
   }
   func pause() {
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
-    refreshOBSSnapshot()
   }
   func toggle() { isActivelyRunning ? pause() : play() }
   func restart() {
@@ -162,7 +153,6 @@ final class SessionStore: ObservableObject {
     lastConfirmedTokenIndex = nil
     tokenIndex = 0
     state = .stopped
-    refreshOBSSnapshot()
   }
 
   func seek(to index: Int) {
@@ -195,7 +185,6 @@ final class SessionStore: ObservableObject {
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
     if !incrementSeekRevision { tracker.seek(to: tokenIndex) }
     anchorNotice = nil
-    refreshOBSSnapshot()
   }
   func nextPassage() {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
@@ -365,52 +354,9 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
-      refreshOBSSnapshot()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }
-  }
-
-  func startOBS() async throws {
-    let value = try await obsServer.start()
-    obsURL = value
-    obsStatus = obsServer.status
-    refreshOBSSnapshot()
-  }
-
-  func stopOBS() {
-    obsServer.stop()
-    obsURL = obsServer.url
-    obsStatus = obsServer.status
-  }
-
-  private func refreshOBSSnapshot() {
-    guard obsURL != nil else { return }
-    var offset = 0
-    let runs = document.blocks.compactMap { block -> OBSSnapshot.Run? in
-      guard !block.spokenTokens.isEmpty else { return nil }
-      defer { offset += block.spokenTokens.count }
-      let text = block.rawMarkdown
-        .replacingOccurrences(of: #"(?<!\\)\[[^\]\n]+\](?!\s*\()"#, with: "", options: .regularExpression)
-        .replacingOccurrences(of: #"\[([^\]\n]+)\]\([^\)\n]+\)"#, with: "$1", options: .regularExpression)
-        .replacingOccurrences(of: #"^(?:\s*#{1,6}\s|\s*(?:[-+*]|\d+[.)])\s)"#, with: "", options: .regularExpression)
-        .replacingOccurrences(of: "`", with: "")
-      let ns = text as NSString
-      var cursor = 0
-      let ranges = block.spokenTokens.map { token -> OBSSnapshot.TokenRange in
-        let found = ns.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive], range: NSRange(location: cursor, length: ns.length - cursor))
-        if found.location != NSNotFound { cursor = found.upperBound; return .init(location: found.location, length: found.length) }
-        return .init(location: 0, length: 0)
-      }
-      return .init(
-        text: text, spokenTokenStart: offset, spokenTokenCount: block.spokenTokens.count, tokenRanges: ranges)
-    }
-    let activeTokenIndex = settings.mode == "Voice" ? lastConfirmedTokenIndex ?? tokenIndex : tokenIndex
-    obsServer.update(snapshot: .init(
-      runs: runs, activeTokenIndex: activeTokenIndex, fontSize: settings.fontSize,
-      textOpacity: settings.textOpacity, backgroundOpacity: settings.backgroundOpacity,
-      mirrorX: settings.horizontalMirror, mirrorY: settings.verticalMirror,
-      rotation: settings.rotation, guideFraction: settings.guideFraction, fontName: settings.fontName))
   }
 
   private func restartModeTask() {
@@ -596,7 +542,6 @@ final class SessionStore: ObservableObject {
   private func failAudio(_ message: String) {
     pause()
     anchorNotice = message
-    refreshOBSSnapshot()
   }
 
   private func speechLocales() async throws -> [Locale] {

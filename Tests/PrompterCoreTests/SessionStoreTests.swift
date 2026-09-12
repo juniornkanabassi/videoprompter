@@ -59,40 +59,6 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .running)
   }
 
-  func testOBSSnapshotPreservesPunctuationAndOmitsStageDirections() async throws {
-    let session = SessionStore()
-    session.present(
-      record: ScriptRecord(
-        metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
-        markdown: "Hello, [pause] world!"), settings: PrompterSettings())
-    try await session.startOBS()
-    defer { session.stopOBS() }
-    let url = try XCTUnwrap(session.obsURL)
-    let (data, _) = try await URLSession.shared.data(from: url.appending(path: "state"))
-    let snapshot = try JSONDecoder().decode(OBSSnapshot.self, from: data)
-    XCTAssertEqual(snapshot.runs.first?.text, "Hello,  world!")
-    XCTAssertEqual(snapshot.runs.first?.spokenTokenCount, 2)
-  }
-
-  func testVoiceOBSSnapshotHighlightsLastConfirmedWord() async throws {
-    let session = SessionStore()
-    session.present(record: record(), settings: PrompterSettings())
-    try await session.startOBS()
-    defer { session.stopOBS() }
-    session.play(captureAudio: false)
-    session.acceptSpeechCandidate(SpeechCandidate(
-      replacementID: "voice", generation: 1, locale: Locale(identifier: "en-GB"), text: "one two",
-      range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
-    try await Task.sleep(for: .milliseconds(40))
-    let url = try XCTUnwrap(session.obsURL)
-    let (data, _) = try await URLSession.shared.data(from: url.appending(path: "state"))
-    let snapshot = try JSONDecoder().decode(OBSSnapshot.self, from: data)
-    XCTAssertEqual(session.lastConfirmedTokenIndex, 1)
-    XCTAssertEqual(session.tokenIndex, 2)
-    XCTAssertEqual(snapshot.activeTokenIndex, 1)
-    session.pause()
-  }
-
   func testSwitchingToTimedKeepsAnActiveSessionRunning() async {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())
