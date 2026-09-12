@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import AppKit
+import CoreText
 import Foundation
 import Speech
 import XCTest
@@ -144,6 +145,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var acceptedWordsAtSourceRewind: Int?
     var rereadProgressedIntoPriorRange = false
     if rendersPresenter {
+      let fontRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+        .deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Resources/Fonts")
+      for file in ["Lexend-Variable.ttf", "LexendDeca-Variable.ttf"] {
+        CTFontManagerRegisterFontsForURL(fontRoot.appendingPathComponent(file) as CFURL, .process, nil)
+      }
+      XCTAssertNotNil(NSFont(name: "Lexend Deca", size: 18), "Rendered acceptance must not silently use a system fallback.")
       guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) else {
         throw XCTSkip("Rendered replay requires the Prompter XL display.")
       }

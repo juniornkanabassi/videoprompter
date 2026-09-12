@@ -93,12 +93,14 @@ private enum PresenterSaveError: LocalizedError {
   private let defaults: UserDefaults
 
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
+    _ = AvailableFonts.presenter
     let root: URL
     if let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count {
       root = URL(fileURLWithPath: arguments[i + 1])
     } else {
       root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent("JuniorPrompter", isDirectory: true)
+        .appendingPathComponent(Bundle.main.bundleIdentifier?.hasSuffix(".alpha") == true
+          ? "JuniorPrompter Alpha" : "JuniorPrompter", isDirectory: true)
     }
     let hasTestDirectory = arguments.firstIndex(of: "--data-directory").map { $0 + 1 < arguments.count } ?? false
     let isolatedDefaults = defaults ?? (hasTestDirectory

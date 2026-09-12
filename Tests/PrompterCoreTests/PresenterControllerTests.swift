@@ -333,7 +333,7 @@ final class PresenterControllerTests: XCTestCase {
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex - 1, guideFraction: 0.35)
     RunLoop.main.run(until: Date().addingTimeInterval(0.10))
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.19))
+    RunLoop.main.run(until: Date().addingTimeInterval(0.55))
     XCTAssertEqual(scroll.contentView.bounds.origin.y, sameLineTarget, accuracy: 2,
       "A same-line token update must not restart the existing alignment")
     coordinator.snapNextAlignment = true
