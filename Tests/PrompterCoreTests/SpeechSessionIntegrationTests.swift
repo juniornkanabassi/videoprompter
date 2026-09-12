@@ -118,8 +118,11 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       ? .dictation : .transcription
     let rendersPresenter = environment["JUNIORPROMPTER_RENDERED_REPLAY"] == "1"
     let replayScrollBack = environment["JUNIORPROMPTER_REPLAY_SCROLL_BACK"] == "1"
+    let replayReread = environment["JUNIORPROMPTER_REPLAY_REREAD"] == "1"
     try XCTSkipUnless(!replayScrollBack || rendersPresenter,
       "Scroll-back replay requires JUNIORPROMPTER_RENDERED_REPLAY=1.")
+    try XCTSkipUnless(!replayReread || (replayScrollBack && rendersPresenter && startOffset == 0),
+      "Re-read replay requires rendered scroll-back from the full recording.")
     XCTAssertFalse(replayScrollBack && startOffset != 0,
       "Scroll-back replay must use the full recording from offset 0.")
     let session: SessionStore
@@ -133,6 +136,13 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var acceptedWordsAtScrollBack: Int?
     var providerGenerationAtScrollBack: UInt64?
     var progressedAfterScrollBack = false
+    var tokenBeforeScrollBack: Int?
+    var tokenAfterScrollBack: Int?
+    var sourceRewindFrame: AVAudioFramePosition?
+    var sourceRewindApplied = false
+    var streamTimeAtSourceRewind: Double?
+    var acceptedWordsAtSourceRewind: Int?
+    var rereadProgressedIntoPriorRange = false
     if rendersPresenter {
       guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) else {
         throw XCTSkip("Rendered replay requires the Prompter XL display.")
@@ -232,6 +242,10 @@ final class SpeechSessionIntegrationTests: XCTestCase {
           providerGenerationAtScrollBack = ledger.events.reversed().first(where: { $0.type == "candidate" })?.generation
           acceptedWordsAtScrollBack = session.acceptedWords
           let tokenBeforeScroll = session.tokenIndex
+          tokenBeforeScrollBack = tokenBeforeScroll
+          if replayReread {
+            sourceRewindFrame = AVAudioFramePosition((31 * audio.processingFormat.sampleRate).rounded())
+          }
           let origin = scrollView.contentView.bounds.origin
           NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scrollView)
           scrollView.contentView.setBoundsOrigin(NSPoint(x: origin.x, y: max(0, origin.y - 100)))
@@ -240,18 +254,29 @@ final class SpeechSessionIntegrationTests: XCTestCase {
           NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scrollView)
           XCTAssertLessThan(session.tokenIndex, tokenBeforeScroll, "Scroll-back must actually move the reading anchor backwards.")
           intentionalSeekRevision = session.seekRevision
+          tokenAfterScrollBack = session.tokenIndex
           scrollBackTriggered = true
           ledger.events.append(.init(
             type: "intentional_scroll_seek", generation: providerGenerationAtScrollBack, replacementID: nil,
             wallSecondsSinceFirstAudio: elapsed, audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
             tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
             droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
-            text: "Programmatic native live-scroll lifecycle exercised the presenter reanchor; not hardware wheel evidence."))
+            text: replayReread
+              ? "Programmatic native live-scroll lifecycle requested an AVAudioFile rewind to 31 seconds; provider stream time stays monotonic."
+              : "Programmatic native live-scroll lifecycle exercised the presenter reanchor; not hardware wheel evidence."))
           previousSeekRevision = session.seekRevision
         }
         if scrollBackTriggered, let acceptedWordsAtScrollBack,
           session.acceptedWords > acceptedWordsAtScrollBack
         { progressedAfterScrollBack = true }
+        if sourceRewindApplied, let tokenBeforeScrollBack, let tokenAfterScrollBack,
+          let streamTimeAtSourceRewind, let acceptedWordsAtSourceRewind,
+          session.acceptedWords > acceptedWordsAtSourceRewind,
+          ledger.events.contains(where: {
+            $0.type == "candidate" && ($0.audioEnd ?? -.infinity) >= streamTimeAtSourceRewind + 0.5
+          }),
+          session.tokenIndex > tokenAfterScrollBack, session.tokenIndex < tokenBeforeScrollBack
+        { rereadProgressedIntoPriorRange = true }
         if session.tokenIndex != previousToken {
           ledger.events.append(.init(
             type: "session_token_progress", generation: nil, replacementID: nil,
@@ -280,6 +305,20 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       let converter = try XCTUnwrap(AVAudioConverter(from: audio.processingFormat, to: format))
       var outputFrame: Int64 = 0
       while audio.framePosition < audio.length {
+        if replayReread, let frame = sourceRewindFrame, !sourceRewindApplied {
+          audio.framePosition = min(audio.length, frame)
+          sourceRewindApplied = true
+          streamTimeAtSourceRewind = Double(outputFrame) / format.sampleRate
+          acceptedWordsAtSourceRewind = session.acceptedWords
+          ledger.events.append(.init(
+            type: "source_rewind", generation: providerGenerationAtScrollBack, replacementID: nil,
+            wallSecondsSinceFirstAudio: ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 },
+            audioStart: Double(audio.framePosition) / audio.processingFormat.sampleRate,
+            audioEnd: nil, recognitionDeliveryLag: nil, tokenIndex: session.tokenIndex,
+            acceptedWords: session.acceptedWords, droppedBuffers: nil, submittedBuffers: nil,
+            isFinal: nil, locale: nil,
+            text: "AVAudioFile source rewound while AnalyzerInput bufferStartTime continued monotonically from \(streamTimeAtSourceRewind ?? 0) seconds."))
+        }
         let source = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 1_600)!
         try audio.read(into: source, frameCount: 1_600)
         guard source.frameLength > 0 else { break }
@@ -302,7 +341,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
           ledger.droppedBuffers += 1
         }
         outputFrame += Int64(output.frameLength)
-        let elapsedAudio = Double(audio.framePosition - startFrame) / audio.processingFormat.sampleRate
+        session.noteSubmittedAudioEnd(through: Double(outputFrame) / format.sampleRate)
+        let elapsedAudio = Double(outputFrame) / format.sampleRate
         let target = ledger.firstAudioWall! + elapsedAudio
         let remaining = target - ProcessInfo.processInfo.systemUptime
         if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
@@ -360,6 +400,11 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         "Replay changed the seek revision after the intentional reanchor. See \(logURL.path).")
       XCTAssertTrue(progressedAfterScrollBack,
         "Production recognition did not advance after the intentional reanchor. See \(logURL.path).")
+      if replayReread {
+        XCTAssertTrue(sourceRewindApplied, "Replay did not apply the requested source rewind. See \(logURL.path).")
+        XCTAssertTrue(rereadProgressedIntoPriorRange,
+          "Recognition did not re-read through the pre-seek token range. See \(logURL.path).")
+      }
       if let providerGenerationAtScrollBack,
         let scrollTime = ledger.events.first(where: { $0.type == "intentional_scroll_seek" })?.wallSecondsSinceFirstAudio
       {

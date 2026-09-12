@@ -56,6 +56,10 @@ final class SessionStore: ObservableObject {
   private var providerStopTask: Task<Void, Never>?
   private var audioDeviceObserver: AudioInputDeviceObserver?
 
+  func noteSubmittedAudioEnd(through end: TimeInterval) {
+    latestAudioEnd = max(latestAudioEnd, end)
+  }
+
   func present(record: ScriptRecord, settings: PrompterSettings) {
     if activeRecord?.metadata.id != record.metadata.id {
       stopTasks()
@@ -495,7 +499,7 @@ final class SessionStore: ObservableObject {
               let end = start.seconds + Double(buffer.frameLength) / format.sampleRate
               Task { @MainActor in
                 guard let self, self.lifecycleGeneration == generation else { return }
-                self.latestAudioEnd = max(self.latestAudioEnd, end)
+                self.noteSubmittedAudioEnd(through: end)
               }
             }
             Task { @MainActor in
