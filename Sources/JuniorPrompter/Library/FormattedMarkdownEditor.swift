@@ -52,12 +52,27 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-  func makeNSView(context: Context) -> NSScrollView {
+  func makeNSView(context: Context) -> NSView {
+    let root = NSView()
+    let header = NSView()
     let scroll = NSScrollView()
+    root.addSubview(header)
+    root.addSubview(scroll)
+    header.translatesAutoresizingMaskIntoConstraints = false
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+      header.topAnchor.constraint(equalTo: root.topAnchor),
+      header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+      header.heightAnchor.constraint(equalToConstant: 32),
+      scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+      scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+      scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+      scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+    ])
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     scroll.drawsBackground = false
-    scroll.contentInsets = NSEdgeInsets(top: 32, left: 0, bottom: 0, right: 0)
     let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
     container.widthTracksTextView = true
     let layout = NSLayoutManager()
@@ -84,20 +99,22 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     formatButton.bezelStyle = .rounded
     formatButton.setAccessibilityLabel("Format selected text")
     formatButton.translatesAutoresizingMaskIntoConstraints = false
-    scroll.addSubview(formatButton)
+    header.addSubview(formatButton)
     NSLayoutConstraint.activate([
-      formatButton.topAnchor.constraint(equalTo: scroll.topAnchor, constant: 4),
-      formatButton.trailingAnchor.constraint(equalTo: scroll.trailingAnchor, constant: -8)
+      formatButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+      formatButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8)
     ])
     context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize)
     if focusesOnAppear {
       DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
     }
-    return scroll
+    return root
   }
 
-  func updateNSView(_ scroll: NSScrollView, context: Context) {
-    guard let view = scroll.documentView as? NSTextView else { return }
+  func updateNSView(_ root: NSView, context: Context) {
+    guard let scroll = root.subviews.compactMap({ $0 as? NSScrollView }).first,
+      let view = scroll.documentView as? NSTextView
+    else { return }
     context.coordinator.parent = self
     context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize)
   }
