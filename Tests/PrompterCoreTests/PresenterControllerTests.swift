@@ -183,6 +183,29 @@ final class PresenterControllerTests: XCTestCase {
       ["First", "point", "Deuxième", "point", "One", "Two"])
   }
 
+  func testOnlyLiveScrollNotificationsReanchorAtTheGuide() {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))
+    scroll.documentView = text
+    var seeks: [Int] = []
+    let coordinator = ScriptTextView.Coordinator(onSeek: { seeks.append($0) })
+    coordinator.textView = text
+    coordinator.render(
+      document: PrompterDocument(markdown: (1...40).map { "Line \($0) with words." }.joined(separator: "\n\n")),
+      fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    coordinator.observeUserScrolls(in: scroll)
+    scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 500))
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+    XCTAssertTrue(seeks.isEmpty)
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+    XCTAssertEqual(seeks.count, 1)
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+    XCTAssertEqual(seeks.count, 1)
+    coordinator.stopObservingUserScrolls()
+  }
+
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))

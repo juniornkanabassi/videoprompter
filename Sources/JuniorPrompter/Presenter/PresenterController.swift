@@ -345,7 +345,6 @@ struct ScriptTextView: NSViewRepresentable {
     scroll.drawsBackground = false
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
-    scroll.contentView.postsBoundsChangedNotifications = true
     let text = TrackingTextView()
     text.isEditable = false
     text.isSelectable = true
@@ -414,21 +413,28 @@ struct ScriptTextView: NSViewRepresentable {
     var seekRevision = 0
     var isActivelyRunning = false
     var snapNextAlignment = false
-    private var scrollObserver: NSObjectProtocol?
-    private var isProgrammaticScroll = false
+    private var scrollObservers: [NSObjectProtocol] = []
+    private var isLiveScrolling = false
     init(onSeek: @escaping (Int) -> Void) { self.onSeek = onSeek }
     func stopObservingUserScrolls() {
-      if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) }
-      scrollObserver = nil
+      scrollObservers.forEach(NotificationCenter.default.removeObserver)
+      scrollObservers.removeAll()
     }
     func observeUserScrolls(in scroll: NSScrollView) {
       stopObservingUserScrolls()
-      scrollObserver = NotificationCenter.default.addObserver(
-        forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main
-      ) { [weak self, weak scroll] _ in
-        guard let self, let scroll else { return }
-        MainActor.assumeIsolated { self.userDidScroll(scroll) }
-      }
+      let center = NotificationCenter.default
+      scrollObservers = [
+        center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.isLiveScrolling = true }
+        },
+        center.addObserver(forName: NSScrollView.didLiveScrollNotification, object: scroll, queue: .main) { [weak self, weak scroll] _ in
+          guard let self, let scroll else { return }
+          MainActor.assumeIsolated { self.userDidScroll(scroll) }
+        },
+        center.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
+          MainActor.assumeIsolated { self?.isLiveScrolling = false }
+        },
+      ]
     }
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
@@ -546,7 +552,7 @@ struct ScriptTextView: NSViewRepresentable {
       onSeek(nearest.1)
     }
     func userDidScroll(_ scroll: NSScrollView) {
-      guard !isProgrammaticScroll, let textView,
+      guard isLiveScrolling, let textView,
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
       manager.ensureLayout(for: container)
@@ -581,19 +587,15 @@ struct ScriptTextView: NSViewRepresentable {
       let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
         && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
-      isProgrammaticScroll = true
       if animate {
         NSAnimationContext.runAnimationGroup { context in
           context.duration = 0.16
           context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
           scroll.contentView.animator().setBoundsOrigin(destination)
-        } completionHandler: { [weak self] in
-          Task { @MainActor in self?.isProgrammaticScroll = false }
         }
       } else {
         scroll.contentView.layer?.removeAllAnimations()
         scroll.contentView.setBoundsOrigin(destination)
-        isProgrammaticScroll = false
       }
       scroll.reflectScrolledClipView(scroll.contentView)
       lastAligned = tokenIndex

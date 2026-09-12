@@ -129,7 +129,7 @@ struct InspectorView: View {
         }
         InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping)
         LabeledContent("Peak level", value: Self.decibelText(session.audioPeakDBFS))
-        Text("Green below −12 dBFS. Yellow from −12 to −6 dBFS. Red above −6 dBFS.")
+        Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
           .font(.caption)
           .foregroundStyle(.secondary)
         if session.isClipping {
@@ -208,11 +208,10 @@ struct InspectorView: View {
 }
 
 enum AvailableFonts {
-  private static let installed: Set<String> = {
+  private static let supportedInstalled: [String] = {
     registerBundledFonts(missingFrom: Set(NSFontManager.shared.availableFontFamilies))
-    return Set(NSFontManager.shared.availableFontFamilies)
+    return ["Poppins", "Lexend", "Lexend Deca"].filter { NSFont(name: $0, size: 14) != nil }
   }()
-  private static let supportedInstalled = ["Poppins", "Lexend", "Lexend Deca"].filter { installed.contains($0) }
 
   static let presenter = ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"] + supportedInstalled
   static let editor = ["System Serif", "System", "Georgia", "Avenir Next", "Helvetica Neue", "Monospaced"] + supportedInstalled

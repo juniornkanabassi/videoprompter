@@ -194,6 +194,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let monitor = Task { @MainActor in
       var previousToken = session.tokenIndex
+      var previousSeekRevision = session.seekRevision
       var previousRenderedOffset: Double?
       while !Task.isCancelled {
         let elapsed = ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 }
@@ -222,6 +223,16 @@ final class SpeechSessionIntegrationTests: XCTestCase {
             tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
             droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil, text: nil))
           previousToken = session.tokenIndex
+        }
+        if session.seekRevision != previousSeekRevision {
+          ledger.events.append(.init(
+            type: "unexpected_seek", generation: nil, replacementID: nil,
+            wallSecondsSinceFirstAudio: elapsed,
+            audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
+            tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
+            droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
+            text: "Untouched replay changed the presenter seek revision."))
+          previousSeekRevision = session.seekRevision
         }
         try? await Task.sleep(for: .milliseconds(10))
       }
@@ -304,6 +315,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     }
     try await Task.sleep(for: .milliseconds(200))
     let progress = ledger.events.filter { $0.type == "session_token_progress" }
+    XCTAssertEqual(session.seekRevision, 0, "Untouched replay changed the presenter seek revision. See \(logURL.path).")
     let largestHold = zip(progress, progress.dropFirst()).map {
       ($1.wallSecondsSinceFirstAudio ?? 0) - ($0.wallSecondsSinceFirstAudio ?? 0)
     }.max() ?? 0
