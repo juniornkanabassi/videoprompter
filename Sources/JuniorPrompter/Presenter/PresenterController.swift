@@ -650,8 +650,8 @@ struct ScriptTextView: NSViewRepresentable {
       } ?? false
       if animate && !isSameDestination {
         NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.30
-          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          context.duration = 0.60
+          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
           scroll.contentView.animator().setBoundsOrigin(destination)
         }
       } else if !animate {
