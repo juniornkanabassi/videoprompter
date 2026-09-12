@@ -65,7 +65,6 @@ struct LibraryView: View {
         }.padding(10)
       }
       .onChange(of: selection) { _, value in if let id = value.first { store.selectedID = id } }
-      .onDeleteCommand { store.delete(selection) }
       .onKeyPress(.delete, phases: .down) { press in
         guard press.modifiers == .command, !selection.isEmpty,
           !(NSApp.keyWindow?.firstResponder is NSTextView) else { return .ignored }
