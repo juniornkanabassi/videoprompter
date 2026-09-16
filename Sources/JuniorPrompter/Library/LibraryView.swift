@@ -210,9 +210,10 @@ private struct ScriptRow: View {
       HStack(spacing: 4) {
         Label(script.metadata.title, systemImage: "doc.text")
         if let path = script.metadata.linkedPath {
-          Image(systemName: FileManager.default.fileExists(atPath: path) ? "link" : "link.badge.plus")
-            .font(.caption).foregroundStyle(FileManager.default.fileExists(atPath: path) ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
-            .accessibilityLabel(FileManager.default.fileExists(atPath: path) ? "Linked file" : "Linked file missing")
+          let present = FileManager.default.fileExists(atPath: path)
+          Image(systemName: present ? "link" : "link.badge.plus")
+            .font(.caption).foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            .accessibilityLabel(present ? "Linked file" : "Linked file missing")
             .help(path)
         }
       }

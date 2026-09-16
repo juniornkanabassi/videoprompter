@@ -90,7 +90,11 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
-  private var activationObserver: NSObjectProtocol?  // held for the app's lifetime; the block is [weak self]
+  // nonisolated so `deinit` can take the observer back out again.
+  nonisolated(unsafe) private var activationObserver: NSObjectProtocol?
+  /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
+  /// repeating on top of the two-second poll.
+  private var lastExternalRefresh = Date.distantPast
   private let defaults: UserDefaults
 
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
@@ -143,7 +147,17 @@ private enum PresenterSaveError: LocalizedError {
     // Coming back from MarkEdit or Obsidian should not wait for the next tick.
     activationObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
-    ) { [weak self] _ in Task { @MainActor in await self?.refreshExternalChanges() } }
+    ) { [weak self] _ in
+      Task { @MainActor in
+        guard let self, Date().timeIntervalSince(self.lastExternalRefresh) >= 1 else { return }
+        await self.refreshExternalChanges()
+      }
+    }
+  }
+
+  deinit {
+    externalWatcher?.cancel()
+    if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
   }
 
 
@@ -513,6 +527,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   func refreshExternalChanges() async {
     guard let library else { return }
+    lastExternalRefresh = Date()
     do {
       if !(try await library.discoverExternalScripts()).isEmpty { await reload() }
     } catch { errorMessage = "New script files could not be added. \(error)" }
@@ -555,9 +570,11 @@ private enum PresenterSaveError: LocalizedError {
         }
       }
     }
-    if let conflict = await library.takeLinkConflicts().first {
-      errorMessage =
-        "The linked file and your in-app edit both changed. The file on disk was used; your version is kept as \(conflict) in the library's Conflicts folder."
+    let conflicts = await library.takeLinkConflicts()
+    if !conflicts.isEmpty {
+      let notice =
+        "The linked file and your in-app edit both changed. The file on disk was used; your version is kept as \(conflicts.joined(separator: ", ")) in the library's Conflicts folder."
+      errorMessage = errorMessage.map { "\($0)\n\n\(notice)" } ?? notice
     }
   }
 }

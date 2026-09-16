@@ -64,6 +64,38 @@ final class AppStoreTests: XCTestCase {
     XCTAssertNil(store.errorMessage)
   }
 
+  /// What the Import button actually does: create the script from the preview and link the
+  /// file it came from, in one step, so later edits in MarkEdit reach the script.
+  func testImportingAMarkdownFileCreatesALinkedScript() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let file = outside.appendingPathComponent("Imported notes.md")
+    try Data("Imported body.".utf8).write(to: file)
+
+    store.create(title: "Imported notes", markdown: "Imported body.", linkTo: file)
+    try await Task.sleep(for: .milliseconds(200))
+    let created = try XCTUnwrap(store.scripts.first { $0.metadata.title == "Imported notes" })
+    XCTAssertEqual(created.markdown, "Imported body.")
+    XCTAssertEqual(created.metadata.linkedPath, file.standardizedFileURL.path)
+    XCTAssertNil(store.errorMessage)
+
+    // The point of the link: an edit made elsewhere reaches the script.
+    try Data("Edited in MarkEdit.".utf8).write(to: file)
+    await store.refreshExternalChanges()
+    XCTAssertEqual(store.scripts.first { $0.id == created.id }?.markdown, "Edited in MarkEdit.")
+
+    // And an in-app edit reaches the file.
+    store.updateMarkdown("Edited in the app.", for: created.id)
+    _ = await store.flushPendingSaves()
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "Edited in the app.")
+    XCTAssertNil(store.errorMessage)
+  }
+
   func testFlushPendingSavePersistsImmediateEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
