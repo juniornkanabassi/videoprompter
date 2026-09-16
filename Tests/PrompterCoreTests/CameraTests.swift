@@ -1,5 +1,6 @@
 import AppKit
 import CoreVideo
+import SwiftUI
 import XCTest
 @testable import JuniorPrompter
 
@@ -78,6 +79,58 @@ final class CameraTests: XCTestCase {
     model.selectedUID = CameraModel.resolve(nil, in: cameras)?.uid
     XCTAssertEqual(model.selectedUID, "uid-built-in")
     XCTAssertEqual(CameraModel(defaults: store).selectedUID, "uid-built-in")
+  }
+
+  /// The Camera window's toolbar pop-ups: a list that arrives after the window opens still shows
+  /// the chosen name, two cameras of the same name are both listed, and choosing reports the index.
+  func testTheToolbarPopUpShowsTheChoiceEvenWhenTheListArrivesLate() {
+    let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+    let coordinator = ToolbarPopUp<String?>.Coordinator()
+    ToolbarPopUp<String?>.sync(popup, titles: [], selected: nil, placeholder: "No Camera Found", target: coordinator)
+    XCTAssertEqual(popup.titleOfSelectedItem, "No Camera Found")
+    XCTAssertFalse(popup.isEnabled)
+    ToolbarPopUp<String?>.sync(popup, titles: ["FaceTime HD Camera", "Cam B", "Cam B"], selected: 2,
+                               placeholder: "No Camera Found", target: coordinator)
+    XCTAssertEqual(popup.itemArray.count, 3, "two cameras of the same name are both listed")
+    XCTAssertEqual(popup.indexOfSelectedItem, 2)
+    XCTAssertEqual(popup.titleOfSelectedItem, "Cam B")
+    XCTAssertTrue(popup.isEnabled)
+    var chosen: Int?
+    coordinator.onChoose = { chosen = $0 }
+    popup.menu?.performActionForItem(at: 0)
+    XCTAssertEqual(chosen, 0)
+  }
+
+  /// The same pop-ups inside a real SwiftUI toolbar, in a window that never reaches the screen:
+  /// they name the camera and the rotation, and follow the model when either changes.
+  func testTheCameraToolbarNamesTheCameraAndTheRotation() throws {
+    let model = CameraModel(defaults: defaults())
+    model.setRotation(.quarter)
+    let feed = DeviceFeed()
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 700, height: 300),
+                          styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentViewController = NSHostingController(rootView: ToolbarHarness(model: model, feed: feed))
+    func popUps() -> [NSPopUpButton] {
+      func find(_ view: NSView) -> [NSPopUpButton] {
+        (view as? NSPopUpButton).map { [$0] } ?? view.subviews.flatMap(find)
+      }
+      return (window.toolbar?.items ?? []).compactMap(\.view).flatMap(find)
+    }
+    func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+    settle()
+    var shown = popUps()
+    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Camera", "Rotation"])
+    XCTAssertEqual(shown.first?.titleOfSelectedItem, "No Camera Found")
+    XCTAssertEqual(shown.last?.titleOfSelectedItem, "90°")
+
+    feed.devices = cameras
+    model.selectedUID = "uid-obs"
+    model.rotationChoice.wrappedValue = nil
+    settle()
+    shown = popUps()
+    XCTAssertEqual(shown.first?.titleOfSelectedItem, "OBS Virtual Camera", "the late list shows the chosen camera")
+    XCTAssertEqual(shown.last?.titleOfSelectedItem, "Auto")
   }
 
   /// Two windows can show the camera at once. One of them being covered used to detach the
@@ -190,5 +243,20 @@ final class CameraTests: XCTestCase {
     XCTAssertNil(session.attachedUID)
     session.select(nil)
     XCTAssertNil(session.attachedUID)
+  }
+}
+
+@MainActor private final class DeviceFeed: ObservableObject {
+  @Published var devices: [CameraDevice] = []
+}
+
+/// The Camera window's own pop-up items, with a device list the test controls.
+private struct ToolbarHarness: View {
+  @ObservedObject var model: CameraModel
+  @ObservedObject var feed: DeviceFeed
+  var body: some View {
+    Color.clear.frame(width: 700, height: 300).toolbar {
+      CameraChoiceItems(devices: feed.devices, camera: $model.selectedUID, rotation: model.rotationChoice)
+    }
   }
 }

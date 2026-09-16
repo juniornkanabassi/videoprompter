@@ -1,41 +1,79 @@
 import AppKit
+import Combine
 import PrompterCore
 import SwiftUI
 
 @MainActor final class PresenterController: NSObject, NSWindowDelegate {
   static let shared = PresenterController()
-  private var panel: NSPanel?
+  /// Internal so a test can stand in for the panel.
+  var panel: PresenterPanel?
   private var screenObserver: NSObjectProtocol?
   private weak var activeSession: SessionStore?
   private var draft: PresenterDraft?
+  private let camera: CameraModel
+  private var videoObserver: AnyCancellable?
   /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
-  private var closesAfterFullScreen = false
-  private var isFullScreen: Bool { panel?.styleMask.contains(.fullScreen) == true }
+  private(set) var closesAfterFullScreen = false
+  private var isFullScreen: Bool { panel?.isInFullScreen == true }
+  /// On screen, not minimised and not full screen: the only state a camera fit may resize.
+  private var isWindowedOnScreen: Bool {
+    guard let panel else { return false }
+    return panel.isVisible && !panel.isMiniaturized && !panel.isInFullScreen
+  }
+
+  init(camera: CameraModel = .shared) {
+    self.camera = camera
+    super.init()
+    // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
+    // property. `dropFirst` skips the value the presenter opens with.
+    videoObserver = camera.$presentsWithVideo.dropFirst().removeDuplicates().sink { [weak self] on in
+      MainActor.assumeIsolated { self?.videoDidChange(on) }
+    }
+  }
+
   // A floating window in its own full-screen Space misbehaves, so it floats only outside one.
   func windowWillEnterFullScreen(_ notification: Notification) {
     (notification.object as? NSWindow)?.level = .normal
   }
-  func windowDidFailToEnterFullScreen(_ window: NSWindow) { window.level = .floating }
-  func windowDidExitFullScreen(_ notification: Notification) {
-    (notification.object as? NSWindow)?.level = .floating
-    if closesAfterFullScreen { closesAfterFullScreen = false; closeNow() }
+  func windowDidEnterFullScreen(_ notification: Notification) {
+    // A close that arrived while the window was still entering full screen could not leave it then.
+    finishPendingClose()
   }
-  /// Video turned on in a windowed presenter fits the window to the camera once; in full screen
-  /// the picture just appears, and turning video off leaves the window alone.
-  static func fitsToCamera(videoOn: Bool, fullScreen: Bool) -> Bool { videoOn && !fullScreen }
+  func windowDidFailToEnterFullScreen(_ window: NSWindow) { (window as? PresenterPanel)?.settle() }
+  func windowDidExitFullScreen(_ notification: Notification) {
+    (notification.object as? PresenterPanel)?.settle()
+    finishPendingClose()
+  }
+  /// A close that waited for a full-screen transition goes through `close()`, so an edit begun in
+  /// the meantime is asked about instead of the panel being emptied under it.
+  private func finishPendingClose() {
+    guard closesAfterFullScreen else { return }
+    closesAfterFullScreen = false
+    close()
+  }
+  func windowDidFailToExitFullScreen(_ window: NSWindow) {
+    closesAfterFullScreen = false
+    (window as? PresenterPanel)?.settle()
+  }
+  /// Video turned on in a windowed presenter fits the window to the camera once. Opening with video
+  /// already on, a closed or minimised presenter, full screen and video off all leave it alone.
   func videoDidChange(_ on: Bool) {
-    guard Self.fitsToCamera(videoOn: on, fullScreen: isFullScreen) else { return }
+    guard on, isWindowedOnScreen else { return }
     // The new preview selects the camera, and so learns its size, in this same update.
     DispatchQueue.main.async { self.matchCameraSize() }
   }
+  /// The presenter capsule's video button.
+  func toggleVideo() { camera.presentsWithVideo.toggle() }
   func toggleFullScreen() {
     guard let panel, panel.isVisible else { return }
     panel.toggleFullScreen(nil)
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
-    guard let draft, draft.isEditing else { activeSession?.pause(); return true }
-    draft.requestClose()
-    return false
+    if let draft, draft.isEditing { draft.requestClose(); return false }
+    // The red button or Cmd-W in full screen: leave the Space first, then close.
+    if isFullScreen { closeNow(); return false }
+    activeSession?.pause()
+    return true
   }
   func present(store: AppStore, on screen: NSScreen? = nil) {
     guard draft?.isEditing != true else {
@@ -45,14 +83,25 @@ import SwiftUI
     }
     guard let script = store.selected else { return }
     closesAfterFullScreen = false
+    let panel = self.panel ?? makePanel()
+    self.panel = panel
+    // Present on the presenter already showing this script only brings it forward: a new hosting
+    // view restarted the camera and threw the open edit away.
+    let isShowing = panel.isVisible && store.session.activeScriptID == script.id
+      && panel.contentView is NSHostingView<PresenterView>
+    // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
+    panel.title = "JuniorPrompter · \(script.metadata.title)"
+    panel.settle()
+    if isShowing {
+      panel.orderFrontRegardless()
+      panel.makeKey()
+      return
+    }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
-    let panel = self.panel ?? makePanel()
-    panel.title = "JuniorPrompter · \(script.metadata.title)"
     panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
-    self.panel = panel
     let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen")
       ? (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
       : nil)
@@ -79,9 +128,9 @@ import SwiftUI
     activeSession?.pause()
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
     panel?.orderOut(nil)
-    // `orderOut` does not close the window, so the hosting view would keep holding the camera
-    // session. Taking the content view out moves it to no window, which releases the holder;
-    // `present` builds a fresh hosting view every time anyway.
+    // The camera is already let go: the stage view stops holding it when `orderOut` clears the
+    // window's `isVisible`. Dropping the hosting view also stops the hidden presenter observing the
+    // store and session; `present` builds a fresh one every time.
     panel?.contentView = NSView()
   }
 
@@ -93,44 +142,24 @@ import SwiftUI
     rotation.fittedRect(aspect: picture, in: visibleFrame)
   }
   func matchCameraSize() {
-    guard let panel, !isFullScreen,
+    guard let panel, isWindowedOnScreen,
       let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
     else { return }
     // Until the camera reports its size, the stage view draws 16:9 too.
     let picture = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
     panel.setFrame(
       Self.matchedCameraFrame(
-        picture: picture, rotation: CameraModel.shared.guides.rotation,
+        picture: picture, rotation: camera.guides.rotation,
         in: screen.visibleFrame), display: true)
   }
-  private func makePanel() -> NSPanel {
-    let value = Self.configuredPanel()
+  private func makePanel() -> PresenterPanel {
+    let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
       MainActor.assumeIsolated { if let panel = self?.panel { self?.recoverVisibleFrame(panel) } }
     }
-    return value
-  }
-  /// `.fullScreenPrimary` (not `.fullScreenAuxiliary`) is what lets the presenter take its own
-  /// Space from the green button, View > Enter Full Screen and Ctrl-Cmd-F.
-  static func configuredPanel() -> NSPanel {
-    let value = NSPanel(
-      contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
-      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false
-    )
-    value.level = .floating
-    value.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenPrimary]
-    value.sharingType = CommandLine.arguments.contains("--capture-visible") ? .readOnly : .none
-    value.hidesOnDeactivate = false
-    value.isMovableByWindowBackground = true
-    value.isReleasedWhenClosed = false
-    value.isOpaque = false
-    value.backgroundColor = .clear
-    value.titleVisibility = .hidden
-    value.titlebarAppearsTransparent = true
-    value.minSize = NSSize(width: 360, height: 220)
     return value
   }
   private func recoverVisibleFrame(_ panel: NSPanel) {
@@ -169,6 +198,67 @@ import SwiftUI
 }
 
 private extension NSRect { var area: CGFloat { width * height } }
+
+/// The presenter window. At rest it is `.fullScreenAuxiliary`, which is what lets it float over
+/// another app's full-screen Space (OBS, verified on 7 September). It turns `.fullScreenPrimary`
+/// only for a full-screen Space of its own, and every way in comes through `toggleFullScreen`:
+/// Prompter > Presenter Full Screen, View > Enter Full Screen (Ctrl-Cmd-F) and the green button.
+class PresenterPanel: NSPanel {
+  /// `captureVisible` lets screen capture see the presenter, for testing only.
+  convenience init(captureVisible: Bool) {
+    self.init(
+      contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
+      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel],
+      backing: .buffered, defer: false)
+    sharingType = captureVisible ? .readOnly : .none
+    hidesOnDeactivate = false
+    isMovableByWindowBackground = true
+    isReleasedWhenClosed = false
+    isOpaque = false
+    backgroundColor = .clear
+    titleVisibility = .hidden
+    titlebarAppearsTransparent = true
+    minSize = NSSize(width: 360, height: 220)
+    settle()
+  }
+  static func collectionBehavior(fullScreen: Bool) -> NSWindow.CollectionBehavior {
+    [.canJoinAllSpaces, .canJoinAllApplications, fullScreen ? .fullScreenPrimary : .fullScreenAuxiliary]
+  }
+  /// Internal so a test can stand in for a window in its own full-screen Space.
+  var isInFullScreen: Bool { styleMask.contains(.fullScreen) }
+
+  override func toggleFullScreen(_ sender: Any?) {
+    // Primary for the transition either way; `settle` puts Auxiliary back once it is over.
+    collectionBehavior = Self.collectionBehavior(fullScreen: true)
+    redirectZoomButton()
+    performFullScreenTransition(sender)
+  }
+  /// Internal so a test can stand in for AppKit's transition.
+  func performFullScreenTransition(_ sender: Any?) { super.toggleFullScreen(sender) }
+
+  /// Level and behaviour for the state the window is really in: floating and Auxiliary outside
+  /// full screen; normal and Primary inside it, which is also where a failed exit leaves it.
+  func settle() {
+    let fullScreen = isInFullScreen
+    collectionBehavior = Self.collectionBehavior(fullScreen: fullScreen)
+    level = fullScreen ? .normal : .floating
+    redirectZoomButton()
+  }
+
+  /// An Auxiliary window's green button only zooms; send it to full screen as a Primary one does.
+  private func redirectZoomButton() {
+    guard let zoom = standardWindowButton(.zoomButton) else { return }
+    zoom.target = self
+    zoom.action = #selector(toggleFullScreen(_:))
+  }
+
+  /// View > Enter Full Screen is disabled for an Auxiliary window unless the panel says otherwise.
+  override func validateMenuItem(_ item: NSMenuItem) -> Bool {
+    guard item.action == #selector(toggleFullScreen(_:)) else { return super.validateMenuItem(item) }
+    item.title = isInFullScreen ? "Exit Full Screen" : "Enter Full Screen"
+    return true
+  }
+}
 
 @MainActor final class PresenterDraft: ObservableObject {
   private(set) var recordID: UUID
@@ -351,39 +441,35 @@ private struct PresenterView: View {
       .padding(.top, 4)
       .accessibilityLabel("Drag presenter window")
       .accessibilityHint("Drag to move the presenter window")
+      .help("Drag to move the presenter")
       .allowsHitTesting(!draft.isEditing)
       .accessibilityHidden(draft.isEditing)
     }
     .overlay(alignment: .bottom) {
       HStack(spacing: 8) {
+        // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
         Group {
-          Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
-            .accessibilityLabel("Previous passage")
-          Button(action: session.toggle) {
-            Image(systemName: session.isActivelyRunning ? "pause.fill" : "play.fill")
-          }.buttonStyle(.borderedProminent).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Play")
-          Button(action: session.nextPassage) { Image(systemName: "forward.end.fill") }
-            .accessibilityLabel("Next passage")
-          Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
-            .accessibilityLabel("Restart")
-        }.disabled(draft.isEditing).accessibilityHidden(draft.isEditing)
-        Button { camera.presentsWithVideo.toggle() } label: {
-          Image(systemName: camera.presentsWithVideo ? "video.fill" : "video.slash")
-        }.accessibilityLabel(camera.presentsWithVideo ? "Present without video" : "Present with video")
-        Button {
+          CapsuleButton("Previous passage", systemImage: "backward.end.fill", action: session.previousPassage)
+          CapsuleButton(session.isActivelyRunning ? "Pause" : "Play",
+                        systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", action: session.toggle)
+            .buttonStyle(.borderedProminent)
+          CapsuleButton("Next passage", systemImage: "forward.end.fill", action: session.nextPassage)
+          CapsuleButton("Back to the start", systemImage: "arrow.counterclockwise", action: session.restart)
+        }.disabled(draft.isEditing)
+        CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
+                      systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash") {
+          PresenterController.shared.toggleVideo()
+        }
+        CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
+                      systemImage: draft.isEditing ? "checkmark" : "pencil",
+                      shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil) {
           if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
-        } label: {
-          Image(systemName: draft.isEditing ? "checkmark" : "pencil")
-        }.accessibilityLabel(draft.isEditing ? "Finish script edit" : "Edit script")
-          .keyboardShortcut(draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil)
-          .disabled(draft.isSaving)
+        }.disabled(draft.isSaving)
         if draft.isEditing {
-          Button { draft.requestCancel() } label: { Image(systemName: "xmark") }
-            .accessibilityLabel("Cancel script edit")
-            .keyboardShortcut(.cancelAction).disabled(draft.isSaving)
+          CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction) { draft.requestCancel() }
+            .disabled(draft.isSaving)
         } else {
-          Button { PresenterController.shared.close() } label: { Image(systemName: "xmark") }
-            .accessibilityLabel("Close presenter")
+          CapsuleButton("Close presenter", systemImage: "xmark") { PresenterController.shared.close() }
         }
       }
       .buttonStyle(.bordered).padding(8)
@@ -436,6 +522,23 @@ private struct PresenterView: View {
       paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
       horizontalInset: sideInset,
       alignment: settings.alignment == "Right" ? .right : settings.alignment == "Center" ? .center : .left)
+  }
+}
+
+/// An icon-only capsule button: the title is its tooltip and its VoiceOver label.
+private struct CapsuleButton: View {
+  let title: String
+  let systemImage: String
+  var shortcut: KeyboardShortcut?
+  let action: () -> Void
+  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, action: @escaping () -> Void) {
+    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.action = action
+  }
+  var body: some View {
+    Button(action: action) { Label(title, systemImage: systemImage) }
+      .labelStyle(.iconOnly)
+      .keyboardShortcut(shortcut)
+      .help(title)
   }
 }
 
