@@ -32,10 +32,14 @@ enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
     guard aspect.width > 0, aspect.height > 0, !bounds.isEmpty else { return bounds }
     let shown = swapsAxes ? CGSize(width: aspect.height, height: aspect.width) : aspect
     let scale = min(bounds.width / shown.width, bounds.height / shown.height)
-    let size = CGSize(width: shown.width * scale, height: shown.height * scale)
-    return CGRect(
-      x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2,
-      width: size.width, height: size.height)
+    return bounds.centred(CGSize(width: shown.width * scale, height: shown.height * scale))
+  }
+}
+
+extension CGRect {
+  /// A rectangle of `size` with the same centre as this one.
+  func centred(_ size: CGSize) -> CGRect {
+    CGRect(x: midX - size.width / 2, y: midY - size.height / 2, width: size.width, height: size.height)
   }
 }
 

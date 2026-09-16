@@ -102,14 +102,9 @@ import SwiftUI
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
     panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
-    let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen")
-      ? (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
-      : nil)
-    if let targetScreen, !isFullScreen {
-      let area = targetScreen.visibleFrame
-      let size = NSSize(width: min(760, area.width), height: min(520, area.height))
-      panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
-                            width: size.width, height: size.height), display: true)
+    let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen") ? NSScreen.agentScreen : nil)
+    if let area = targetScreen?.visibleFrame, !isFullScreen {
+      panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
     }
     recoverVisibleFrame(panel)
     if screen != nil || CommandLine.arguments.contains("--agent-screen") {
@@ -166,12 +161,8 @@ import SwiftUI
     guard !isFullScreen, !Self.hasReachableTitleBar(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)),
       let target = NSScreen.main ?? NSScreen.screens.first
     else { return }
-    var frame = panel.frame
-    frame.size.width = min(frame.width, target.visibleFrame.width)
-    frame.size.height = min(frame.height, target.visibleFrame.height)
-    frame.origin = NSPoint(
-      x: target.visibleFrame.midX - frame.width / 2, y: target.visibleFrame.midY - frame.height / 2)
-    panel.setFrame(frame, display: true)
+    let area = target.visibleFrame
+    panel.setFrame(area.centred(NSSize(width: min(panel.frame.width, area.width), height: min(panel.frame.height, area.height))), display: true)
   }
   static func hasReachableTitleBar(_ frame: NSRect, visibleFrames: [NSRect]) -> Bool {
     let titleBar = NSRect(x: frame.minX, y: frame.maxY - 44, width: frame.width, height: 44)

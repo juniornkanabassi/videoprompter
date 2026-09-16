@@ -15,12 +15,7 @@ struct CameraAspect: Codable, Equatable, Hashable, Identifiable, Sendable {
   /// The largest rectangle of this shape that fits inside `rect`, centred. Nothing is cropped
   /// from the picture: the marker only draws where the delivered frame lands.
   func fitted(in rect: CGRect) -> CGRect {
-    guard isValid, !rect.isEmpty else { return rect }
-    let scale = min(rect.width / width, rect.height / height)
-    let size = CGSize(width: width * scale, height: height * scale)
-    return CGRect(
-      x: rect.midX - size.width / 2, y: rect.midY - size.height / 2,
-      width: size.width, height: size.height)
+    CameraRotation.none.fittedRect(aspect: CGSize(width: width, height: height), in: rect)
   }
   /// The shapes offered in the picker; anything else is typed in as a custom W:H.
   static let presets = [
