@@ -30,6 +30,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var largestProgressHoldSeconds: Double? = nil
     var renderedOffsetY: Double? = nil
     var renderedOffsetSource: String? = nil
+    var acceptanceLatencySeconds: Double? = nil
   }
 
   @MainActor private final class ReplayLedger {
@@ -37,6 +38,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var firstAudioWall: TimeInterval?
     var submittedBuffers = 0
     var droppedBuffers = 0
+    var acceptanceLatencies: [Double] = []
   }
 
   private func scrollView(in view: NSView?) -> NSScrollView? {
@@ -285,12 +287,19 @@ final class SpeechSessionIntegrationTests: XCTestCase {
           session.tokenIndex > tokenAfterScrollBack, session.tokenIndex < tokenBeforeScrollBack
         { rereadProgressedIntoPriorRange = true }
         if session.tokenIndex != previousToken {
+          // Spoken-word-to-dim latency: the presenter dims at this instant, and the newest
+          // candidate's audioEnd is how far into the recording the recogniser had listened.
+          let latestCandidateAudioEnd = ledger.events.reversed().first(where: { $0.type == "candidate" })?.audioEnd
+          var latency: Double?
+          if let elapsed, let latestCandidateAudioEnd { latency = elapsed - latestCandidateAudioEnd }
+          if let latency, session.tokenIndex > previousToken { ledger.acceptanceLatencies.append(latency) }
           ledger.events.append(.init(
             type: "session_token_progress", generation: nil, replacementID: nil,
             wallSecondsSinceFirstAudio: elapsed,
-            audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
+            audioStart: nil, audioEnd: latestCandidateAudioEnd, recognitionDeliveryLag: nil,
             tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
-            droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil, text: nil))
+            droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil, text: nil,
+            acceptanceLatencySeconds: latency))
           previousToken = session.tokenIndex
         }
         if session.seekRevision != previousSeekRevision {
@@ -447,6 +456,16 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       submittedBuffers: ledger.submittedBuffers, isFinal: nil, locale: nil,
       text: "\(engine == .dictation ? "DictationTranscriber contextual" : "SpeechTranscriber") replay. \(rendersPresenter ? "Rendered scroll offsets record UI cadence only, not ASR-to-render latency." : "Recognition delivery lag and session token progress are measured separately; rendered UI latency is not measured by this test.")",
       progressEvents: progress.count, largestProgressHoldSeconds: largestHold))
+    let latencies = ledger.acceptanceLatencies.sorted()
+    if !latencies.isEmpty {
+      let median = latencies[latencies.count / 2]
+      let p90 = latencies[min(latencies.count - 1, Int(Double(latencies.count) * 0.9))]
+      print("Acceptance latency (dim instant minus recognised audio end): n=\(latencies.count) median=\(median)s p90=\(p90)s max=\(latencies.last!)s")
+      if let bound = Double(environment["JUNIORPROMPTER_MAX_ACCEPTANCE_LATENCY_P90"] ?? "") {
+        XCTAssertLessThanOrEqual(p90, bound,
+          "Spoken-word-to-dim latency regressed: p90 \(p90)s over \(bound)s. See \(logURL.path).")
+      }
+    }
     XCTAssertEqual(
       session.tokenIndex, session.document.spokenTokens.count - 1,
       "Replay ended at token \(session.tokenIndex)/\(session.document.spokenTokens.count - 1). See \(logURL.path).")

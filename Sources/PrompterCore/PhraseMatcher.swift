@@ -51,6 +51,37 @@ public struct PhraseMatcher: Sendable {
     if let match = localForwardMatch(words: words, script: script, current: current) { return match }
     return forwardMatch(words: words, script: script, current: current)
   }
+  /// The tail of a fresh revision, when it continues the script exactly from the next token, is
+  /// speech the reader has just produced, so it is credited at once rather than waiting for enough
+  /// later evidence to clear the ordinary forward thresholds. That wait is what made the word being
+  /// spoken dim only once the next word had begun.
+  ///
+  /// The run must end on the revision's last word, which keeps this to speech just heard, and must
+  /// continue the script contiguously from the next token, which keeps it from speculating ahead or
+  /// moving back. It deliberately does not require the revision to be a pure append: the dictation
+  /// engine rewrites its own tail constantly ("a better champ" becoming "a better Champions
+  /// League"), and gating on appends alone left the fix dormant for most of a reading.
+  public func forwardExtension(words: [String], script: [DocumentToken], currentIndex: Int)
+    -> PhraseMatch?
+  {
+    let target = script.map(\.normalised)
+    guard !words.isEmpty, !target.isEmpty else { return nil }
+    let start = min(max(0, currentIndex), target.count - 1) + 1
+    guard start < target.count else { return nil }
+    for source in 0..<words.count {
+      var index = start
+      var word = source
+      while word < words.count, index < target.count {
+        let components = contractionComponents(words[word])
+        guard target[index...].starts(with: components) else { break }
+        index += components.count
+        word += 1
+      }
+      guard word == words.count, index > start else { continue }
+      return PhraseMatch(tokenIndex: index - 1, score: 1, direction: .forward)
+    }
+    return nil
+  }
   private func localForwardMatch(
     words: [String], script: [DocumentToken], current: Int
   ) -> PhraseMatch? {
@@ -234,6 +265,11 @@ public struct RecognitionTracker: Sendable {
             && match.tokenIndex - tokenIndex > (appendedWords?.count ?? 0))
       {
         candidates.append((event, match))
+      }
+      if let extended = matcher.forwardExtension(
+        words: wordsToMatch, script: script, currentIndex: tokenIndex)
+      {
+        candidates.append((event, extended))
       }
     }
     guard events.contains(where: { $0.generation == generation }) else {
