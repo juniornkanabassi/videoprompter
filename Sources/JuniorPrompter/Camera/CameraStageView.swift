@@ -46,7 +46,7 @@ final class CameraStageView: NSView {
     self.guides = guides
     self.mirrored = mirrored
     SharedCameraSession.shared.select(uid)
-    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding) { rotation in
+    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding, for: self) { rotation in
       Task { @MainActor [weak self] in self?.onAutoRotation?(rotation) }
     }
     guideLayer.strokeColor = guides.strokeColor
@@ -111,7 +111,7 @@ final class CameraStageView: NSView {
     } else {
       SharedCameraSession.shared.release()
     }
-    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && on) { rotation in
+    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && on, for: self) { rotation in
       Task { @MainActor [weak self] in self?.onAutoRotation?(rotation) }
     }
     if on { applyConnection() }
@@ -138,6 +138,8 @@ final class CameraStageView: NSView {
     }
     setHolding(window.occlusionState.contains(.visible))
   }
+
+  deinit { windowObservers.forEach(NotificationCenter.default.removeObserver) }
 
   func stop() {
     setHolding(false)

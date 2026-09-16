@@ -6,6 +6,8 @@ import CoreText
 struct InspectorView: View {
   @ObservedObject var store: AppStore
   @ObservedObject private var session: SessionStore
+  @ObservedObject private var camera = CameraModel.shared
+  @State private var showsGuideSettings = false
   @State private var presetName = ""
   @State private var devices: [AudioInputDevice] = []
   @State private var deviceObserver: AudioInputDeviceObserver?
@@ -15,7 +17,32 @@ struct InspectorView: View {
   init(store: AppStore) { self.store = store; self.session = store.session }
   var body: some View {
     Form {
-      Section("Appearance") {
+      Section("Mode") {
+        Picker("Mode", selection: $camera.presentsWithVideo) {
+          Text("Prompter only").tag(false)
+          Text("Prompter + video").tag(true)
+        }.pickerStyle(.segmented).labelsHidden()
+      }
+      if camera.presentsWithVideo {
+        Section("Video") {
+          Picker("Camera", selection: $camera.selectedUID) {
+            if camera.devices.isEmpty { Text("No camera found").tag(camera.selectedUID) }
+            ForEach(camera.devices) { Text($0.name).tag(Optional($0.uid)) }
+          }
+          HStack {
+            Picker("Rotation", selection: camera.rotationChoice) {
+              Text("Auto").tag(nil as CameraRotation?)
+              ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
+            }
+            Button("Guides") { showsGuideSettings.toggle() }
+              .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
+                CameraGuideSettings(model: camera).frame(width: 300).padding()
+              }
+          }
+          Toggle("Mirror camera", isOn: $camera.mirrored)
+        }.task { camera.start() }
+      }
+      Section("Text") {
         Picker("Font", selection: $store.settings.fontName) {
           ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
         }
@@ -38,6 +65,12 @@ struct InspectorView: View {
           Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }
           Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }
           Slider(value: $store.settings.horizontalMargin, in: 0...120) { Text("Horizontal margin") }
+          Toggle("Mirror text horizontally", isOn: $store.settings.horizontalMirror)
+          Toggle("Mirror text vertically", isOn: $store.settings.verticalMirror)
+          Picker("Text rotation", selection: $store.settings.rotation) {
+            Text("0°").tag(0)
+            Text("180°").tag(180)
+          }
           Toggle("Show stage directions", isOn: $store.settings.showCues)
           Toggle("Snap presenter window", isOn: $store.settings.presenterSnappingEnabled)
           Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
@@ -45,16 +78,8 @@ struct InspectorView: View {
           ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = $0.nsColor.hex }), supportsOpacity: false)
         }
       }
-      Section("Mirror") {
-        Toggle("Horizontal", isOn: $store.settings.horizontalMirror)
-        Toggle("Vertical", isOn: $store.settings.verticalMirror)
-        Picker("Rotation", selection: $store.settings.rotation) {
-          Text("0°").tag(0)
-          Text("180°").tag(180)
-        }
-      }
-      Section("Tracking") {
-        Picker("Mode", selection: $store.settings.mode) {
+      Section("Motion") {
+        Picker("Tracking", selection: $store.settings.mode) {
           ForEach(["Voice", "Timed", "Manual", "Sound"], id: \.self, content: Text.init)
         }
         if store.settings.mode == "Timed" || store.settings.mode == "Sound" {
@@ -79,7 +104,7 @@ struct InspectorView: View {
           }
         }
       }
-      Section("Audio input") {
+      Section("Microphone") {
         HStack {
           Picker(
             "Microphone",

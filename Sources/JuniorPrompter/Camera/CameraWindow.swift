@@ -102,6 +102,20 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
     let resolved = Self.resolve(selectedUID, in: devices)?.uid
     if resolved != selectedUID { selectedUID = resolved }
   }
+
+  /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
+  /// On the model, because the Camera window's toolbar and the inspector both show it.
+  var rotationChoice: Binding<CameraRotation?> {
+    Binding(
+      get: { [weak self] in
+        guard let self, !guides.automaticRotation else { return nil }
+        return guides.rotation
+      },
+      set: { [weak self] value in
+        guard let self else { return }
+        if let value { setRotation(value) } else { guides.automaticRotation = true }
+      })
+  }
 }
 
 /// The camera picture in a window or behind the script. Both hand the same model to the same
@@ -159,7 +173,7 @@ struct CameraView: View {
         }.frame(minWidth: 180)
       }
       ToolbarItem {
-        Picker("Rotation", selection: rotationChoice) {
+        Picker("Rotation", selection: model.rotationChoice) {
           Text("Auto").tag(nil as CameraRotation?)
           ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
         }.frame(minWidth: 96)
@@ -176,23 +190,11 @@ struct CameraView: View {
       ToolbarItem { Toggle("Always on Top", systemImage: "pin", isOn: $model.alwaysOnTop) }
     }
   }
-  /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
-  private var rotationChoice: Binding<CameraRotation?> {
-    Binding(
-      get: { model.guides.automaticRotation ? nil : model.guides.rotation },
-      set: { value in
-        if let value {
-          model.setRotation(value)
-        } else {
-          model.guides.automaticRotation = true
-        }
-      })
-  }
 }
 
 /// The composition guides and the frame marker, in one popover rather than a row of toolbar
 /// toggles: there are too many of them now to sit in the toolbar.
-private struct CameraGuideSettings: View {
+struct CameraGuideSettings: View {
   @ObservedObject var model: CameraModel
   @State private var customWidth = 2.39
   @State private var customHeight = 1.0

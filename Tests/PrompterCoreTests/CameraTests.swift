@@ -41,6 +41,67 @@ final class CameraTests: XCTestCase {
     XCTAssertTrue(reopened.alwaysOnTop)
   }
 
+  /// The inspector's Mode control writes straight to this, and the presenter reads it on the
+  /// next launch: Junior should not have to pick "Prompter + video" twice.
+  func testTheModeChoiceSurvivesARelaunch() {
+    let store = defaults()
+    let model = CameraModel(defaults: store)
+    XCTAssertFalse(model.presentsWithVideo)
+    model.presentsWithVideo = true
+    XCTAssertTrue(CameraModel(defaults: store).presentsWithVideo)
+    model.presentsWithVideo = false
+    XCTAssertFalse(CameraModel(defaults: store).presentsWithVideo)
+  }
+
+  /// One rotation control on the model, shown by both the Camera window's toolbar and the
+  /// inspector's Video section: Auto is the nil tag, an angle turns Auto off.
+  func testTheRotationControlMapsAutoToNothingAndAnAngleTurnsAutoOff() {
+    let model = CameraModel(defaults: defaults())
+    let choice = model.rotationChoice
+    model.guides.automaticRotation = true
+    XCTAssertNil(choice.wrappedValue)
+    choice.wrappedValue = .quarter
+    XCTAssertEqual(choice.wrappedValue, .quarter)
+    XCTAssertFalse(model.guides.automaticRotation)
+    XCTAssertEqual(model.guides.rotation, .quarter)
+    choice.wrappedValue = nil
+    XCTAssertTrue(model.guides.automaticRotation)
+    XCTAssertNil(choice.wrappedValue)
+  }
+
+  /// The inspector's camera picker is the Camera window's list: same devices, same remembered
+  /// choice, and the tags it offers are exactly the unique IDs.
+  func testTheCameraPickerListsTheSameDevicesAndRemembersTheChoice() {
+    let store = defaults()
+    let model = CameraModel(defaults: store)
+    XCTAssertEqual(cameras.map(\.id), cameras.map(\.uid))
+    model.selectedUID = CameraModel.resolve(nil, in: cameras)?.uid
+    XCTAssertEqual(model.selectedUID, "uid-built-in")
+    XCTAssertEqual(CameraModel(defaults: store).selectedUID, "uid-built-in")
+  }
+
+  /// Two windows can show the camera at once. One of them being covered used to detach the
+  /// orientation detector and take Auto away from the other.
+  func testAutoOrientationSurvivesOneOfTwoViewersGoingAway() {
+    let session = SharedCameraSession.shared
+    let windowView = NSView()
+    let presenterView = NSView()
+    defer {
+      session.setAutoOrientation(false, for: windowView) { _ in }
+      session.setAutoOrientation(false, for: presenterView) { _ in }
+    }
+    session.setAutoOrientation(false, for: windowView) { _ in }
+    session.setAutoOrientation(false, for: presenterView) { _ in }
+    XCTAssertFalse(session.isAutoOrienting)
+    session.setAutoOrientation(true, for: windowView) { _ in }
+    session.setAutoOrientation(true, for: presenterView) { _ in }
+    XCTAssertTrue(session.isAutoOrienting)
+    session.setAutoOrientation(false, for: presenterView) { _ in }
+    XCTAssertTrue(session.isAutoOrienting)
+    session.setAutoOrientation(false, for: windowView) { _ in }
+    XCTAssertFalse(session.isAutoOrienting)
+  }
+
   private func segments(_ path: CGPath) -> [(CGPoint, CGPoint)] {
     var points: [CGPoint] = []
     path.applyWithBlock { points.append($0.pointee.points[0]) }

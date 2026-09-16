@@ -58,6 +58,7 @@ struct CameraHolders {
   private var holders = CameraHolders()
   private var currentUID: String?
   private var auto: CameraAutoOrientation?
+  private var autoWanters = Set<ObjectIdentifier>()
   var holderCount: Int { holders.count }
   /// The picture's own size, before rotation, for the aspect-fit of a turned feed.
   private(set) var pictureSize: CGSize?
@@ -93,16 +94,32 @@ struct CameraHolders {
   }
 
   /// Auto orientation runs only while it is switched on and something is showing the camera.
-  func setAutoOrientation(_ enabled: Bool, onRotation: @escaping @Sendable (CameraRotation) -> Void) {
-    if enabled, auto == nil {
+  ///
+  /// Two stage views can ask at once — the Camera window and the presenter's video background —
+  /// so `owner` identifies which one is asking and the detector goes away only when neither
+  /// wants it. Without that, covering one window took Auto away from the other.
+  ///
+  /// Attach and detach reconfigure the session, so they go on the session's own serial queue
+  /// like `select` does. Running `beginConfiguration` from the main actor while the queue is
+  /// inside its own begin/commit is two threads in one configuration block.
+  func setAutoOrientation(
+    _ enabled: Bool, for owner: AnyObject,
+    onRotation: @escaping @Sendable (CameraRotation) -> Void
+  ) {
+    let id = ObjectIdentifier(owner)
+    if enabled { autoWanters.insert(id) } else { autoWanters.remove(id) }
+    let session = self.session
+    if !autoWanters.isEmpty, auto == nil {
       let detector = CameraAutoOrientation(onRotation: onRotation)
       auto = detector
-      detector.attach(to: session)
-    } else if !enabled, let detector = auto {
-      detector.detach(from: session)
+      queue.async { detector.attach(to: session) }
+    } else if autoWanters.isEmpty, let detector = auto {
       auto = nil
+      queue.async { detector.detach(from: session) }
     }
   }
+  /// For the test that covering one window must not stop the other's Auto.
+  var isAutoOrienting: Bool { auto != nil }
 
   private func setRunning(_ on: Bool) {
     let session = self.session

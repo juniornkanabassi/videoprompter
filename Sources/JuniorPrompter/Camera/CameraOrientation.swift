@@ -43,7 +43,11 @@ enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
 /// in each of the four orientations, and the one with the most convincing upright face wins.
 /// The data output is attached only while Auto is on and the window is showing; the rest of the
 /// time the camera path stays preview-layer only, with no frame callbacks at all.
-final class CameraAutoOrientation: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
+/// `@unchecked Sendable`: every member is touched on the session's serial queue only — the
+/// sample-buffer callback, and `attach`/`detach`, which `SharedCameraSession` dispatches there.
+final class CameraAutoOrientation: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
+  @unchecked Sendable
+{
   /// What one `VNFaceObservation` is worth to the choice, so the chooser can be tested without
   /// a camera or a Vision run.
   struct Face: Equatable, Sendable {
