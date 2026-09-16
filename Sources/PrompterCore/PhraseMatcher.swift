@@ -5,6 +5,22 @@ private let commonWords: Set<String> = [
   "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
 
+/// A digit the script writes and the single word a recogniser hears for it ("1" read as "one").
+// ponytail: English single words only (0-20 and the tens); add French or "twenty five" when a
+// script needs them.
+private let spelledNumbers: [String: String] = {
+  let formatter = NumberFormatter()
+  formatter.numberStyle = .spellOut
+  formatter.locale = Locale(identifier: "en_GB")
+  var result: [String: String] = [:]
+  for number in 0...99 {
+    if let word = formatter.string(from: number as NSNumber), word.allSatisfy(\.isLetter) {
+      result["\(number)"] = word
+    }
+  }
+  return result
+}()
+
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
   public var score: Double
@@ -71,12 +87,33 @@ public struct PhraseMatcher: Sendable {
     for source in 0..<words.count {
       var index = start
       var word = source
-      while word < words.count, let covered = coverage(of: words[word], in: target, at: index) {
-        index += covered
+      // One script word may be stepped over: one he left out ("I'm simply saying he's", no "that")
+      // or the recogniser dropped ("G/A" heard as "G"). Otherwise the run broke there, and the
+      // fallback forward match was vetoed by an older copy of the same phrase behind him ("than
+      // Yamal"), which outscores it for not being ahead: the words stayed lit for up to 3 s.
+      // Stepping over the very next word needs the two heard words before the run to end where he
+      // is, or an already credited "I'm not saying" skips "saying" onto the "I am not saying" after.
+      let anchored =
+        source >= 2 && endsOn(words[(source - 2)..<source], target: target, through: start - 1)
+      var skipped: Int?
+      while word < words.count {
+        if let covered = coverage(of: words[word], in: target, at: index) {
+          index += covered
+        } else if skipped == nil, word > source || anchored,
+          let covered = coverage(of: words[word], in: target, at: index + 1)
+        {
+          skipped = index
+          index += 1 + covered
+        } else {
+          break
+        }
         word += 1
       }
-      guard word == words.count, index > start,
-        target[start..<index].contains(where: { $0.count > 2 && !common.contains($0) })
+      // A step needs two heard words, and the informative word must be one he was heard saying.
+      guard word == words.count, index > start, skipped == nil || words.count - source >= 2,
+        (start..<index).contains(where: {
+          $0 != skipped && target[$0].count > 2 && !common.contains(target[$0])
+        })
       else { continue }
       // Below 1 so a proper match always outranks a fresh tail, and never on filler alone:
       // a trailing "and" or "the" would otherwise win every candidate sort on its own.
@@ -106,8 +143,17 @@ public struct PhraseMatcher: Sendable {
       // be credited: on a script that repeats a phrase, the "a better Champions League player
       // than" he had spoken a paragraph earlier matched the same phrase ahead of him and dimmed
       // six words he had not reached, while the eleven words he had actually said since were
-      // ignored. A misrecognised tail is short, so this still credits the nearest continuation.
-      if words.count - source <= sourceCount, sourceCount >= 3, informative >= 2 {
+      // ignored. A misrecognised tail is short, so this still credits the nearest continuation; but
+      // a longer tail must name a word of what follows, or it is speech after an older copy of the
+      // run: "in the Champions League and you in" (he had said "... and has fewer minutes in")
+      // dimmed the repeat's "League" before he said it, and on 172 a La Liga "No, was he the best
+      // player" lit the next question's six words while its "in the Champions League" was ignored.
+      let rest = words[source...]
+      let next = target[targetIndex..<min(target.count, targetIndex + rest.count + 2)]
+      if rest.count <= sourceCount, sourceCount >= 3, informative >= 2,
+        rest.count < 2
+          || rest.contains(where: { $0.count > 2 && !common.contains($0) && next.contains($0) })
+      {
         return PhraseMatch(tokenIndex: targetIndex - 1, score: 1, direction: .forward)
       }
     }
@@ -227,6 +273,7 @@ public struct PhraseMatcher: Sendable {
   private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
     guard index < target.count else { return nil }
     if target[index] == word { return 1 }
+    if spelledNumbers[target[index]] == word { return 1 }
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
   }
