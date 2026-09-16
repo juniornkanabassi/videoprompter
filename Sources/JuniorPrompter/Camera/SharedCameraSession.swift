@@ -46,7 +46,7 @@ struct CameraHolders {
   /// `v210` (4K v210 is about 1 GB/s); its 8-bit 4:2:2 twin is the same picture at half the
   /// bandwidth, and a preview layer cannot tell them apart. Same dimensions only — changing
   /// those would fight the card's own signal detection.
-  static func preferredFormat(in formats: [VideoFormat], active: VideoFormat) -> Int? {
+  nonisolated static func preferredFormat(in formats: [VideoFormat], active: VideoFormat) -> Int? {
     let best = formats.enumerated()
       .filter { $0.element.width == active.width && $0.element.height == active.height }
       .min { $0.element.weight < $1.element.weight }
@@ -119,7 +119,11 @@ struct CameraHolders {
   /// `activeFormat` is what puts the session on input priority (macOS has no such preset
   /// constant), and without it the default `.high` preset re-picks the format and a DeckLink
   /// loses the signal it auto-detected, falling back to 720x486 NTSC.
-  private static func pinFormat(of device: AVCaptureDevice) {
+  ///
+  /// `nonisolated`, and it must stay that way: this runs on the session's own serial queue, and a
+  /// main-actor-isolated version of it is what crashed 0.7.1 with `dispatch_assert_queue_fail`. It
+  /// touches the device only, never this class's state.
+  nonisolated private static func pinFormat(of device: AVCaptureDevice) {
     func row(_ format: AVCaptureDevice.Format) -> VideoFormat {
       let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
       return VideoFormat(
