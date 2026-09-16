@@ -57,14 +57,10 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
 
   /// A rotation chosen by hand turns Auto back off; one Vision picked leaves it on.
   func setRotation(_ rotation: CameraRotation, automatic: Bool = false) {
-    guard guides.rotation != rotation || guides.automaticRotation == automatic else { return }
-    if automatic {
-      guard guides.automaticRotation else { return }
-      guides.rotation = rotation
-    } else {
-      guides.rotation = rotation
-      guides.automaticRotation = false
-    }
+    guard guides.rotation != rotation || guides.automaticRotation == automatic,
+      !automatic || guides.automaticRotation else { return }
+    guides.rotation = rotation
+    if !automatic { guides.automaticRotation = false }
   }
 
   /// Built-in, USB/Thunderbolt UVC, Continuity Camera and every virtual camera (OBS, Elgato,
@@ -253,7 +249,7 @@ struct CameraGuideSettings: View {
         LabeledContent("Opacity") { Slider(value: $model.guides.opacity, in: 0...1) }
       }
       Section("Frame marker") {
-        Picker("Aspect ratio", selection: marker) {
+        Picker("Aspect ratio", selection: $model.guides.marker) {
           Text("Off").tag(nil as CameraAspect?)
           ForEach(CameraAspect.presets) { Text($0.label).tag(Optional($0)) }
           Text("Custom").tag(Optional(custom))
@@ -264,8 +260,8 @@ struct CameraGuideSettings: View {
             Text(":")
             TextField("Height", value: $customHeight, format: .number).frame(width: 64)
           }
-          .onChange(of: customWidth) { _, _ in model.guides.marker = custom }
-          .onChange(of: customHeight) { _, _ in model.guides.marker = custom }
+          .onChange(of: customWidth) { model.guides.marker = custom }
+          .onChange(of: customHeight) { model.guides.marker = custom }
         }
         if model.guides.marker != nil {
           LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1) }
@@ -274,22 +270,17 @@ struct CameraGuideSettings: View {
     }.formStyle(.grouped)
   }
   private var custom: CameraAspect { CameraAspect(width: customWidth, height: customHeight) }
-  private var marker: Binding<CameraAspect?> {
-    Binding(get: { model.guides.marker }, set: { model.guides.marker = $0 })
-  }
   private var guideColor: Binding<Color> {
-    Binding(get: guideColorValue, set: setGuideColor)
-  }
-  private func guideColorValue() -> Color {
-    guard let cgColor = CameraGuides.color(model.guides.colorHex, alpha: 1) else { return .blue }
-    return Color(nsColor: NSColor(cgColor: cgColor) ?? .systemBlue)
-  }
-  private func setGuideColor(_ color: Color) {
-    let rgb: NSColor = NSColor(color).usingColorSpace(.sRGB) ?? .systemBlue
-    let red = Int((rgb.redComponent * 255).rounded())
-    let green = Int((rgb.greenComponent * 255).rounded())
-    let blue = Int((rgb.blueComponent * 255).rounded())
-    model.guides.colorHex = String(format: "#%02X%02X%02X", red, green, blue)
+    Binding(
+      get: {
+        guard let cgColor = CameraGuides.color(model.guides.colorHex, alpha: 1) else { return .blue }
+        return Color(nsColor: NSColor(cgColor: cgColor) ?? .systemBlue)
+      },
+      set: {
+        let rgb = NSColor($0).usingColorSpace(.sRGB) ?? .systemBlue
+        func byte(_ value: CGFloat) -> Int { Int((value * 255).rounded()) }
+        model.guides.colorHex = String(format: "#%02X%02X%02X", byte(rgb.redComponent), byte(rgb.greenComponent), byte(rgb.blueComponent))
+      })
   }
 }
 

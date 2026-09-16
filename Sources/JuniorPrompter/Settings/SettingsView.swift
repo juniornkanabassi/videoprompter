@@ -28,8 +28,7 @@ struct InspectorView: View {
           LabeledContent("Camera") { CameraPicker(model: camera) }
           HStack {
             Picker("Rotation", selection: camera.rotationChoice) {
-              Text("Auto").tag(nil as CameraRotation?)
-              ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
+              ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
             }
             Button("Guides") { showsGuideSettings.toggle() }
               .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
@@ -120,11 +119,10 @@ struct InspectorView: View {
             }
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
-          Button { devices = AudioCapture.inputDevices() } label: {
-            Label("Refresh microphones", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
-          }
-          .buttonStyle(.borderless)
-          .help("Refresh microphones")
+          Button("Refresh microphones", systemImage: "arrow.clockwise") { devices = AudioCapture.inputDevices() }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Refresh microphones")
         }
         LabeledContent("Input gain") {
           Slider(
@@ -182,11 +180,8 @@ struct InspectorView: View {
             Button(preset.name) { store.applyPreset(preset) }.buttonStyle(.plain)
               .help("Apply this preset")
             Spacer()
-            Button {
-              store.deletePreset(preset.id)
-            } label: {
-              Label("Delete \(preset.name)", systemImage: "trash").labelStyle(.iconOnly)
-            }.buttonStyle(.plain)
+            Button("Delete \(preset.name)", systemImage: "trash") { store.deletePreset(preset.id) }
+              .labelStyle(.iconOnly).buttonStyle(.plain)
               .help("Delete preset")
           }.contextMenu {
             Button("Rename") { renamePreset = preset; renameValue = preset.name }
@@ -355,11 +350,8 @@ struct InputLevelMeter: View {
     .accessibilityValue(
       peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
     .accessibilityHint(isClipping ? "Input is clipping." : "Marks from minus 60 to 0 dBFS, with warning zones at minus 20 and minus 9.")
-    .onChange(of: peakDBFS) { _, value in
-      guard value.isFinite else { return }
-      let uptime = ProcessInfo.processInfo.systemUptime
-      peakHold.ingest(value, at: uptime)
-    }
+    // `ingest` ignores silence.
+    .onChange(of: peakDBFS) { _, value in peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime) }
     .task(id: peakHold.generation) {
       guard peakHold.value(at: ProcessInfo.processInfo.systemUptime) != nil else { return }
       try? await Task.sleep(for: .seconds(6))

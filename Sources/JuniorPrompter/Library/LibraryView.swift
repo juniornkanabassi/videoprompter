@@ -32,11 +32,10 @@ struct LibraryView: View {
           HStack {
             TextField("New folder", text: $newFolderName)
               .onSubmit(createFolder)
-            Button(action: createFolder) {
-              Label("Create Folder", systemImage: "plus").labelStyle(.iconOnly)
-            }
-            .help("Create folder")
-            .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Create Folder", systemImage: "plus", action: createFolder)
+              .labelStyle(.iconOnly)
+              .help("Create folder")
+              .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           }
         }
         Section("Scripts") {
@@ -60,13 +59,10 @@ struct LibraryView: View {
       .safeAreaInset(edge: .bottom) {
         HStack {
           Spacer()
-          Button {
-            store.delete(selection)
-          } label: {
-            Label("Move to Trash", systemImage: "trash").labelStyle(.iconOnly)
-          }
-          .help("Move to Trash")
-          .disabled(selection.isEmpty)
+          Button("Move to Trash", systemImage: "trash") { store.delete(selection) }
+            .labelStyle(.iconOnly)
+            .help("Move to Trash")
+            .disabled(selection.isEmpty)
         }.padding(10)
       }
       .onChange(of: selection) { _, value in if let id = value.first { store.selectedID = id } }
@@ -94,18 +90,12 @@ struct LibraryView: View {
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup {
-        Button {
-          store.create()
-        } label: {
-          Label("New Script", systemImage: "square.and.pencil")
-        }
-        .help("New script")
-        .disabled(!store.libraryAvailable)
-        Button { importing = true } label: {
-          Label("Import…", systemImage: "square.and.arrow.down")
-        }
-        .help("Import a script")
-        .disabled(!store.libraryAvailable)
+        Button("New Script", systemImage: "square.and.pencil") { store.create() }
+          .help("New script")
+          .disabled(!store.libraryAvailable)
+        Button("Import…", systemImage: "square.and.arrow.down") { importing = true }
+          .help("Import a script")
+          .disabled(!store.libraryAvailable)
         Menu {
           Button("Import from Clipboard") { store.importClipboard() }
           Button("Export Markdown…") {
@@ -129,13 +119,9 @@ struct LibraryView: View {
         } label: { Label("More Actions", systemImage: "ellipsis.circle") }
           .help("More script actions")
           .disabled(!store.libraryAvailable)
-        Button {
-          store.duplicate()
-        } label: {
-          Label("Duplicate", systemImage: "plus.square.on.square")
-        }
-        .help("Duplicate script")
-        .disabled(store.selected == nil)
+        Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicate() }
+          .help("Duplicate script")
+          .disabled(store.selected == nil)
         Menu {
           Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }
           ForEach(store.folders) { folder in
@@ -144,19 +130,11 @@ struct LibraryView: View {
         } label: { Label("Move to", systemImage: "folder") }
           .help("Move to folder")
           .disabled(selection.isEmpty)
-        Button {
-          PresenterController.shared.present(store: store)
-        } label: {
-          Label("Present", systemImage: "play.rectangle")
-        }
-        .help(store.selected == nil ? "Select a script to present" : "Present script")
-        .disabled(store.selected == nil)
-        Button {
-          store.inspector.toggle()
-        } label: {
-          Label("Inspector", systemImage: "sidebar.right")
-        }
-        .help(store.inspector ? "Hide inspector" : "Show inspector")
+        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.present(store: store) }
+          .help(store.selected == nil ? "Select a script to present" : "Present script")
+          .disabled(store.selected == nil)
+        Button("Inspector", systemImage: "sidebar.right") { store.inspector.toggle() }
+          .help(store.inspector ? "Hide inspector" : "Show inspector")
       }
     }
     .alert(
@@ -242,9 +220,7 @@ private struct ScriptRow: View {
         }
       }
       if !script.metadata.tags.isEmpty {
-        Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(
-          .secondary
-        ).lineLimit(1)
+        Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
       }
     }.tag(script.metadata.id)
   }
@@ -271,7 +247,7 @@ private struct EditorView: View {
       HStack(spacing: 10) {
         Text("Font").font(.caption).foregroundStyle(.secondary)
         Picker("Editor font", selection: $store.previewFontName) {
-          ForEach(Self.fontChoices, id: \.self) { Text($0).tag($0) }
+          ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
         }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
         Stepper(value: $store.previewFontSize, in: 12...40, step: 1) {
           Text("\(Int(store.previewFontSize)) pt").monospacedDigit()
@@ -309,10 +285,7 @@ private struct EditorView: View {
           editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
         }).padding(24)
     }
-    .onChange(of: text) { _, value in
-      editNotice = nil
-      store.updateMarkdown(value, for: script.metadata.id)
-    }
+    .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id) }
     .onAppear {
       text = script.markdown
       title = script.metadata.title
@@ -322,6 +295,4 @@ private struct EditorView: View {
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
     .id(script.metadata.id)
   }
-
-  private static let fontChoices = AvailableFonts.editor
 }

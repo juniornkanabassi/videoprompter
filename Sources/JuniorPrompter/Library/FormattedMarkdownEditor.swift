@@ -106,7 +106,6 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     view.isRichText = true
     view.allowsUndo = true
     view.drawsBackground = false
-    view.textContainerInset = NSSize(width: 0, height: 8)
     view.delegate = context.coordinator
     view.onFormat = { [weak coordinator = context.coordinator, weak view] action in
       guard let coordinator, let view else { return }
@@ -170,18 +169,13 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       self.fontName = fontName
       self.fontSize = fontSize
       self.typography = typography
-      guard model.markdown != markdown || changedFont else { return }
       // A binding echo after a native edit has the same source model. Re-rendering it
       // would reset AppKit's selection and undo grouping.
-      if model.markdown == markdown {
-        if changedFont {
-          render(view, keeping: view.selectedRange())
-          applyEmptyTypingAttributes(to: view)
-        }
-        return
+      guard model.markdown != markdown || changedFont else { return }
+      if model.markdown != markdown {
+        editorUndoManager.removeAllActions()
+        model = FormattedMarkdownEditModel(markdown: markdown)
       }
-      editorUndoManager.removeAllActions()
-      model = FormattedMarkdownEditModel(markdown: markdown)
       render(view, keeping: view.selectedRange())
       applyEmptyTypingAttributes(to: view)
     }
@@ -233,14 +227,10 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
     func apply(_ action: EditorFormatAction, in view: NSTextView) {
       switch action {
-      case .bold:
-        apply(model.applyingStyle("**", to: view.selectedRange()), in: view)
-      case .italic:
-        apply(model.applyingStyle("*", to: view.selectedRange()), in: view)
-      case .heading:
-        apply(model.applyingHeading(to: view.selectedRange()), in: view)
-      case .link:
-        applyLink(in: view)
+      case .bold: apply(model.applyingStyle("**", to: view.selectedRange()), in: view)
+      case .italic: apply(model.applyingStyle("*", to: view.selectedRange()), in: view)
+      case .heading: apply(model.applyingHeading(to: view.selectedRange()), in: view)
+      case .link: applyLink(in: view)
       }
     }
 
@@ -295,23 +285,17 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       }
       let previous = model
       model = next
-      view.undoManager?.registerUndo(withTarget: self) { target in target.restoreFormatted(previous) }
+      view.undoManager?.registerUndo(withTarget: self) { target in target.restore(previous, rendering: true) }
       render(view, keeping: view.selectedRange())
       parent.markdown = next.markdown
     }
 
-    private func restoreFormatted(_ snapshot: FormattedMarkdownEditModel) {
+    /// Undo and redo. A native edit's snapshot needs no render: AppKit restores the text itself.
+    private func restore(_ snapshot: FormattedMarkdownEditModel, rendering: Bool = false) {
       let current = model
       model = snapshot
-      textView?.undoManager?.registerUndo(withTarget: self) { target in target.restoreFormatted(current) }
-      if let textView { render(textView, keeping: textView.selectedRange()) }
-      parent.markdown = snapshot.markdown
-    }
-
-    private func restore(_ snapshot: FormattedMarkdownEditModel) {
-      let current = model
-      model = snapshot
-      textView?.undoManager?.registerUndo(withTarget: self) { target in target.restore(current) }
+      textView?.undoManager?.registerUndo(withTarget: self) { target in target.restore(current, rendering: rendering) }
+      if rendering, let textView { render(textView, keeping: textView.selectedRange()) }
       parent.markdown = snapshot.markdown
     }
 
@@ -398,6 +382,10 @@ struct FormattedMarkdownEditModel {
     let source = markdown as NSString
     var cursor = 0
 
+    func isFence(_ line: some StringProtocol) -> Bool {
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      return trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
+    }
     func appendLiteral(_ range: NSRange) {
       guard range.length > 0 else { return }
       output.append(NSAttributedString(string: source.substring(with: range)))
@@ -411,8 +399,7 @@ struct FormattedMarkdownEditModel {
       for (index, line) in lines.enumerated() {
         let raw = String(line)
         if block.kind == .code {
-          let fence = raw.trimmingCharacters(in: .whitespaces).hasPrefix("```")
-            || raw.trimmingCharacters(in: .whitespaces).hasPrefix("~~~")
+          let fence = isFence(raw)
           if !fence {
             let part = NSMutableAttributedString(string: raw)
             part.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular), range: NSRange(location: 0, length: part.length))
@@ -421,9 +408,7 @@ struct FormattedMarkdownEditModel {
           }
           lineOffset += (raw as NSString).length
           if index < lines.count - 1 {
-            let nextIsFence = lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("```")
-              || lines[index + 1].trimmingCharacters(in: .whitespaces).hasPrefix("~~~")
-            if !fence && !nextIsFence { output.append(NSAttributedString(string: "\n")); offsets.append(lineOffset) }
+            if !fence && !isFence(lines[index + 1]) { output.append(NSAttributedString(string: "\n")); offsets.append(lineOffset) }
             lineOffset += 1
           }
           continue
