@@ -48,6 +48,12 @@ public enum ReadingAnchorRemapper {
     {
       let localMap = lcsMap(
         oldBlock.spokenTokens.map(\.normalised), block.spokenTokens.map(\.normalised))
+      // The word left its block (a paragraph split or merge): follow it through the whole document.
+      if localMap[anchor.tokenOffset] == nil,
+        let moved = contextMatch(anchor, in: new, newRevision: newRevision)
+      {
+        return moved
+      }
       let exactOffset: Int
       if let mapped = localMap[anchor.tokenOffset] {
         exactOffset = mapped
@@ -73,24 +79,7 @@ public enum ReadingAnchorRemapper {
     let oldIndex = globalIndex(of: anchor, in: old) ?? 0
     let oldWords = old.spokenTokens.map(\.normalised)
     let newWords = new.spokenTokens.map(\.normalised)
-    let context = anchor.precedingContext + anchor.followingContext
-    if context.count >= 2 {
-      let candidates = newWords.indices.filter { i in
-        let before = Array(newWords[max(0, i - anchor.precedingContext.count)..<i])
-        let after = Array(
-          newWords[(i + 1)..<min(newWords.count, i + 1 + anchor.followingContext.count)])
-        return before == Array(anchor.precedingContext.suffix(before.count))
-          && after == Array(anchor.followingContext.prefix(after.count))
-          && before.count + after.count >= min(2, context.count)
-      }
-      if candidates.count == 1 {
-        return .init(
-          anchor: makeAnchor(
-            scriptID: anchor.scriptID, revision: newRevision, document: new,
-            globalTokenIndex: candidates[0], guideFraction: anchor.guideFraction),
-          disposition: .context)
-      }
-    }
+    if let moved = contextMatch(anchor, in: new, newRevision: newRevision) { return moved }
     let mapping = lcsMap(oldWords, newWords)
     if let prior = mapping.keys.filter({ $0 < oldIndex }).max(), let mapped = mapping[prior] {
       return .init(
@@ -113,6 +102,28 @@ public enum ReadingAnchorRemapper {
         scriptID: anchor.scriptID, revision: newRevision, document: new,
         globalTokenIndex: proportional, guideFraction: anchor.guideFraction),
       disposition: .currentPassageDeleted)
+  }
+
+  /// The one place in `new` whose neighbours match the anchor's saved context, if it is unique.
+  private static func contextMatch(
+    _ anchor: ReadingAnchor, in new: PrompterDocument, newRevision: UInt64
+  ) -> AnchorRemapResult? {
+    guard anchor.precedingContext.count + anchor.followingContext.count >= 2 else { return nil }
+    let newWords = new.spokenTokens.map(\.normalised)
+    let candidates = newWords.indices.filter { i in
+      let before = Array(newWords[max(0, i - anchor.precedingContext.count)..<i])
+      let after = Array(
+        newWords[(i + 1)..<min(newWords.count, i + 1 + anchor.followingContext.count)])
+      return before == Array(anchor.precedingContext.suffix(before.count))
+        && after == Array(anchor.followingContext.prefix(after.count))
+        && before.count + after.count >= 2
+    }
+    guard candidates.count == 1 else { return nil }
+    return .init(
+      anchor: makeAnchor(
+        scriptID: anchor.scriptID, revision: newRevision, document: new,
+        globalTokenIndex: candidates[0], guideFraction: anchor.guideFraction),
+      disposition: .context)
   }
 
   private static func lcsMap(_ a: [String], _ b: [String]) -> [Int: Int] {

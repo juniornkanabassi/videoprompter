@@ -888,9 +888,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     }
   }
 
-  /// Adding a paragraph break inside the passage being read is an ordinary in-place edit. The
-  /// first half keeps the block's identity, the anchored word is no longer in it, and the remap
-  /// clamps to the first half's last word instead of following the word into the new block.
+  /// Adding a paragraph break inside the passage being read is an ordinary in-place edit. Whichever
+  /// half keeps the block's identity, the anchor follows its word, even into the other half.
   func testSplittingTheCurrentPassageKeepsTheAnchorOnTheSameWord() async throws {
     let original = try fixture("173 script.md")
     let edited = original.replacingOccurrences(of: "per game. Higher than", with: "per game.\n\nHigher than")
@@ -905,10 +904,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertNil(draft.errorMessage)
     let saved = try await XCTUnwrap(store.library).read(record.id)
     XCTAssertEqual(saved.markdown, edited)
-    let landed = session.activeToken?.text
-    XCTExpectFailure("BUG: splitting the anchored paragraph moves the anchor to the end of the first half") {
-      XCTAssertEqual(landed, "Bayern’s")
-    }
+    XCTAssertEqual(session.activeToken?.text, "Bayern’s")
     // The same when the reader is in the first half and the second half keeps the identity.
     let (other, _) = try await presenting(
       "Short opener here.\n\nAlpha beta gamma delta one two three four five six seven eight nine ten", mode: "Manual")
@@ -917,9 +913,35 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     split.markdown = "Short opener here.\n\nAlpha beta gamma\n\ndelta one two three four five six seven eight nine ten"
     split.metadata.revision += 1
     other.session.applyEditedRecord(split)
-    let landedOther = other.session.activeToken?.text
-    XCTExpectFailure("BUG: splitting before the second half keeps its identity moves the anchor into it") {
-      XCTAssertEqual(landedOther, "gamma")
+    XCTAssertEqual(other.session.activeToken?.text, "gamma")
+    XCTAssertNil(other.session.anchorNotice)
+  }
+
+  /// Splits after the anchored word and merges of two paragraphs, whichever block keeps the
+  /// identity: the anchor stays on its word and no passage is reported deleted.
+  func testSplittingAfterAndMergingAroundTheAnchorKeepTheSameWord() async throws {
+    let opener = "Short opener here."
+    let long = "Alpha beta gamma delta one two three four five six seven eight nine ten"
+    let original = "\(opener)\n\n\(long)"
+    let edits: [(name: String, word: String, markdown: String)] = [
+      ("split after, second half keeps the identity", "gamma",
+       "\(opener)\n\nAlpha beta gamma delta\n\none two three four five six seven eight nine ten"),
+      ("split after, first half keeps the identity", "two",
+       "\(opener)\n\nAlpha beta gamma delta one two three four five six seven\n\neight nine ten"),
+      ("merge, anchored paragraph loses the identity", "opener", "\(opener) \(long)"),
+      ("merge, anchored paragraph keeps the identity", "gamma", "\(opener) \(long)"),
+    ]
+    for edit in edits {
+      let (store, _) = try await presenting(original, mode: "Manual")
+      let session = store.session
+      session.seek(to: try index(of: edit.word, in: session))
+      var edited = try XCTUnwrap(session.activeRecord)
+      edited.markdown = edit.markdown
+      edited.metadata.revision += 1
+      session.applyEditedRecord(edited)
+      XCTAssertEqual(session.document.markdown, edit.markdown, edit.name)
+      XCTAssertEqual(session.activeToken?.text, edit.word, edit.name)
+      XCTAssertNil(session.anchorNotice, edit.name)
     }
   }
 
@@ -1285,9 +1307,44 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(composed, decomposed, "Swift already treats them as equal")
     let expected = PrompterDocument(markdown: composed).spokenTokens.map(\.normalised)
     let actual = PrompterDocument(markdown: decomposed).spokenTokens.map(\.normalised)
-    XCTExpectFailure("BUG: the token regex omits \\p{M}, so decomposed accents split words") {
-      XCTAssertEqual(actual, expected)
+    XCTAssertEqual(actual, expected)
+  }
+
+  /// A decomposed name mid-sentence is one token spanning the whole decomposed word, and a
+  /// recogniser writing composed (or unaccented) text dims it as it is said.
+  func testDecomposedNamesInASentenceTrackAgainstComposedRecognition() {
+    let markdown = "Tonight Désiré Doué and Atlético’s Julián Álvarez meet Müller."
+      .decomposedStringWithCanonicalMapping
+    let tokens = PrompterDocument(markdown: markdown).spokenTokens
+    XCTAssertEqual(tokens.map(\.normalised), [
+      "tonight", "desire", "doue", "and", "atletico's", "julian", "alvarez", "meet", "muller",
+    ])
+    let ns = markdown as NSString
+    for token in tokens {
+      XCTAssertEqual(
+        ns.substring(with: NSRange(location: token.sourceRange.location, length: token.sourceRange.length)),
+        token.text)
     }
+    XCTAssertEqual(tokens[1].text.unicodeScalars.count, 8, "Désiré keeps both combining accents")
+    for spoken in [
+      "Tonight Désiré Doué and Atlético's Julián Álvarez meet Müller",
+      "tonight desire doue and atletico's julian alvarez meet muller",
+    ] {
+      var tracker = RecognitionTracker(generation: 1, tokenIndex: 0)
+      var words: [String] = []
+      for (index, word) in spoken.split(separator: " ").enumerated() {
+        words.append(String(word))
+        let update = tracker.consume(.init(
+          replacementID: "r", generation: 1, text: words.joined(separator: " "), isFinal: false,
+          timestamp: Double(index), audioStart: 0, audioEnd: Double(index) + 0.3), script: tokens)
+        XCTAssertLessThanOrEqual(update.tokenIndex, index, "\(spoken): ran ahead")
+        if index > 0, tokens[index].text.unicodeScalars.contains(where: { $0.properties.isGraphemeExtend }) {
+          XCTAssertEqual(update.tokenIndex, index, "\(word) did not dim as it was said in '\(spoken)'")
+        }
+      }
+      XCTAssertEqual(tracker.tokenIndex, tokens.count - 1, spoken)
+    }
+    XCTAssertEqual(PrompterDocument.normalise("De\u{301}sire\u{301}"), PrompterDocument.normalise("Désiré"))
   }
 
   /// The library search box is where a script is found before it is presented. The library's
