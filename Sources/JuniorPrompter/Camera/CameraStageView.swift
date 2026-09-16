@@ -126,6 +126,25 @@ final class CameraStageView: NSView {
     }
     updateAutoOrientation()
     if on { applyConnection() }
+    logRefreshes(on)
+  }
+
+  /// Opt-in latency log only: this screen's refresh times, for `CameraFrameProbe` to place each
+  /// frame on. Nothing is created unless the log is switched on.
+  private var refreshLink: CADisplayLink?
+  private var refreshLogEnds = 0.0
+  private func logRefreshes(_ on: Bool) {
+    guard CameraFrameProbe.logsLatency else { return }
+    refreshLink?.invalidate()
+    refreshLink = on ? displayLink(target: self, selector: #selector(refreshed(_:))) : nil
+    refreshLink?.add(to: .main, forMode: .common)
+    refreshLogEnds = CACurrentMediaTime() + CameraFrameProbe.logWindow + 2
+  }
+  @objc private func refreshed(_ link: CADisplayLink) {
+    SharedCameraSession.shared.probe.refreshed(at: link.targetTimestamp)
+    guard link.targetTimestamp > refreshLogEnds else { return }
+    link.invalidate()
+    refreshLink = nil
   }
 
   /// The handler names no view: the detector outlives whichever view created it, and capturing
