@@ -1,6 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 ROOT="${0:A:h}"
+source "$ROOT/env.sh"
 WORK=$(mktemp -d /private/tmp/juniorprompter-alpha.XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$ROOT/Resources/Info.plist")
