@@ -126,18 +126,9 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
 /// `CameraStageView`, so the session is opened once and the guides cannot drift apart.
 struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
-  /// The presenter keeps the camera's own composition guides off unless they are asked for.
-  var showsGuides = true
   func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
-    var guides = model.guides
-    if !showsGuides {
-      guides.thirds = false
-      guides.axes = false
-      guides.bullseye = false
-      guides.marker = nil
-    }
-    view.apply(uid: model.selectedUID, guides: guides, mirrored: model.mirrored)
+    view.apply(uid: model.selectedUID, guides: model.guides, mirrored: model.mirrored)
   }
   static func dismantleNSView(_ view: CameraStageView, coordinator: ()) { view.stop() }
 }
@@ -207,7 +198,6 @@ struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
   let title: String
   let options: [(String, Value)]
   @Binding var selection: Value
-  var placeholder = "None"
 
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeNSView(context: Context) -> NSPopUpButton {
@@ -223,7 +213,7 @@ struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
       if values.indices.contains(index) { selection.wrappedValue = values[index] }
     }
     Self.sync(popup, titles: options.map(\.0), selected: values.firstIndex(of: self.selection),
-              placeholder: placeholder, target: context.coordinator)
+              placeholder: "None", target: context.coordinator)
   }
   /// Items go in through the menu: `addItems(withTitles:)` drops a second camera of the same name.
   static func sync(_ popup: NSPopUpButton, titles: [String], selected: Int?, placeholder: String,

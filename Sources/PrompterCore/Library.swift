@@ -381,10 +381,6 @@ public actor MarkdownLibrary {
     do { try persistIndex() } catch { index.scripts[position] = old; throw error }
     return index.scripts[position]
   }
-  /// The linked file as it resolves right now, `nil` when the script has no link.
-  public func linkedURL(for id: UUID) -> URL? {
-    index.scripts.first { $0.id == id }.flatMap(Self.resolveLink)
-  }
   /// Conflict files written since the last call, for the caller to show once.
   public func takeLinkConflicts() -> [String] {
     defer { linkConflicts.removeAll() }

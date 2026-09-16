@@ -229,8 +229,6 @@ final class LinkedFileTests: XCTestCase {
     let record = try await library.create(title: "Plain", markdown: "plain body")
     let unchanged = try await library.externalChange(for: record.id)
     XCTAssertNil(unchanged)
-    let link = await library.linkedURL(for: record.id)
-    XCTAssertNil(link)
     let saved = try await library.save(
       record.id, markdown: "edited", expectedFingerprint: record.metadata.contentFingerprint)
     XCTAssertEqual(saved.markdown, "edited")
