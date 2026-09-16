@@ -71,8 +71,8 @@ struct InspectorView: View {
           Toggle("Show stage directions", isOn: $store.settings.showCues)
           Toggle("Snap presenter window", isOn: $store.settings.presenterSnappingEnabled)
           Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
-          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = $0.nsColor.hex }), supportsOpacity: false)
-          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = $0.nsColor.hex }), supportsOpacity: false)
+          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false)
+          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
         }
       }
       Section("Motion") {
@@ -382,12 +382,4 @@ struct PeakHold {
     return result >= -60 ? result : nil
   }
   mutating func expire() { peak = nil; generation += 1 }
-}
-
-private extension Color {
-  var nsColor: NSColor { NSColor(self) }
-}
-private extension NSColor {
-  convenience init?(hex: String) { guard let value = UInt64(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) else { return nil }; self.init(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1) }
-  var hex: String { let c = usingColorSpace(.deviceRGB) ?? self; return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255)) }
 }

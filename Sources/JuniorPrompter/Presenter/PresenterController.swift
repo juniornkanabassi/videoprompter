@@ -131,9 +131,7 @@ import SwiftUI
 
   /// Resize the presenter to the shape of the feed as it is shown — a feed turned 90° gives a
   /// vertical window — as large as the screen it is on allows.
-  static func matchedCameraFrame(picture: CGSize, rotation: CameraRotation, in visibleFrame: NSRect)
-    -> NSRect
-  {
+  static func matchedCameraFrame(picture: CGSize, rotation: CameraRotation, in visibleFrame: NSRect) -> NSRect {
     rotation.fittedRect(aspect: picture, in: visibleFrame)
   }
   func matchCameraSize() {
@@ -142,10 +140,7 @@ import SwiftUI
     else { return }
     // Until the camera reports its size, the stage view draws 16:9 too.
     let picture = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
-    panel.setFrame(
-      Self.matchedCameraFrame(
-        picture: picture, rotation: camera.guides.rotation,
-        in: screen.visibleFrame), display: true)
+    panel.setFrame(Self.matchedCameraFrame(picture: picture, rotation: camera.guides.rotation, in: screen.visibleFrame), display: true)
   }
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
@@ -290,6 +285,7 @@ class PresenterPanel: NSPanel {
     errorMessage = nil
     noticeMessage = nil
   }
+  /// Leaves editing; also how a save that went through finishes.
   func cancel(resuming: Bool = true) {
     isEditing = false
     closeRequested = false
@@ -328,10 +324,7 @@ class PresenterPanel: NSPanel {
         expectedFingerprint = saved.metadata.contentFingerprint
         expectedRevision = saved.metadata.revision
       }
-      isEditing = false
-      closeRequested = false
-      errorMessage = nil
-      resumeTracking()
+      cancel()
     } catch {
       errorMessage = "The script changed or could not be saved. Your presenter draft is still open. \(error)"
     }
@@ -341,10 +334,7 @@ class PresenterPanel: NSPanel {
     defer { isSaving = false }
     do {
       try await store.savePresentedDraftAsCopy(markdown, for: recordID)
-      isEditing = false
-      closeRequested = false
-      errorMessage = nil
-      resumeTracking()
+      cancel()
       noticeMessage = "Draft saved as a separate script. The presenter remains on the original script."
     } catch {
       errorMessage = "The draft could not be saved as a separate script. \(error)"
@@ -475,10 +465,8 @@ private struct PresenterView: View {
     } message: {
       Text("The draft has not been saved to the script library.")
     }
-    .onChange(of: draft.markdown) { _, _ in editorNotice = nil }
-    .onChange(of: draft.isEditing) { _, isEditing in
-      if isEditing { editorNotice = nil }
-    }
+    .onChange(of: draft.markdown) { editorNotice = nil }
+    .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
     .overlay(alignment: .bottom) {
       if hasBottomNotice {
       VStack(spacing: 6) {
@@ -512,7 +500,7 @@ private struct PresenterView: View {
       lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
       paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
       horizontalInset: sideInset,
-      alignment: settings.alignment == "Right" ? .right : settings.alignment == "Center" ? .center : .left)
+      alignment: NSTextAlignment(setting: settings.alignment))
   }
 }
 
@@ -563,26 +551,23 @@ private struct WindowDragHandle: NSViewRepresentable {
 struct ScriptTextView: NSViewRepresentable {
   let document: PrompterDocument
   let tokenIndex: Int
-  let lastConfirmedTokenIndex: Int?
-  let isActivelyRunning: Bool
-  let seekRevision: Int
+  var lastConfirmedTokenIndex: Int?
+  var isActivelyRunning = false
+  var seekRevision = 0
   let guideFraction: Double
-  let verticalMirror: Bool
+  var verticalMirror = false
   let fontName: String
   let fontSize: Double
   let textOpacity: Double
-  let fontWeight: String
-  let textColorHex: String
-  let lineSpacing: Double
-  let paragraphSpacing: Double
-  let horizontalMargin: Double
-  let alignment: String
-  let showCues: Bool
-  let highlightActiveWord: Bool
+  var fontWeight = "Regular"
+  var textColorHex = "#FFFFFF"
+  var lineSpacing = 0.16
+  var paragraphSpacing = 0.34
+  var horizontalMargin = 42.0
+  var alignment = "Left"
+  var showCues = true
+  var highlightActiveWord = false
   let onSeek: (Int) -> Void
-  init(document: PrompterDocument, tokenIndex: Int, lastConfirmedTokenIndex: Int? = nil, isActivelyRunning: Bool = false, seekRevision: Int = 0, guideFraction: Double, verticalMirror: Bool = false, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
-    self.document = document; self.tokenIndex = tokenIndex; self.lastConfirmedTokenIndex = lastConfirmedTokenIndex; self.isActivelyRunning = isActivelyRunning; self.seekRevision = seekRevision; self.guideFraction = guideFraction; self.verticalMirror = verticalMirror; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
-  }
   /// The column is `textWidth` of the presenter's width, centred, and never nearer an edge
   /// than the old fixed 42 pt margin. Only the text uses it; the camera stays full size.
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
@@ -607,13 +592,12 @@ struct ScriptTextView: NSViewRepresentable {
     text.textContainerInset = NSSize(width: horizontalMargin, height: 80)
     text.textContainer?.widthTracksTextView = true
     text.onCharacterClick = { context.coordinator.seek($0) }
-        text.onLayout = { [weak scroll] in
-          guard let scroll else { return }
-          context.coordinator.invalidateAlignment()
-          context.coordinator.align(
-            scroll: scroll, tokenIndex: context.coordinator.tokenIndex,
-            guideFraction: context.coordinator.guideFraction)
-        }
+    text.onLayout = { [weak scroll] in
+      guard let scroll else { return }
+      context.coordinator.invalidateAlignment()
+      context.coordinator.align(
+        scroll: scroll, tokenIndex: context.coordinator.tokenIndex, guideFraction: context.coordinator.guideFraction)
+    }
     scroll.documentView = text
     context.coordinator.textView = text
     context.coordinator.verticalMirror = verticalMirror
@@ -621,37 +605,32 @@ struct ScriptTextView: NSViewRepresentable {
     return scroll
   }
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    context.coordinator.setSideInset(horizontalMargin)
-    context.coordinator.onSeek = onSeek
-    context.coordinator.tokenIndex = tokenIndex
-    context.coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
-    context.coordinator.guideFraction = guideFraction
-    if context.coordinator.verticalMirror != verticalMirror {
-      context.coordinator.verticalMirror = verticalMirror
-      context.coordinator.invalidateAlignment()
-      context.coordinator.snapNextAlignment = true
+    let coordinator = context.coordinator
+    coordinator.setSideInset(horizontalMargin)
+    coordinator.onSeek = onSeek
+    coordinator.tokenIndex = tokenIndex
+    coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
+    coordinator.guideFraction = guideFraction
+    if coordinator.verticalMirror != verticalMirror || coordinator.seekRevision != seekRevision {
+      coordinator.verticalMirror = verticalMirror
+      coordinator.seekRevision = seekRevision
+      coordinator.snapToGuide()
     }
-    if context.coordinator.seekRevision != seekRevision {
-      context.coordinator.seekRevision = seekRevision
-      context.coordinator.invalidateAlignment()
-      context.coordinator.snapNextAlignment = true
-    }
-    context.coordinator.isActivelyRunning = isActivelyRunning
+    coordinator.isActivelyRunning = isActivelyRunning
     let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
-    if context.coordinator.needsRender(document: document, style: style) {
-      context.coordinator.render(
+    if coordinator.needsRender(document: document, style: style) {
+      coordinator.render(
         document: document, fontName: fontName, fontSize: fontSize, textOpacity: textOpacity,
         fontWeight: fontWeight, textColorHex: textColorHex, lineSpacing: lineSpacing,
         paragraphSpacing: paragraphSpacing, horizontalMargin: horizontalMargin,
         alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord)
     }
-    context.coordinator.updateGeneration &+= 1
-    let generation = context.coordinator.updateGeneration
+    coordinator.updateGeneration &+= 1
+    let generation = coordinator.updateGeneration
     DispatchQueue.main.async {
-      guard context.coordinator.updateGeneration == generation else { return }
-      context.coordinator.updateReadState()
-      context.coordinator.align(
-        scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction)
+      guard coordinator.updateGeneration == generation else { return }
+      coordinator.updateReadState()
+      coordinator.align(scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction)
     }
   }
   @MainActor final class Coordinator {
@@ -718,9 +697,11 @@ struct ScriptTextView: NSViewRepresentable {
       guard let textView else { return }
       self.textOpacity = textOpacity
       self.highlightActiveWord = highlightActiveWord
-      self.textColour = NSColor(hex: textColorHex) ?? .white
+      textColour = NSColor(hex: textColorHex) ?? .white
       let attributed = NSMutableAttributedString()
-      let textColour = NSColor(hex: textColorHex) ?? .white
+      func markdown(_ text: String) -> AttributedString {
+        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .full))) ?? AttributedString(text)
+      }
       var headingRanges: [NSRange] = []
       var blockRanges: [UUID: NSRange] = [:]
       for (index, block) in document.blocks.enumerated() {
@@ -730,7 +711,7 @@ struct ScriptTextView: NSViewRepresentable {
           for (lineIndex, line) in block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             if lineIndex > 0 { lines.append(AttributedString("\n")) }
             let text = String(line)
-            let shown = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .full))) ?? AttributedString(text)
+            let shown = markdown(text)
             // Markdown drops "1." but it is read aloud, so it is shown, mapped and dimmed like any word.
             if let marker = Self.orderedListMarker(text),
               !String(shown.characters).drop(while: \.isWhitespace).hasPrefix(marker)
@@ -741,16 +722,13 @@ struct ScriptTextView: NSViewRepresentable {
           }
           rendered = lines
         } else {
-          rendered = (try? AttributedString(
-            markdown: block.rawMarkdown, options: .init(interpretedSyntax: .full)))
-            ?? AttributedString(block.rawMarkdown)
+          rendered = markdown(block.rawMarkdown)
         }
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rendered))
         part.addAttribute(.foregroundColor, value: textColour.withAlphaComponent(textOpacity), range: NSRange(location: 0, length: part.length))
-        if block.kind == .heading {
-          headingRanges.append(NSRange(location: attributed.length, length: part.length))
-        }
-        blockRanges[block.id] = NSRange(location: attributed.length, length: part.length)
+        let range = NSRange(location: attributed.length, length: part.length)
+        if block.kind == .heading { headingRanges.append(range) }
+        blockRanges[block.id] = range
         attributed.append(part)
         if index < document.blocks.count - 1 { attributed.append(NSAttributedString(string: "\n\n")) }
       }
@@ -778,7 +756,7 @@ struct ScriptTextView: NSViewRepresentable {
       let paragraph = NSMutableParagraphStyle()
       paragraph.lineSpacing = max(3, fontSize * lineSpacing)
       paragraph.paragraphSpacing = max(10, fontSize * paragraphSpacing)
-      paragraph.alignment = alignment == "Right" ? .right : alignment == "Center" ? .center : .left
+      paragraph.alignment = NSTextAlignment(setting: alignment)
       attributed.addAttribute(.paragraphStyle, value: paragraph, range: full)
       mappings = []
       let plain = attributed.string as NSString
@@ -833,9 +811,7 @@ struct ScriptTextView: NSViewRepresentable {
       lastReadTokenIndex = tokenIndex
       lastReadConfirmedTokenIndex = lastConfirmedTokenIndex
       textView.needsLayout = true
-      lastAligned = nil
-      lastGuideFraction = nil
-      lastAlignmentDestination = nil
+      invalidateAlignment()
     }
     func updateReadState() {
       guard let textView else { return }
@@ -862,9 +838,7 @@ struct ScriptTextView: NSViewRepresentable {
         ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
     }
     func seek(_ character: Int) {
-      guard
-        let nearest = mappings.min(by: { distance(character, $0.0) < distance(character, $1.0) })
-      else { return }
+      guard let nearest = mappings.min(by: { distance(character, $0.0) < distance(character, $1.0) }) else { return }
       onSeek(nearest.1)
     }
     func userDidScroll(_ scroll: NSScrollView) {
@@ -893,13 +867,17 @@ struct ScriptTextView: NSViewRepresentable {
     func setSideInset(_ inset: CGFloat) {
       guard let textView, abs(textView.textContainerInset.width - inset) > 0.5 else { return }
       textView.textContainerInset.width = inset
-      invalidateAlignment()
-      snapNextAlignment = true
+      snapToGuide()
     }
     func invalidateAlignment() {
       lastAligned = nil
       lastGuideFraction = nil
       lastAlignmentDestination = nil
+    }
+    /// Re-align on the next update without easing.
+    func snapToGuide() {
+      invalidateAlignment()
+      snapNextAlignment = true
     }
     func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double) {
       guard (lastAligned != tokenIndex || lastGuideFraction != guideFraction), let textView,
@@ -917,11 +895,8 @@ struct ScriptTextView: NSViewRepresentable {
       manager.ensureLayout(for: container)
       let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
       let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
-      let target = max(
-        0,
-        rect.midY + textView.textContainerInset.height - guideY)
-      let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
-        && !Self.reducesMotion()
+      let target = max(0, rect.midY + textView.textContainerInset.height - guideY)
+      let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment && !Self.reducesMotion()
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
@@ -974,9 +949,7 @@ struct ScriptTextView: NSViewRepresentable {
       return NSRange(location: range.location, length: end - range.location)
     }
     private func distance(_ point: Int, _ range: NSRange) -> Int {
-      point < range.location
-        ? range.location - point
-        : point > range.location + range.length ? point - (range.location + range.length) : 0
+      max(0, range.location - point, point - NSMaxRange(range))
     }
   }
 }
@@ -1005,10 +978,20 @@ private final class TrackingTextView: NSTextView {
   }
 }
 
-private extension NSColor {
+extension NSColor {
+  /// "#RRGGBB", as the settings store colours.
   convenience init?(hex: String) {
-    var value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
     guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
     self.init(red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255, blue: CGFloat(number & 255) / 255, alpha: 1)
   }
+  var hex: String {
+    let c = usingColorSpace(.deviceRGB) ?? self
+    return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
+  }
+}
+
+extension NSTextAlignment {
+  /// The settings' "Left", "Center" or "Right".
+  init(setting: String) { self = setting == "Right" ? .right : setting == "Center" ? .center : .left }
 }
