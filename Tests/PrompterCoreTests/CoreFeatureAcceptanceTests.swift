@@ -61,13 +61,14 @@ private struct ReadingSurface: View {
     (view as? NSScrollView) ?? view.subviews.lazy.compactMap(find).first
   }
 
-  /// One SwiftUI update plus the deferred read-state/alignment pass; `animations` also waits
-  /// out the 0.6 s scroll easing a running session uses.
+  /// One SwiftUI update plus the deferred read-state/alignment pass. These tests run with Reduce
+  /// Motion, so a running session's scroll lands at once instead of easing for 0.6 s;
+  /// `animations` marks the places that would otherwise have waited for it.
   func settle(animations: Bool = false) async {
     host.layoutSubtreeIfNeeded()
     try? await Task.sleep(for: .milliseconds(30))
     host.layoutSubtreeIfNeeded()
-    try? await Task.sleep(for: .milliseconds(animations ? 750 : 30))
+    try? await Task.sleep(for: .milliseconds(30))
   }
 
   var mirrored: Bool { store.settings.verticalMirror != (store.settings.rotation == 180) }
@@ -115,14 +116,21 @@ private struct ReadingSurface: View {
   }
 }
 
+/// Each word's pattern, compiled once: compiling one per word on every check was most of these
+/// tests' run time.
+@MainActor private var wordPatterns: [String: NSRegularExpression] = [:]
+
 /// An independent reading of where each spoken token is drawn: whole words, in order.
-private func wordRanges(_ tokens: [DocumentToken], in string: String) -> [NSRange?] {
+@MainActor private func wordRanges(_ tokens: [DocumentToken], in string: String) -> [NSRange?] {
   let ns = string as NSString
   var cursor = 0
   return tokens.map { token in
     let pattern = "(?<![\\p{L}\\p{N}])" + NSRegularExpression.escapedPattern(for: token.text)
       + "(?![\\p{L}\\p{N}])"
-    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
+    if wordPatterns[pattern] == nil {
+      wordPatterns[pattern] = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }
+    guard let regex = wordPatterns[pattern],
       cursor <= ns.length,
       let match = regex.firstMatch(in: string, range: NSRange(location: cursor, length: ns.length - cursor))
     else { return nil }
@@ -132,7 +140,7 @@ private func wordRanges(_ tokens: [DocumentToken], in string: String) -> [NSRang
 }
 
 /// Indices of the tokens a reader says off the presenter: all of them except ordered-list
-/// numbers, which the presenter does not draw.
+/// numbers, which the presenter draws but a reader usually skips.
 private func readableIndices(_ document: PrompterDocument) -> [Int] {
   let ns = document.markdown as NSString
   return document.spokenTokens.indices.filter { index in
@@ -257,6 +265,14 @@ private func replay(_ document: PrompterDocument, rangeLength: Int = 18) -> Repl
 
 @MainActor
 final class CoreFeatureAcceptanceTests: XCTestCase {
+  override func setUp() async throws {
+    try await super.setUp()
+    // Where the text lands is what these tests check; the easing has its own test.
+    let system = ScriptTextView.Coordinator.reducesMotion
+    ScriptTextView.Coordinator.reducesMotion = { true }
+    addTeardownBlock { @MainActor in ScriptTextView.Coordinator.reducesMotion = system }
+  }
+
   private func fixture(_ name: String) throws -> String {
     try String(contentsOf: acceptanceInputs.appendingPathComponent(name), encoding: .utf8)
   }
@@ -361,20 +377,12 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(result.failures, [], "\(result.failures.count) of \(result.total) words")
   }
 
-  /// 172 has a numbered list. The presenter drops the "1." markers, but the document keeps
-  /// "1", "2", "3" as spoken tokens, and the renderer then looks for "1" as a bare substring
-  /// from its cursor: it lands inside "15" twenty paragraphs later and every word in between
-  /// loses its place on screen (no dimming, no scrolling, clicks seek to the wrong word).
+  /// 172 has a numbered list. The presenter used to drop the "1." markers while the document
+  /// kept "1", "2", "3" as spoken tokens, and the renderer's search for "1" landed inside "15"
+  /// twenty paragraphs later: every word in between lost its place on screen.
   func test172EveryWordIsDrawnAsItselfInOrder() throws {
     let result = unmappedWords(try fixture("172 script.md"))
-    XCTExpectFailure("BUG: ordered-list numbers are spoken tokens the presenter never draws; their unanchored search desynchronises every later word mapping") {
-      XCTAssertEqual(result.failures, [], "\(result.failures.count) of \(result.total) words: \(result.failures.prefix(6))")
-    }
-    // The damage is not limited to the list numbers themselves.
-    let beyondTheList = result.failures.filter { !$0.contains("'1'") && !$0.contains("'2'") && !$0.contains("'3'") }
-    XCTExpectFailure("BUG: words after the numbered list are drawn at the wrong place or not at all") {
-      XCTAssertEqual(beyondTheList, [], "\(beyondTheList.count) ordinary words lost: \(beyondTheList.prefix(6))")
-    }
+    XCTAssertEqual(result.failures, [], "\(result.failures.count) of \(result.total) words: \(result.failures.prefix(6))")
   }
 
   /// Next passage onto the numbered list must put the list's first visible word on the guide.
@@ -388,9 +396,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     session.nextPassage()
     await surface.settle()
     let guide = (surface.text.string as NSString).substring(with: surface.guideLine())
-    XCTExpectFailure("BUG: next passage lands on the invisible list number, mapped to the '1' inside '15'") {
-      XCTAssertTrue(guide.contains("Individual performances"), "guide shows '\(guide)'")
-    }
+    XCTAssertTrue(guide.contains("Individual performances"), "guide shows '\(guide)'")
   }
 
   func testEmptyOneWordAndHeadingsAndCuesOnlyScripts() async throws {
@@ -758,8 +764,6 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
 
   /// Words already read stay dimmed when the presenter re-renders (any appearance change, an
   /// edit, or a fresh presenter view after closing, reopening or finishing an in-place edit).
-  /// `Coordinator.render` repaints every word bright and forgets the last painted state, and
-  /// `updateReadState` then only repaints between the last confirmed word and the next one.
   func testReadWordsStayDimmedAfterARenderOrAFreshPresenterView() async throws {
     let (store, record) = try await presenting(try fixture("173 script.md"))
     let session = store.session
@@ -778,10 +782,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     store.settings.fontSize = 60
     session.updateSettings(store.settings)
     await surface.settle()
-    let afterFont = surface.wronglyDimmed(session)
-    XCTExpectFailure("BUG: a font change re-renders every read word bright") {
-      XCTAssertEqual(afterFont, [], "after a font size change")
-    }
+    XCTAssertEqual(surface.wronglyDimmed(session), [], "after a font size change")
 
     var edited = record
     edited.markdown = session.document.markdown.replacingOccurrences(of: "offside trap.", with: "offside trap!")
@@ -789,18 +790,12 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     session.applyEditedRecord(edited)
     await surface.settle()
     XCTAssertEqual(session.lastConfirmedTokenIndex, 11, "an edit after the anchor keeps the confirmed word")
-    let afterEdit = surface.wronglyDimmed(session)
-    XCTExpectFailure("BUG: an edit re-renders every read word bright") {
-      XCTAssertEqual(afterEdit, [], "after an edit")
-    }
+    XCTAssertEqual(surface.wronglyDimmed(session), [], "after an edit")
 
     let reopened = Surface(store: store)
     defer { reopened.close() }
     await reopened.settle()
-    let afterReopen = reopened.wronglyDimmed(session)
-    XCTExpectFailure("BUG: a fresh presenter view (reopen, end of in-place edit) shows read words bright") {
-      XCTAssertEqual(afterReopen, [], "in a fresh presenter view")
-    }
+    XCTAssertEqual(reopened.wronglyDimmed(session), [], "in a fresh presenter view")
   }
 
   // MARK: Mirror and rotation
@@ -1007,9 +1002,11 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   // MARK: Full screen
 
   func testFullScreenStateFlags() {
-    let panel = PresenterController.configuredPanel()
+    let panel = PresenterPanel(captureVisible: false)
     XCTAssertTrue(panel.styleMask.contains(.resizable))
-    XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary))
+    // Auxiliary at rest, so it floats over another app's full-screen Space; Primary only while in
+    // its own (PresenterControllerTests covers the switch).
+    XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
     XCTAssertFalse(panel.styleMask.contains(.fullScreen), "a new presenter is windowed")
     XCTAssertFalse(panel.isReleasedWhenClosed, "closing keeps the panel for the next present")
     XCTAssertFalse(panel.hidesOnDeactivate)
@@ -1032,9 +1029,9 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     // Without a presented panel the full-screen command and close are harmless no-ops.
     controller.toggleFullScreen()
     controller.closeNow()
+    controller.videoDidChange(true)
     XCTAssertTrue(controller.windowShouldClose(panel), "no open edit, so the close button closes")
-    XCTAssertTrue(PresenterController.fitsToCamera(videoOn: true, fullScreen: false))
-    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: true, fullScreen: true))
+    // When video on fits the window is `testTurningVideoOnFitsTheWindowOnlyWhenItIsWindowedOnScreen`.
   }
 
   // MARK: Linked Markdown
@@ -1347,8 +1344,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(PrompterDocument.normalise("De\u{301}sire\u{301}"), PrompterDocument.normalise("Désiré"))
   }
 
-  /// The library search box is where a script is found before it is presented. The library's
-  /// own search folds accents; the store's visible list does not.
+  /// The library search box is where a script is found before it is presented. Both it and the
+  /// library's own search fold accents.
   func testFindingAScriptIgnoresAccents() async throws {
     let store = makeStore()
     let library = try XCTUnwrap(store.library)
@@ -1357,10 +1354,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     let found = try await library.search("barca").map(\.id)
     XCTAssertEqual(found, [script.id], "the library's search folds accents")
     store.search = "Barca"
-    let visible = store.visible.map(\.id)
-    XCTExpectFailure("BUG: AppStore.visible uses localizedCaseInsensitiveContains, which is accent-sensitive") {
-      XCTAssertEqual(visible, [script.id])
-    }
+    XCTAssertEqual(store.visible.map(\.id), [script.id])
     store.search = "barça"
     XCTAssertEqual(store.visible.map(\.id), [script.id])
   }
@@ -1420,7 +1414,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   /// A 5,000-word script (the two real scripts, four times over). Per recognition update:
   /// the work `SessionStore.flushCandidates` does (tracker match against
   /// `document.spokenTokens` for both locales, index bookkeeping, a fresh anchor) and the work
-  /// the presenter does (`updateNSView`'s document signature, read-state repaint, alignment).
+  /// the presenter does (`updateNSView`'s re-render check, read-state repaint, alignment).
   /// Budgets are 1 ms on average in an optimised build; `./test.sh` builds for debugging, where
   /// the Swift-side matcher runs several times slower, so it gets a looser session budget.
   func testAFiveThousandWordScriptKeepsProgressUnderAMillisecondPerUpdate() throws {
@@ -1481,8 +1475,10 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
         coordinator.updateReadState()
         coordinator.align(scroll: scroll, tokenIndex: index + 1, guideFraction: 0.35)
       }
-      // ScriptTextView.updateNSView builds this on every SwiftUI update, i.e. every word.
-      signature += clock.measure { _ = "\(document.hashValue)|Helvetica|44.0|1.0|Regular|#FFFFFF" }
+      // ScriptTextView.updateNSView makes this check on every SwiftUI update, i.e. every word.
+      signature += clock.measure {
+        _ = coordinator.needsRender(document: document, style: "Helvetica|44.0|1.0|Regular|#FFFFFF")
+      }
     }
     let repaintAverage = repaint / steps.count
     let signatureAverage = signature / steps.count
@@ -1494,8 +1490,6 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     #endif
     XCTAssertLessThan(sessionAverage, sessionBudget, "session progress handling")
     XCTAssertLessThan(repaintAverage, .milliseconds(1), "presenter repaint and alignment")
-    XCTExpectFailure("BUG: ScriptTextView.updateNSView hashes the whole document on every update") {
-      XCTAssertLessThan(repaintAverage + signatureAverage, .milliseconds(1), "presenter work per update")
-    }
+    XCTAssertLessThan(repaintAverage + signatureAverage, .milliseconds(1), "presenter work per update")
   }
 }

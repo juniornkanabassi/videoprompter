@@ -646,9 +646,8 @@ struct ScriptTextView: NSViewRepresentable {
       context.coordinator.snapNextAlignment = true
     }
     context.coordinator.isActivelyRunning = isActivelyRunning
-    let signature = "\(document.hashValue)|\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
-    if context.coordinator.signature != signature {
-      context.coordinator.signature = signature
+    let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
+    if context.coordinator.needsRender(document: document, style: style) {
       context.coordinator.render(
         document: document, fontName: fontName, fontSize: fontSize, textOpacity: textOpacity,
         fontWeight: fontWeight, textColorHex: textColorHex, lineSpacing: lineSpacing,
@@ -668,7 +667,10 @@ struct ScriptTextView: NSViewRepresentable {
     weak var textView: NSTextView?
     var onSeek: (Int) -> Void
     var mappings: [(NSRange, Int)] = []
-    var signature = ""
+    /// The system's Reduce Motion; tests that only check where the text lands set it to skip the easing.
+    static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var renderedDocument: PrompterDocument?
+    private var renderedStyle = ""
     var tokenIndex = 0
     var lastConfirmedTokenIndex: Int?
     var guideFraction = 0.35
@@ -708,6 +710,15 @@ struct ScriptTextView: NSViewRepresentable {
         },
       ]
     }
+    /// Whether this document or style differs from what is drawn. It runs on every SwiftUI update,
+    /// i.e. every word, so it compares instead of hashing the script: an unchanged document shares
+    /// its storage with the drawn one, and that comparison returns at once.
+    func needsRender(document: PrompterDocument, style: String) -> Bool {
+      guard renderedDocument != document || renderedStyle != style else { return false }
+      renderedDocument = document
+      renderedStyle = style
+      return true
+    }
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
       paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left",
@@ -720,13 +731,22 @@ struct ScriptTextView: NSViewRepresentable {
       let attributed = NSMutableAttributedString()
       let textColour = NSColor(hex: textColorHex) ?? .white
       var headingRanges: [NSRange] = []
+      var blockRanges: [UUID: NSRange] = [:]
       for (index, block) in document.blocks.enumerated() {
         let rendered: AttributedString
         if block.kind == .listItem {
           var lines = AttributedString()
           for (lineIndex, line) in block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             if lineIndex > 0 { lines.append(AttributedString("\n")) }
-            lines.append((try? AttributedString(markdown: String(line), options: .init(interpretedSyntax: .full))) ?? AttributedString(String(line)))
+            let text = String(line)
+            let shown = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .full))) ?? AttributedString(text)
+            // Markdown drops "1." but it is read aloud, so it is shown, mapped and dimmed like any word.
+            if let marker = Self.orderedListMarker(text),
+              !String(shown.characters).drop(while: \.isWhitespace).hasPrefix(marker)
+            {
+              lines.append(AttributedString(marker))
+            }
+            lines.append(shown)
           }
           rendered = lines
         } else {
@@ -739,6 +759,7 @@ struct ScriptTextView: NSViewRepresentable {
         if block.kind == .heading {
           headingRanges.append(NSRange(location: attributed.length, length: part.length))
         }
+        blockRanges[block.id] = NSRange(location: attributed.length, length: part.length)
         attributed.append(part)
         if index < document.blocks.count - 1 { attributed.append(NSAttributedString(string: "\n\n")) }
       }
@@ -786,14 +807,16 @@ struct ScriptTextView: NSViewRepresentable {
           attributed.addAttribute(.kern, value: CGFloat(0), range: hiddenRange)
         }
       }
-      textView.textStorage?.setAttributedString(attributed)
-      lastReadTokenIndex = nil
-      lastReadConfirmedTokenIndex = nil
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
+        // Each word is looked for only inside its own passage. A spoken word the rendering does not
+        // show (a list's "1." before it was shown) otherwise matched the "1" of a "15" paragraphs
+        // later, and every word after it mapped there or nowhere: the presenter jumped ahead.
+        let block = blockRanges[token.blockID] ?? NSRange(location: 0, length: plain.length)
+        cursor = max(cursor, block.location)
         var found = NSRange(location: NSNotFound, length: 0)
-        while cursor < plain.length {
-          let search = NSRange(location: cursor, length: plain.length - cursor)
+        while cursor < NSMaxRange(block) {
+          let search = NSRange(location: cursor, length: NSMaxRange(block) - cursor)
           let candidate = plain.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive], range: search)
           guard candidate.location != NSNotFound else { break }
           if cueRanges.contains(where: { NSIntersectionRange($0, candidate).length > 0 }) {
@@ -809,6 +832,15 @@ struct ScriptTextView: NSViewRepresentable {
           cursor = range.location + range.length
         }
       }
+      // Words already read stay dimmed through a re-render (a style change, an edit, a reopened
+      // presenter or the end of an in-place edit): their colour goes in before the text is shown.
+      let progress = max(tokenIndex, lastConfirmedTokenIndex ?? 0)
+      for (range, index) in mappings where index <= progress {
+        attributed.addAttribute(.foregroundColor, value: readColour(index), range: range)
+      }
+      textView.textStorage?.setAttributedString(attributed)
+      lastReadTokenIndex = tokenIndex
+      lastReadConfirmedTokenIndex = lastConfirmedTokenIndex
       textView.needsLayout = true
       lastAligned = nil
       lastGuideFraction = nil
@@ -825,14 +857,18 @@ struct ScriptTextView: NSViewRepresentable {
       // instead of once per word; a progress event can cover a dozen words.
       textView.textStorage?.beginEditing()
       for (range, index) in mappings where first...last ~= index {
-        let confirmed = lastConfirmedTokenIndex.map { index <= $0 } ?? false
-        let alpha = confirmed ? textOpacity * 0.38 : textOpacity
-        let color: NSColor = index == tokenIndex && !confirmed && highlightActiveWord ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
-        textView.textStorage?.addAttribute(.foregroundColor, value: color, range: range)
+        textView.textStorage?.addAttribute(.foregroundColor, value: readColour(index), range: range)
       }
       textView.textStorage?.endEditing()
       lastReadTokenIndex = tokenIndex
       lastReadConfirmedTokenIndex = lastConfirmedTokenIndex
+    }
+    /// Read words dim; the current word is highlighted when that is on.
+    private func readColour(_ index: Int) -> NSColor {
+      let confirmed = lastConfirmedTokenIndex.map { index <= $0 } ?? false
+      let alpha = confirmed ? textOpacity * 0.38 : textOpacity
+      return index == tokenIndex && !confirmed && highlightActiveWord
+        ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
     }
     func seek(_ character: Int) {
       guard
@@ -894,7 +930,7 @@ struct ScriptTextView: NSViewRepresentable {
         0,
         rect.midY + textView.textContainerInset.height - guideY)
       let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment
-        && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        && !Self.reducesMotion()
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
@@ -914,6 +950,14 @@ struct ScriptTextView: NSViewRepresentable {
       lastGuideFraction = guideFraction
       lastAlignmentDestination = destination
       snapNextAlignment = false
+    }
+    /// The ordered markers that open a list line, as written: "1. " for "1. Intro", "1. 2020. " for
+    /// "1. 2020. A year", nil for bullets. At most nine digits, as CommonMark allows.
+    static func orderedListMarker(_ line: String) -> String? {
+      guard let run = line.range(of: #"^\s*(?:(?:[-+*]|\d{1,9}[.)])\s+)+"#, options: .regularExpression)
+      else { return nil }
+      let numbers = line[run].split(whereSeparator: \.isWhitespace).filter { $0.first?.isNumber == true }
+      return numbers.isEmpty ? nil : numbers.joined(separator: " ") + " "
     }
     private func cueRanges(in plain: NSString, document: PrompterDocument) -> [NSRange] {
       var result: [NSRange] = []

@@ -454,11 +454,62 @@ final class PresenterControllerTests: XCTestCase {
     let document = PrompterDocument(markdown: "- First point\n- Deuxième point\n\n1. One\n2. Two")
     coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
 
-    XCTAssertEqual(view.string, "First point\nDeuxième point\n\nOne\nTwo")
+    XCTAssertEqual(view.string, "First point\nDeuxième point\n\n1. One\n2. Two")
     XCTAssertEqual(coordinator.mappings.map { document.spokenTokens[$0.1].text },
-      ["First", "point", "Deuxième", "point", "One", "Two"])
+      ["First", "point", "Deuxième", "point", "1", "One", "2", "Two"])
     XCTAssertEqual(coordinator.mappings.map { (view.string as NSString).substring(with: $0.0) },
-      ["First", "point", "Deuxième", "point", "One", "Two"])
+      ["First", "point", "Deuxième", "point", "1.", "One", "2.", "Two"])
+  }
+
+  /// Short 172: only 118 of 534 words mapped. The list's "1." was read aloud but not shown, so it
+  /// matched the "1" of a later "15" and every word after it mapped there or nowhere. The numbers
+  /// are shown now, every word maps in order inside its own passage, and a read number dims.
+  func testANumberedListScriptMapsEveryWordInOrderAndDimsTheNumbers() throws {
+    let document = PrompterDocument(markdown: "The criteria are as follows:\n\n1. Individual performances\n2. Team achievements\n3. 2020. A year\n\nNine of his 15 goals came late.")
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2_400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    let tokens = document.spokenTokens
+    XCTAssertTrue(text.string.contains("1. Individual performances\n2. Team achievements\n3. 2020. A year"), text.string)
+    XCTAssertEqual(coordinator.mappings.map(\.1), Array(tokens.indices), "every spoken word is shown and mapped")
+    let plain = text.string as NSString
+    XCTAssertEqual(coordinator.mappings.map { plain.substring(with: $0.0).trimmingCharacters(in: .punctuationCharacters) },
+      tokens.map(\.text))
+    let locations = coordinator.mappings.map(\.0.location)
+    XCTAssertEqual(locations, locations.sorted())
+    func shown(_ index: Int) throws -> NSRange { try XCTUnwrap(coordinator.mappings.first { $0.1 == index }).0 }
+    XCTAssertEqual(plain.substring(with: try shown(try XCTUnwrap(tokens.firstIndex { $0.text == "15" }))), "15")
+
+    let one = try XCTUnwrap(tokens.firstIndex { $0.text == "1" })
+    coordinator.tokenIndex = one + 1
+    coordinator.lastConfirmedTokenIndex = one
+    coordinator.updateReadState()
+    let marker = try shown(one)
+    XCTAssertEqual(plain.substring(with: marker), "1.")
+    let dimmed = text.textStorage?.attribute(.foregroundColor, at: marker.location, effectiveRange: nil) as? NSColor
+    XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.38, accuracy: 0.02, "a read number dims like a read word")
+
+    XCTAssertEqual(ScriptTextView.Coordinator.orderedListMarker("  12) Twelve"), "12) ")
+    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("- Bullet"))
+    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("2020 was a year"))
+    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("1234567890. Not a list"))
+  }
+
+  /// A spoken word the reading view does not show must not be looked for in later passages: a
+  /// code fence's language tag once pulled every word after it onto a later "text".
+  func testAWordThatIsNotShownNeverMapsIntoALaterPassage() {
+    let document = PrompterDocument(markdown: "Intro line.\n\n```text\nQuoted words here\n```\n\nThe text had 15 goals.")
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2_400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    let tokens = document.spokenTokens
+    let hidden = tokens.indices.filter { tokens[$0].blockID == document.blocks[1].id && tokens[$0].text == "text" }
+    XCTAssertEqual(hidden.count, 1, "the fence's language tag is a spoken token the view does not show")
+    XCTAssertEqual(coordinator.mappings.map(\.1), tokens.indices.filter { !hidden.contains($0) })
+    let locations = coordinator.mappings.map(\.0.location)
+    XCTAssertEqual(locations, locations.sorted())
   }
 
   func testOnlyLiveScrollNotificationsReanchorAtTheGuide() {
