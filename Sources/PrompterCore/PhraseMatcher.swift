@@ -5,6 +5,20 @@ private let commonWords: Set<String> = [
   "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
 
+/// Numbers as dictation may write them where a script has digits, or the reverse: every single-word
+/// spelling from zero to ninety-nine ("five", "twenty", not "twenty-one", which is two words), and
+/// the first three ordinals.
+private let spelledNumbers: [String: String] = {
+  let formatter = NumberFormatter()
+  formatter.numberStyle = .spellOut
+  formatter.locale = Locale(identifier: "en_GB")
+  var table = ["first": "1st", "second": "2nd", "third": "3rd"]
+  for number in 0...99 {
+    if let word = formatter.string(from: number as NSNumber), word.allSatisfy(\.isLetter) { table[word] = "\(number)" }
+  }
+  return table
+}()
+
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
   public var score: Double
@@ -88,13 +102,20 @@ public struct PhraseMatcher: Sendable {
     for wordStart in words.indices {
       let (source, targetIndex, informative) = follow(words, from: wordStart, along: target, at: start)
       let sourceCount = source - wordStart
+      let rest = words[source...]
       // The run has to sit at the reader's frontier, so no more of the revision may be left
       // unexplained after it than the run itself covers. Without that, any interior window could
       // be credited: on a script that repeats a phrase, the "a better Champions League player
       // than" he had spoken a paragraph earlier matched the same phrase ahead of him and dimmed
       // six words he had not reached, while the eleven words he had actually said since were
-      // ignored. A misrecognised tail is short, so this still credits the nearest continuation.
-      if words.count - source <= sourceCount, sourceCount >= 3, informative >= 2 {
+      // ignored. A misrecognised tail is short, so this still credits the nearest continuation; but
+      // a longer one must name a word of what follows, or it is speech after an older copy of the
+      // run: "in the Champions League and you in" (he had said "... fewer minutes in") dimmed the
+      // repeat's "League" before he said it.
+      let next = target[targetIndex..<min(target.count, targetIndex + rest.count + 2)]
+      if rest.count <= sourceCount, sourceCount >= 3, informative >= 2,
+        rest.count < 2 || rest.contains(where: { continues($0) && next.contains($0) })
+      {
         return PhraseMatch(tokenIndex: targetIndex - 1, score: 1, direction: .forward)
       }
     }
@@ -110,22 +131,24 @@ public struct PhraseMatcher: Sendable {
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
       guard informativeCount > 0 else { continue }
-      for start in lo..<hi where target[start] == evidence[0] {
+      for start in lo..<hi where same(evidence[0], target[start]) {
         var ti = start
         var matched = 0
         var last = start
         var trailingMatches = 0
         var leadingInformative = 0
         var leadingIntact = true
-        var trailingInformative = 0
+        // After a skip of eight or more words inside the phrase, the run that resumes there.
+        var landing: (informative: Int, intact: Bool)?
         for word in evidence {
           let before = ti
-          while ti < hi && target[ti] != word { ti += 1 }
+          while ti < hi && !same(word, target[ti]) { ti += 1 }
           if ti < hi {
             let informative = word.count > 2 && !common.contains(word) ? 1 : 0
             leadingIntact = leadingIntact && ti == before
             if leadingIntact { leadingInformative += informative }
-            trailingInformative = ti == before ? trailingInformative + informative : informative
+            if ti - max(before, current + 1) >= 8 { landing = (0, true) } else if ti != before { landing?.intact = false }
+            if landing?.intact == true { landing?.informative += informative }
             matched += 1
             last = ti
             ti += 1
@@ -137,20 +160,19 @@ public struct PhraseMatcher: Sendable {
             // the same, so the contiguity counter starts again.
             ti = before
             trailingMatches = 0
-            trailingInformative = 0
             leadingIntact = false
+            landing?.intact = false
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
         let gaps = Double(max(0, last - start + 1 - matched))
-        // Skipping more than a phrase he has not been heard saying takes an unbroken run of at least
-        // three informative words where the match lands: at its start, or, for a phrase that starts
-        // among words already read and crosses a gap, at its end. On weaker evidence a phrase said
-        // here ("their defence", "argue that Barcelona", "more goals than Barcelona") was credited
-        // to the same words a paragraph ahead and dimmed everything in between. A short skip keeps
-        // the looser rules: that is the recogniser dropping or garbling a word or two.
+        // Skipping eight or more words he has not been heard saying takes an unbroken run of at least
+        // three informative words where the match lands, before the phrase or inside it. On weaker
+        // evidence a phrase said here ("their defence", "argue that Barcelona", "you still") was
+        // credited to the same words a paragraph ahead and dimmed everything in between. A shorter
+        // skip keeps the looser rules: that is the recogniser dropping or garbling a word or two.
         if start > current + 8, leadingInformative < 3 { continue }
-        if last > current + 8, start <= current, gaps > 0, trailingInformative < 3 { continue }
+        if let landing, landing.informative < 3 { continue }
         // A lone word after a gap is weak evidence wherever the phrase starts: "ties that ... they"
         // credited the "they" four words on, over the "knocked them out" he had not said.
         guard gaps == 0 || trailingMatches >= 2 || last <= current + 1 else { continue }
@@ -203,7 +225,7 @@ public struct PhraseMatcher: Sendable {
   private func endsOn(_ words: ArraySlice<String>, target: [String], through: Int) -> Bool {
     var end = through + 1
     for word in words.reversed() {
-      if end >= 1, target[end - 1] == word {
+      if end >= 1, same(word, target[end - 1]) {
         end -= 1
         continue
       }
@@ -216,19 +238,21 @@ public struct PhraseMatcher: Sendable {
     return true
   }
   /// Follows `words` from `source` along the script from `index` while each word continues it. A
-  /// reader or the recogniser often drops one short function word ("saying [that] he's a better")
-  /// or writes a figure its own way ("one more" for "1 more"), which stranded the whole
-  /// continuation, so one short script word may be stepped over, once, when at least two
-  /// recognised words carry on after it. With only one, a
-  /// false start ("defender in 2024" before "defender in the 2024") dimmed the "the" too early.
+  /// reader leaves a word out ("saying [that] he's a better") and the recogniser drops one ("G/A"
+  /// heard as "G"), which stranded the whole continuation, so one script word may be stepped over,
+  /// once, when at least two recognised words carry on after it (with only one, a false start,
+  /// "defender in 2024" before "defender in the 2024", dimmed the "the" too early). Stepping over
+  /// the very next word also needs the two words heard before the run to end where he is, or an
+  /// already credited "I'm not saying" skips "saying" onto the "I am not saying" after it.
   private func follow(_ words: [String], from source: Int, along target: [String], at start: Int)
     -> (word: Int, index: Int, informative: Int)
   {
+    let anchored = source >= 2 && endsOn(words[(source - 2)..<source], target: target, through: start - 1)
     var word = source, index = start, informative = 0
     var skip: (word: Int, index: Int, informative: Int)?
     while word < words.count {
       var covered = coverage(of: words[word], in: target, at: index)
-      if covered == nil, skip == nil, index < target.count, target[index].count <= 2 || common.contains(target[index]),
+      if covered == nil, skip == nil, word > source || anchored,
         let next = coverage(of: words[word], in: target, at: index + 1)
       {
         skip = (word, index, informative)
@@ -251,12 +275,21 @@ public struct PhraseMatcher: Sendable {
     word.count > 2 && !common.contains(word) || word.contains(where: \.isNumber)
   }
   /// How many script tokens a recognised word covers at `index`: itself, or for a contraction the
-  /// words it stands for. "I'm" continues a script's "I'm" as well as its "I am".
+  /// words it stands for ("I'm" continues a script's "I'm" as well as its "I am"), or none for the
+  /// "percent" dictation may add after a script's "35%".
   private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
     guard index < target.count else { return nil }
-    if target[index] == word { return 1 }
+    if same(word, target[index]) { return 1 }
+    if word == "percent", index > 0, target[index - 1].allSatisfy(\.isNumber) { return 0 }
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
+  }
+  /// Whether a recognised word is this script token: the same word, the same number written the
+  /// other way ("five" for "5", "second" for "2nd"), or a year for its short form ("2025" for the
+  /// "25" of "2024-25"). Without it every "five" against a "5" broke the run.
+  private func same(_ word: String, _ token: String) -> Bool {
+    word == token || spelledNumbers[word] == token || spelledNumbers[token] == word
+      || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
   }
   private func contractionComponents(_ word: String) -> [String] {
     switch word {

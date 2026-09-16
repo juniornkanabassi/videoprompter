@@ -383,8 +383,12 @@ final class RecognitionTests: XCTestCase {
       replacementID: "1-dictation-1-533760-16000", generation: 1,
       text: "youy to excuse For better team I'm sorry You have just", isFinal: false,
       timestamp: 95.158, localeIdentifier: "fr_FR", audioStart: 88.74, audioEnd: 95.166), script: script)
-    XCTAssertEqual(update.status, .held)
-    XCTAssertEqual(tracker.tokenIndex, 260)
+    // The French revision does carry "better team I'm sorry you", which he has said, so the
+    // continuation credits through "you" (its "then" dropped). The reordered "have just" must not
+    // reach this sentence's "just" or the later repeated one.
+    XCTAssertEqual(script[264].normalised, "you")
+    XCTAssertEqual(update.tokenIndex, 264)
+    XCTAssertEqual(tracker.tokenIndex, 264)
   }
 
   func testDualLocaleHallucinatedTailCannotJumpFromEarlierPrefix() {
