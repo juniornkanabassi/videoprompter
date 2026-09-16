@@ -428,6 +428,29 @@ final class RecognitionTests: XCTestCase {
     XCTAssertEqual(tracker.tokenIndex, 24)
   }
 
+  func testRepeatedPhraseAlreadySpokenCannotCreditWordsAheadOfTheReader() {
+    let script = PrompterDocument(markdown: """
+      Doué is a better Champions League player than Yamal
+
+      As of the 28th of August 2026, Désiré Doué is a better Champions League player than Lamine Yamal.
+      """).spokenTokens
+    XCTAssertEqual(script[18].normalised, "is")
+    XCTAssertEqual(script[19].normalised, "a")
+    XCTAssertEqual(script[24].normalised, "than")
+    // The canonical trace at 12.96s: the reader has just reached "Doué is a" in the second
+    // sentence, and the revision still carries the first sentence's "a better Champions League
+    // player than". That earlier, already-spoken phrase must not be credited against the same
+    // phrase ahead of him; only the word he actually reached may dim.
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 18)
+    let update = tracker.consume(.init(
+      replacementID: "1-dictation-0-0-16000", generation: 1,
+      text: "Duet is a better Champions League player than Yamal as of the 28th of August 2026 Doué is a",
+      isFinal: false, timestamp: 12.96, localeIdentifier: "en_GB",
+      audioStart: 0, audioEnd: 12.96), script: script)
+    XCTAssertEqual(update.tokenIndex, 19)
+    XCTAssertEqual(tracker.tokenIndex, 19)
+  }
+
   func testImmediateSingleAndWeakTwoWordForwardMatchesRemainEligible() {
     let single = PrompterDocument(markdown: "alpha beta").spokenTokens
     XCTAssertEqual(

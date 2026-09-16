@@ -105,7 +105,13 @@ public struct PhraseMatcher: Sendable {
         targetIndex += components.count
         source += 1
       }
-      if sourceCount >= 3, informative >= 2 {
+      // The run has to sit at the reader's frontier, so no more of the revision may be left
+      // unexplained after it than the run itself covers. Without that, any interior window could
+      // be credited: on a script that repeats a phrase, the "a better Champions League player
+      // than" he had spoken a paragraph earlier matched the same phrase ahead of him and dimmed
+      // six words he had not reached, while the eleven words he had actually said since were
+      // ignored. A misrecognised tail is short, so this still credits the nearest continuation.
+      if words.count - source <= sourceCount, sourceCount >= 3, informative >= 2 {
         return PhraseMatch(tokenIndex: targetIndex - 1, score: 1, direction: .forward)
       }
     }
