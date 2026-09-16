@@ -71,10 +71,8 @@ public struct PhraseMatcher: Sendable {
     for source in 0..<words.count {
       var index = start
       var word = source
-      while word < words.count, index < target.count {
-        let components = contractionComponents(words[word])
-        guard target[index...].starts(with: components) else { break }
-        index += components.count
+      while word < words.count, let covered = coverage(of: words[word], in: target, at: index) {
+        index += covered
         word += 1
       }
       guard word == words.count, index > start,
@@ -97,12 +95,10 @@ public struct PhraseMatcher: Sendable {
       var targetIndex = start
       var sourceCount = 0
       var informative = 0
-      while source < words.count, targetIndex < target.count {
-        let components = contractionComponents(words[source])
-        guard target[targetIndex...].starts(with: components) else { break }
+      while source < words.count, let covered = coverage(of: words[source], in: target, at: targetIndex) {
         sourceCount += 1
-        informative += components.filter { $0.count > 2 && !common.contains($0) }.count
-        targetIndex += components.count
+        informative += target[targetIndex..<targetIndex + covered].filter { $0.count > 2 && !common.contains($0) }.count
+        targetIndex += covered
         source += 1
       }
       // The run has to sit at the reader's frontier, so no more of the revision may be left
@@ -132,10 +128,14 @@ public struct PhraseMatcher: Sendable {
         var matched = 0
         var last = start
         var trailingMatches = 0
+        var leadingInformative = 0
+        var leadingIntact = true
         for word in evidence {
           let before = ti
           while ti < hi && target[ti] != word { ti += 1 }
           if ti < hi {
+            leadingIntact = leadingIntact && ti == before
+            if leadingIntact, word.count > 2, !common.contains(word) { leadingInformative += 1 }
             matched += 1
             last = ti
             ti += 1
@@ -147,12 +147,20 @@ public struct PhraseMatcher: Sendable {
             // the same, so the contiguity counter starts again.
             ti = before
             trailingMatches = 0
+            leadingIntact = false
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
         let gaps = Double(max(0, last - start + 1 - matched))
-        // ponytail: a lone post-gap word is weak evidence; require more tail context for local forward jumps.
-        guard gaps == 0 || trailingMatches >= 2 || start + 1 < current else { continue }
+        // Skipping more than a phrase he has not been heard saying takes an unbroken run of at least
+        // three informative words from the landing point. On weaker evidence a phrase said here
+        // ("their defence", "argue that Barcelona", "more goals than Barcelona") was credited to the
+        // same words a paragraph ahead and dimmed everything in between. A short skip keeps the
+        // looser rules: that is the recogniser dropping or garbling a word or two.
+        if start > current + 8, leadingInformative < 3 { continue }
+        // A lone word after a gap is weak evidence wherever the phrase starts: "ties that ... they"
+        // credited the "they" four words on, over the "knocked them out" he had not said.
+        guard gaps == 0 || trailingMatches >= 2 || last <= current + 1 else { continue }
         guard words.count == 1 || informativeCount >= 2 || start <= current + 1 else { continue }
         let distance = Double(max(0, start - current))
         let score =
@@ -169,6 +177,58 @@ public struct PhraseMatcher: Sendable {
       best.score - runner >= (words.count == 1 ? 0.2 : 0.05)
     else { return nil }
     return PhraseMatch(tokenIndex: best.index, score: best.score, direction: .forward)
+  }
+  /// Word-onset credit. A live hypothesis often ends on the start of the word being spoken ("a better
+  /// champ"), a few hundred milliseconds before the recogniser commits to the whole word. When the
+  /// words before that fragment end exactly where the reader already is (or continue the script from
+  /// there, as `forwardExtension` credits), and the fragment is the first three or more letters of
+  /// the very next script word, that word is dimmed now.
+  ///
+  /// Only the next word is ever considered, so nothing is skipped and nothing moves back. A fragment
+  /// that is a whole common word ("the" before "these") or that begins a common word proves nothing
+  /// and is refused, as is a fragment with no anchoring words before it.
+  public func onsetCredit(words: [String], script: [DocumentToken], currentIndex: Int) -> PhraseMatch? {
+    let target = script.map(\.normalised)
+    guard let fragment = words.last, words.count >= 2, target.indices.contains(currentIndex) else { return nil }
+    let head = Array(words.dropLast())
+    let reached: Int
+    if head.count >= 2, endsOn(head.suffix(2), target: target, through: currentIndex) {
+      reached = currentIndex
+    } else if let run = forwardExtension(words: head, script: script, currentIndex: currentIndex) {
+      reached = run.tokenIndex
+    } else {
+      return nil
+    }
+    let next = reached + 1
+    guard next < target.count, fragment.count >= 3, fragment != target[next],
+      target[next].hasPrefix(fragment), !common.contains(target[next]),
+      !common.contains(where: { $0.hasPrefix(fragment) })
+    else { return nil }
+    return PhraseMatch(tokenIndex: next, score: 0.98, direction: .forward)
+  }
+  /// Whether `words` are exactly the script tokens ending at `through`.
+  private func endsOn(_ words: ArraySlice<String>, target: [String], through: Int) -> Bool {
+    var end = through + 1
+    for word in words.reversed() {
+      if end >= 1, target[end - 1] == word {
+        end -= 1
+        continue
+      }
+      let expanded = contractionComponents(word)
+      guard expanded.count > 1, end >= expanded.count,
+        Array(target[(end - expanded.count)..<end]) == expanded
+      else { return false }
+      end -= expanded.count
+    }
+    return true
+  }
+  /// How many script tokens a recognised word covers at `index`: itself, or for a contraction the
+  /// words it stands for. "I'm" continues a script's "I'm" as well as its "I am".
+  private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
+    guard index < target.count else { return nil }
+    if target[index] == word { return 1 }
+    let expanded = contractionComponents(word)
+    return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
   }
   private func contractionComponents(_ word: String) -> [String] {
     switch word {
@@ -223,20 +283,12 @@ public struct RecognitionTracker: Sendable {
     tokenIndex = max(0, index)
     invalidate(startingAt: tokenIndex)
   }
-  public mutating func reanchor(
-    to index: Int, minimumAudioStart: TimeInterval, baselining events: [RecognitionEvent] = []
-  ) {
+  public mutating func reanchor(to index: Int, minimumAudioStart: TimeInterval) {
     tokenIndex = max(0, index)
     acceptedAudio.removeAll()
     minimumSeekAudioStart = minimumAudioStart
     postSeekBaselined.removeAll()
     seekBaselines = revisions.mapValues(\.words)
-    for event in events where event.generation == generation {
-      let key = "\(event.localeIdentifier)|\(event.replacementID)"
-      let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
-      revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
-      seekBaselines[key] = words
-    }
   }
   public mutating func consume(_ event: RecognitionEvent, script: [DocumentToken])
     -> RecognitionUpdate
@@ -300,6 +352,9 @@ public struct RecognitionTracker: Sendable {
         words: wordsToMatch, script: script, currentIndex: tokenIndex)
       {
         candidates.append((event, extended))
+      }
+      if let onset = matcher.onsetCredit(words: wordsToMatch, script: script, currentIndex: tokenIndex) {
+        candidates.append((event, onset))
       }
     }
     guard events.contains(where: { $0.generation == generation }) else {

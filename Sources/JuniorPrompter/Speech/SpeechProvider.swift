@@ -9,6 +9,9 @@ public struct SpeechCandidate: Sendable, Hashable {
   public let text: String
   public let range: CMTimeRange
   public let isFinal: Bool
+  /// The recogniser's own result text, whose runs carry each word's audio time range. Nothing in the
+  /// app reads it; replays measure per-word latency from it.
+  public var transcript = AttributedString()
 }
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation }
@@ -24,7 +27,6 @@ public actor SpeechProvider {
   private var generation: UInt64 = 0
   private var resultTasks: [Task<Void, Swift.Error>] = []
   public init() {}
-  public var currentGeneration: UInt64 { generation }
   public static func contextualPhrases(from script: String) -> [String] {
     let words = script.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
     var phrases: [String] = []
@@ -90,7 +92,7 @@ public actor SpeechProvider {
   }
   public func start<S: AsyncSequence>(
     input: S, generation externalGeneration: UInt64? = nil,
-    onCandidate: @escaping @Sendable (SpeechCandidate) -> Void
+    onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
     guard let analyzer else { throw Error.notPrepared }
     resultTasks.forEach { $0.cancel() }
@@ -104,28 +106,30 @@ public actor SpeechProvider {
     case .transcription:
       for (i, module) in modules.enumerated() {
         resultTasks.append(
-          Task { [weak self] in
+          Task { @MainActor in
             for try await result in module.results {
-              guard let self, await self.currentGeneration == g else { return }
+              guard !Task.isCancelled else { return }
               let id = "\(g)-\(i)-\(result.range.start.seconds)"
               onCandidate(
                 .init(
                   replacementID: id, generation: g, locale: locales[i],
-                  text: String(result.text.characters), range: result.range, isFinal: result.isFinal))
+                  text: String(result.text.characters), range: result.range, isFinal: result.isFinal,
+                  transcript: result.text))
             }
           })
       }
     case .dictation:
       for (i, module) in dictationModules.enumerated() {
         resultTasks.append(
-          Task { [weak self] in
+          Task { @MainActor in
             for try await result in module.results {
-              guard let self, await self.currentGeneration == g else { return }
+              guard !Task.isCancelled else { return }
               let id = "\(g)-dictation-\(i)-\(result.range.start.value)-\(result.range.start.timescale)"
               onCandidate(
                 .init(
                   replacementID: id, generation: g, locale: locales[i],
-                  text: String(result.text.characters), range: result.range, isFinal: false))
+                  text: String(result.text.characters), range: result.range, isFinal: false,
+                  transcript: result.text))
             }
           })
       }
