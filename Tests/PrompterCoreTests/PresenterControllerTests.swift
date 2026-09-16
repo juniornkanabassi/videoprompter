@@ -25,6 +25,115 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(draft.expectedRevision, 3)
   }
 
+  /// In-place presenter editing: the reader keeps the passage they were on, whether
+  /// the change lands before it, inside its own passage, or after it.
+  func testInPlaceEditKeepsTheAnchorOnTheSamePassage() {
+    let markdown = "Opening lines of the script.\n\nSecond passage holds the target word here.\n\nClosing lines of the script."
+    for (name, edited) in [
+      ("before", "Rewritten opening lines entirely.\n\nSecond passage holds the target word here.\n\nClosing lines of the script."),
+      ("at", "Opening lines of the script.\n\nSecond passage really holds the target word here.\n\nClosing lines of the script."),
+      ("after", "Opening lines of the script.\n\nSecond passage holds the target word here.\n\nClosing lines rewritten entirely."),
+    ] {
+      let record = ScriptRecord(metadata: .init(title: "Anchor", fileName: "anchor.md", revision: 4,
+        contentFingerprint: "one"), markdown: markdown)
+      let session = SessionStore()
+      session.present(record: record, settings: PrompterSettings())
+      let target = try! XCTUnwrap(session.document.spokenTokens.firstIndex { $0.normalised == "target" })
+      session.seek(to: target)
+      var next = record
+      next.metadata.revision = 5
+      next.metadata.contentFingerprint = "two"
+      next.markdown = edited
+      session.applyEditedRecord(next)
+      XCTAssertEqual(session.activeToken?.normalised, "target", "edit \(name) the anchor moved it")
+      XCTAssertNil(session.anchorNotice, "edit \(name) reported a deleted passage")
+    }
+  }
+
+  /// Editing happens in the presenter's own view, so it must borrow the presenter's
+  /// type and put the anchored passage back on the guide line.
+  func testInPlaceEditorUsesPresenterTypeAndPutsTheAnchorOnTheGuide() throws {
+    let markdown = (1...30).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n")
+    let document = PrompterDocument(markdown: markdown)
+    let token = try XCTUnwrap(document.spokenTokens.first { $0.normalised == "20" })
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 4_000))
+    view.isVerticallyResizable = true
+    view.textContainer?.containerSize = NSSize(width: 760, height: CGFloat.greatestFiniteMagnitude)
+    view.textContainer?.widthTracksTextView = true
+    scroll.documentView = view
+    let typography = EditorTypography(textColor: .systemRed, lineSpacing: 8, paragraphSpacing: 16,
+      horizontalInset: 42, alignment: .center)
+    let coordinator = FormattedMarkdownEditor(markdown: .constant(markdown), fontName: "Helvetica",
+      fontSize: 44).makeCoordinator()
+    view.textContainerInset = NSSize(width: typography.horizontalInset, height: 8)
+    coordinator.configure(view, markdown: markdown, fontName: "Helvetica", fontSize: 44,
+      typography: typography)
+    let storage = try XCTUnwrap(view.textStorage)
+    XCTAssertEqual((storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? 0, 44, accuracy: 0.1)
+    XCTAssertEqual(storage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemRed)
+    XCTAssertEqual((storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)?.alignment, .center)
+
+    coordinator.scrollToAnchor(view, sourceOffset: token.sourceRange.location, guideFraction: 0.35)
+    let manager = try XCTUnwrap(view.layoutManager)
+    let container = try XCTUnwrap(view.textContainer)
+    manager.ensureLayout(for: container)
+    let visible = try XCTUnwrap(FormattedMarkdownEditModel(markdown: markdown)
+      .visibleIndex(forSourceOffset: token.sourceRange.location))
+    XCTAssertEqual((view.string as NSString).substring(with: NSRange(location: visible, length: 2)), "20")
+    XCTAssertEqual(view.selectedRange().location, visible)
+    let glyph = manager.glyphRange(forCharacterRange: NSRange(location: visible, length: 1), actualCharacterRange: nil)
+    let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
+    XCTAssertEqual(rect.midY + view.textContainerInset.height - scroll.contentView.bounds.origin.y,
+      ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height, fraction: 0.35), accuracy: 2)
+  }
+
+  /// The pencil pauses tracking in place and finishing carries on from where it was.
+  func testInPlaceEditPausesTrackingAndFinishingResumesIt() {
+    var settings = PrompterSettings()
+    settings.mode = "Timed"
+    let record = ScriptRecord(metadata: .init(title: "Run", fileName: "run.md", revision: 1,
+      contentFingerprint: "one"), markdown: "one two three four")
+    let session = SessionStore()
+    session.present(record: record, settings: settings)
+    session.play()
+    XCTAssertTrue(session.isActivelyRunning)
+    let draft = PresenterDraft(record: record)
+    draft.begin(session: session)
+    XCTAssertFalse(session.isActivelyRunning)
+    draft.markdown = "one two three four five"
+    draft.cancel()
+    XCTAssertTrue(session.isActivelyRunning)
+    session.pause()
+    // Cancelling restored the script the presenter is reading.
+    draft.begin(session: session)
+    XCTAssertEqual(draft.markdown, "one two three four")
+    XCTAssertEqual(session.document.markdown, "one two three four")
+    draft.cancel()
+    session.pause()
+  }
+
+  func testPresenterEditCommitPersistsMarkdownAndKeepsTheAnchor() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.library!.create(
+      title: "Presented", markdown: "Opening words here.\n\nSecond passage with the target word.")
+    await store.reload()
+    store.session.present(record: record, settings: PrompterSettings())
+    let target = try XCTUnwrap(store.session.document.spokenTokens.firstIndex { $0.normalised == "target" })
+    store.session.seek(to: target)
+    let draft = PresenterDraft(record: record)
+    draft.begin(session: store.session)
+    draft.markdown = "Rewritten opening.\n\nSecond passage with the target word."
+    await draft.confirm(store: store)
+    XCTAssertNil(draft.errorMessage)
+    XCTAssertFalse(draft.isEditing)
+    let saved = try await store.library!.read(record.id)
+    XCTAssertEqual(saved.markdown, "Rewritten opening.\n\nSecond passage with the target word.")
+    XCTAssertEqual(store.session.activeToken?.normalised, "target")
+  }
+
   func testOnePixelScreenIntersectionDoesNotMakePresenterReachable() {
     XCTAssertFalse(PresenterController.hasReachableTitleBar(
       NSRect(x: 1919, y: 100, width: 760, height: 520),

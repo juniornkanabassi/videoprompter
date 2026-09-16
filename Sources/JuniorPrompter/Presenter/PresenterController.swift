@@ -121,6 +121,8 @@ private extension NSRect { var area: CGFloat { width * height } }
   @Published var closeRequested = false
   @Published var errorMessage: String?
   @Published var noticeMessage: String?
+  private weak var session: SessionStore?
+  private var resumeAfterEdit = false
 
   init(record: ScriptRecord) {
     recordID = record.id
@@ -134,12 +136,25 @@ private extension NSRect { var area: CGFloat { width * height } }
     expectedFingerprint = record.metadata.contentFingerprint
     expectedRevision = record.metadata.revision
     markdown = record.markdown
+    self.session = session
+    resumeAfterEdit = session.isActivelyRunning
     session.pause()
     isEditing = true
     errorMessage = nil
     noticeMessage = nil
   }
-  func cancel() { isEditing = false; closeRequested = false; errorMessage = nil }
+  func cancel(resuming: Bool = true) {
+    isEditing = false
+    closeRequested = false
+    errorMessage = nil
+    if resuming { resumeTracking() } else { resumeAfterEdit = false }
+  }
+  /// Editing pauses recognition; finishing it carries on from the remapped anchor.
+  private func resumeTracking() {
+    guard resumeAfterEdit else { return }
+    resumeAfterEdit = false
+    session?.play()
+  }
   func requestClose() {
     guard !isSaving else {
       errorMessage = "Wait for the save to finish before closing the presenter."
@@ -161,6 +176,7 @@ private extension NSRect { var area: CGFloat { width * height } }
       isEditing = false
       closeRequested = false
       errorMessage = nil
+      resumeTracking()
     } catch {
       errorMessage = "The script changed or could not be saved. Your presenter draft is still open. \(error)"
     }
@@ -173,6 +189,7 @@ private extension NSRect { var area: CGFloat { width * height } }
       isEditing = false
       closeRequested = false
       errorMessage = nil
+      resumeTracking()
       noticeMessage = "Draft saved as a separate script. The presenter remains on the original script."
     } catch {
       errorMessage = "The draft could not be saved as a separate script. \(error)"
@@ -193,25 +210,37 @@ private struct PresenterView: View {
     GeometryReader { geometry in
       ZStack(alignment: .top) {
         Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).opacity(store.settings.backgroundOpacity)
-        ScriptTextView(
-          document: session.document, tokenIndex: session.tokenIndex,
-          lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
-          isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
-          guideFraction: store.settings.guideFraction,
-          verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180),
-          fontName: store.settings.fontName,
-          fontSize: store.settings.fontSize, textOpacity: store.settings.textOpacity,
-          fontWeight: store.settings.fontWeight, textColorHex: store.settings.textColorHex,
-          lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
-          horizontalMargin: store.settings.horizontalMargin, alignment: store.settings.alignment,
-          showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
-          onSeek: session.seek
-        )
+        Group {
+          if draft.isEditing {
+            FormattedMarkdownEditor(
+              markdown: $draft.markdown, fontName: store.settings.fontName,
+              fontSize: store.settings.fontSize,
+              onUnsupportedEdit: {
+                editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+              }, focusesOnAppear: true,
+              typography: Self.presenterTypography(store.settings),
+              anchorSourceOffset: session.activeToken?.sourceRange.location,
+              guideFraction: store.settings.guideFraction)
+          } else {
+            ScriptTextView(
+              document: session.document, tokenIndex: session.tokenIndex,
+              lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
+              isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
+              guideFraction: store.settings.guideFraction,
+              verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180),
+              fontName: store.settings.fontName,
+              fontSize: store.settings.fontSize, textOpacity: store.settings.textOpacity,
+              fontWeight: store.settings.fontWeight, textColorHex: store.settings.textColorHex,
+              lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
+              horizontalMargin: store.settings.horizontalMargin, alignment: store.settings.alignment,
+              showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
+              onSeek: session.seek
+            )
+          }
+        }
         .scaleEffect(
           x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
         ).rotationEffect(.degrees(Double(store.settings.rotation)))
-        .allowsHitTesting(!draft.isEditing)
-        .accessibilityHidden(draft.isEditing)
         Rectangle().fill(.cyan.opacity(0.82)).frame(height: 2).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction)
         ).allowsHitTesting(false)
@@ -239,68 +268,39 @@ private struct PresenterView: View {
     }
     .overlay(alignment: .bottom) {
       HStack(spacing: 8) {
-        Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
-          .accessibilityLabel("Previous passage")
-        Button(action: session.toggle) {
-          Image(systemName: session.isActivelyRunning ? "pause.fill" : "play.fill")
-        }.buttonStyle(.borderedProminent).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Play")
-        Button(action: session.nextPassage) { Image(systemName: "forward.end.fill") }
-          .accessibilityLabel("Next passage")
-        Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
-          .accessibilityLabel("Restart")
+        Group {
+          Button(action: session.previousPassage) { Image(systemName: "backward.end.fill") }
+            .accessibilityLabel("Previous passage")
+          Button(action: session.toggle) {
+            Image(systemName: session.isActivelyRunning ? "pause.fill" : "play.fill")
+          }.buttonStyle(.borderedProminent).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Play")
+          Button(action: session.nextPassage) { Image(systemName: "forward.end.fill") }
+            .accessibilityLabel("Next passage")
+          Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
+            .accessibilityLabel("Restart")
+        }.disabled(draft.isEditing).accessibilityHidden(draft.isEditing)
         Button {
-          if draft.isEditing { draft.cancel() } else { draft.begin(session: session) }
+          if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
         } label: {
-          Image(systemName: draft.isEditing ? "xmark" : "pencil")
-        }.accessibilityLabel(draft.isEditing ? "Cancel script edit" : "Edit script")
-        Button { PresenterController.shared.close() } label: { Image(systemName: "xmark") }
-          .accessibilityLabel("Close presenter")
+          Image(systemName: draft.isEditing ? "checkmark" : "pencil")
+        }.accessibilityLabel(draft.isEditing ? "Finish script edit" : "Edit script")
+          .keyboardShortcut(draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil)
+          .disabled(draft.isSaving)
+        if draft.isEditing {
+          Button { draft.cancel() } label: { Image(systemName: "xmark") }
+            .accessibilityLabel("Cancel script edit")
+            .keyboardShortcut(.cancelAction).disabled(draft.isSaving)
+        } else {
+          Button { PresenterController.shared.close() } label: { Image(systemName: "xmark") }
+            .accessibilityLabel("Close presenter")
+        }
       }
       .buttonStyle(.bordered).padding(8)
       .background(.ultraThinMaterial, in: Capsule()).padding(10)
-      .disabled(draft.isEditing)
-      .accessibilityHidden(draft.isEditing)
-    }
-    .overlay {
-      if draft.isEditing {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Edit script").font(.headline)
-          FormattedMarkdownEditor(
-            markdown: $draft.markdown, fontName: store.previewFontName,
-            fontSize: store.previewFontSize, onUnsupportedEdit: {
-              editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-            }, focusesOnAppear: true
-          )
-          .frame(maxHeight: .infinity)
-          if let editorNotice {
-            Text(editorNotice).font(.callout).foregroundStyle(.secondary)
-          }
-          if draft.hasExternalChange(in: store) {
-            Text("This script changed outside JuniorPrompter. Confirming will keep this draft and show a conflict instead of overwriting it.")
-              .foregroundStyle(.orange)
-          }
-          if let error = draft.errorMessage {
-            Text(error).foregroundStyle(.red)
-            Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
-              .disabled(draft.isSaving)
-          }
-          HStack {
-            Button("Cancel") { draft.cancel() }
-              .keyboardShortcut(.cancelAction).disabled(draft.isSaving)
-            Spacer()
-            Button("Confirm edit") { Task { await draft.confirm(store: store) } }
-              .buttonStyle(.borderedProminent).keyboardShortcut(.return, modifiers: .command)
-              .disabled(draft.isSaving)
-          }
-        }
-        .padding(16).frame(maxWidth: 720, maxHeight: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .padding()
-      }
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button("Discard Draft and Close", role: .destructive) {
-        draft.cancel()
+        draft.cancel(resuming: false)
         PresenterController.shared.closeNow()
       }
       Button("Keep Editing", role: .cancel) {}
@@ -312,11 +312,39 @@ private struct PresenterView: View {
       if isEditing { editorNotice = nil }
     }
     .overlay(alignment: .bottom) {
-      if let notice = session.anchorNotice ?? draft.noticeMessage {
-        Text(notice).font(.caption).padding(8).background(.regularMaterial, in: Capsule())
-          .padding(.bottom, 58)
+      if hasBottomNotice {
+      VStack(spacing: 6) {
+        if draft.isEditing, draft.hasExternalChange(in: store) {
+          Text("This script changed outside JuniorPrompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
+            .foregroundStyle(.orange)
+        }
+        if let error = draft.errorMessage {
+          Text(error).foregroundStyle(.red)
+          Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
+            .disabled(draft.isSaving)
+        }
+        if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage {
+          Text(notice)
+        }
+      }
+      .font(.caption).multilineTextAlignment(.center)
+      .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+      .padding(.bottom, 58).frame(maxWidth: 560)
       }
     }
+  }
+  private var hasBottomNotice: Bool {
+    editorNotice != nil || session.anchorNotice != nil || draft.noticeMessage != nil
+      || draft.errorMessage != nil || (draft.isEditing && draft.hasExternalChange(in: store))
+  }
+  private static func presenterTypography(_ settings: PrompterSettings) -> EditorTypography {
+    EditorTypography(
+      textColor: (NSColor(hex: settings.textColorHex) ?? .white)
+        .withAlphaComponent(settings.textOpacity),
+      lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
+      paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
+      horizontalInset: settings.horizontalMargin,
+      alignment: settings.alignment == "Right" ? .right : settings.alignment == "Center" ? .center : .left)
   }
 }
 

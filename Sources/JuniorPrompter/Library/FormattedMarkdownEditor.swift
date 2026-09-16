@@ -6,6 +6,16 @@ enum EditorFormatAction {
   case bold, italic, heading, link
 }
 
+/// Type and layout an editing surface borrows from wherever it is shown, so the
+/// presenter can edit in place without the text moving or changing appearance.
+struct EditorTypography {
+  var textColor: NSColor = .labelColor
+  var lineSpacing: Double = 0
+  var paragraphSpacing: Double = 0
+  var horizontalInset: Double = 0
+  var alignment: NSTextAlignment = .left
+}
+
 private final class FormattingTextView: NSTextView {
   var onFormat: ((EditorFormatAction) -> Void)?
 
@@ -49,6 +59,11 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
   var fontSize: Double
   var onUnsupportedEdit: (() -> Void)? = nil
   var focusesOnAppear = false
+  var typography = EditorTypography()
+  /// Markdown offset to place on the guide when the editor appears, so an in-place
+  /// presenter edit starts where the reader was.
+  var anchorSourceOffset: Int? = nil
+  var guideFraction = 0.35
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -104,9 +119,15 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       formatButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
       formatButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8)
     ])
-    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize)
+    view.textContainerInset = NSSize(width: typography.horizontalInset, height: 8)
+    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography)
     if focusesOnAppear {
       DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
+    }
+    if let anchorSourceOffset {
+      DispatchQueue.main.async { [guideFraction] in
+        context.coordinator.scrollToAnchor(view, sourceOffset: anchorSourceOffset, guideFraction: guideFraction)
+      }
     }
     return root
   }
@@ -116,7 +137,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       let view = scroll.documentView as? NSTextView
     else { return }
     context.coordinator.parent = self
-    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize)
+    view.textContainerInset.width = typography.horizontalInset
+    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -125,16 +147,24 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     private var updating = false
     private var fontName = ""
     private var fontSize = 0.0
+    private var typography = EditorTypography()
     private weak var textView: NSTextView?
     private let editorUndoManager = UndoManager()
 
     init(_ parent: FormattedMarkdownEditor) { self.parent = parent }
 
-    func configure(_ view: NSTextView, markdown: String, fontName: String, fontSize: Double) {
+    func configure(_ view: NSTextView, markdown: String, fontName: String, fontSize: Double,
+      typography: EditorTypography = EditorTypography())
+    {
       textView = view
       let changedFont = self.fontName != fontName || self.fontSize != fontSize
+        || self.typography.textColor != typography.textColor
+        || self.typography.lineSpacing != typography.lineSpacing
+        || self.typography.paragraphSpacing != typography.paragraphSpacing
+        || self.typography.alignment != typography.alignment
       self.fontName = fontName
       self.fontSize = fontSize
+      self.typography = typography
       guard model.markdown != markdown || changedFont else { return }
       // A binding echo after a native edit has the same source model. Re-rendering it
       // would reset AppKit's selection and undo grouping.
@@ -181,7 +211,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       if view.undoManager?.isUndoing == true || view.undoManager?.isRedoing == true { return }
       // This is only a recovery path for an AppKit mutation that did not take the
       // delegate route. Normal undo/redo restores its exact registered source snapshot.
-      let rendered = model.rendered(fontName: fontName, fontSize: fontSize)
+      let rendered = model.rendered(fontName: fontName, fontSize: fontSize, typography: typography)
       if view.string != rendered.string {
         guard let edit = Self.visibleEdit(from: rendered.string,
           to: view.string), let next = model.replacing(edit.range, with: edit.replacement)
@@ -282,20 +312,38 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
     private func render(_ view: NSTextView, keeping selection: NSRange) {
       updating = true
-      view.textStorage?.setAttributedString(model.rendered(fontName: fontName, fontSize: fontSize))
+      view.textStorage?.setAttributedString(model.rendered(fontName: fontName, fontSize: fontSize, typography: typography))
       let location = min(selection.location, view.string.utf16.count)
       view.setSelectedRange(NSRange(location: location, length: min(selection.length, view.string.utf16.count - location)))
       updating = false
     }
 
+    /// Same guide arithmetic as the presenter's own text view, so the passage the
+    /// reader was on does not move when editing starts.
+    func scrollToAnchor(_ view: NSTextView, sourceOffset: Int, guideFraction: Double) {
+      guard let index = model.visibleIndex(forSourceOffset: sourceOffset),
+        let manager = view.layoutManager, let container = view.textContainer,
+        let scroll = view.enclosingScrollView
+      else { return }
+      manager.ensureLayout(for: container)
+      let glyph = manager.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
+      let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
+      let clip = scroll.contentView
+      let guideY = ScriptTextView.visualGuideY(height: clip.bounds.height, fraction: guideFraction)
+      clip.setBoundsOrigin(NSPoint(x: clip.bounds.origin.x,
+        y: max(0, rect.midY + view.textContainerInset.height - guideY)))
+      scroll.reflectScrolledClipView(clip)
+      view.setSelectedRange(NSRange(location: index, length: 0))
+    }
+
     private func applyEmptyTypingAttributes(to view: NSTextView) {
       guard view.string.isEmpty else { return }
-      view.typingAttributes = [.font: FormattedMarkdownEditModel.font(name: fontName, size: fontSize), .foregroundColor: NSColor.labelColor]
+      view.typingAttributes = [.font: FormattedMarkdownEditModel.font(name: fontName, size: fontSize), .foregroundColor: typography.textColor]
     }
 
     private func reconcileAttributes(in view: NSTextView) {
       guard let storage = view.textStorage, storage.length > 0 else { return }
-      let rendered = model.rendered(fontName: fontName, fontSize: fontSize)
+      let rendered = model.rendered(fontName: fontName, fontSize: fontSize, typography: typography)
       guard storage.string == rendered.string, !storage.isEqual(to: rendered) else { return }
       updating = true
       storage.beginEditing()
@@ -533,7 +581,14 @@ struct FormattedMarkdownEditModel {
     }
   }
 
-  func rendered(fontName: String = "System Serif", fontSize: Double = 14) -> NSAttributedString {
+  /// First visible character at or after a markdown offset, for placing a guide.
+  func visibleIndex(forSourceOffset offset: Int) -> Int? {
+    sourceOffsets.firstIndex { $0.map { $0 >= offset } ?? false }
+  }
+
+  func rendered(fontName: String = "System Serif", fontSize: Double = 14,
+    typography: EditorTypography = EditorTypography()) -> NSAttributedString
+  {
     let output = NSMutableAttributedString(attributedString: renderedSource)
     let full = NSRange(location: 0, length: output.length)
     guard full.length > 0 else { return output }
@@ -552,7 +607,14 @@ struct FormattedMarkdownEditModel {
       let bold = NSFontManager.shared.convert(base, toHaveTrait: .boldFontMask)
       output.addAttribute(.font, value: NSFontManager.shared.convert(bold, toSize: fontSize * 1.35), range: range)
     }
-    output.addAttribute(.foregroundColor, value: NSColor.labelColor, range: full)
+    output.addAttribute(.foregroundColor, value: typography.textColor, range: full)
+    if typography.lineSpacing > 0 || typography.paragraphSpacing > 0 || typography.alignment != .left {
+      let paragraph = NSMutableParagraphStyle()
+      paragraph.lineSpacing = typography.lineSpacing
+      paragraph.paragraphSpacing = typography.paragraphSpacing
+      paragraph.alignment = typography.alignment
+      output.addAttribute(.paragraphStyle, value: paragraph, range: full)
+    }
     return output
   }
 
