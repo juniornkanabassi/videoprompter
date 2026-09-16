@@ -124,7 +124,7 @@ struct CameraGuideStore {
         path.addLine(to: corners[(index + 1) % corners.count])
       }
     }
-    path.addPath(CameraPreviewView.overlayPath(in: frame, thirds: guides.thirds, axes: guides.axes))
+    path.addPath(Self.thirdsAndAxes(in: frame, thirds: guides.thirds, axes: guides.axes))
     if guides.bullseye {
       let radius = min(frame.width, frame.height) * 0.045
       let centre = CGPoint(x: frame.midX, y: frame.midY)
@@ -135,6 +135,25 @@ struct CameraGuideStore {
       path.addLine(to: CGPoint(x: centre.x + arm, y: centre.y))
       path.move(to: CGPoint(x: centre.x, y: centre.y - arm))
       path.addLine(to: CGPoint(x: centre.x, y: centre.y + arm))
+    }
+    return path
+  }
+
+  /// Straight lines only: two thirds lines each way, and the centre cross.
+  static func thirdsAndAxes(in rect: CGRect, thirds: Bool, axes: Bool) -> CGPath {
+    let path = CGMutablePath()
+    func line(_ a: CGPoint, _ b: CGPoint) { path.move(to: a); path.addLine(to: b) }
+    if thirds {
+      for step in 1...2 {
+        let x = rect.minX + rect.width * CGFloat(step) / 3
+        let y = rect.minY + rect.height * CGFloat(step) / 3
+        line(CGPoint(x: x, y: rect.minY), CGPoint(x: x, y: rect.maxY))
+        line(CGPoint(x: rect.minX, y: y), CGPoint(x: rect.maxX, y: y))
+      }
+    }
+    if axes {
+      line(CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.midX, y: rect.maxY))
+      line(CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY))
     }
     return path
   }

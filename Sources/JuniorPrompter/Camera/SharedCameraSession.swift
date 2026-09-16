@@ -23,6 +23,36 @@ struct CameraHolders {
 /// showing it.
 @MainActor final class SharedCameraSession {
   static let shared = SharedCameraSession()
+
+  /// One row of a device's format table, reduced to what the choice actually turns on.
+  struct VideoFormat: Equatable, Sendable {
+    let width: Int32
+    let height: Int32
+    let subType: FourCharCode
+    /// Bytes per pixel on the wire. DeckLink offers the same picture in several codings.
+    var weight: Double {
+      switch subType {
+      case FourCharCode(kCVPixelFormatType_422YpCbCr8), FourCharCode(kCVPixelFormatType_422YpCbCr8_yuvs): return 2
+      case FourCharCode(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+           FourCharCode(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange): return 1.5
+      case FourCharCode(kCVPixelFormatType_422YpCbCr10): return 8.0 / 3
+      default: return 4  // BGRA, ARGB, r210
+      }
+    }
+  }
+
+  /// Index of a cheaper coding of the picture the device already auto-detected, or nil to
+  /// leave it alone. A DeckLink advertises every signal it can take and lands on 10-bit
+  /// `v210` (4K v210 is about 1 GB/s); its 8-bit 4:2:2 twin is the same picture at half the
+  /// bandwidth, and a preview layer cannot tell them apart. Same dimensions only — changing
+  /// those would fight the card's own signal detection.
+  static func preferredFormat(in formats: [VideoFormat], active: VideoFormat) -> Int? {
+    let best = formats.enumerated()
+      .filter { $0.element.width == active.width && $0.element.height == active.height }
+      .min { $0.element.weight < $1.element.weight }
+    guard let best, best.element.weight < active.weight else { return nil }
+    return best.offset
+  }
   let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "JuniorPrompter.camera.session")
   private var holders = CameraHolders()
@@ -90,14 +120,14 @@ struct CameraHolders {
   /// constant), and without it the default `.high` preset re-picks the format and a DeckLink
   /// loses the signal it auto-detected, falling back to 720x486 NTSC.
   private static func pinFormat(of device: AVCaptureDevice) {
-    func row(_ format: AVCaptureDevice.Format) -> CameraPreviewView.VideoFormat {
+    func row(_ format: AVCaptureDevice.Format) -> VideoFormat {
       let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-      return CameraPreviewView.VideoFormat(
+      return VideoFormat(
         width: d.width, height: d.height, subType: format.formatDescription.mediaSubType.rawValue)
     }
     let active = device.activeFormat
     let pick =
-      CameraPreviewView.preferredFormat(in: device.formats.map(row), active: row(active))
+      Self.preferredFormat(in: device.formats.map(row), active: row(active))
       .map { device.formats[$0] } ?? active
     guard (try? device.lockForConfiguration()) != nil else { return }
     device.activeFormat = pick

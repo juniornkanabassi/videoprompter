@@ -43,8 +43,8 @@ final class CameraOrientationTests: XCTestCase {
     // The guides are drawn on the rotated video rectangle, so a vertical feed gets vertical thirds.
     let upright = CameraRotation.none.fittedRect(aspect: feed, in: window)
     let turned = CameraRotation.quarter.fittedRect(aspect: feed, in: window)
-    let uprightThirds = segments(CameraPreviewView.overlayPath(in: upright, thirds: true, axes: false))
-    let turnedThirds = segments(CameraPreviewView.overlayPath(in: turned, thirds: true, axes: false))
+    let uprightThirds = segments(CameraOverlay.thirdsAndAxes(in: upright, thirds: true, axes: false))
+    let turnedThirds = segments(CameraOverlay.thirdsAndAxes(in: turned, thirds: true, axes: false))
     XCTAssertEqual(uprightThirds.count, 4)
     XCTAssertEqual(turnedThirds.count, 4)
     // First vertical third: a third across the wide picture, a third across the narrow one.
@@ -56,7 +56,7 @@ final class CameraOrientationTests: XCTestCase {
     XCTAssertEqual(turnedThirds[1].0, CGPoint(x: 78.75, y: 120))
     XCTAssertEqual(turnedThirds[1].1, CGPoint(x: 78.75 + 202.5, y: 120))
     // The centre cross stays on the picture's own centre, which is the window's here.
-    let axes = segments(CameraPreviewView.overlayPath(in: turned, thirds: false, axes: true))
+    let axes = segments(CameraOverlay.thirdsAndAxes(in: turned, thirds: false, axes: true))
     XCTAssertEqual(axes[0].0, CGPoint(x: 180, y: 0))
     XCTAssertEqual(axes[1].0, CGPoint(x: 78.75, y: 180))
   }

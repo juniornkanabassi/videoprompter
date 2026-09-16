@@ -11,27 +11,61 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
 }
 
 @MainActor final class CameraModel: ObservableObject {
+  /// One model for the Camera window, the Camera menu and the presenter's video background:
+  /// they show the same camera with the same rotation and the same guides.
+  static let shared = CameraModel()
   @Published private(set) var devices: [CameraDevice] = []
-  @Published var selectedUID: String? { didSet { defaults.set(selectedUID, forKey: "cameraDeviceUID") } }
+  @Published var selectedUID: String? {
+    didSet {
+      defaults.set(selectedUID, forKey: "cameraDeviceUID")
+      guard selectedUID != oldValue else { return }
+      loadingGuides = true
+      guides = guideStore.guides(for: selectedUID)
+      loadingGuides = false
+    }
+  }
+  /// Rotation, framing guides and the frame marker, remembered for each camera in turn.
+  @Published var guides = CameraGuides() {
+    didSet { if !loadingGuides { guideStore.set(guides, for: selectedUID) } }
+  }
   @Published var mirrored: Bool { didSet { defaults.set(mirrored, forKey: "cameraMirrored") } }
-  @Published var showsThirds: Bool { didSet { defaults.set(showsThirds, forKey: "cameraShowsThirds") } }
-  @Published var showsAxes: Bool { didSet { defaults.set(showsAxes, forKey: "cameraShowsAxes") } }
   @Published var alwaysOnTop: Bool { didSet { defaults.set(alwaysOnTop, forKey: "cameraAlwaysOnTop") } }
+  /// Whether the presenter shows the script over the live picture rather than over its own
+  /// background. The presenter's own controls are unaffected either way.
+  @Published var presentsWithVideo: Bool {
+    didSet { defaults.set(presentsWithVideo, forKey: "presenterWithVideo") }
+  }
   @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
   private let defaults: UserDefaults
+  private let guideStore: CameraGuideStore
+  private var loadingGuides = false
   // nonisolated so `deinit` can take the observers back out again.
   nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
-    selectedUID = defaults.string(forKey: "cameraDeviceUID")
+    guideStore = CameraGuideStore(defaults: defaults)
+    let uid = defaults.string(forKey: "cameraDeviceUID")
+    selectedUID = uid
+    guides = guideStore.guides(for: uid)
     mirrored = defaults.bool(forKey: "cameraMirrored")
-    showsThirds = defaults.bool(forKey: "cameraShowsThirds")
-    showsAxes = defaults.bool(forKey: "cameraShowsAxes")
     alwaysOnTop = defaults.bool(forKey: "cameraAlwaysOnTop")
+    presentsWithVideo = defaults.bool(forKey: "presenterWithVideo")
   }
 
   deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+
+  /// A rotation chosen by hand turns Auto back off; one Vision picked leaves it on.
+  func setRotation(_ rotation: CameraRotation, automatic: Bool = false) {
+    guard guides.rotation != rotation || guides.automaticRotation == automatic else { return }
+    if automatic {
+      guard guides.automaticRotation else { return }
+      guides.rotation = rotation
+    } else {
+      guides.rotation = rotation
+      guides.automaticRotation = false
+    }
+  }
 
   /// Built-in, USB/Thunderbolt UVC, Continuity Camera and every virtual camera (OBS, Elgato,
   /// Blackmagic) that registers itself as an AVFoundation device — those arrive as `.external`.
@@ -70,191 +104,33 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
   }
 }
 
-/// Live preview plus the composition overlay. Aspect-fit, so the overlay is drawn over the
-/// video rectangle rather than the view's bounds.
-final class CameraPreviewView: NSView {
-  private let session = AVCaptureSession()
-  private let preview = AVCaptureVideoPreviewLayer()
-  private let overlay = CAShapeLayer()
-  private let sessionQueue = DispatchQueue(label: "JuniorPrompter.camera.session")
-  private var currentUID: String?
-  private var windowObservers: [NSObjectProtocol] = []
-  /// What the window wants: the session only runs while the view is in a visible window.
-  private var wantsRunning = false
-  private var mirrored = false
-  private var thirds = false
-  private var axes = false
-
-  override init(frame: NSRect) {
-    super.init(frame: frame)
-    wantsLayer = true
-    layer?.backgroundColor = NSColor.black.cgColor
-    preview.session = session
-    preview.videoGravity = .resizeAspect
-    overlay.fillColor = nil
-    overlay.strokeColor = NSColor.white.withAlphaComponent(0.55).cgColor
-    overlay.lineWidth = 1
-    layer?.addSublayer(preview)
-    layer?.addSublayer(overlay)
-  }
-  required init?(coder: NSCoder) { nil }
-
-  /// Straight lines only: two thirds lines each way, and the centre cross.
-  static func overlayPath(in rect: CGRect, thirds: Bool, axes: Bool) -> CGPath {
-    let path = CGMutablePath()
-    func line(_ a: CGPoint, _ b: CGPoint) { path.move(to: a); path.addLine(to: b) }
-    if thirds {
-      for step in 1...2 {
-        let x = rect.minX + rect.width * CGFloat(step) / 3
-        let y = rect.minY + rect.height * CGFloat(step) / 3
-        line(CGPoint(x: x, y: rect.minY), CGPoint(x: x, y: rect.maxY))
-        line(CGPoint(x: rect.minX, y: y), CGPoint(x: rect.maxX, y: y))
-      }
-    }
-    if axes {
-      line(CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.midX, y: rect.maxY))
-      line(CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY))
-    }
-    return path
-  }
-
-
-  /// One row of a device's format table, reduced to what the choice actually turns on.
-  struct VideoFormat: Equatable, Sendable {
-    let width: Int32
-    let height: Int32
-    let subType: FourCharCode
-    /// Bytes per pixel on the wire. DeckLink offers the same picture in several codings.
-    var weight: Double {
-      switch subType {
-      case FourCharCode(kCVPixelFormatType_422YpCbCr8), FourCharCode(kCVPixelFormatType_422YpCbCr8_yuvs): return 2
-      case FourCharCode(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
-           FourCharCode(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange): return 1.5
-      case FourCharCode(kCVPixelFormatType_422YpCbCr10): return 8.0 / 3
-      default: return 4  // BGRA, ARGB, r210
-      }
-    }
-  }
-
-  /// Index of a cheaper coding of the picture the device already auto-detected, or nil to
-  /// leave it alone. A DeckLink advertises every signal it can take and lands on 10-bit
-  /// `v210` (4K v210 is about 1 GB/s); its 8-bit 4:2:2 twin is the same picture at half the
-  /// bandwidth, and a preview layer cannot tell them apart. Same dimensions only — changing
-  /// those would fight the card's own signal detection.
-  static func preferredFormat(in formats: [VideoFormat], active: VideoFormat) -> Int? {
-    let best = formats.enumerated()
-      .filter { $0.element.width == active.width && $0.element.height == active.height }
-      .min { $0.element.weight < $1.element.weight }
-    guard let best, best.element.weight < active.weight else { return nil }
-    return best.offset
-  }
-
-  func apply(uid: String?, mirrored: Bool, thirds: Bool, axes: Bool) {
-    self.mirrored = mirrored
-    self.thirds = thirds
-    self.axes = axes
-    if uid != currentUID {
-      currentUID = uid
-      select(uid)
-    }
-    preview.connection.map {
-      $0.automaticallyAdjustsVideoMirroring = false
-      $0.isVideoMirrored = mirrored
-    }
-    needsLayout = true
-  }
-
-  private func select(_ uid: String?) {
-    let session = self.session
-    let device = uid.flatMap { AVCaptureDevice(uniqueID: $0) }
-    let input = device.flatMap { try? AVCaptureDeviceInput(device: $0) }
-    let wanted = wantsRunning
-    sessionQueue.async {
-      session.beginConfiguration()
-      session.inputs.forEach(session.removeInput)
-      if let input, session.canAddInput(input) { session.addInput(input) }
-      session.commitConfiguration()
-      if let device { Self.lightenFormat(of: device) }
-      if input == nil || !wanted { session.stopRunning() } else if !session.isRunning { session.startRunning() }
-    }
-  }
-
-  /// Pin the device's format. Always, even when `preferredFormat` has nothing better: assigning
-  /// `activeFormat` is what puts the session on input priority (macOS has no such preset
-  /// constant), and without it the default `.high` preset re-picks the format and a DeckLink
-  /// loses the signal it auto-detected, falling back to 720x486 NTSC.
-  private static func lightenFormat(of device: AVCaptureDevice) {
-    func row(_ format: AVCaptureDevice.Format) -> VideoFormat {
-      let d = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
-      return VideoFormat(width: d.width, height: d.height, subType: format.formatDescription.mediaSubType.rawValue)
-    }
-    let active = device.activeFormat
-    let pick = preferredFormat(in: device.formats.map(row), active: row(active)).map { device.formats[$0] } ?? active
-    guard (try? device.lockForConfiguration()) != nil else { return }
-    device.activeFormat = pick
-    device.unlockForConfiguration()
-  }
-
-  /// Nothing runs while the window is closed or fully hidden: a 4K capture is not free.
-  private func setRunning(_ on: Bool) {
-    guard on != wantsRunning else { return }
-    wantsRunning = on
-    let session = self.session
-    sessionQueue.async {
-      if on {
-        if !session.inputs.isEmpty, !session.isRunning { session.startRunning() }
-      } else if session.isRunning {
-        session.stopRunning()
-      }
-    }
-  }
-
-  override func viewDidMoveToWindow() {
-    super.viewDidMoveToWindow()
-    windowObservers.forEach(NotificationCenter.default.removeObserver)
-    windowObservers = []
-    guard let window else { setRunning(false); return }
-    for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.willCloseNotification] {
-      windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] note in
-        MainActor.assumeIsolated {
-          self?.setRunning(name == NSWindow.didChangeOcclusionStateNotification
-            && (note.object as? NSWindow)?.occlusionState.contains(.visible) == true)
-        }
-      })
-    }
-    setRunning(window.occlusionState.contains(.visible))
-  }
-
-  func stop() {
-    setRunning(false)
-    windowObservers.forEach(NotificationCenter.default.removeObserver)
-    windowObservers = []
-  }
-
-  override func layout() {
-    super.layout()
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    preview.frame = bounds
-    let video = preview.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
-    overlay.frame = bounds
-    overlay.path = Self.overlayPath(in: video.isEmpty ? bounds : video, thirds: thirds, axes: axes)
-    CATransaction.commit()
-  }
-}
-
-private struct CameraPreview: NSViewRepresentable {
+/// The camera picture in a window or behind the script. Both hand the same model to the same
+/// `CameraStageView`, so the session is opened once and the guides cannot drift apart.
+struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
-  func makeNSView(context: Context) -> CameraPreviewView { CameraPreviewView(frame: .zero) }
-  func updateNSView(_ view: CameraPreviewView, context: Context) {
-    view.apply(uid: model.selectedUID, mirrored: model.mirrored, thirds: model.showsThirds, axes: model.showsAxes)
-    view.window?.level = model.alwaysOnTop ? .floating : .normal
+  /// The presenter keeps the camera's own composition guides off unless they are asked for.
+  var showsGuides = true
+  func makeNSView(context: Context) -> CameraStageView {
+    let view = CameraStageView(frame: .zero)
+    view.onAutoRotation = { rotation in CameraModel.shared.setRotation(rotation, automatic: true) }
+    return view
   }
-  static func dismantleNSView(_ view: CameraPreviewView, coordinator: ()) { view.stop() }
+  func updateNSView(_ view: CameraStageView, context: Context) {
+    var guides = model.guides
+    if !showsGuides {
+      guides.thirds = false
+      guides.axes = false
+      guides.bullseye = false
+      guides.marker = nil
+    }
+    view.apply(uid: model.selectedUID, guides: guides, mirrored: model.mirrored)
+  }
+  static func dismantleNSView(_ view: CameraStageView, coordinator: ()) { view.stop() }
 }
 
 struct CameraView: View {
-  @StateObject private var model = CameraModel()
+  @ObservedObject private var model = CameraModel.shared
+  @State private var showsGuideSettings = false
   var body: some View {
     Group {
       switch model.authorization {
@@ -275,6 +151,7 @@ struct CameraView: View {
     }
     .frame(minWidth: 320, minHeight: 200)
     .task { model.start() }
+    .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
       ToolbarItem {
         Picker("Camera", selection: $model.selectedUID) {
@@ -282,11 +159,98 @@ struct CameraView: View {
         }.frame(minWidth: 180)
       }
       ToolbarItem {
+        Picker("Rotation", selection: rotationChoice) {
+          Text("Auto").tag(nil as CameraRotation?)
+          ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
+        }.frame(minWidth: 96)
+      }
+      ToolbarItem {
         Toggle("Mirror", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
       }
-      ToolbarItem { Toggle("Thirds", systemImage: "grid", isOn: $model.showsThirds) }
-      ToolbarItem { Toggle("Centre", systemImage: "plus.viewfinder", isOn: $model.showsAxes) }
+      ToolbarItem {
+        Button("Guides", systemImage: "grid") { showsGuideSettings.toggle() }
+          .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
+            CameraGuideSettings(model: model).frame(width: 300).padding()
+          }
+      }
       ToolbarItem { Toggle("Always on Top", systemImage: "pin", isOn: $model.alwaysOnTop) }
     }
+  }
+  /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
+  private var rotationChoice: Binding<CameraRotation?> {
+    Binding(
+      get: { model.guides.automaticRotation ? nil : model.guides.rotation },
+      set: { value in
+        if let value {
+          model.setRotation(value)
+        } else {
+          model.guides.automaticRotation = true
+        }
+      })
+  }
+}
+
+/// The composition guides and the frame marker, in one popover rather than a row of toolbar
+/// toggles: there are too many of them now to sit in the toolbar.
+private struct CameraGuideSettings: View {
+  @ObservedObject var model: CameraModel
+  @State private var customWidth = 2.39
+  @State private var customHeight = 1.0
+  var body: some View {
+    Form {
+      Section("Guides") {
+        Toggle("Rule of thirds", isOn: $model.guides.thirds)
+        Toggle("Centre axes", isOn: $model.guides.axes)
+        Toggle("Centre bullseye", isOn: $model.guides.bullseye)
+        ColorPicker("Colour", selection: guideColor, supportsOpacity: false)
+        LabeledContent("Opacity") { Slider(value: $model.guides.opacity, in: 0...1) }
+      }
+      Section("Frame marker") {
+        Picker("Delivered frame", selection: marker) {
+          Text("Off").tag(nil as CameraAspect?)
+          ForEach(CameraAspect.presets) { Text($0.label).tag(Optional($0)) }
+          Text("Custom").tag(Optional(custom))
+        }
+        if let value = model.guides.marker, !CameraAspect.presets.contains(value) {
+          HStack {
+            TextField("Width", value: $customWidth, format: .number).frame(width: 64)
+            Text(":")
+            TextField("Height", value: $customHeight, format: .number).frame(width: 64)
+          }
+          .onChange(of: customWidth) { _, _ in model.guides.marker = custom }
+          .onChange(of: customHeight) { _, _ in model.guides.marker = custom }
+        }
+        if model.guides.marker != nil {
+          LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1) }
+        }
+      }
+    }.formStyle(.grouped)
+  }
+  private var custom: CameraAspect { CameraAspect(width: customWidth, height: customHeight) }
+  private var marker: Binding<CameraAspect?> {
+    Binding(get: { model.guides.marker }, set: { model.guides.marker = $0 })
+  }
+  private var guideColor: Binding<Color> {
+    Binding(get: guideColorValue, set: setGuideColor)
+  }
+  private func guideColorValue() -> Color {
+    guard let cgColor = CameraGuides.color(model.guides.colorHex, alpha: 1) else { return .blue }
+    return Color(nsColor: NSColor(cgColor: cgColor) ?? .systemBlue)
+  }
+  private func setGuideColor(_ color: Color) {
+    let rgb: NSColor = NSColor(color).usingColorSpace(.sRGB) ?? .systemBlue
+    let red = Int((rgb.redComponent * 255).rounded())
+    let green = Int((rgb.greenComponent * 255).rounded())
+    let blue = Int((rgb.blueComponent * 255).rounded())
+    model.guides.colorHex = String(format: "#%02X%02X%02X", red, green, blue)
+  }
+}
+
+/// Always-on-top belongs to the window, not to the preview inside it.
+private struct CameraWindowLevel: NSViewRepresentable {
+  let alwaysOnTop: Bool
+  func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+  func updateNSView(_ view: NSView, context: Context) {
+    view.window?.level = alwaysOnTop ? .floating : .normal
   }
 }
