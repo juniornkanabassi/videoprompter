@@ -49,18 +49,24 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   }
 
   /// How far into the script the presenter's text storage is painted dim: the last token whose text
-  /// ends at or before the last dimmed character. The rendered text is searched for each token the way
-  /// the presenter maps them, so this reads what is on the page rather than the session's state.
-  private static func paintedThrough(_ storage: NSTextStorage, tokens: [DocumentToken], opacity: Double, ends: inout [Int]) -> Int {
+  /// ends at or before the last dimmed character. Each token is looked for inside its own passage
+  /// (passages render separated by a blank line), so this reads what is on the page rather than the
+  /// session's state; a token the page does not show (a list number) takes its predecessor's end.
+  private static func paintedThrough(_ storage: NSTextStorage, document: PrompterDocument, opacity: Double, ends: inout [Int]) -> Int {
     let text = storage.string as NSString
-    if ends.isEmpty {
-      var cursor = 0
-      for token in tokens {
-        let found = text.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive],
-          range: NSRange(location: cursor, length: text.length - cursor))
-        guard found.location != NSNotFound else { break }
-        cursor = NSMaxRange(found)
-        ends.append(cursor)
+    let passages = text.components(separatedBy: "\n\n")
+    if ends.isEmpty, passages.count == document.blocks.count {
+      var start = 0
+      for (passage, block) in zip(passages, document.blocks) {
+        let range = NSRange(location: start, length: (passage as NSString).length)
+        var cursor = start
+        for token in block.spokenTokens {
+          let found = text.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive],
+            range: NSRange(location: cursor, length: NSMaxRange(range) - cursor))
+          if found.location != NSNotFound { cursor = NSMaxRange(found) }
+          ends.append(cursor)
+        }
+        start = NSMaxRange(range) + 2
       }
     }
     var lastDimmed = 0
@@ -249,7 +255,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     session.play(captureAudio: false)
 
     let ledger = ReplayLedger()
-    let tokens = session.document.spokenTokens
+    let document = session.document
+    let tokens = document.spokenTokens
     ledger.published = Array(repeating: nil, count: tokens.count)
     ledger.painted = Array(repeating: nil, count: tokens.count)
     // Exact publish instants: the sink runs synchronously inside the property's willSet.
@@ -307,7 +314,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
               MainActor.assumeIsolated {
                 guard let first = ledger.firstAudioWall else { return }
                 let now = ProcessInfo.processInfo.systemUptime - first
-                let through = Self.paintedThrough(storage, tokens: tokens, opacity: textOpacity, ends: &ledger.tokenEnds)
+                let through = Self.paintedThrough(storage, document: document, opacity: textOpacity, ends: &ledger.tokenEnds)
                 guard through >= 0 else { return }
                 for token in 0...through where ledger.painted[token] == nil { ledger.painted[token] = now }
               }
@@ -400,6 +407,9 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       }
     }
     defer { monitor.cancel() }
+    // 1600 frames (33 ms at 48 kHz) by default. The live input tap cannot deliver less than 100 ms
+    // (AVAudioNode.installTap), so 4800 here reproduces what the microphone path feeds the recogniser.
+    let chunk = AVAudioFrameCount(environment["JUNIORPROMPTER_REPLAY_CHUNK_FRAMES"] ?? "") ?? 1_600
     let producer = Task { @MainActor in
       defer { stream.continuation.finish() }
       let converter = try XCTUnwrap(AVAudioConverter(from: audio.processingFormat, to: format))
@@ -419,8 +429,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
             isFinal: nil, locale: nil,
             text: "AVAudioFile source rewound while AnalyzerInput bufferStartTime continued monotonically from \(streamTimeAtSourceRewind ?? 0) seconds."))
         }
-        let source = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 1_600)!
-        try audio.read(into: source, frameCount: 1_600)
+        let source = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: chunk)!
+        try audio.read(into: source, frameCount: chunk)
         guard source.frameLength > 0 else { break }
         let capacity = AVAudioFrameCount(
           ceil(Double(source.frameLength) * format.sampleRate / audio.processingFormat.sampleRate)) + 1
