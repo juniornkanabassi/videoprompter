@@ -5,6 +5,19 @@ private let commonWords: Set<String> = [
   "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
 
+private let numberWords = [
+  "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven",
+  "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty",
+]
+/// A small number as it is said, so a script's "3" (or its list marker "1.") and a recogniser's
+/// "three" are the same word. The recogniser writes either form, and he reads either as a word.
+private func spoken(_ word: String) -> String {
+  Int(word).flatMap { numberWords.indices.contains($0) ? numberWords[$0] : nil } ?? word
+}
+private extension DocumentToken {
+  var spoken: String { PrompterCore.spoken(normalised) }
+}
+
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
   public var score: Double
@@ -24,8 +37,8 @@ public struct PhraseMatcher: Sendable {
   public func match(recognised: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
   {
-    let words = recognised.map(PrompterDocument.normalise).filter { !$0.isEmpty }
-    let target = script.map(\.normalised)
+    let words = recognised.map { spoken(PrompterDocument.normalise($0)) }.filter { !$0.isEmpty }
+    let target = script.map(\.spoken)
     guard !words.isEmpty && !target.isEmpty else { return nil }
     let current = min(max(0, currentIndex), target.count - 1)
     if words.count >= minimumBackwardTokens {
@@ -64,7 +77,7 @@ public struct PhraseMatcher: Sendable {
   public func forwardExtension(words: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
   {
-    let target = script.map(\.normalised)
+    let target = script.map(\.spoken)
     guard !words.isEmpty, !target.isEmpty else { return nil }
     let start = min(max(0, currentIndex), target.count - 1) + 1
     guard start < target.count else { return nil }
@@ -87,7 +100,7 @@ public struct PhraseMatcher: Sendable {
   private func localForwardMatch(
     words: [String], script: [DocumentToken], current: Int
   ) -> PhraseMatch? {
-    let target = script.map(\.normalised)
+    let target = script.map(\.spoken)
     let start = current + 1
     guard start < target.count else { return nil }
     for wordStart in words.indices {
@@ -114,7 +127,7 @@ public struct PhraseMatcher: Sendable {
     return nil
   }
   private func forwardMatch(words: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
-    let target = script.map(\.normalised)
+    let target = script.map(\.spoken)
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
@@ -198,7 +211,7 @@ public struct PhraseMatcher: Sendable {
   /// that is a whole common word ("the" before "these") or that begins a common word proves nothing
   /// and is refused, as is a fragment with no anchoring words before it.
   public func onsetCredit(words: [String], script: [DocumentToken], currentIndex: Int) -> PhraseMatch? {
-    let target = script.map(\.normalised)
+    let target = script.map(\.spoken)
     guard let fragment = words.last, words.count >= 2, target.indices.contains(currentIndex) else { return nil }
     let head = Array(words.dropLast())
     let reached: Int
@@ -313,7 +326,7 @@ public struct RecognitionTracker: Sendable {
     var sawFresh = false
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
-      let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
+      let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.spoken)
       let old = revisions[key]
       if old?.words == words && old?.isFinal == event.isFinal { continue }
       var wordsToMatch = words

@@ -53,4 +53,26 @@ final class Replay_s172_Tests: XCTestCase {
     }
     XCTAssertEqual(normalised[tracker.tokenIndex], "d'or")
   }
+
+  /// The numbered list: he reads the script's "1." as "number one", and the recogniser writes "one".
+  /// Revision texts are the trace's own (25.2 to 25.92 s), from the start of the sentence.
+  func testSpokenNumberCreditsTheScriptsDigit() throws {
+    let tokens = PrompterDocument(markdown: """
+      The main 3 criteria on which the Ballon d’Or is awarded are as follows:
+
+      1. Individual performances, decisive and impressive character
+      2. Team performances and achievements
+      """).spokenTokens
+    var tracker = RecognitionTracker(
+      generation: 1, tokenIndex: try XCTUnwrap(tokens.firstIndex { $0.normalised == "follows" }))
+    let sentence = "The main three criteria on which the Ballon d'Or is awarded or as follows"
+    for (end, tail) in [(25.2, " number"), (25.44, " number one"), (25.92, ", number one individual")] {
+      _ = tracker.consume(
+        .init(
+          replacementID: "1-dictation-0-0-16000", generation: 1, text: sentence + tail, isFinal: false,
+          timestamp: end, localeIdentifier: "en_GB", audioStart: 21.6, audioEnd: end),
+        script: tokens)
+    }
+    XCTAssertEqual(tokens[tracker.tokenIndex].text, "Individual")
+  }
 }
