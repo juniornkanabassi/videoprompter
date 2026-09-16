@@ -48,6 +48,9 @@ struct InspectorView: View {
         }
         Slider(value: $store.settings.fontSize, in: 18...120)
         LabeledContent("Text size", value: "\(Int(store.settings.fontSize)) pt")
+        LabeledContent("Text width") {
+          Slider(value: $store.settings.textWidth, in: 0.3...1)
+        }
         LabeledContent("Background opacity") {
           Slider(value: $store.settings.backgroundOpacity, in: 0...1)
         }
@@ -64,7 +67,6 @@ struct InspectorView: View {
           }
           Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }
           Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }
-          Slider(value: $store.settings.horizontalMargin, in: 0...120) { Text("Horizontal margin") }
           Toggle("Mirror text horizontally", isOn: $store.settings.horizontalMirror)
           Toggle("Mirror text vertically", isOn: $store.settings.verticalMirror)
           Picker("Text rotation", selection: $store.settings.rotation) {
@@ -263,19 +265,45 @@ enum AvailableFonts {
   }
 }
 
-private struct InputLevelMeter: View {
+struct InputLevelMeter: View {
   let peakDBFS: Float
   let isClipping: Bool
   @State private var peakHold = PeakHold()
-  private let ticks: [(Double, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-20, "−20"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
+  static let ticks: [(Float, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-20, "−20"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
+  private static let labelFont = NSFont.monospacedDigitSystemFont(
+    ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize, weight: .regular)
+  static let labelWidths = ticks.map { ($0.1 as NSString).size(withAttributes: [.font: labelFont]).width }
 
-  private var fill: CGFloat {
-    guard peakDBFS.isFinite else { return 0 }
-    return CGFloat(min(1, max(0, (peakDBFS + 60) / 60)))
+  /// OBS's mapping: linear in dB from −60 to 0.
+  static func position(_ dBFS: Float) -> CGFloat {
+    dBFS.isFinite ? CGFloat(min(1, max(0, (dBFS + 60) / 60))) : 0
+  }
+
+  /// One row of labels that never collide: both ends always, then from 0 leftwards each label
+  /// that clears every label already placed by `gap`. Positions are fractions of the width.
+  static func visibleLabels(positions: [CGFloat], widths: [CGFloat], availableWidth: CGFloat, gap: CGFloat = 6) -> [Int] {
+    guard let last = positions.indices.last else { return [] }
+    var placed = [last, 0]
+    for index in positions.indices.reversed() where index != last && index != 0 {
+      let span = labelSpan(position: positions[index], width: widths[index], availableWidth: availableWidth)
+      let clears = placed.allSatisfy { other in
+        let placedSpan = labelSpan(position: positions[other], width: widths[other], availableWidth: availableWidth)
+        return span.upperBound + gap <= placedSpan.lowerBound || placedSpan.upperBound + gap <= span.lowerBound
+      }
+      if clears { placed.append(index) }
+    }
+    return Set(placed).sorted()
+  }
+
+  /// A label centred on its tick, kept inside the meter.
+  static func labelSpan(position: CGFloat, width: CGFloat, availableWidth: CGFloat) -> ClosedRange<CGFloat> {
+    let start = min(max(0, position * availableWidth - width / 2), max(0, availableWidth - width))
+    return start...(start + width)
   }
 
   var body: some View {
     GeometryReader { geometry in
+      let positions = Self.ticks.map { Self.position($0.0) }
       ZStack(alignment: .topLeading) {
         ZStack(alignment: .leading) {
           Capsule().fill(.quaternary)
@@ -286,32 +314,32 @@ private struct InputLevelMeter: View {
               .init(color: .red, location: 0.85)
             ], startPoint: .leading, endPoint: .trailing
           ).mask(alignment: .leading) {
-            Rectangle().frame(width: geometry.size.width * fill)
+            Rectangle().frame(width: geometry.size.width * Self.position(peakDBFS))
           }
-          ForEach(ticks, id: \.0) { value, _ in
-            let position = CGFloat((value + 60) / 60)
+          ForEach(positions, id: \.self) { position in
             Rectangle().fill(.primary.opacity(0.65)).frame(width: 1).offset(
               x: geometry.size.width * position - 1)
           }
           if peakHold.value(at: ProcessInfo.processInfo.systemUptime) != nil {
             TimelineView(.periodic(from: .now, by: 0.1)) { _ in
               if let marker = peakHold.value(at: ProcessInfo.processInfo.systemUptime) {
-                Rectangle().fill(.white).frame(width: 2).offset(x: geometry.size.width * markerPosition(marker) - 1)
+                Rectangle().fill(.white).frame(width: 2).offset(x: geometry.size.width * Self.position(marker) - 1)
               }
             }
           }
         }
         .frame(height: 12)
-        ForEach(Array(ticks.enumerated()), id: \.offset) { index, tick in
-          let position = CGFloat((tick.0 + 60) / 60)
-          Text(tick.1)
-            .font(.caption2.monospacedDigit())
+        ForEach(Self.visibleLabels(positions: positions, widths: Self.labelWidths, availableWidth: geometry.size.width), id: \.self) { index in
+          let span = Self.labelSpan(position: positions[index], width: Self.labelWidths[index], availableWidth: geometry.size.width)
+          Text(Self.ticks[index].1)
+            .font(Font(Self.labelFont as CTFont))
             .foregroundStyle(.secondary)
-            .position(x: min(geometry.size.width - 8, max(8, geometry.size.width * position)), y: index.isMultiple(of: 2) ? 21 : 31)
+            .fixedSize()
+            .position(x: (span.lowerBound + span.upperBound) / 2, y: 22)
         }
       }
     }
-    .frame(height: 40)
+    .frame(height: 30)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Microphone peak level")
     .accessibilityValue(
@@ -327,10 +355,6 @@ private struct InputLevelMeter: View {
       try? await Task.sleep(for: .seconds(6))
       if !Task.isCancelled { peakHold.expire() }
     }
-  }
-
-  private func markerPosition(_ value: Float) -> CGFloat {
-    CGFloat(min(1, max(0, (value + 60) / 60)))
   }
 }
 

@@ -8,6 +8,22 @@ import SwiftUI
   private var screenObserver: NSObjectProtocol?
   private weak var activeSession: SessionStore?
   private var draft: PresenterDraft?
+  /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
+  private var closesAfterFullScreen = false
+  private var isFullScreen: Bool { panel?.styleMask.contains(.fullScreen) == true }
+  // A floating window in its own full-screen Space misbehaves, so it floats only outside one.
+  func windowWillEnterFullScreen(_ notification: Notification) {
+    (notification.object as? NSWindow)?.level = .normal
+  }
+  func windowDidFailToEnterFullScreen(_ window: NSWindow) { window.level = .floating }
+  func windowDidExitFullScreen(_ notification: Notification) {
+    (notification.object as? NSWindow)?.level = .floating
+    if closesAfterFullScreen { closesAfterFullScreen = false; closeNow() }
+  }
+  func toggleFullScreen() {
+    guard let panel, panel.isVisible else { return }
+    panel.toggleFullScreen(nil)
+  }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     guard let draft, draft.isEditing else { activeSession?.pause(); return true }
     draft.requestClose()
@@ -20,6 +36,7 @@ import SwiftUI
       return
     }
     guard let script = store.selected else { return }
+    closesAfterFullScreen = false
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
@@ -31,7 +48,7 @@ import SwiftUI
     let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen")
       ? (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
       : nil)
-    if let targetScreen {
+    if let targetScreen, !isFullScreen {
       let area = targetScreen.visibleFrame
       let size = NSSize(width: min(760, area.width), height: min(520, area.height))
       panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2,
@@ -52,6 +69,7 @@ import SwiftUI
   }
   func closeNow() {
     activeSession?.pause()
+    if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
     panel?.orderOut(nil)
     // `orderOut` does not close the window, so the hosting view would keep holding the camera
     // session. Taking the content view out moves it to no window, which releases the holder;
@@ -67,7 +85,7 @@ import SwiftUI
     rotation.fittedRect(aspect: picture, in: visibleFrame)
   }
   func matchCameraSize() {
-    guard let panel, let picture = SharedCameraSession.shared.pictureSize,
+    guard let panel, !isFullScreen, let picture = SharedCameraSession.shared.pictureSize,
       let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
     else { return }
     panel.setFrame(
@@ -76,13 +94,24 @@ import SwiftUI
         in: screen.visibleFrame), display: true)
   }
   private func makePanel() -> NSPanel {
+    let value = Self.configuredPanel()
+    value.delegate = self
+    screenObserver = NotificationCenter.default.addObserver(
+      forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { if let panel = self?.panel { self?.recoverVisibleFrame(panel) } }
+    }
+    return value
+  }
+  /// `.fullScreenPrimary` (not `.fullScreenAuxiliary`) is what lets the presenter take its own
+  /// Space from the green button, View > Enter Full Screen and Ctrl-Cmd-F.
+  static func configuredPanel() -> NSPanel {
     let value = NSPanel(
       contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
       styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel], backing: .buffered, defer: false
     )
-    value.delegate = self
     value.level = .floating
-    value.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]
+    value.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenPrimary]
     value.sharingType = CommandLine.arguments.contains("--capture-visible") ? .readOnly : .none
     value.hidesOnDeactivate = false
     value.isMovableByWindowBackground = true
@@ -92,15 +121,10 @@ import SwiftUI
     value.titleVisibility = .hidden
     value.titlebarAppearsTransparent = true
     value.minSize = NSSize(width: 360, height: 220)
-    screenObserver = NotificationCenter.default.addObserver(
-      forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
-    ) { [weak self] _ in
-      MainActor.assumeIsolated { if let panel = self?.panel { self?.recoverVisibleFrame(panel) } }
-    }
     return value
   }
   private func recoverVisibleFrame(_ panel: NSPanel) {
-    guard !Self.hasReachableTitleBar(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)),
+    guard !isFullScreen, !Self.hasReachableTitleBar(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)),
       let target = NSScreen.main ?? NSScreen.screens.first
     else { return }
     var frame = panel.frame
@@ -129,6 +153,7 @@ import SwiftUI
     return result
   }
   func snapAfterDrag(_ panel: NSWindow) {
+    guard !panel.styleMask.contains(.fullScreen) else { return }
     panel.setFrame(Self.snappedFrame(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)), display: true)
   }
 }
@@ -248,6 +273,7 @@ private struct PresenterView: View {
   @State private var editorNotice: String?
   var body: some View {
     GeometryReader { geometry in
+      let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
       ZStack(alignment: .top) {
         if camera.presentsWithVideo {
           // The live picture is the bottom layer only. The background colour above it is the
@@ -255,9 +281,11 @@ private struct PresenterView: View {
           // editing all keep working exactly as they do without video.
           CameraPreview(model: camera)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .ignoresSafeArea()
             .task { camera.start() }
         }
         Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).opacity(store.settings.backgroundOpacity)
+          .ignoresSafeArea()
         Group {
           if draft.isEditing {
             FormattedMarkdownEditor(
@@ -266,7 +294,7 @@ private struct PresenterView: View {
               onUnsupportedEdit: {
                 editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
               }, focusesOnAppear: true,
-              typography: Self.presenterTypography(store.settings),
+              typography: Self.presenterTypography(store.settings, sideInset: sideInset),
               anchorSourceOffset: session.activeToken?.sourceRange.location,
               guideFraction: store.settings.guideFraction,
               verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180))
@@ -281,7 +309,7 @@ private struct PresenterView: View {
               fontSize: store.settings.fontSize, textOpacity: store.settings.textOpacity,
               fontWeight: store.settings.fontWeight, textColorHex: store.settings.textColorHex,
               lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
-              horizontalMargin: store.settings.horizontalMargin, alignment: store.settings.alignment,
+              horizontalMargin: sideInset, alignment: store.settings.alignment,
               showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
               onSeek: session.seek
             )
@@ -389,13 +417,13 @@ private struct PresenterView: View {
     editorNotice != nil || session.anchorNotice != nil || draft.noticeMessage != nil
       || draft.errorMessage != nil || (draft.isEditing && draft.hasExternalChange(in: store))
   }
-  private static func presenterTypography(_ settings: PrompterSettings) -> EditorTypography {
+  private static func presenterTypography(_ settings: PrompterSettings, sideInset: CGFloat) -> EditorTypography {
     EditorTypography(
       textColor: (NSColor(hex: settings.textColorHex) ?? .white)
         .withAlphaComponent(settings.textOpacity),
       lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
       paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
-      horizontalInset: settings.horizontalMargin,
+      horizontalInset: sideInset,
       alignment: settings.alignment == "Right" ? .right : settings.alignment == "Center" ? .center : .left)
   }
 }
@@ -442,6 +470,11 @@ struct ScriptTextView: NSViewRepresentable {
   init(document: PrompterDocument, tokenIndex: Int, lastConfirmedTokenIndex: Int? = nil, isActivelyRunning: Bool = false, seekRevision: Int = 0, guideFraction: Double, verticalMirror: Bool = false, fontName: String, fontSize: Double, textOpacity: Double, fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16, paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left", showCues: Bool = true, highlightActiveWord: Bool = false, onSeek: @escaping (Int) -> Void) {
     self.document = document; self.tokenIndex = tokenIndex; self.lastConfirmedTokenIndex = lastConfirmedTokenIndex; self.isActivelyRunning = isActivelyRunning; self.seekRevision = seekRevision; self.guideFraction = guideFraction; self.verticalMirror = verticalMirror; self.fontName = fontName; self.fontSize = fontSize; self.textOpacity = textOpacity; self.fontWeight = fontWeight; self.textColorHex = textColorHex; self.lineSpacing = lineSpacing; self.paragraphSpacing = paragraphSpacing; self.horizontalMargin = horizontalMargin; self.alignment = alignment; self.showCues = showCues; self.highlightActiveWord = highlightActiveWord; self.onSeek = onSeek
   }
+  /// The column is `textWidth` of the presenter's width, centred, and never nearer an edge
+  /// than the old fixed 42 pt margin. Only the text uses it; the camera stays full size.
+  static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
+    max(42, width * (1 - CGFloat(textWidth)) / 2)
+  }
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
   }
@@ -475,11 +508,7 @@ struct ScriptTextView: NSViewRepresentable {
     return scroll
   }
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    // Assigning textContainerInset dirties the layout of the whole script, so only do it when
-    // the margin really moved. This ran on every SwiftUI update of the presenter.
-    if let text = scroll.documentView as? NSTextView,
-      abs(text.textContainerInset.width - horizontalMargin) > 0.5
-    { text.textContainerInset.width = horizontalMargin }
+    context.coordinator.setSideInset(horizontalMargin)
     context.coordinator.onSeek = onSeek
     context.coordinator.tokenIndex = tokenIndex
     context.coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
@@ -495,7 +524,7 @@ struct ScriptTextView: NSViewRepresentable {
       context.coordinator.snapNextAlignment = true
     }
     context.coordinator.isActivelyRunning = isActivelyRunning
-    let signature = "\(document.hashValue)|\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(horizontalMargin)|\(alignment)|\(showCues)|\(highlightActiveWord)"
+    let signature = "\(document.hashValue)|\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
     if context.coordinator.signature != signature {
       context.coordinator.signature = signature
       context.coordinator.render(
@@ -709,6 +738,14 @@ struct ScriptTextView: NSViewRepresentable {
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
       return verticalMirror ? height - visual : visual
+    }
+    /// Assigning textContainerInset dirties the layout of the whole script, so only when the
+    /// width really moved; the reflowed anchor then snaps back onto the guide line.
+    func setSideInset(_ inset: CGFloat) {
+      guard let textView, abs(textView.textContainerInset.width - inset) > 0.5 else { return }
+      textView.textContainerInset.width = inset
+      invalidateAlignment()
+      snapNextAlignment = true
     }
     func invalidateAlignment() {
       lastAligned = nil

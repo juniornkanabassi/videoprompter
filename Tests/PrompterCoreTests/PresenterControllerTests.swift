@@ -590,6 +590,69 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(SharedCameraSession.shared.holderCount, 0)
   }
 
+  /// Native full screen needs `.fullScreenPrimary` and a resizable window; the presenter floats
+  /// only outside its full-screen Space.
+  func testThePresenterCanTakeItsOwnFullScreenSpaceAndFloatsOnlyOutsideIt() {
+    let panel = PresenterController.configuredPanel()
+    XCTAssertTrue(panel.styleMask.contains(.resizable))
+    XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary))
+    XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), "auxiliary rules out full screen")
+    XCTAssertEqual(panel.level, .floating)
+    let controller = PresenterController()
+    controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: panel))
+    XCTAssertEqual(panel.level, .normal)
+    controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: panel))
+    XCTAssertEqual(panel.level, .floating)
+    panel.level = .normal
+    controller.windowDidFailToEnterFullScreen(panel)
+    XCTAssertEqual(panel.level, .floating)
+  }
+
+  /// Text width narrows the script column only: it persists, the reading anchor stays put,
+  /// the text container follows it, and the anchored word stays on the guide line.
+  func testTextWidthPersistsNarrowsTheColumnAndKeepsTheAnchorOnTheGuide() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(store.settings.textWidth, 1)
+    let markdown = (1...20).map { "Line \($0) with useful words for a wide column." }.joined(separator: "\n\n")
+    let record = ScriptRecord(metadata: .init(title: "Width", fileName: "width.md", revision: 1,
+      contentFingerprint: "one"), markdown: markdown)
+    store.session.present(record: record, settings: store.settings)
+    store.session.seek(to: 40)
+    store.settings.textWidth = 0.4
+    store.session.updateSettings(store.settings)
+    XCTAssertEqual(store.session.tokenIndex, 40)
+    XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+      .settings.textWidth, 0.4)
+
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 1600, height: 900))
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 1600, height: 6_000))
+    text.textContainer?.widthTracksTextView = true
+    scroll.documentView = text
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(document: store.session.document, fontName: "Helvetica", fontSize: 44, textOpacity: 1)
+    coordinator.setSideInset(ScriptTextView.sideInset(width: 1600, textWidth: 1))
+    coordinator.align(scroll: scroll, tokenIndex: 40, guideFraction: 0.35)
+    let container = try XCTUnwrap(text.textContainer)
+    XCTAssertEqual(container.size.width, 1600 - 84, accuracy: 0.5)
+    let firstOrigin = scroll.contentView.bounds.origin.y
+
+    coordinator.setSideInset(ScriptTextView.sideInset(width: 1600, textWidth: store.settings.textWidth))
+    coordinator.align(scroll: scroll, tokenIndex: 40, guideFraction: 0.35)
+    XCTAssertEqual(container.size.width, 640, accuracy: 0.5)
+    XCTAssertNotEqual(scroll.contentView.bounds.origin.y, firstOrigin, accuracy: 1, "the narrower column must reflow")
+    let mapping = try XCTUnwrap(coordinator.mappings.first { $0.1 == 40 })
+    let manager = try XCTUnwrap(text.layoutManager)
+    manager.ensureLayout(for: container)
+    let rect = manager.boundingRect(
+      forGlyphRange: manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil), in: container)
+    XCTAssertEqual(rect.midY + text.textContainerInset.height - scroll.contentView.bounds.origin.y,
+      ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height, fraction: 0.35), accuracy: 2)
+    XCTAssertEqual(ScriptTextView.sideInset(width: 300, textWidth: 0.9), 42, "never nearer an edge than 42 pt")
+  }
+
   /// A 4K landscape feed turned 90° shows as 9:16, so the presenter becomes a tall window as
   /// large as the screen allows.
   func testMatchCameraSizeTurnsAVerticalFeedIntoAVerticalWindow() {
