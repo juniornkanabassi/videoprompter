@@ -548,9 +548,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
       // 173 reads stats: "10 goals from an xG of 5.4 and put away". Every token of "from an
       // xG of 5.4 and" is two letters, a digit or filler, so the at-once tail credit refuses the
       // run and six spoken words stay bright until "put".
-      XCTExpectFailure("BUG: contiguous runs of numbers and two-letter words are never credited at once", enabled: name.hasPrefix("173")) {
-        XCTAssertLessThanOrEqual(result.worstLag, 4, "\(name) held words back: \(result.worstAt)")
-      }
+      XCTAssertLessThanOrEqual(result.worstLag, 4, "\(name) held words back: \(result.worstAt)")
       print("[core-qa] \(name): \(document.spokenTokens.count) tokens, worst lag \(result.worstLag) words, \(result.worstAt)")
     }
   }
@@ -1145,10 +1143,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     session.applyEditedRecord(first)
     XCTAssertNotNil(session.anchorNotice, "deleting the read passage says so")
     session.present(record: record("A different script altogether.", title: "Two"), settings: manual)
-    let notice = session.anchorNotice
-    XCTExpectFailure("BUG: present(record:) keeps the previous script's anchorNotice") {
-      XCTAssertNil(notice)
-    }
+    XCTAssertNil(session.anchorNotice)
   }
 
   /// Closing mid-session pauses it and drops the presenter view; reopening presents the same

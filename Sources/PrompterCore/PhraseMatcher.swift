@@ -71,7 +71,7 @@ public struct PhraseMatcher: Sendable {
     for source in 0..<words.count {
       let (word, index, _) = follow(words, from: source, along: target, at: start)
       guard word == words.count, index > start,
-        target[start..<index].contains(where: { $0.count > 2 && !common.contains($0) })
+        target[start..<index].contains(where: continues)
       else { continue }
       // Below 1 so a proper match always outranks a fresh tail, and never on filler alone:
       // a trailing "and" or "the" would otherwise win every candidate sort on its own.
@@ -216,9 +216,10 @@ public struct PhraseMatcher: Sendable {
     return true
   }
   /// Follows `words` from `source` along the script from `index` while each word continues it. A
-  /// reader or the recogniser often drops one short function word ("saying [that] he's a better"),
-  /// which stranded the whole continuation, so one script word that carries no information may be
-  /// stepped over, once, when at least two recognised words carry on after it. With only one, a
+  /// reader or the recogniser often drops one short function word ("saying [that] he's a better")
+  /// or writes a figure its own way ("one more" for "1 more"), which stranded the whole
+  /// continuation, so one short script word may be stepped over, once, when at least two
+  /// recognised words carry on after it. With only one, a
   /// false start ("defender in 2024" before "defender in the 2024") dimmed the "the" too early.
   private func follow(_ words: [String], from source: Int, along target: [String], at start: Int)
     -> (word: Int, index: Int, informative: Int)
@@ -235,12 +236,19 @@ public struct PhraseMatcher: Sendable {
         covered = next
       }
       guard let covered else { break }
-      informative += target[index..<index + covered].filter { $0.count > 2 && !common.contains($0) }.count
+      informative += target[index..<index + covered].filter(continues).count
       index += covered
       word += 1
     }
     if let skip, word - skip.word < 2 { return skip }
     return (word, index, informative)
+  }
+  /// Whether a script word, heard right where the reader is, is evidence he is saying it: an
+  /// informative word or a number. Numbers count only here, next to the reader: "from an xG of 5.4
+  /// and" is all short words, filler and digits, and stayed bright until "put". Far from the reader
+  /// they prove nothing, because a script repeats its figures ("2.88", "2024-25").
+  private func continues(_ word: String) -> Bool {
+    word.count > 2 && !common.contains(word) || word.contains(where: \.isNumber)
   }
   /// How many script tokens a recognised word covers at `index`: itself, or for a contraction the
   /// words it stands for. "I'm" continues a script's "I'm" as well as its "I am".

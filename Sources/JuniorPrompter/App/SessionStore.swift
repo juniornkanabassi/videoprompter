@@ -75,6 +75,7 @@ final class SessionStore: ObservableObject {
       minimumSpeechGeneration = 0
       acceptedWords = 0
       activeDuration = 0
+      anchorNotice = nil
       state = .paused
     } else {
       updateSettings(settings)
@@ -155,6 +156,7 @@ final class SessionStore: ObservableObject {
     anchor = nil
     lastConfirmedTokenIndex = nil
     tokenIndex = 0
+    anchorNotice = nil
     state = .stopped
   }
 
