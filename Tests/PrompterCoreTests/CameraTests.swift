@@ -120,8 +120,9 @@ final class CameraTests: XCTestCase {
     func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
     settle()
     var shown = popUps()
-    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Camera", "Rotation"])
-    XCTAssertEqual(shown.first?.titleOfSelectedItem, "No Camera Found")
+    // The camera is chosen with `CameraPicker` (its label is covered in CameraPickerTests);
+    // the rotation pop-up is the toolbar's one AppKit pop-up.
+    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Rotation"])
     XCTAssertEqual(shown.last?.titleOfSelectedItem, "90°")
 
     feed.devices = cameras
@@ -129,7 +130,6 @@ final class CameraTests: XCTestCase {
     model.rotationChoice.wrappedValue = nil
     settle()
     shown = popUps()
-    XCTAssertEqual(shown.first?.titleOfSelectedItem, "OBS Virtual Camera", "the late list shows the chosen camera")
     XCTAssertEqual(shown.last?.titleOfSelectedItem, "Auto")
   }
 
@@ -256,7 +256,7 @@ private struct ToolbarHarness: View {
   @ObservedObject var feed: DeviceFeed
   var body: some View {
     Color.clear.frame(width: 700, height: 300).toolbar {
-      CameraChoiceItems(devices: feed.devices, camera: $model.selectedUID, rotation: model.rotationChoice)
+      CameraChoiceItems(model: model, rotation: model.rotationChoice)
     }
   }
 }

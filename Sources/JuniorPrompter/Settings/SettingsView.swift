@@ -25,10 +25,7 @@ struct InspectorView: View {
       }
       if camera.presentsWithVideo {
         Section("Video") {
-          Picker("Camera", selection: $camera.selectedUID) {
-            if camera.devices.isEmpty { Text("No camera found").tag(camera.selectedUID) }
-            ForEach(camera.devices) { Text($0.name).tag(Optional($0.uid)) }
-          }
+          LabeledContent("Camera") { CameraPicker(model: camera) }
           HStack {
             Picker("Rotation", selection: camera.rotationChoice) {
               Text("Auto").tag(nil as CameraRotation?)

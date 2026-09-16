@@ -167,7 +167,7 @@ struct CameraView: View {
     .task { model.start() }
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
-      CameraChoiceItems(devices: model.devices, camera: $model.selectedUID, rotation: model.rotationChoice)
+      CameraChoiceItems(model: model, rotation: model.rotationChoice)
       ToolbarItem {
         Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
           .help("Mirror camera")
@@ -189,14 +189,11 @@ struct CameraView: View {
 
 /// The Camera window's camera and rotation pop-ups.
 struct CameraChoiceItems: ToolbarContent {
-  let devices: [CameraDevice]
-  @Binding var camera: String?
+  @ObservedObject var model: CameraModel
   @Binding var rotation: CameraRotation?
   var body: some ToolbarContent {
-    ToolbarItem {
-      ToolbarPopUp(title: "Camera", options: devices.map { ($0.name, Optional($0.uid)) },
-                   selection: $camera, placeholder: "No Camera Found")
-    }
+    // The picker previews each camera on hover, so choosing one is never blind.
+    ToolbarItem { CameraPicker(model: model) }
     ToolbarItem {
       ToolbarPopUp(title: "Rotation", options: CameraModel.rotationOptions, selection: $rotation)
     }
