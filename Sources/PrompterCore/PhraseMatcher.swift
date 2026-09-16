@@ -130,6 +130,11 @@ public struct PhraseMatcher: Sendable {
             last = ti
             ti += 1
             trailingMatches = ti - before == 1 ? trailingMatches + 1 : 1
+          } else {
+            // A word that appears nowhere ahead is a misrecognition, not the end of the phrase.
+            // Leaving the scan at the window's end discarded every word after it, so one wrong
+            // word ("point" for "points") stranded the rest of a sentence.
+            ti = before
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
@@ -182,6 +187,9 @@ public struct RecognitionTracker: Sendable {
   public private(set) var tokenIndex: Int
   private var revisions: [String: Revision] = [:]
   private var seekBaselines: [String: [String]] = [:]
+  /// Revisions whose first result covering audio past the re-anchor watermark has been taken as a
+  /// baseline rather than credited. See `consumeCandidates`.
+  private var postSeekBaselined: Set<String> = []
   private var minimumSeekAudioStart: TimeInterval?
   private var acceptedAudio: [ClosedRange<TimeInterval>] = []
   private var matcher: PhraseMatcher
@@ -194,6 +202,7 @@ public struct RecognitionTracker: Sendable {
     generation &+= 1
     revisions.removeAll()
     seekBaselines.removeAll()
+    postSeekBaselined.removeAll()
     minimumSeekAudioStart = nil
     acceptedAudio.removeAll()
     if let index { tokenIndex = max(0, index) }
@@ -208,6 +217,7 @@ public struct RecognitionTracker: Sendable {
     tokenIndex = max(0, index)
     acceptedAudio.removeAll()
     minimumSeekAudioStart = minimumAudioStart
+    postSeekBaselined.removeAll()
     seekBaselines = revisions.mapValues(\.words)
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
@@ -234,7 +244,15 @@ public struct RecognitionTracker: Sendable {
       if old?.words == words && old?.isFinal == event.isFinal { continue }
       var wordsToMatch = words
       if let baseline = seekBaselines[key] {
-        if let minimumSeekAudioStart, event.audioEnd <= minimumSeekAudioStart {
+        // Audio the reader had already spoken before re-anchoring must not count again, and the
+        // first result that reaches past the watermark still describes mostly that older audio: it
+        // arrives a moment late and its tail is speech from before the move. Crediting it threw the
+        // reader straight back to where the scroll-back had just taken him from. Take that result
+        // as the baseline too, so only what the revision adds afterwards is treated as new speech.
+        if let minimumSeekAudioStart,
+          event.audioEnd <= minimumSeekAudioStart || !postSeekBaselined.contains(key)
+        {
+          if event.audioEnd > minimumSeekAudioStart { postSeekBaselined.insert(key) }
           revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: false)
           seekBaselines[key] = words
           sawFresh = true

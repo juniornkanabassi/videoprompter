@@ -121,8 +121,8 @@ final class SpeechLogReplayTests: XCTestCase {
       + "Immediate \(lags.filter { $0 == 0 }.count)/\(lags.count). Worst: \(worst).")
     // Measured on the canonical acceptance-easing-060-20260912 trace: before crediting a fresh
     // revision's exact continuation the matcher scored mean 0.48s, median 0.24s, p90 1.44s with 58
-    // of 153 advances immediate; after, mean 0.38s, median 0.24s, p90 1.20s with 74 of 175
-    // immediate. The residual is dominated by the recogniser's own delivery lag, not by the
+    // of 153 advances immediate; after that and after a misrecognised word stopped stranding the
+    // rest of its phrase, mean 0.35s, median 0.24s, p90 1.08s with 85 of 188 immediate. The residual is dominated by the recogniser's own delivery lag, not by the
     // matcher: the declined candidates in a long wait are ones whose transcript has not yet reached
     // the next script word at all. The bound guards the matcher's share against regression.
     if environment["JUNIORPROMPTER_CANDIDATE_REPLAY_VERBOSE"] == "1" {

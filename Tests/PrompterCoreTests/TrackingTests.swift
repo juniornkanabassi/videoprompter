@@ -247,10 +247,19 @@ final class RecognitionTests: XCTestCase {
       timestamp: 4, audioStart: 0, audioEnd: 4)
     XCTAssertEqual(tracker.consume(corrected, script: script).status, .held)
     XCTAssertEqual(tracker.tokenIndex, 5)
+    // The first result to reach past the watermark is still describing audio the reader spoke
+    // before re-anchoring: it is simply delivered late. It becomes the baseline in turn, and only
+    // what the revision adds after that counts as new speech. Without this, a result covering
+    // pre-seek audio threw the reader straight back to where a scroll-back had just left.
     let continued = RecognitionEvent(
       replacementID: "range-0", generation: 1, text: "alpha bravo gamma zeta eta", isFinal: false,
       timestamp: 6, audioStart: 0, audioEnd: 6)
-    XCTAssertEqual(tracker.consume(continued, script: script).tokenIndex, 6)
+    XCTAssertEqual(tracker.consume(continued, script: script).status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+    let continuedAgain = RecognitionEvent(
+      replacementID: "range-0", generation: 1, text: "alpha bravo gamma zeta eta theta",
+      isFinal: false, timestamp: 8, audioStart: 0, audioEnd: 8)
+    XCTAssertEqual(tracker.consume(continuedAgain, script: script).tokenIndex, 7)
 
     tracker.reanchor(to: 5, minimumAudioStart: 5)
     let crossingOldAudio = RecognitionEvent(
@@ -272,7 +281,11 @@ final class RecognitionTests: XCTestCase {
     let postSeekExtension = RecognitionEvent(
       replacementID: "range-0", generation: 2, text: "alpha beta gamma zeta eta", isFinal: false,
       timestamp: 6, audioStart: 0, audioEnd: 6)
-    XCTAssertEqual(beforeFirstCandidate.consume(postSeekExtension, script: script).tokenIndex, 6)
+    XCTAssertEqual(beforeFirstCandidate.consume(postSeekExtension, script: script).status, .held)
+    let laterExtension = RecognitionEvent(
+      replacementID: "range-0", generation: 2, text: "alpha beta gamma zeta eta theta",
+      isFinal: false, timestamp: 8, audioStart: 0, audioEnd: 8)
+    XCTAssertEqual(beforeFirstCandidate.consume(laterExtension, script: script).tokenIndex, 7)
   }
 
   func testVolatileRevisionCannotRewindAfterItAdvanced() {
