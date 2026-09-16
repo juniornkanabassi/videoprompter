@@ -37,12 +37,19 @@ import SwiftUI
   }
   func windowDidEnterFullScreen(_ notification: Notification) {
     // A close that arrived while the window was still entering full screen could not leave it then.
-    if closesAfterFullScreen { closeNow() }
+    finishPendingClose()
   }
   func windowDidFailToEnterFullScreen(_ window: NSWindow) { (window as? PresenterPanel)?.settle() }
   func windowDidExitFullScreen(_ notification: Notification) {
     (notification.object as? PresenterPanel)?.settle()
-    if closesAfterFullScreen { closesAfterFullScreen = false; closeNow() }
+    finishPendingClose()
+  }
+  /// A close that waited for a full-screen transition goes through `close()`, so an edit begun in
+  /// the meantime is asked about instead of the panel being emptied under it.
+  private func finishPendingClose() {
+    guard closesAfterFullScreen else { return }
+    closesAfterFullScreen = false
+    close()
   }
   func windowDidFailToExitFullScreen(_ window: NSWindow) {
     closesAfterFullScreen = false
@@ -76,15 +83,25 @@ import SwiftUI
     }
     guard let script = store.selected else { return }
     closesAfterFullScreen = false
+    let panel = self.panel ?? makePanel()
+    self.panel = panel
+    // Present on the presenter already showing this script only brings it forward: a new hosting
+    // view restarted the camera and threw the open edit away.
+    let isShowing = panel.isVisible && store.session.activeScriptID == script.id
+      && panel.contentView is NSHostingView<PresenterView>
+    // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
+    panel.title = "JuniorPrompter · \(script.metadata.title)"
+    panel.settle()
+    if isShowing {
+      panel.orderFrontRegardless()
+      panel.makeKey()
+      return
+    }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
-    let panel = self.panel ?? makePanel()
-    panel.title = "JuniorPrompter · \(script.metadata.title)"
     panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
-    self.panel = panel
-    panel.settle()
     let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen")
       ? (NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) ?? NSScreen.screens.first(where: { $0.localizedName == "Agent Screen" }))
       : nil)

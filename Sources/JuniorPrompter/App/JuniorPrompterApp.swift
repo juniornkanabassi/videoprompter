@@ -640,6 +640,7 @@ private enum PresenterSaveError: LocalizedError {
         CommandMenu("Prompter") {
           Button("Present Script") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("p", modifiers: [.command, .option])
+            .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.

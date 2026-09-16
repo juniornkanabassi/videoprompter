@@ -16,14 +16,18 @@ struct LibraryView: View {
     NavigationSplitView {
       List(selection: $selection) {
         Section("Library") {
+          // Folder and Recently Deleted rows are never the list selection: SwiftUI tags every
+          // `ForEach` row, and a folder or trashed script taken as the "selected script" left
+          // Present with nothing to show.
           Button { store.selectFolder(nil) } label: { Label("All Scripts", systemImage: "tray.full") }
-            .tag(Optional<UUID>.none)
+            .selectionDisabled()
           ForEach(store.folders) { folder in
             Button { store.selectFolder(folder.id) } label: { Label(folder.name, systemImage: "folder") }
               .contextMenu {
                 Button("Rename Folder") { renamingFolder = folder; renamedFolderName = folder.name }
                 Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }
               }
+              .selectionDisabled()
           }
           HStack {
             TextField("New folder", text: $newFolderName)
@@ -45,7 +49,7 @@ struct LibraryView: View {
                 Label(entry.metadata.title, systemImage: "trash")
                 Spacer()
                 Button("Restore") { store.restore(entry.id) }.buttonStyle(.link)
-              }
+              }.selectionDisabled()
             }
           }
         }
@@ -145,7 +149,7 @@ struct LibraryView: View {
         } label: {
           Label("Present", systemImage: "play.rectangle")
         }
-        .help("Present script")
+        .help(store.selected == nil ? "Select a script to present" : "Present script")
         .disabled(store.selected == nil)
         Button {
           store.inspector.toggle()
