@@ -77,8 +77,12 @@ public struct PhraseMatcher: Sendable {
         index += components.count
         word += 1
       }
-      guard word == words.count, index > start else { continue }
-      return PhraseMatch(tokenIndex: index - 1, score: 1, direction: .forward)
+      guard word == words.count, index > start,
+        target[start..<index].contains(where: { $0.count > 2 && !common.contains($0) })
+      else { continue }
+      // Below 1 so a proper match always outranks a fresh tail, and never on filler alone:
+      // a trailing "and" or "the" would otherwise win every candidate sort on its own.
+      return PhraseMatch(tokenIndex: index - 1, score: 0.99, direction: .forward)
     }
     return nil
   }
@@ -133,8 +137,10 @@ public struct PhraseMatcher: Sendable {
           } else {
             // A word that appears nowhere ahead is a misrecognition, not the end of the phrase.
             // Leaving the scan at the window's end discarded every word after it, so one wrong
-            // word ("point" for "points") stranded the rest of a sentence.
+            // word ("point" for "points") stranded the rest of a sentence. The run is broken all
+            // the same, so the contiguity counter starts again.
             ti = before
+            trailingMatches = 0
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
