@@ -40,6 +40,9 @@ struct InspectorView: View {
               }
           }
           Toggle("Mirror camera", isOn: $camera.mirrored)
+          LabeledContent("Video dimming") {
+            Slider(value: $store.settings.videoDimming, in: 0...0.9)
+          }
         }.task { camera.start() }
       }
       Section("Text") {

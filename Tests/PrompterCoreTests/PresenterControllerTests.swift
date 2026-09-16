@@ -679,6 +679,20 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertFalse(PresenterController.fitsToCamera(videoOn: false, fullScreen: true))
   }
 
+  /// Over video the backdrop uses its own, light dimming, so switching modes never blacks the
+  /// picture out; Prompter only keeps its background opacity.
+  func testBackdropOpacityFollowsTheModeAndVideoDimmingPersists() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(store.settings.backdropOpacity(withVideo: false), 0.82)
+    XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.25)
+    store.settings.videoDimming = 0.6
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
+    XCTAssertEqual(reopened.backdropOpacity(withVideo: true), 0.6)
+    XCTAssertEqual(reopened.backdropOpacity(withVideo: false), 0.82, "Prompter only is unchanged")
+  }
+
   /// The reading line's opacity persists and is what the line is drawn with.
   func testGuideOpacityPersistsAndReachesTheLine() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

@@ -294,7 +294,8 @@ private struct PresenterView: View {
             .ignoresSafeArea()
             .task { camera.start() }
         }
-        Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).opacity(store.settings.backgroundOpacity)
+        Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
+          .opacity(store.settings.backdropOpacity(withVideo: camera.presentsWithVideo))
           .ignoresSafeArea()
         Group {
           if draft.isEditing {
