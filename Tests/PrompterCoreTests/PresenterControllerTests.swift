@@ -88,6 +88,80 @@ final class PresenterControllerTests: XCTestCase {
       ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height, fraction: 0.35), accuracy: 2)
   }
 
+  /// Escape threw typed edits away with no confirmation. It now asks, and an untouched
+  /// draft still cancels straight away.
+  func testEscapeConfirmsOnlyWhenTheDraftWasTyped() {
+    var settings = PrompterSettings()
+    settings.mode = "Timed"
+    let record = ScriptRecord(metadata: .init(title: "Run", fileName: "run.md", revision: 1,
+      contentFingerprint: "one"), markdown: "one two three four")
+    let session = SessionStore()
+    session.present(record: record, settings: settings)
+    session.play()
+    let draft = PresenterDraft(record: record)
+
+    draft.begin(session: session)
+    draft.requestCancel()
+    XCTAssertFalse(draft.closeRequested, "an untouched draft must not ask")
+    XCTAssertFalse(draft.isEditing)
+    XCTAssertTrue(session.isActivelyRunning, "cancelling carried on reading")
+
+    session.play()
+    draft.begin(session: session)
+    draft.markdown = "one two three four five"
+    draft.requestCancel()
+    XCTAssertTrue(draft.closeRequested, "typed edits were discarded with no confirmation")
+    XCTAssertTrue(draft.isEditing, "the draft must survive until the confirmation is answered")
+    XCTAssertEqual(draft.markdown, "one two three four five")
+    XCTAssertFalse(draft.discardCloses, "Escape must not close the presenter")
+    // Answering the confirmation discards and carries on reading.
+    draft.cancel(resuming: !draft.discardCloses)
+    XCTAssertFalse(draft.isEditing)
+    XCTAssertFalse(draft.closeRequested)
+    XCTAssertTrue(session.isActivelyRunning)
+
+    // The close button still asks and still closes.
+    draft.begin(session: session)
+    draft.markdown = "typed again"
+    draft.requestClose()
+    XCTAssertTrue(draft.closeRequested)
+    XCTAssertTrue(draft.discardCloses)
+    draft.cancel(resuming: false)
+    session.pause()
+  }
+
+  /// A vertically mirrored presenter reads its guide from the other edge, and the in-place
+  /// editor must use the same flipped line or the anchored passage jumps when editing starts.
+  func testInPlaceEditorFlipsTheGuideForAMirroredPresenter() throws {
+    let markdown = (1...30).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n")
+    let document = PrompterDocument(markdown: markdown)
+    let token = try XCTUnwrap(document.spokenTokens.first { $0.normalised == "20" })
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 4_000))
+    view.isVerticallyResizable = true
+    view.textContainer?.containerSize = NSSize(width: 760, height: CGFloat.greatestFiniteMagnitude)
+    view.textContainer?.widthTracksTextView = true
+    scroll.documentView = view
+    let coordinator = FormattedMarkdownEditor(markdown: .constant(markdown), fontName: "Helvetica",
+      fontSize: 44).makeCoordinator()
+    coordinator.configure(view, markdown: markdown, fontName: "Helvetica", fontSize: 44)
+    coordinator.scrollToAnchor(view, sourceOffset: token.sourceRange.location, guideFraction: 0.35,
+      verticalMirror: true)
+    let manager = try XCTUnwrap(view.layoutManager)
+    let container = try XCTUnwrap(view.textContainer)
+    manager.ensureLayout(for: container)
+    let visible = try XCTUnwrap(FormattedMarkdownEditModel(markdown: markdown)
+      .visibleIndex(forSourceOffset: token.sourceRange.location))
+    let glyph = manager.glyphRange(forCharacterRange: NSRange(location: visible, length: 1), actualCharacterRange: nil)
+    let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
+    let height = scroll.contentView.bounds.height
+    let mirrored = height - ScriptTextView.visualGuideY(height: height, fraction: 0.35)
+    XCTAssertEqual(rect.midY + view.textContainerInset.height - scroll.contentView.bounds.origin.y,
+      mirrored, accuracy: 2)
+    XCTAssertNotEqual(mirrored, ScriptTextView.visualGuideY(height: height, fraction: 0.35),
+      "the mirrored guide must differ from the upright one for this to prove anything")
+  }
+
   /// The pencil pauses tracking in place and finishing carries on from where it was.
   func testInPlaceEditPausesTrackingAndFinishingResumesIt() {
     var settings = PrompterSettings()

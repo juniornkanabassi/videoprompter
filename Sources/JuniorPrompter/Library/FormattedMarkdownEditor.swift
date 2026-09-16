@@ -64,6 +64,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
   /// presenter edit starts where the reader was.
   var anchorSourceOffset: Int? = nil
   var guideFraction = 0.35
+  /// The reading view flips the guide for a vertically mirrored presenter; editing in place
+  /// must flip it the same way or the anchored passage jumps when the pencil is pressed.
+  var verticalMirror = false
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -125,8 +128,10 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
     }
     if let anchorSourceOffset {
-      DispatchQueue.main.async { [guideFraction] in
-        context.coordinator.scrollToAnchor(view, sourceOffset: anchorSourceOffset, guideFraction: guideFraction)
+      DispatchQueue.main.async { [guideFraction, verticalMirror] in
+        context.coordinator.scrollToAnchor(
+          view, sourceOffset: anchorSourceOffset, guideFraction: guideFraction,
+          verticalMirror: verticalMirror)
       }
     }
     return root
@@ -320,7 +325,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
     /// Same guide arithmetic as the presenter's own text view, so the passage the
     /// reader was on does not move when editing starts.
-    func scrollToAnchor(_ view: NSTextView, sourceOffset: Int, guideFraction: Double) {
+    func scrollToAnchor(
+      _ view: NSTextView, sourceOffset: Int, guideFraction: Double, verticalMirror: Bool = false
+    ) {
       guard let index = model.visibleIndex(forSourceOffset: sourceOffset),
         let manager = view.layoutManager, let container = view.textContainer,
         let scroll = view.enclosingScrollView
@@ -329,7 +336,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       let glyph = manager.glyphRange(forCharacterRange: NSRange(location: index, length: 1), actualCharacterRange: nil)
       let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
       let clip = scroll.contentView
-      let guideY = ScriptTextView.visualGuideY(height: clip.bounds.height, fraction: guideFraction)
+      let visual = ScriptTextView.visualGuideY(height: clip.bounds.height, fraction: guideFraction)
+      let guideY = verticalMirror ? clip.bounds.height - visual : visual
       clip.setBoundsOrigin(NSPoint(x: clip.bounds.origin.x,
         y: max(0, rect.midY + view.textContainerInset.height - guideY)))
       scroll.reflectScrolledClipView(clip)

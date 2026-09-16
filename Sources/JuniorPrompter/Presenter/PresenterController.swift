@@ -119,16 +119,22 @@ private extension NSRect { var area: CGFloat { width * height } }
   @Published var isEditing = false
   @Published var isSaving = false
   @Published var closeRequested = false
+  /// Whether the pending discard also closes the presenter. Escape during an edit only
+  /// discards the typing and carries on reading.
+  @Published private(set) var discardCloses = true
   @Published var errorMessage: String?
   @Published var noticeMessage: String?
   private weak var session: SessionStore?
   private var resumeAfterEdit = false
+  private var originalMarkdown: String
+  var hasEdits: Bool { markdown != originalMarkdown }
 
   init(record: ScriptRecord) {
     recordID = record.id
     expectedFingerprint = record.metadata.contentFingerprint
     expectedRevision = record.metadata.revision
     markdown = record.markdown
+    originalMarkdown = record.markdown
   }
   func begin(session: SessionStore) {
     guard let record = session.activeRecord else { return }
@@ -136,6 +142,7 @@ private extension NSRect { var area: CGFloat { width * height } }
     expectedFingerprint = record.metadata.contentFingerprint
     expectedRevision = record.metadata.revision
     markdown = record.markdown
+    originalMarkdown = record.markdown
     self.session = session
     resumeAfterEdit = session.isActivelyRunning
     session.pause()
@@ -160,6 +167,14 @@ private extension NSRect { var area: CGFloat { width * height } }
       errorMessage = "Wait for the save to finish before closing the presenter."
       return
     }
+    discardCloses = true
+    closeRequested = true
+  }
+  /// Escape used to throw typed edits away without asking. Typing goes through the same
+  /// confirmation the close button uses; an untouched draft still cancels straight away.
+  func requestCancel() {
+    guard hasEdits else { cancel(); return }
+    discardCloses = false
     closeRequested = true
   }
   func confirm(store: AppStore) async {
@@ -220,7 +235,8 @@ private struct PresenterView: View {
               }, focusesOnAppear: true,
               typography: Self.presenterTypography(store.settings),
               anchorSourceOffset: session.activeToken?.sourceRange.location,
-              guideFraction: store.settings.guideFraction)
+              guideFraction: store.settings.guideFraction,
+              verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180))
           } else {
             ScriptTextView(
               document: session.document, tokenIndex: session.tokenIndex,
@@ -287,7 +303,7 @@ private struct PresenterView: View {
           .keyboardShortcut(draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil)
           .disabled(draft.isSaving)
         if draft.isEditing {
-          Button { draft.cancel() } label: { Image(systemName: "xmark") }
+          Button { draft.requestCancel() } label: { Image(systemName: "xmark") }
             .accessibilityLabel("Cancel script edit")
             .keyboardShortcut(.cancelAction).disabled(draft.isSaving)
         } else {
@@ -299,9 +315,9 @@ private struct PresenterView: View {
       .background(.ultraThinMaterial, in: Capsule()).padding(10)
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
-      Button("Discard Draft and Close", role: .destructive) {
-        draft.cancel(resuming: false)
-        PresenterController.shared.closeNow()
+      Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
+        draft.cancel(resuming: !draft.discardCloses)
+        if draft.discardCloses { PresenterController.shared.closeNow() }
       }
       Button("Keep Editing", role: .cancel) {}
     } message: {
