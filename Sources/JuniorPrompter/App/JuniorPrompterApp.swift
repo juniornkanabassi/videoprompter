@@ -90,6 +90,7 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
+  private var activationObserver: NSObjectProtocol?  // held for the app's lifetime; the block is [weak self]
   private let defaults: UserDefaults
 
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
@@ -139,7 +140,12 @@ private enum PresenterSaveError: LocalizedError {
         await self?.refreshExternalChanges()
       }
     }
+    // Coming back from MarkEdit or Obsidian should not wait for the next tick.
+    activationObserver = NotificationCenter.default.addObserver(
+      forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in Task { @MainActor in await self?.refreshExternalChanges() } }
   }
+
 
   var selected: ScriptRecord? { scripts.first { $0.metadata.id == selectedID } }
   var visible: [ScriptRecord] {
@@ -214,11 +220,12 @@ private enum PresenterSaveError: LocalizedError {
     selectedID = visible.first?.id
   }
 
-  func create(title: String = "Untitled Script", markdown: String = "") {
+  func create(title: String = "Untitled Script", markdown: String = "", linkTo: URL? = nil) {
     guard let library else { return }
     Task {
       do {
-        let item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
+        var item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
+        if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
         scripts.insert(item, at: 0)
         selectedID = item.metadata.id
       } catch { errorMessage = String(describing: error) }
@@ -421,6 +428,16 @@ private enum PresenterSaveError: LocalizedError {
     }
     hasFailedSaves = !failedSaveIDs.isEmpty
   }
+  /// Stop mirroring the external file. The script keeps the content it already has.
+  func unlink(_ id: UUID) {
+    guard let library else { return }
+    Task {
+      do {
+        let metadata = try await library.unlink(id)
+        if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
+      } catch { errorMessage = String(describing: error) }
+    }
+  }
   func rename(_ value: String, for id: UUID) {
     guard let library else { return }
     Task {
@@ -537,6 +554,10 @@ private enum PresenterSaveError: LocalizedError {
           errorMessage = String(describing: error)
         }
       }
+    }
+    if let conflict = await library.takeLinkConflicts().first {
+      errorMessage =
+        "The linked file and your in-app edit both changed. The file on disk was used; your version is kept as \(conflict) in the library's Conflicts folder."
     }
   }
 }

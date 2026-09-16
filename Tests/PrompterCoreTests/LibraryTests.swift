@@ -100,3 +100,136 @@ final class CoordinatedLibraryTests: XCTestCase {
     XCTAssertEqual(discovered.map(\.fileName), ["retry.md"])
   }
 }
+
+/// Scripts imported from a Markdown file keep following that file: an edit in MarkEdit or
+/// Obsidian reaches the script, an in-app edit reaches the file, and when both moved the
+/// disk version wins with the in-app version preserved.
+final class LinkedFileTests: XCTestCase {
+  private func makeLibrary() throws -> (MarkdownLibrary, URL, URL) {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-linked-\(UUID().uuidString)", isDirectory: true)
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    return (try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false), root, outside)
+  }
+
+  func testExternalEditReachesTheScript() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+
+    try Data("edited elsewhere".utf8).write(to: file)
+    let changed = try await library.externalChange(for: record.id)
+    XCTAssertEqual(changed?.markdown, "edited elsewhere")
+    XCTAssertEqual(changed?.metadata.revision, record.metadata.revision + 1)
+    let stored = try await library.read(record.id).markdown
+    XCTAssertEqual(stored, "edited elsewhere")
+    let settled = try await library.externalChange(for: record.id)
+    XCTAssertNil(settled, "a settled link keeps changing")
+    let conflicts = await library.takeLinkConflicts()
+    XCTAssertTrue(conflicts.isEmpty)
+  }
+
+  func testAtomicRenameReplaceIsDetected() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+
+    // Obsidian and MarkEdit save by writing a sibling and renaming it over the original.
+    let staged = outside.appendingPathComponent("script.md.tmp")
+    try Data("replaced atomically".utf8).write(to: staged)
+    _ = try FileManager.default.replaceItemAt(file, withItemAt: staged)
+
+    let changed = try await library.externalChange(for: record.id)
+    XCTAssertEqual(changed?.markdown, "replaced atomically")
+    let copy = try await library.scriptURL(for: record.id)
+    XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), "replaced atomically")
+  }
+
+  func testInAppEditIsWrittenBackToTheLinkedFile() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+
+    let saved = try await library.save(
+      record.id, markdown: "typed in the app", expectedFingerprint: record.metadata.contentFingerprint)
+    XCTAssertEqual(saved.markdown, "typed in the app")
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "typed in the app")
+    let settled = try await library.externalChange(for: record.id)
+    XCTAssertNil(settled, "the write back looked like an external edit")
+  }
+
+  func testBothSidesChangedKeepsTheDiskVersionAndPreservesTheInAppOne() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+
+    // The file moves on while an in-app edit is being typed, so the write back is declined.
+    try Data("changed on disk".utf8).write(to: file)
+    _ = try await library.save(
+      record.id, markdown: "changed in the app",
+      expectedFingerprint: record.metadata.contentFingerprint)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "changed on disk")
+
+    let resolved = try await library.externalChange(for: record.id)
+    XCTAssertEqual(resolved?.markdown, "changed on disk", "the disk version must win")
+    let conflicts = await library.takeLinkConflicts()
+    XCTAssertEqual(conflicts.count, 1)
+    let kept = root.appendingPathComponent("Conflicts", isDirectory: true)
+      .appendingPathComponent(try XCTUnwrap(conflicts.first))
+    XCTAssertEqual(try String(contentsOf: kept, encoding: .utf8), "changed in the app")
+    let repeated = await library.takeLinkConflicts()
+    XCTAssertTrue(repeated.isEmpty, "the notice repeated")
+  }
+
+  func testRemovedLinkedFileKeepsTheLastContentAndTheLink() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+    try FileManager.default.removeItem(at: file)
+
+    let unchanged = try await library.externalChange(for: record.id)
+    XCTAssertNil(unchanged)
+    let kept = try await library.read(record.id).markdown
+    XCTAssertEqual(kept, "first draft")
+    let listed = await library.listScripts()
+    let metadata = try XCTUnwrap(listed.first { $0.id == record.id })
+    XCTAssertEqual(metadata.linkedPath, file.standardizedFileURL.path, "the broken link must still show")
+    // Saving with the file gone must not fail the in-app edit.
+    let saved = try await library.save(
+      record.id, markdown: "still editable", expectedFingerprint: metadata.contentFingerprint)
+    XCTAssertEqual(saved.markdown, "still editable")
+    let unlinked = try await library.unlink(record.id)
+    XCTAssertNil(unlinked.linkedPath)
+  }
+
+  func testUnlinkedScriptsAreUntouched() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let record = try await library.create(title: "Plain", markdown: "plain body")
+    let unchanged = try await library.externalChange(for: record.id)
+    XCTAssertNil(unchanged)
+    let link = await library.linkedURL(for: record.id)
+    XCTAssertNil(link)
+    let saved = try await library.save(
+      record.id, markdown: "edited", expectedFingerprint: record.metadata.contentFingerprint)
+    XCTAssertEqual(saved.markdown, "edited")
+    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+  }
+}

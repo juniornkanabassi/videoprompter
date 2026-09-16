@@ -30,6 +30,40 @@ private actor PresenterSaveGate {
 
 @MainActor
 final class AppStoreTests: XCTestCase {
+  /// The whole point of linking: the file changes in MarkEdit or Obsidian, the script
+  /// follows it live, and the reader stays on the passage they were reading.
+  func testLinkedFileChangeUpdatesTheScriptAndKeepsTheAnchor() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let markdown = "Opening lines of the script.\n\nSecond passage holds the target word here."
+    let file = outside.appendingPathComponent("script.md")
+    try Data(markdown.utf8).write(to: file)
+    let record = try await store.library!.create(title: "Linked", markdown: markdown)
+    _ = try await store.library!.link(record.id, to: file)
+    await store.reload()
+    let presented = try XCTUnwrap(store.scripts.first { $0.id == record.id })
+    XCTAssertEqual(presented.metadata.linkedPath, file.standardizedFileURL.path)
+    store.session.present(record: presented, settings: PrompterSettings())
+    let target = try XCTUnwrap(store.session.document.spokenTokens.firstIndex { $0.normalised == "target" })
+    store.session.seek(to: target)
+
+    try Data("Rewritten opening entirely.\n\nSecond passage holds the target word here.".utf8)
+      .write(to: file, options: .atomic)
+    await store.refreshExternalChanges()
+
+    XCTAssertEqual(
+      store.scripts.first { $0.id == record.id }?.markdown,
+      "Rewritten opening entirely.\n\nSecond passage holds the target word here.")
+    XCTAssertEqual(store.session.activeToken?.normalised, "target")
+    XCTAssertNil(store.session.anchorNotice)
+    XCTAssertNil(store.errorMessage)
+  }
+
   func testFlushPendingSavePersistsImmediateEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!

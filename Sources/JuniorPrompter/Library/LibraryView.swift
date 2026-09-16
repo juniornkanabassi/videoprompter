@@ -179,7 +179,12 @@ struct LibraryView: View {
           Spacer()
           Button("Cancel") { importPreview = nil }
           Button("Import") {
-            store.create(title: value.sourceURL.deletingPathExtension().lastPathComponent, markdown: value.markdown)
+            // A Markdown original stays linked, so edits made in MarkEdit or Obsidian
+            // reach the script. Converted formats (PDF, DOCX, RTF) have no such original.
+            let markdownSource = ["md", "markdown"].contains(value.sourceURL.pathExtension.lowercased())
+            store.create(
+              title: value.sourceURL.deletingPathExtension().lastPathComponent,
+              markdown: value.markdown, linkTo: markdownSource ? value.sourceURL : nil)
             importPreview = nil
           }.buttonStyle(.borderedProminent)
         }
@@ -202,7 +207,15 @@ private struct ScriptRow: View {
   let script: ScriptRecord
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
-      Label(script.metadata.title, systemImage: "doc.text")
+      HStack(spacing: 4) {
+        Label(script.metadata.title, systemImage: "doc.text")
+        if let path = script.metadata.linkedPath {
+          Image(systemName: FileManager.default.fileExists(atPath: path) ? "link" : "link.badge.plus")
+            .font(.caption).foregroundStyle(FileManager.default.fileExists(atPath: path) ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            .accessibilityLabel(FileManager.default.fileExists(atPath: path) ? "Linked file" : "Linked file missing")
+            .help(path)
+        }
+      }
       if !script.metadata.tags.isEmpty {
         Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(
           .secondary
@@ -243,6 +256,23 @@ private struct EditorView: View {
       if let editNotice {
         Text(editNotice).font(.callout).foregroundStyle(.secondary)
           .padding(.horizontal, 24).padding(.vertical, 8)
+      }
+      if let path = script.metadata.linkedPath {
+        let present = FileManager.default.fileExists(atPath: path)
+        HStack(spacing: 8) {
+          Label(
+            present ? "Linked to \(path)" : "Linked file missing: \(path)",
+            systemImage: present ? "link" : "exclamationmark.triangle")
+            .font(.caption)
+            .foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            .lineLimit(1)
+            .truncationMode(.middle).help(path)
+          Spacer()
+          Button("Reveal in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+          }.buttonStyle(.link).disabled(!present)
+          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link)
+        }.padding(.horizontal, 24).padding(.vertical, 6)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
         Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")

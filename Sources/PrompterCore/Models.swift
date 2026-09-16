@@ -21,10 +21,19 @@ public struct ScriptMetadata: Codable, Hashable, Identifiable, Sendable {
   public var folderID: UUID?
   public var tags: [String]
   public var contentFingerprint: String
+  /// Path of the external Markdown file this script mirrors, for display and as a
+  /// fallback when the bookmark cannot be resolved. `nil` for ordinary scripts.
+  public var linkedPath: String?
+  /// Bookmark to the same file, so a rename or move in Finder does not break the link.
+  public var linkedBookmark: Data?
+  /// Content fingerprint at the last successful sync, the baseline both sides are
+  /// compared against to tell an external edit from an in-app one.
+  public var linkedFingerprint: String?
   public init(
     id: UUID = UUID(), title: String, fileName: String, createdAt: Date = Date(),
     modifiedAt: Date = Date(), revision: UInt64 = 0, folderID: UUID? = nil, tags: [String] = [],
-    contentFingerprint: String = ""
+    contentFingerprint: String = "", linkedPath: String? = nil, linkedBookmark: Data? = nil,
+    linkedFingerprint: String? = nil
   ) {
     self.id = id
     self.title = title
@@ -35,6 +44,9 @@ public struct ScriptMetadata: Codable, Hashable, Identifiable, Sendable {
     self.folderID = folderID
     self.tags = tags
     self.contentFingerprint = contentFingerprint
+    self.linkedPath = linkedPath
+    self.linkedBookmark = linkedBookmark
+    self.linkedFingerprint = linkedFingerprint
   }
 }
 public struct ScriptFolder: Codable, Hashable, Identifiable, Sendable {
