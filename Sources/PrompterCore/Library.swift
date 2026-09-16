@@ -32,6 +32,12 @@ public actor MarkdownLibrary {
   private var linkConflicts: [String] = []
   /// Last seen modification date of each linked file, so an untouched file is not re-read.
   private var lastLinkSync: [UUID: Date] = [:]
+  /// Modification date of each library file the last time the poll read it, and of the Scripts
+  /// folder the last time it was scanned. The two-second poll used to coordinate-read and
+  /// fingerprint every script and re-enumerate the folder every tick, whether or not anything
+  /// on disk had moved; a stat is orders of magnitude cheaper than a read plus a hash.
+  private var lastExternalRead: [UUID: Date] = [:]
+  private var lastScriptsScan: Date?
 
   public init(rootURL: URL, coordinatesExternalChanges: Bool = true) throws {
     self.rootURL = rootURL
@@ -100,6 +106,11 @@ public actor MarkdownLibrary {
   }
   public func discoverExternalScripts() throws -> [ScriptMetadata] {
     try validateManagedDirectories()
+    // A file added or removed changes the folder's own modification date, so an unchanged date
+    // means there is nothing new to enumerate.
+    let scanned = Self.modificationDate(of: scriptsURL)
+    if let scanned, lastScriptsScan == scanned { return [] }
+    lastScriptsScan = scanned
     var known = Set(index.scripts.map(\.fileName))
     known.formUnion(index.trash.map { $0.metadata.fileName })
     let discovered = try Self.discoverScripts(in: scriptsURL, known: &known)
@@ -222,6 +233,15 @@ public actor MarkdownLibrary {
   }
   public func externalChange(for id: UUID) throws -> ScriptRecord? {
     try syncLinkedFile(id)
+    // Nothing can have changed in a file whose modification date has not moved, so the poll does
+    // not read or hash it. `syncLinkedFile` may have just rewritten it, which moves the date.
+    if let metadata = index.scripts.first(where: { $0.id == id }),
+      let url = try? validatedURL(metadata.fileName, in: scriptsURL),
+      let modified = Self.modificationDate(of: url)
+    {
+      if lastExternalRead[id] == modified { return nil }
+      lastExternalRead[id] = modified
+    }
     let record = try read(id)
     let actual = Self.fingerprint(record.markdown)
     guard actual != record.metadata.contentFingerprint else { return nil }

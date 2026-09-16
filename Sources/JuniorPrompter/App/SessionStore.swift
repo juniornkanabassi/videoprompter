@@ -24,7 +24,9 @@ final class SessionStore: ObservableObject {
   @Published private(set) var acceptedWords = 0
   @Published private(set) var activeDuration: TimeInterval = 0
   @Published private(set) var anchorNotice: String?
-  @Published private(set) var audioLevel: Float = 0
+  /// Not @Published: no view reads it, and it changes at the audio buffer rate (~47 Hz), so
+  /// publishing it invalidated every SwiftUI view observing the session on every buffer.
+  private(set) var audioLevel: Float = 0
   @Published private(set) var audioPeakDBFS: Float = -.infinity
   @Published private(set) var isClipping = false
   @Published private(set) var isTestingMicrophone = false
@@ -246,8 +248,7 @@ final class SessionStore: ObservableObject {
           onBuffer: { [weak self] _, _, _, peak, clipping in
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
-              self.audioPeakDBFS = AudioCapture.decibels(fullScalePeak: peak)
-              self.isClipping = clipping
+              self.publishMeter(peak: peak, clipping: clipping)
             }
           },
           onStop: { [weak self] error in
@@ -288,6 +289,7 @@ final class SessionStore: ObservableObject {
     audioCapture = nil
     isTestingMicrophone = false
     audioLevel = 0
+    pendingPeak = 0
     audioPeakDBFS = -.infinity
     isClipping = false
   }
@@ -301,6 +303,21 @@ final class SessionStore: ObservableObject {
     guard let audioCapture else { return }
     guard !devices.contains(where: { $0.uid == audioCapture.selectedDevice.uid }) else { return }
     audioCapture.stop(reason: .deviceLost)
+  }
+
+  /// The meter is a Settings-window readout; the eye cannot use more than 20 Hz and every
+  /// publish re-renders every view observing the session. Buffers arrive at ~47 Hz.
+  private var lastMeterPublish: TimeInterval = 0
+  private var pendingPeak: Float = 0
+  func publishMeter(peak: Float, clipping: Bool) {
+    pendingPeak = max(pendingPeak, peak)
+    let now = ProcessInfo.processInfo.systemUptime
+    guard clipping != isClipping || now - lastMeterPublish >= 0.05 else { return }
+    lastMeterPublish = now
+    // The loudest buffer since the last publish, so throttling cannot hide a transient peak.
+    audioPeakDBFS = AudioCapture.decibels(fullScalePeak: pendingPeak)
+    pendingPeak = 0
+    isClipping = clipping
   }
 
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
@@ -413,6 +430,7 @@ final class SessionStore: ObservableObject {
       await speechProvider.stop()
     }
     audioLevel = 0
+    pendingPeak = 0
     audioPeakDBFS = -.infinity
     isClipping = false
     isTestingMicrophone = false
@@ -493,20 +511,18 @@ final class SessionStore: ObservableObject {
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
           onBuffer: { [weak self] buffer, _, level, peak, clipping in
+            // One main-actor hop per buffer, not two: at ~47 Hz the second hop was pure overhead.
+            var submittedEnd: TimeInterval?
             if mode == "Voice" {
               let start = counter.next(buffer.frameLength)
               pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
-              let end = start.seconds + Double(buffer.frameLength) / format.sampleRate
-              Task { @MainActor in
-                guard let self, self.lifecycleGeneration == generation else { return }
-                self.noteSubmittedAudioEnd(through: end)
-              }
+              submittedEnd = start.seconds + Double(buffer.frameLength) / format.sampleRate
             }
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
+              if let submittedEnd { self.noteSubmittedAudioEnd(through: submittedEnd) }
               self.audioLevel = level
-              self.audioPeakDBFS = AudioCapture.decibels(fullScalePeak: peak)
-              self.isClipping = clipping
+              self.publishMeter(peak: peak, clipping: clipping)
               if mode == "Sound" { self.acceptSoundLevel(level) }
             }
           },

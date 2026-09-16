@@ -303,4 +303,28 @@ final class LinkedFileTests: XCTestCase {
     let settled = try await library.externalChange(for: record.id)
     XCTAssertNil(settled)
   }
+
+  func testThePollDoesNotRereadAFileWhoseModificationDateHasNotMoved() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-poll-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    let record = try await library.create(title: "Poll", markdown: "original")
+    let url = try await library.scriptURL(for: record.metadata.id)
+    let pinned = Date(timeIntervalSince1970: 1_700_000_000)
+    try FileManager.default.setAttributes([.modificationDate: pinned], ofItemAtPath: url.path)
+    var change = try await library.externalChange(for: record.metadata.id)
+    XCTAssertNil(change)
+    // Rewrite the content but put the modification date back. The two-second poll reads and
+    // hashes every script otherwise, which is most of its cost; it must stat first and stop.
+    try Data("changed behind the stat".utf8).write(to: url, options: .atomic)
+    try FileManager.default.setAttributes([.modificationDate: pinned], ofItemAtPath: url.path)
+    change = try await library.externalChange(for: record.metadata.id)
+    XCTAssertNil(change, "An unchanged modification date must skip the read and the hash.")
+    // ponytail: the ceiling of that shortcut, and why it is safe. A real editor moves the date.
+    try FileManager.default.setAttributes(
+      [.modificationDate: pinned.addingTimeInterval(1)], ofItemAtPath: url.path)
+    change = try await library.externalChange(for: record.metadata.id)
+    XCTAssertEqual(change?.markdown, "changed behind the stat")
+  }
 }

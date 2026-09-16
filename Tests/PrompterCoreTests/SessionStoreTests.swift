@@ -11,6 +11,20 @@ final class SessionStoreTests: XCTestCase {
       metadata: ScriptMetadata(title: "Test", fileName: "test.md"), markdown: "One two three")
   }
 
+  func testMeterPublishesAtMostTwentyTimesASecondAndKeepsTheLoudestPeak() {
+    let session = SessionStore()
+    // Buffers arrive at about 47 Hz; each publish re-renders every view observing the session.
+    session.publishMeter(peak: 0.5, clipping: false)
+    let first = session.audioPeakDBFS
+    session.publishMeter(peak: 0.9, clipping: false)
+    XCTAssertEqual(session.audioPeakDBFS, first, "A second buffer within 50 ms must not publish.")
+    Thread.sleep(forTimeInterval: 0.06)
+    session.publishMeter(peak: 0.1, clipping: false)
+    XCTAssertEqual(
+      session.audioPeakDBFS, AudioCapture.decibels(fullScalePeak: 0.9), accuracy: 0.001,
+      "The loudest buffer since the last publish must survive the throttle.")
+  }
+
   func testMissingAudioInputPausesAndPreservesAnchor() {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())

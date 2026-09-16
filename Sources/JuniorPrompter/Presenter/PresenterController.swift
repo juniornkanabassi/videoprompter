@@ -439,7 +439,11 @@ struct ScriptTextView: NSViewRepresentable {
     return scroll
   }
   func updateNSView(_ scroll: NSScrollView, context: Context) {
-    (scroll.documentView as? NSTextView)?.textContainerInset.width = horizontalMargin
+    // Assigning textContainerInset dirties the layout of the whole script, so only do it when
+    // the margin really moved. This ran on every SwiftUI update of the presenter.
+    if let text = scroll.documentView as? NSTextView,
+      abs(text.textContainerInset.width - horizontalMargin) > 0.5
+    { text.textContainerInset.width = horizontalMargin }
     context.coordinator.onSeek = onSeek
     context.coordinator.tokenIndex = tokenIndex
     context.coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
@@ -630,12 +634,16 @@ struct ScriptTextView: NSViewRepresentable {
       guard let first = values.min(), let last = values.max(),
         lastReadTokenIndex != tokenIndex || lastReadConfirmedTokenIndex != lastConfirmedTokenIndex
       else { return }
+      // One edit transaction, so the text storage invalidates and redraws the changed span once
+      // instead of once per word; a progress event can cover a dozen words.
+      textView.textStorage?.beginEditing()
       for (range, index) in mappings where first...last ~= index {
         let confirmed = lastConfirmedTokenIndex.map { index <= $0 } ?? false
         let alpha = confirmed ? textOpacity * 0.38 : textOpacity
         let color: NSColor = index == tokenIndex && !confirmed && highlightActiveWord ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
         textView.textStorage?.addAttribute(.foregroundColor, value: color, range: range)
       }
+      textView.textStorage?.endEditing()
       lastReadTokenIndex = tokenIndex
       lastReadConfirmedTokenIndex = lastConfirmedTokenIndex
     }
@@ -679,7 +687,11 @@ struct ScriptTextView: NSViewRepresentable {
       let height = scroll.contentView.bounds.height
       let guideY = layoutGuideY(height: height, fraction: guideFraction)
       let edgeInset = max(80, max(guideY, height - guideY))
-      textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
+      // Same reason: re-laying the whole script out on every advance is the presenter's most
+      // expensive recurring work, and the edge inset only changes when the window resizes.
+      if abs(textView.textContainerInset.height - edgeInset) > 0.5 {
+        textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
+      }
       manager.ensureLayout(for: container)
       let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
       let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
