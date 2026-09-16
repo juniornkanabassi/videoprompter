@@ -65,8 +65,8 @@ struct CameraHolders {
   /// The picture's own size, before rotation, for the aspect-fit of a turned feed.
   private(set) var pictureSize: CGSize?
 
-  /// A window that shows the camera holds the session while it is visible and lets go when it
-  /// closes or is fully covered: a 4K capture is not free.
+  /// A window that shows the camera holds the session while it is on screen and lets go when it
+  /// is ordered out, closed or minimised: a 4K capture is not free.
   func retain() { if holders.retain() { setRunning(true) } }
   func release() { if holders.release() { setRunning(false) } }
 

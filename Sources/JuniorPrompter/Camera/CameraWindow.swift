@@ -124,11 +124,7 @@ struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
   /// The presenter keeps the camera's own composition guides off unless they are asked for.
   var showsGuides = true
-  func makeNSView(context: Context) -> CameraStageView {
-    let view = CameraStageView(frame: .zero)
-    view.onAutoRotation = { rotation in CameraModel.shared.setRotation(rotation, automatic: true) }
-    return view
-  }
+  func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
     var guides = model.guides
     if !showsGuides {

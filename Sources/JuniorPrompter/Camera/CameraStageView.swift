@@ -11,17 +11,16 @@ import AppKit
 final class CameraStageView: NSView {
   private let preview = AVCaptureVideoPreviewLayer()
   private let shade = CAShapeLayer()
-  private let guideLayer = CAShapeLayer()
+  /// Internal for the geometry test.
+  let guideLayer = CAShapeLayer()
   private var guides = CameraGuides()
   private var mirrored = false
   private var uid: String?
-  /// True while the connection turns the picture itself, which also turns the rectangle
-  /// `layerRectConverted` reports, so the guides follow without a second calculation.
-  private var rotatesInConnection = false
+  /// True while the connection turns the picture itself; otherwise the layer transform does.
+  /// Internal so the geometry test can stand in for a camera connection.
+  var rotatesInConnection = false
   private var holding = false
-  private var windowObservers: [NSObjectProtocol] = []
-  /// Where an automatic rotation goes when Vision picks one.
-  var onAutoRotation: ((CameraRotation) -> Void)?
+  private var visibility: NSKeyValueObservation?
 
   override init(frame: NSRect) {
     super.init(frame: frame)
@@ -48,62 +47,70 @@ final class CameraStageView: NSView {
     self.uid = uid
     self.guides = guides
     self.mirrored = mirrored
-    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding, for: self) { rotation in
-      Task { @MainActor [weak self] in self?.onAutoRotation?(rotation) }
-    }
-    guideLayer.strokeColor = guides.strokeColor
-    shade.fillColor = guides.shadeColor
+    updateAutoOrientation()
     applyConnection()
     needsLayout = true
   }
 
   /// Mirroring and, where this macOS offers it, the rotation itself both belong to the
   /// connection. The layer transform is the fallback for a connection that will not take the
-  /// angle.
+  /// angle, or that does not exist yet: the first view is made before the camera is attached.
   private func applyConnection() {
-    guard let connection = preview.connection else {
-      rotatesInConnection = false
-      return
+    var rotates = false
+    if let connection = preview.connection {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = mirrored
+      let angle = CGFloat(guides.rotation.rawValue)
+      rotates = connection.isVideoRotationAngleSupported(angle)
+      connection.videoRotationAngle = rotates ? angle : 0
     }
-    connection.automaticallyAdjustsVideoMirroring = false
-    connection.isVideoMirrored = mirrored
-    let angle = CGFloat(guides.rotation.rawValue)
-    rotatesInConnection = connection.isVideoRotationAngleSupported(angle)
-    if rotatesInConnection { connection.videoRotationAngle = angle }
+    // A connection that starts turning after the last layout would turn the picture twice.
+    guard rotates != rotatesInConnection else { return }
+    rotatesInConnection = rotates
+    needsLayout = true
   }
 
   override func layout() {
     super.layout()
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    let picture: CGRect
-    preview.setAffineTransform(.identity)
+    // Where the picture lands follows from its size, its turn and the bounds, never from the
+    // preview layer: its own video rectangle is empty until the first frame and lags a resize,
+    // which left 0.8.1's guides spread over the whole window.
+    let aspect = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
+    let picture = guides.rotation.fittedRect(aspect: aspect, in: bounds)
     if rotatesInConnection {
+      preview.setAffineTransform(.identity)
       preview.frame = bounds
-      let video = preview.layerRectConverted(
-        fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
-      picture = video.isEmpty ? bounds : video
     } else {
       // Lay the layer out unturned, then turn it about its own centre: it lands exactly on the
       // aspect-fitted rectangle, so a turned 16:9 feed shows as 9:16 with nothing cropped.
-      let aspect = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
-      let fitted = guides.rotation.fittedRect(aspect: aspect, in: bounds)
       preview.bounds = CGRect(
         origin: .zero,
         size: guides.rotation.swapsAxes
-          ? CGSize(width: fitted.height, height: fitted.width) : fitted.size)
-      preview.position = CGPoint(x: fitted.midX, y: fitted.midY)
+          ? CGSize(width: picture.height, height: picture.width) : picture.size)
+      preview.position = CGPoint(x: picture.midX, y: picture.midY)
       preview.setAffineTransform(CGAffineTransform(rotationAngle: guides.rotation.radians))
-      picture = fitted
     }
-    guideLayer.frame = bounds
-    shade.frame = bounds
+    // Sublayers do not inherit the window's scale: at 1x a hairline on a Retina screen blurs.
+    let scale = window?.backingScaleFactor ?? 1
+    for shape in [shade, guideLayer] {
+      shape.frame = bounds
+      shape.contentsScale = scale
+    }
+    guideLayer.strokeColor = guides.strokeColor
+    shade.fillColor = guides.shadeColor
     guideLayer.path = CameraOverlay.guidePath(picture: picture, guides: guides)
     shade.path = CameraOverlay.shadePath(picture: picture, guides: guides)
     CATransaction.commit()
   }
 
-  /// A window that is closed, minimised or fully covered holds nothing: a 4K capture is not free,
+  override func viewDidChangeBackingProperties() {
+    super.viewDidChangeBackingProperties()
+    needsLayout = true
+  }
+
+  /// A window that is ordered out, closed or minimised holds nothing: a 4K capture is not free,
   /// and with both windows showing the camera the session is still opened only once.
   func setHolding(_ on: Bool) {
     guard on != holding else { return }
@@ -113,39 +120,34 @@ final class CameraStageView: NSView {
     } else {
       SharedCameraSession.shared.release()
     }
-    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && on, for: self) { rotation in
-      Task { @MainActor [weak self] in self?.onAutoRotation?(rotation) }
-    }
+    updateAutoOrientation()
     if on { applyConnection() }
+  }
+
+  /// The handler names no view: the detector outlives whichever view created it, and capturing
+  /// that view kept it, and its preview layer on the running session, alive.
+  private func updateAutoOrientation() {
+    SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding, for: self) { rotation in
+      Task { @MainActor in CameraModel.shared.setRotation(rotation, automatic: true) }
+    }
   }
 
   override func viewDidMoveToWindow() {
     super.viewDidMoveToWindow()
-    windowObservers.forEach(NotificationCenter.default.removeObserver)
-    windowObservers = []
-    guard let window else {
-      setHolding(false)
-      return
+    // `isVisible` changes the moment a window is ordered in or out (present, close, minimise,
+    // orderOut) and reports it through KVO. The occlusion report comes 20–300 ms later, and in
+    // 0.8.1 it said "hidden" for a presenter on screen, so a view added then held nothing and
+    // showed no picture.
+    // ponytail: a fully covered window keeps capturing; bring occlusion back as a release-only
+    // hint if that CPU ever matters.
+    visibility = window?.observe(\.isVisible, options: .initial) { [weak self] window, _ in
+      MainActor.assumeIsolated { self?.setHolding(window.isVisible) }
     }
-    for name in [NSWindow.didChangeOcclusionStateNotification, NSWindow.willCloseNotification] {
-      windowObservers.append(
-        NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) {
-          [weak self] note in
-          MainActor.assumeIsolated {
-            self?.setHolding(
-              name == NSWindow.didChangeOcclusionStateNotification
-                && (note.object as? NSWindow)?.occlusionState.contains(.visible) == true)
-          }
-        })
-    }
-    setHolding(window.occlusionState.contains(.visible))
+    if window == nil { setHolding(false) }
   }
 
-  deinit { windowObservers.forEach(NotificationCenter.default.removeObserver) }
-
   func stop() {
+    visibility = nil
     setHolding(false)
-    windowObservers.forEach(NotificationCenter.default.removeObserver)
-    windowObservers = []
   }
 }
