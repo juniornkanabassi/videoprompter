@@ -60,6 +60,8 @@ struct CameraHolders {
   private var auto: CameraAutoOrientation?
   private var autoWanters = Set<ObjectIdentifier>()
   var holderCount: Int { holders.count }
+  /// The camera actually attached, for the retry test.
+  var attachedUID: String? { currentUID }
   /// The picture's own size, before rotation, for the aspect-fit of a turned feed.
   private(set) var pictureSize: CGSize?
 
@@ -70,10 +72,12 @@ struct CameraHolders {
 
   func select(_ uid: String?) {
     guard uid != currentUID else { return }
-    currentUID = uid
     let session = self.session
     let device = uid.flatMap { AVCaptureDevice(uniqueID: $0) }
     let input = device.flatMap { try? AVCaptureDeviceInput(device: $0) }
+    // Remember the camera only once it is really attached: selected before access was granted,
+    // the input fails, and remembering it anyway left the picture black until relaunch.
+    currentUID = input != nil && AVCaptureDevice.authorizationStatus(for: .video) == .authorized ? uid : nil
     let running = holders.count > 0
     queue.async {
       session.beginConfiguration()

@@ -170,13 +170,13 @@ struct CameraView: View {
       ToolbarItem {
         Picker("Camera", selection: $model.selectedUID) {
           ForEach(model.devices) { Text($0.name).tag(Optional($0.uid)) }
-        }.frame(minWidth: 180)
+        }.pickerStyle(.menu).frame(minWidth: 180)
       }
       ToolbarItem {
         Picker("Rotation", selection: model.rotationChoice) {
           Text("Auto").tag(nil as CameraRotation?)
           ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
-        }.frame(minWidth: 96)
+        }.pickerStyle(.menu).frame(minWidth: 96)
       }
       ToolbarItem {
         Toggle("Mirror", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)

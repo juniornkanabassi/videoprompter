@@ -19,7 +19,7 @@ cp "$BIN" "$APP/Contents/MacOS/JuniorPrompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 if [[ -f "$ROOT/Resources/AppIcon/JuniorPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/JuniorPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
-/usr/bin/codesign --force --deep --sign - "$APP"
+/usr/bin/codesign --force --deep --sign "$SIGN_ID" "$APP"
 /usr/bin/codesign --verify --strict "$APP"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$TMP_ARCHIVE"
 mkdir -p "$OUTPUT_ROOT"

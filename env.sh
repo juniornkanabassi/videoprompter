@@ -20,3 +20,9 @@ XCTEST="$XCODE_DEVELOPER_DIR/usr/bin/xctest"
 # then rejects the test bundle with "resource fork, Finder information, or
 # similar detritus not allowed".
 JUNIORPROMPTER_TEST_SCRATCH="${JUNIORPROMPTER_TEST_SCRATCH:-/private/tmp/JuniorPrompter-test-cache}"
+
+# A stable local identity keeps the Camera and Microphone grants across rebuilds; ad hoc ("-")
+# ties them to one build's cdhash, so every new build silently loses them (black camera, silent mic).
+SIGN_ID="-"
+if /usr/bin/security find-identity -v -p codesigning 2>/dev/null | grep -q '"ReadAlong Dev"'; then SIGN_ID="ReadAlong Dev"; fi
+export SIGN_ID

@@ -40,12 +40,14 @@ final class CameraStageView: NSView {
   required init?(coder: NSCoder) { nil }
 
   func apply(uid: String?, guides: CameraGuides, mirrored: Bool) {
+    // Before the guard: `select` ignores a camera it already has, and retries one it could not
+    // open yet (no camera access at the time).
+    SharedCameraSession.shared.select(uid)
     let changed = uid != self.uid || guides != self.guides || mirrored != self.mirrored
     guard changed else { return }
     self.uid = uid
     self.guides = guides
     self.mirrored = mirrored
-    SharedCameraSession.shared.select(uid)
     SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding, for: self) { rotation in
       Task { @MainActor [weak self] in self?.onAutoRotation?(rotation) }
     }

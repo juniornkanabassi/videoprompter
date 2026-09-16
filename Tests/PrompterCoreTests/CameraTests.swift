@@ -181,4 +181,14 @@ final class CameraTests: XCTestCase {
     XCTAssertNil(SharedCameraSession.preferredFormat(in: deckLink, active: fmt(4096, 2160, kCVPixelFormatType_422YpCbCr10)))
     XCTAssertNil(SharedCameraSession.preferredFormat(in: [], active: fmt(1920, 1080, kCVPixelFormatType_32BGRA)))
   }
+
+  /// A camera that could not be opened (unplugged, or no access yet) must not be remembered,
+  /// or the next `select` of the same camera is skipped and the picture stays black.
+  func testACameraThatCouldNotBeOpenedIsRetriedNextTime() {
+    let session = SharedCameraSession.shared
+    session.select("no-such-camera")
+    XCTAssertNil(session.attachedUID)
+    session.select(nil)
+    XCTAssertNil(session.attachedUID)
+  }
 }
