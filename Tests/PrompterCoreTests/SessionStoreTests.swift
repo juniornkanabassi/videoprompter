@@ -40,26 +40,6 @@ final class SessionStoreTests: XCTestCase {
     session.pause()
   }
 
-  func testMissingAudioInputDoesNotAccumulateDuration() async {
-    let session = SessionStore()
-    session.present(record: record(), settings: PrompterSettings())
-    session.play()
-    try? await Task.sleep(for: .milliseconds(350))
-    XCTAssertEqual(session.activeDuration, 0, accuracy: 0.01)
-  }
-
-  func testPausingCancelsDurationClock() async {
-    let session = SessionStore()
-    var settings = PrompterSettings(); settings.mode = "Timed"
-    session.present(record: record(), settings: settings)
-    session.play(captureAudio: false)
-    try? await Task.sleep(for: .milliseconds(20))
-    session.pause()
-    let duration = session.activeDuration
-    try? await Task.sleep(for: .milliseconds(350))
-    XCTAssertEqual(session.activeDuration, duration, accuracy: 0.01)
-  }
-
   func testTogglePausesAndResumesTimedSession() {
     let session = SessionStore()
     var settings = PrompterSettings()
@@ -82,7 +62,6 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .running)
     try? await Task.sleep(for: .milliseconds(500))
     XCTAssertGreaterThan(session.tokenIndex, 0)
-    XCTAssertGreaterThan(session.activeDuration, 0)
     session.pause()
   }
 
@@ -114,12 +93,6 @@ final class SessionStoreTests: XCTestCase {
     session.acceptSpeechCandidate(candidate("forward", "eight nine ten"))
     try? await Task.sleep(for: .milliseconds(40))
     XCTAssertEqual(session.tokenIndex, 9)
-  }
-
-  func testSessionStatsStartAtZeroWithNextHundredWordMilestone() {
-    let session = SessionStore()
-    XCTAssertEqual(session.estimatedWPM, 0)
-    XCTAssertEqual(session.sessionMilestone, 100)
   }
 
   func testSoundModeUsesThresholdAndConfiguredSpeed() {

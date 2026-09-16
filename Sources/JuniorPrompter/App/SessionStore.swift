@@ -22,7 +22,6 @@ final class SessionStore: ObservableObject {
   @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var acceptedWords = 0
-  @Published private(set) var activeDuration: TimeInterval = 0
   @Published private(set) var anchorNotice: String?
   /// Not @Published: no view reads it, and it changes at the audio buffer rate (~47 Hz), so
   /// publishing it invalidated every SwiftUI view observing the session on every buffer.
@@ -31,8 +30,6 @@ final class SessionStore: ObservableObject {
   @Published private(set) var isClipping = false
   @Published private(set) var isTestingMicrophone = false
   @Published private(set) var microphoneTestNotice: String?
-  var estimatedWPM: Int { activeDuration > 0 ? Int((Double(acceptedWords) / activeDuration * 60).rounded()) : 0 }
-  var sessionMilestone: Int { ((acceptedWords / 100) + 1) * 100 }
   @Published private(set) var settings = PrompterSettings()
   var activeScriptID: UUID? { activeRecord?.metadata.id }
   var activeToken: DocumentToken? {
@@ -41,7 +38,6 @@ final class SessionStore: ObservableObject {
 
   private var tracker = RecognitionTracker()
   private var runTask: Task<Void, Never>?
-  private var durationTask: Task<Void, Never>?
   private var latestAudioEnd: TimeInterval = 0
   private var lastSoundAdvance: TimeInterval = 0
   private var speechGeneration: UInt64?
@@ -74,7 +70,7 @@ final class SessionStore: ObservableObject {
       speechGeneration = nil
       minimumSpeechGeneration = 0
       acceptedWords = 0
-      activeDuration = 0
+      anchorNotice = nil
       state = .paused
     } else {
       updateSettings(settings)
@@ -93,7 +89,6 @@ final class SessionStore: ObservableObject {
     if isActivelyRunning, modeChanged {
       stopTasks()
       if value.mode == "Timed" { state = .running }
-      startDurationClock()
       restartModeTask()
       if value.mode == "Voice" || value.mode == "Sound" { startAudioMode() }
     } else if isActivelyRunning, speedChanged {
@@ -135,7 +130,6 @@ final class SessionStore: ObservableObject {
     stopMicrophoneTest()
     anchorNotice = nil
     state = .running
-    startDurationClock()
     restartModeTask()
     if captureAudio && (settings.mode == "Voice" || settings.mode == "Sound") { startAudioMode() }
   }
@@ -155,6 +149,7 @@ final class SessionStore: ObservableObject {
     anchor = nil
     lastConfirmedTokenIndex = nil
     tokenIndex = 0
+    anchorNotice = nil
     state = .stopped
   }
 
@@ -360,25 +355,10 @@ final class SessionStore: ObservableObject {
       }
     }
   }
-  private func startDurationClock() {
-    durationTask?.cancel()
-    durationTask = Task { [weak self] in
-      var previous = ProcessInfo.processInfo.systemUptime
-      while !Task.isCancelled {
-        try? await Task.sleep(for: .milliseconds(250))
-        guard !Task.isCancelled else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        if self?.isActivelyRunning == true { self?.activeDuration += now - previous }
-        previous = now
-      }
-    }
-  }
   private func stopTasks() {
     lifecycleGeneration &+= 1
     runTask?.cancel()
     runTask = nil
-    durationTask?.cancel()
-    durationTask = nil
     latestAudioEnd = 0
     analyzerContinuation?.finish()
     analyzerContinuation = nil

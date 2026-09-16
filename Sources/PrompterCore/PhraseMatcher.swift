@@ -5,6 +5,20 @@ private let commonWords: Set<String> = [
   "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
 
+/// Numbers as dictation may write them where a script has digits, or the reverse: every single-word
+/// spelling from zero to ninety-nine ("five", "twenty", not "twenty-one", which is two words), and
+/// the first three ordinals.
+private let spelledNumbers: [String: String] = {
+  let formatter = NumberFormatter()
+  formatter.numberStyle = .spellOut
+  formatter.locale = Locale(identifier: "en_GB")
+  var table = ["first": "1st", "second": "2nd", "third": "3rd"]
+  for number in 0...99 {
+    if let word = formatter.string(from: number as NSNumber), word.allSatisfy(\.isLetter) { table[word] = "\(number)" }
+  }
+  return table
+}()
+
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
   public var score: Double
@@ -69,14 +83,9 @@ public struct PhraseMatcher: Sendable {
     let start = min(max(0, currentIndex), target.count - 1) + 1
     guard start < target.count else { return nil }
     for source in 0..<words.count {
-      var index = start
-      var word = source
-      while word < words.count, let covered = coverage(of: words[word], in: target, at: index) {
-        index += covered
-        word += 1
-      }
+      let (word, index, _) = follow(words, from: source, along: target, at: start)
       guard word == words.count, index > start,
-        target[start..<index].contains(where: { $0.count > 2 && !common.contains($0) })
+        target[start..<index].contains(where: continues)
       else { continue }
       // Below 1 so a proper match always outranks a fresh tail, and never on filler alone:
       // a trailing "and" or "the" would otherwise win every candidate sort on its own.
@@ -91,30 +100,31 @@ public struct PhraseMatcher: Sendable {
     let start = current + 1
     guard start < target.count else { return nil }
     for wordStart in words.indices {
-      var source = wordStart
-      var targetIndex = start
-      var sourceCount = 0
-      var informative = 0
-      while source < words.count, let covered = coverage(of: words[source], in: target, at: targetIndex) {
-        sourceCount += 1
-        informative += target[targetIndex..<targetIndex + covered].filter { $0.count > 2 && !common.contains($0) }.count
-        targetIndex += covered
-        source += 1
-      }
+      let (source, targetIndex, informative) = follow(words, from: wordStart, along: target, at: start)
+      let sourceCount = source - wordStart
+      let rest = words[source...]
       // The run has to sit at the reader's frontier, so no more of the revision may be left
       // unexplained after it than the run itself covers. Without that, any interior window could
       // be credited: on a script that repeats a phrase, the "a better Champions League player
       // than" he had spoken a paragraph earlier matched the same phrase ahead of him and dimmed
       // six words he had not reached, while the eleven words he had actually said since were
-      // ignored. A misrecognised tail is short, so this still credits the nearest continuation.
-      if words.count - source <= sourceCount, sourceCount >= 3, informative >= 2 {
+      // ignored. A misrecognised tail is short, so this still credits the nearest continuation; but
+      // a longer one must name a word of what follows, or it is speech after an older copy of the
+      // run: "in the Champions League and you in" (he had said "... fewer minutes in") dimmed the
+      // repeat's "League" before he said it.
+      let next = target[targetIndex..<min(target.count, targetIndex + rest.count + 2)]
+      if rest.count <= sourceCount, sourceCount >= 3, informative >= 2,
+        rest.count < 2 || rest.contains(where: { continues($0) && next.contains($0) })
+      {
         return PhraseMatch(tokenIndex: targetIndex - 1, score: 1, direction: .forward)
       }
     }
     return nil
   }
-  private func forwardMatch(words: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
-    let target = script.map(\.normalised)
+  private func forwardMatch(words spoken: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
+    // Compared by key, so the inner loop stays a plain string comparison.
+    let target = script.map { key($0.normalised) }
+    let words = spoken.map(key)
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
@@ -130,12 +140,17 @@ public struct PhraseMatcher: Sendable {
         var trailingMatches = 0
         var leadingInformative = 0
         var leadingIntact = true
+        // After a skip of eight or more words inside the phrase, the run that resumes there.
+        var landing: (informative: Int, intact: Bool)?
         for word in evidence {
           let before = ti
           while ti < hi && target[ti] != word { ti += 1 }
           if ti < hi {
+            let informative = word.count > 2 && !common.contains(word) ? 1 : 0
             leadingIntact = leadingIntact && ti == before
-            if leadingIntact, word.count > 2, !common.contains(word) { leadingInformative += 1 }
+            if leadingIntact { leadingInformative += informative }
+            if ti - max(before, current + 1) >= 8 { landing = (0, true) } else if ti != before { landing?.intact = false }
+            if landing?.intact == true { landing?.informative += informative }
             matched += 1
             last = ti
             ti += 1
@@ -148,16 +163,18 @@ public struct PhraseMatcher: Sendable {
             ti = before
             trailingMatches = 0
             leadingIntact = false
+            landing?.intact = false
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
         let gaps = Double(max(0, last - start + 1 - matched))
-        // Skipping more than a phrase he has not been heard saying takes an unbroken run of at least
-        // three informative words from the landing point. On weaker evidence a phrase said here
-        // ("their defence", "argue that Barcelona", "more goals than Barcelona") was credited to the
-        // same words a paragraph ahead and dimmed everything in between. A short skip keeps the
-        // looser rules: that is the recogniser dropping or garbling a word or two.
+        // Skipping eight or more words he has not been heard saying takes an unbroken run of at least
+        // three informative words where the match lands, before the phrase or inside it. On weaker
+        // evidence a phrase said here ("their defence", "argue that Barcelona", "you still") was
+        // credited to the same words a paragraph ahead and dimmed everything in between. A shorter
+        // skip keeps the looser rules: that is the recogniser dropping or garbling a word or two.
         if start > current + 8, leadingInformative < 3 { continue }
+        if let landing, landing.informative < 3 { continue }
         // A lone word after a gap is weak evidence wherever the phrase starts: "ties that ... they"
         // credited the "they" four words on, over the "knocked them out" he had not said.
         guard gaps == 0 || trailingMatches >= 2 || last <= current + 1 else { continue }
@@ -210,7 +227,7 @@ public struct PhraseMatcher: Sendable {
   private func endsOn(_ words: ArraySlice<String>, target: [String], through: Int) -> Bool {
     var end = through + 1
     for word in words.reversed() {
-      if end >= 1, target[end - 1] == word {
+      if end >= 1, same(word, target[end - 1]) {
         end -= 1
         continue
       }
@@ -222,13 +239,62 @@ public struct PhraseMatcher: Sendable {
     }
     return true
   }
+  /// Follows `words` from `source` along the script from `index` while each word continues it. A
+  /// reader leaves a word out ("saying [that] he's a better") and the recogniser drops one ("G/A"
+  /// heard as "G"), which stranded the whole continuation, so one script word may be stepped over,
+  /// once, when at least two recognised words carry on after it (with only one, a false start,
+  /// "defender in 2024" before "defender in the 2024", dimmed the "the" too early). Stepping over
+  /// the very next word also needs the two words heard before the run to end where he is, or an
+  /// already credited "I'm not saying" skips "saying" onto the "I am not saying" after it.
+  private func follow(_ words: [String], from source: Int, along target: [String], at start: Int)
+    -> (word: Int, index: Int, informative: Int)
+  {
+    let anchored = source >= 2 && endsOn(words[(source - 2)..<source], target: target, through: start - 1)
+    var word = source, index = start, informative = 0
+    var skip: (word: Int, index: Int, informative: Int)?
+    while word < words.count {
+      var covered = coverage(of: words[word], in: target, at: index)
+      if covered == nil, skip == nil, word > source || anchored,
+        let next = coverage(of: words[word], in: target, at: index + 1)
+      {
+        skip = (word, index, informative)
+        index += 1
+        covered = next
+      }
+      guard let covered else { break }
+      informative += target[index..<index + covered].filter(continues).count
+      index += covered
+      word += 1
+    }
+    if let skip, word - skip.word < 2 { return skip }
+    return (word, index, informative)
+  }
+  /// Whether a script word, heard right where the reader is, is evidence he is saying it: an
+  /// informative word or a number. Numbers count only here, next to the reader: "from an xG of 5.4
+  /// and" is all short words, filler and digits, and stayed bright until "put". Far from the reader
+  /// they prove nothing, because a script repeats its figures ("2.88", "2024-25").
+  private func continues(_ word: String) -> Bool {
+    word.count > 2 && !common.contains(word) || word.contains(where: \.isNumber)
+  }
   /// How many script tokens a recognised word covers at `index`: itself, or for a contraction the
-  /// words it stands for. "I'm" continues a script's "I'm" as well as its "I am".
+  /// words it stands for ("I'm" continues a script's "I'm" as well as its "I am"), or none for the
+  /// "percent" dictation may add after a script's "35%".
   private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
     guard index < target.count else { return nil }
-    if target[index] == word { return 1 }
+    if same(word, target[index]) { return 1 }
+    if word == "percent", index > 0, target[index - 1].allSatisfy(\.isNumber) { return 0 }
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
+  }
+  /// The form words are compared in: a spelled number is its digits ("five" is "5", "second" is
+  /// "2nd"), so dictation and the script match whichever way each writes it. Without it every
+  /// "five" against a "5" broke the run.
+  private func key(_ word: String) -> String { spelledNumbers[word] ?? word }
+  /// Whether a recognised word next to the reader is this script token: the same key, or a year
+  /// for its short form ("2025" for the "25" of "2024-25").
+  private func same(_ word: String, _ token: String) -> Bool {
+    key(word) == key(token)
+      || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
   }
   private func contractionComponents(_ word: String) -> [String] {
     switch word {

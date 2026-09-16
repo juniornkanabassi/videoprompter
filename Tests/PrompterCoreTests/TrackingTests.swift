@@ -174,9 +174,11 @@ final class RecognitionTests: XCTestCase {
     let match = PhraseMatcher().match(
       recognised: ["I'm", "simply", "saying", "he's", "a", "better"],
       script: script, currentIndex: current)
+    // He dropped "that" and contracted "he is": the continuation steps over the one function word
+    // and reaches the "better" he has said, instead of stopping at "saying".
     XCTAssertEqual(
       match?.tokenIndex,
-      script.indices.first { $0 > current && script[$0].normalised == "saying" })
+      script.indices.first { $0 > current && script[$0].normalised == "better" })
   }
 
   func testZeroLookaheadLocalAnchorDoesNotSkipAnUnmatchedName() {
@@ -381,8 +383,12 @@ final class RecognitionTests: XCTestCase {
       replacementID: "1-dictation-1-533760-16000", generation: 1,
       text: "youy to excuse For better team I'm sorry You have just", isFinal: false,
       timestamp: 95.158, localeIdentifier: "fr_FR", audioStart: 88.74, audioEnd: 95.166), script: script)
-    XCTAssertEqual(update.status, .held)
-    XCTAssertEqual(tracker.tokenIndex, 260)
+    // The French revision does carry "better team I'm sorry you", which he has said, so the
+    // continuation credits through "you" (its "then" dropped). The reordered "have just" must not
+    // reach this sentence's "just" or the later repeated one.
+    XCTAssertEqual(script[264].normalised, "you")
+    XCTAssertEqual(update.tokenIndex, 264)
+    XCTAssertEqual(tracker.tokenIndex, 264)
   }
 
   func testDualLocaleHallucinatedTailCannotJumpFromEarlierPrefix() {
@@ -483,6 +489,99 @@ final class RecognitionTests: XCTestCase {
         replacementID: "r2", generation: 2, text: "football aujourd'hui", isFinal: true,
         timestamp: 2.1, localeIdentifier: "fr_FR", audioStart: 1, audioEnd: 4), script: script)
     XCTAssertEqual(duplicate.status, .duplicateRevision)
+  }
+}
+
+extension RecognitionTests {
+  /// Word-onset credit: a partial last word dims the next script word at once, and nothing else.
+  func testWordOnsetDimsOnlyTheNextWordAndNeverACommonOne() {
+    let script = PrompterDocument(
+      markdown: "He is a better Champions League player than [look up] these others, and that is final."
+    ).spokenTokens
+    XCTAssertEqual(script.map(\.normalised)[3...8], ["better", "champions", "league", "player", "than", "these"])
+    let matcher = PhraseMatcher()
+    func onset(_ words: [String], after current: Int) -> Int? {
+      matcher.onsetCredit(words: words, script: script, currentIndex: current)?.tokenIndex
+    }
+    // "a better" is credited and "champ" begins the next word.
+    XCTAssertEqual(onset(["a", "better", "champ"], after: 3), 4)
+    // New whole words continuing the script, then the fragment of the word after them.
+    XCTAssertEqual(onset(["a", "better", "champions", "lea"], after: 3), 5)
+    // The bracket cue and the punctuation are not words, so "thes" still begins the next one.
+    XCTAssertEqual(onset(["player", "than", "thes"], after: 7), 8)
+    // A prefix of a later word never skips the next one.
+    XCTAssertNil(onset(["a", "better", "lea"], after: 3))
+    // Fewer than three letters, the whole word (the ordinary extension's job), no anchoring words.
+    XCTAssertNil(onset(["a", "better", "ch"], after: 3))
+    XCTAssertNil(onset(["a", "better", "champions"], after: 3))
+    XCTAssertNil(onset(["champ"], after: 3))
+    XCTAssertNil(onset(["quite", "unrelated", "champ"], after: 3))
+    // Common short words prove nothing: "the" said before "these", or "tha" before "that".
+    XCTAssertNil(onset(["player", "than", "the"], after: 7))
+    XCTAssertNil(onset(["others", "and", "tha"], after: 10))
+
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 3)
+    let dimmed = tracker.consume(.init(
+      replacementID: "r", generation: 1, text: "He is a better champ", isFinal: false, timestamp: 1,
+      localeIdentifier: "en_GB", audioStart: 0, audioEnd: 1), script: script)
+    XCTAssertEqual(dimmed.tokenIndex, 4)
+    // Further on, the same fragment is behind the reader and cannot move him back.
+    var ahead = RecognitionTracker(generation: 1, tokenIndex: 6)
+    let stayed = ahead.consume(.init(
+      replacementID: "s", generation: 1, text: "a better champ", isFinal: false, timestamp: 1,
+      localeIdentifier: "en_GB", audioStart: 0, audioEnd: 1), script: script)
+    XCTAssertEqual(stayed.status, .held)
+    XCTAssertEqual(ahead.tokenIndex, 6)
+  }
+
+  /// The canonical trace sat on "then" for a second: "I'm" in the script only matched "I am".
+  func testScriptContractionContinuesFromTheSameContraction() {
+    let script = PrompterDocument(markdown: "then I'm sorry to say you're just being dogmatic").spokenTokens
+    let matcher = PhraseMatcher()
+    XCTAssertEqual(matcher.forwardExtension(words: ["fact", "then", "i'm", "sorry"], script: script, currentIndex: 0)?.tokenIndex, 2)
+    let expanded = PrompterDocument(markdown: "then I am sorry").spokenTokens
+    XCTAssertEqual(matcher.forwardExtension(words: ["then", "i'm", "sorry"], script: expanded, currentIndex: 0)?.tokenIndex, 3)
+  }
+
+  /// Short 173 at 166.9 s: re-reading "one could argue that Barcelona's" jumped sixty words to the
+  /// later "I would argue that Barcelona".
+  func testWeakPhraseCannotJumpAParagraphAhead() {
+    let script = PrompterDocument(markdown: """
+      One could argue Barcelona's defensive personnel has gotten worse. In the last 2 years Barcelona lost Inigo Martinez. As excellent a midfielder as Rodri is.
+
+      And I would argue that Barcelona would have been much better served.
+      """).spokenTokens
+    XCTAssertEqual(script[5].normalised, "personnel")
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 5)
+    let update = tracker.consume(.init(
+      replacementID: "r", generation: 1, text: "one could argue that Barcelona", isFinal: false,
+      timestamp: 1, localeIdentifier: "en_GB", audioStart: 0, audioEnd: 1), script: script)
+    XCTAssertEqual(update.status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 5)
+    // A lone name or word from further down moves nothing either.
+    for (id, text) in [("n", "Rodri"), ("w", "served")] {
+      let lone = tracker.consume(.init(
+        replacementID: id, generation: 1, text: text, isFinal: false,
+        timestamp: 1, localeIdentifier: "en_GB", audioStart: 0, audioEnd: 1), script: script)
+      XCTAssertEqual(lone.tokenIndex, 5, text)
+    }
+    // Three informative words in a row where he really is do carry a skip that far.
+    let skipped = tracker.consume(.init(
+      replacementID: "s", generation: 1, text: "I would argue that Barcelona would have been much better served",
+      isFinal: false, timestamp: 2, localeIdentifier: "en_GB", audioStart: 1, audioEnd: 2), script: script)
+    XCTAssertEqual(skipped.tokenIndex, script.count - 1)
+  }
+
+  /// Short 173 at 291.4 s, a false start: "the ties that they" credited the "they" after
+  /// "knocked them out", which he had not said yet.
+  func testLoneWordAfterAGapCannotCreditPastTheNextWord() {
+    let script = PrompterDocument(markdown: "even in the ties that knocked them out they scored 8 goals").spokenTokens
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 4)
+    let update = tracker.consume(.init(
+      replacementID: "r", generation: 1, text: "clinical and even in the ties that they", isFinal: false,
+      timestamp: 1, localeIdentifier: "en_GB", audioStart: 0, audioEnd: 1), script: script)
+    XCTAssertEqual(update.status, .held)
+    XCTAssertEqual(tracker.tokenIndex, 4)
   }
 }
 
