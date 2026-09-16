@@ -9,6 +9,7 @@
 <key>CFBundleShortVersionString</key><string>0.6.0</string>
 <key>CFBundleVersion</key><string>13</string>
 <key>LSMinimumSystemVersion</key><string>26.0</string>
+<key>NSCameraUsageDescription</key><string>JuniorPrompter shows a live preview of your camera so you can frame yourself while reading.</string>
 <key>NSMicrophoneUsageDescription</key><string>JuniorPrompter uses your selected microphone for voice tracking.</string>
 <key>NSSpeechRecognitionUsageDescription</key><string>JuniorPrompter uses on-device speech recognition to follow your script.</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>

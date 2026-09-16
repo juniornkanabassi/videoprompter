@@ -616,7 +616,20 @@ private enum PresenterSaveError: LocalizedError {
           Button("Play or Pause") { store.session.toggle() }.keyboardShortcut(
             .space, modifiers: [.command, .option])
         }
+        CameraCommands()
       }
+    Window("Camera", id: "camera") { CameraView() }
+      .defaultSize(width: 760, height: 480)
+  }
+}
+
+/// The `Window` scene already lists itself under Window; this adds the shortcut.
+private struct CameraCommands: Commands {
+  @Environment(\.openWindow) private var openWindow
+  var body: some Commands {
+    CommandGroup(after: .windowList) {
+      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut("C", modifiers: [.command, .shift])
+    }
   }
 }
 
