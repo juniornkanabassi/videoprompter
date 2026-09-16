@@ -210,17 +210,30 @@ struct InspectorView: View {
 
 enum AvailableFonts {
   private static let supportedInstalled: [String] = {
-    registerBundledFonts(missingFrom: Set(NSFontManager.shared.availableFontFamilies))
+    registerBundledFonts()
     return ["Poppins", "Lexend", "Lexend Deca"].filter { NSFont(name: $0, size: 14) != nil }
   }()
 
   static let presenter = ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"] + supportedInstalled
   static let editor = ["System Serif", "System", "Georgia", "Avenir Next", "Helvetica Neue", "Monospaced"] + supportedInstalled
 
-  private static func registerBundledFonts(missingFrom families: Set<String>) {
-    for (file, family) in [("Lexend-Variable.ttf", "Lexend"), ("LexendDeca-Variable.ttf", "Lexend Deca")] where !families.contains(family) {
+  private static func registerBundledFonts() {
+    for (file, family) in [("Lexend-Variable.ttf", "Lexend"), ("LexendDeca-Variable.ttf", "Lexend Deca")]
+    where needsBundledFont(members: NSFontManager.shared.availableMembers(ofFontFamily: family)) {
       guard let url = Bundle.main.url(forResource: file, withExtension: nil, subdirectory: "Fonts") else { continue }
       CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+    }
+  }
+
+  /// A present family name is not enough: this Mac has Lexend installed as
+  /// ExtraBold alone, so asking for "Lexend" returned a heavy face. Register the
+  /// bundled variable font whenever the family has no upright regular member.
+  static func needsBundledFont(members: [[Any]]?) -> Bool {
+    guard let members, !members.isEmpty else { return true }
+    return !members.contains { member in
+      guard member.count >= 4, (member[2] as? Int) == 5, let traits = member[3] as? UInt
+      else { return false }
+      return traits & UInt(NSFontTraitMask.italicFontMask.rawValue) == 0
     }
   }
 }

@@ -1,4 +1,5 @@
 import AppKit
+import CoreText
 import XCTest
 
 @testable import JuniorPrompter
@@ -15,6 +16,34 @@ final class TypographyTests: XCTestCase {
     XCTAssertEqual(hold.value(at: 20), -30)
     hold.expire()
     XCTAssertNil(hold.value(at: 20))
+  }
+
+  /// Backlog F: this Mac has Lexend installed as ExtraBold alone, so the family
+  /// name existing must not stop the bundled regular-bearing variable font.
+  func testBundledFontRegistersWhenTheInstalledFamilyHasNoRegularFace() {
+    let extraBoldOnly: [[Any]] = [["Lexend-ExtraBold", "ExtraBold", 11, UInt(2)]]
+    XCTAssertTrue(AvailableFonts.needsBundledFont(members: extraBoldOnly))
+    XCTAssertTrue(AvailableFonts.needsBundledFont(members: nil))
+    XCTAssertTrue(AvailableFonts.needsBundledFont(members: []))
+    let italicRegularOnly: [[Any]] = [["Lexend-Italic", "Italic", 5, UInt(NSFontTraitMask.italicFontMask.rawValue)]]
+    XCTAssertTrue(AvailableFonts.needsBundledFont(members: italicRegularOnly))
+    let withRegular: [[Any]] = extraBoldOnly + [["Lexend-Regular", "Regular", 5, UInt(0)]]
+    XCTAssertFalse(AvailableFonts.needsBundledFont(members: withRegular))
+  }
+
+  /// The premise of the fix: the bundled file carries the regular face the
+  /// installed ExtraBold-only family lacks. (Registration itself is order-sensitive
+  /// inside one process, so it is not asserted here.)
+  func testBundledLexendFileCarriesARegularFace() throws {
+    let url = URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("Resources/Fonts/Lexend-Variable.ttf")
+    try XCTSkipUnless(FileManager.default.fileExists(atPath: url.path))
+    let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
+    let styles = (descriptors ?? []).compactMap {
+      CTFontDescriptorCopyAttribute($0, kCTFontStyleNameAttribute) as? String
+    }
+    XCTAssertTrue(styles.contains("Regular"), "bundled Lexend styles were \(styles)")
   }
 
   func testMarkdownTraitsAndHeadingScaleReachTextView() {
