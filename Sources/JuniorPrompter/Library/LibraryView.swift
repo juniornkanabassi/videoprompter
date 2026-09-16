@@ -27,8 +27,12 @@ struct LibraryView: View {
           }
           HStack {
             TextField("New folder", text: $newFolderName)
-            Button { store.createFolder(named: newFolderName); newFolderName = "" } label: { Image(systemName: "plus") }
-              .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+              .onSubmit(createFolder)
+            Button(action: createFolder) {
+              Label("Create Folder", systemImage: "plus").labelStyle(.iconOnly)
+            }
+            .help("Create folder")
+            .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
           }
         }
         Section("Scripts") {
@@ -48,19 +52,17 @@ struct LibraryView: View {
       }
       .listStyle(.sidebar)
       .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+      // New lives in the toolbar and File menu; this bar keeps Move to Trash (Command-Delete).
       .safeAreaInset(edge: .bottom) {
         HStack {
-          Button {
-            store.create()
-          } label: {
-            Label("New", systemImage: "plus")
-          }
           Spacer()
           Button {
             store.delete(selection)
           } label: {
-            Image(systemName: "trash")
-          }.disabled(selection.isEmpty)
+            Label("Move to Trash", systemImage: "trash").labelStyle(.iconOnly)
+          }
+          .help("Move to Trash")
+          .disabled(selection.isEmpty)
         }.padding(10)
       }
       .onChange(of: selection) { _, value in if let id = value.first { store.selectedID = id } }
@@ -91,14 +93,17 @@ struct LibraryView: View {
         Button {
           store.create()
         } label: {
-          Label("New", systemImage: "square.and.pencil")
-        }.disabled(!store.libraryAvailable)
-        Button("Import…") { importing = true }.disabled(!store.libraryAvailable)
+          Label("New Script", systemImage: "square.and.pencil")
+        }
+        .help("New script")
+        .disabled(!store.libraryAvailable)
+        Button { importing = true } label: {
+          Label("Import…", systemImage: "square.and.arrow.down")
+        }
+        .help("Import a script")
+        .disabled(!store.libraryAvailable)
         Menu {
-          Button("Import from Clipboard") {
-            guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
-            store.create(title: "Pasted Script", markdown: markdown)
-          }
+          Button("Import from Clipboard") { store.importClipboard() }
           Button("Export Markdown…") {
             guard let script = store.selected else { return }
             let panel = NSSavePanel()
@@ -117,29 +122,37 @@ struct LibraryView: View {
               } catch { importError = "Could not reveal the script. \(error.localizedDescription)" }
             }
           }.disabled(store.selected == nil)
-        } label: { Image(systemName: "ellipsis.circle") }.accessibilityLabel("Script actions")
+        } label: { Label("More Actions", systemImage: "ellipsis.circle") }
+          .help("More script actions")
           .disabled(!store.libraryAvailable)
         Button {
           store.duplicate()
         } label: {
           Label("Duplicate", systemImage: "plus.square.on.square")
-        }.disabled(store.selected == nil)
-        Menu("Move to") {
+        }
+        .help("Duplicate script")
+        .disabled(store.selected == nil)
+        Menu {
           Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }
           ForEach(store.folders) { folder in
             Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }
           }
-        }.disabled(selection.isEmpty)
+        } label: { Label("Move to", systemImage: "folder") }
+          .help("Move to folder")
+          .disabled(selection.isEmpty)
         Button {
           PresenterController.shared.present(store: store)
         } label: {
           Label("Present", systemImage: "play.rectangle")
-        }.disabled(store.selected == nil)
+        }
+        .help("Present script")
+        .disabled(store.selected == nil)
         Button {
           store.inspector.toggle()
         } label: {
           Label("Inspector", systemImage: "sidebar.right")
         }
+        .help(store.inspector ? "Hide inspector" : "Show inspector")
       }
     }
     .alert(
@@ -177,7 +190,8 @@ struct LibraryView: View {
         ForEach(value.warnings, id: \.self) { Text($0).foregroundStyle(.orange) }
         HStack {
           Spacer()
-          Button("Cancel") { importPreview = nil }
+          Button("Cancel", role: .cancel) { importPreview = nil }
+            .keyboardShortcut(.cancelAction)
           Button("Import") {
             // A Markdown original stays linked, so edits made in MarkEdit or Obsidian
             // reach the script. Converted formats (PDF, DOCX, RTF) have no such original.
@@ -186,7 +200,7 @@ struct LibraryView: View {
               title: value.sourceURL.deletingPathExtension().lastPathComponent,
               markdown: value.markdown, linkTo: markdownSource ? value.sourceURL : nil)
             importPreview = nil
-          }.buttonStyle(.borderedProminent)
+          }.keyboardShortcut(.defaultAction)
         }
       }.padding(24)
       }
@@ -200,6 +214,12 @@ struct LibraryView: View {
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
     .frame(minWidth: 760, minHeight: 500)
+  }
+
+  private func createFolder() {
+    guard !newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    store.createFolder(named: newFolderName)
+    newFolderName = ""
   }
 }
 

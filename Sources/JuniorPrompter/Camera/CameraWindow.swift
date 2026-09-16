@@ -103,6 +103,10 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
     if resolved != selectedUID { selectedUID = resolved }
   }
 
+  /// The rotation control's choices, in the Camera window's toolbar and the inspector alike.
+  static let rotationOptions: [(String, CameraRotation?)] =
+    [("Auto", nil)] + CameraRotation.allCases.map { ($0.label, Optional($0)) }
+
   /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
   /// On the model, because the Camera window's toolbar and the inspector both show it.
   var rotationChoice: Binding<CameraRotation?> {
@@ -163,28 +167,86 @@ struct CameraView: View {
     .task { model.start() }
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
+      CameraChoiceItems(devices: model.devices, camera: $model.selectedUID, rotation: model.rotationChoice)
       ToolbarItem {
-        Picker("Camera", selection: $model.selectedUID) {
-          ForEach(model.devices) { Text($0.name).tag(Optional($0.uid)) }
-        }.pickerStyle(.menu).frame(minWidth: 180)
-      }
-      ToolbarItem {
-        Picker("Rotation", selection: model.rotationChoice) {
-          Text("Auto").tag(nil as CameraRotation?)
-          ForEach(CameraRotation.allCases) { Text($0.label).tag(Optional($0)) }
-        }.pickerStyle(.menu).frame(minWidth: 96)
-      }
-      ToolbarItem {
-        Toggle("Mirror", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
+        Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
+          .help("Mirror camera")
       }
       ToolbarItem {
         Button("Guides", systemImage: "grid") { showsGuideSettings.toggle() }
+          .help("Guides and frame marker")
           .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
             CameraGuideSettings(model: model).frame(width: 300).padding()
           }
       }
-      ToolbarItem { Toggle("Always on Top", systemImage: "pin", isOn: $model.alwaysOnTop) }
+      ToolbarItem {
+        Toggle("Always on Top", systemImage: "pin", isOn: $model.alwaysOnTop)
+          .help("Keep the Camera window above other windows")
+      }
     }
+  }
+}
+
+/// The Camera window's camera and rotation pop-ups.
+struct CameraChoiceItems: ToolbarContent {
+  let devices: [CameraDevice]
+  @Binding var camera: String?
+  @Binding var rotation: CameraRotation?
+  var body: some ToolbarContent {
+    ToolbarItem {
+      ToolbarPopUp(title: "Camera", options: devices.map { ($0.name, Optional($0.uid)) },
+                   selection: $camera, placeholder: "No Camera Found")
+    }
+    ToolbarItem {
+      ToolbarPopUp(title: "Rotation", options: CameraModel.rotationOptions, selection: $rotation)
+    }
+  }
+}
+
+/// A toolbar pop-up that always shows its selection. SwiftUI's `Picker` drew blank in this
+/// toolbar; AppKit's pop-up is re-synced on every update, so a camera list that arrives after the
+/// window opens still shows the chosen name.
+struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
+  let title: String
+  let options: [(String, Value)]
+  @Binding var selection: Value
+  var placeholder = "None"
+
+  func makeCoordinator() -> Coordinator { Coordinator() }
+  func makeNSView(context: Context) -> NSPopUpButton {
+    let popup = NSPopUpButton(frame: .zero, pullsDown: false)
+    popup.setAccessibilityLabel(title)
+    popup.toolTip = title
+    return popup
+  }
+  func updateNSView(_ popup: NSPopUpButton, context: Context) {
+    let values = options.map(\.1)
+    let selection = $selection
+    context.coordinator.onChoose = { index in
+      if values.indices.contains(index) { selection.wrappedValue = values[index] }
+    }
+    Self.sync(popup, titles: options.map(\.0), selected: values.firstIndex(of: self.selection),
+              placeholder: placeholder, target: context.coordinator)
+  }
+  /// Items go in through the menu: `addItems(withTitles:)` drops a second camera of the same name.
+  static func sync(_ popup: NSPopUpButton, titles: [String], selected: Int?, placeholder: String,
+                   target: Coordinator) {
+    let shown = titles.isEmpty ? [placeholder] : titles
+    if popup.itemArray.map(\.title) != shown {
+      popup.removeAllItems()
+      for (index, title) in shown.enumerated() {
+        let item = NSMenuItem(title: title, action: titles.isEmpty ? nil : #selector(Coordinator.choose(_:)), keyEquivalent: "")
+        item.target = target
+        item.tag = index
+        popup.menu?.addItem(item)
+      }
+    }
+    popup.isEnabled = !titles.isEmpty
+    popup.selectItem(at: titles.isEmpty ? 0 : selected ?? -1)
+  }
+  @MainActor final class Coordinator: NSObject {
+    var onChoose: (Int) -> Void = { _ in }
+    @objc func choose(_ sender: NSMenuItem) { onChoose(sender.tag) }
   }
 }
 
@@ -204,7 +266,7 @@ struct CameraGuideSettings: View {
         LabeledContent("Opacity") { Slider(value: $model.guides.opacity, in: 0...1) }
       }
       Section("Frame marker") {
-        Picker("Delivered frame", selection: marker) {
+        Picker("Aspect ratio", selection: marker) {
           Text("Off").tag(nil as CameraAspect?)
           ForEach(CameraAspect.presets) { Text($0.label).tag(Optional($0)) }
           Text("Custom").tag(Optional(custom))

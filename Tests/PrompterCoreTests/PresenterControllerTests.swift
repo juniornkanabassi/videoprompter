@@ -577,8 +577,8 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertNil(session.anchorNotice)
   }
 
-  /// `closeNow` orders the panel out rather than closing it, which on its own would leave the
-  /// hosting view — and so the camera — holding the shared session open for ever.
+  /// `orderOut` already lets the camera go (see `CameraStageTests`); `closeNow` then drops the
+  /// hosting view, and that swap must release the holder too rather than keep it for ever.
   func testClosingThePresenterWithVideoOnLetsTheSharedCameraSessionGo() {
     XCTAssertEqual(SharedCameraSession.shared.holderCount, 0, "another test left a holder behind")
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
@@ -591,92 +591,302 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(SharedCameraSession.shared.holderCount, 0)
   }
 
-  /// Native full screen needs `.fullScreenPrimary` and a resizable window; the presenter floats
-  /// only outside its full-screen Space.
-  func testThePresenterCanTakeItsOwnFullScreenSpaceAndFloatsOnlyOutsideIt() {
-    let panel = PresenterController.configuredPanel()
-    XCTAssertTrue(panel.styleMask.contains(.resizable))
-    XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary))
-    XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), "auxiliary rules out full screen")
-    XCTAssertEqual(panel.level, .floating)
-    let controller = PresenterController()
-    controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: panel))
-    XCTAssertEqual(panel.level, .normal)
-    controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: panel))
-    XCTAssertEqual(panel.level, .floating)
-    panel.level = .normal
-    controller.windowDidFailToEnterFullScreen(panel)
-    XCTAssertEqual(panel.level, .floating)
+  // MARK: Presenter window
+
+  /// A presenter panel that never reaches the screen. Visibility, minimising, full screen and
+  /// AppKit's transition are stood in for, and ordering out is recorded.
+  private final class FakePanel: PresenterPanel {
+    var shown = true
+    var minimised = false
+    var fullScreen = false
+    var transitions = 0
+    var orderedOut = false
+    override var isVisible: Bool { shown }
+    override var isMiniaturized: Bool { minimised }
+    override var isInFullScreen: Bool { fullScreen }
+    override func performFullScreenTransition(_ sender: Any?) { transitions += 1 }
+    override func orderOut(_ sender: Any?) { orderedOut = true; shown = false }
   }
 
-  /// Text width narrows the script column only: it persists, the reading anchor stays put,
-  /// the text container follows it, and the anchored word stays on the guide line.
-  func testTextWidthPersistsNarrowsTheColumnAndKeepsTheAnchorOnTheGuide() throws {
+  private func videoModel() -> (CameraModel, UserDefaults) {
+    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let defaults = UserDefaults(suiteName: suite)!
+    return (CameraModel(defaults: defaults), defaults)
+  }
+  private func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }
+  private func assertFrame(_ frame: NSRect, _ expected: NSRect, _ message: String, line: UInt = #line) {
+    for (a, b) in [(frame.minX, expected.minX), (frame.minY, expected.minY), (frame.width, expected.width), (frame.height, expected.height)] {
+      XCTAssertEqual(a, b, accuracy: 1, "\(message): \(frame) is not \(expected)", line: line)
+    }
+  }
+  /// A windowed presenter, and the frame Match Camera Size gives it for a vertical feed.
+  private func windowedPanel(_ controller: PresenterController) throws -> (FakePanel, start: NSRect, fitted: NSRect) {
+    guard let screen = NSScreen.main ?? NSScreen.screens.first else { throw XCTSkip("no screen") }
+    let panel = FakePanel(captureVisible: false)
+    let start = NSRect(x: 100, y: 100, width: 760, height: 520)
+    panel.setFrame(start, display: false)
+    controller.panel = panel
+    let fitted = PresenterController.matchedCameraFrame(
+      picture: SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9),
+      rotation: .quarter, in: (panel.screen ?? screen).visibleFrame)
+    XCTAssertGreaterThan(abs(fitted.width - start.width) + abs(fitted.height - start.height), 20,
+      "the fit must change the frame for this to prove anything")
+    return (panel, start, fitted)
+  }
+
+  /// At rest the panel is Auxiliary, so it floats over another app's full-screen Space (OBS). It
+  /// is Primary only while a full screen of its own lasts, however that was asked for, and a close
+  /// from full screen leaves the Space before the window goes.
+  func testFullScreenIsPrimaryOnlyWhileItLastsAndClosingFromItLeavesTheSpaceFirst() throws {
+    let controller = PresenterController(camera: videoModel().0)
+    let panel = FakePanel(captureVisible: false)
+    panel.delegate = controller
+    controller.panel = panel
+    func note(_ name: Notification.Name) -> Notification { Notification(name: name, object: panel) }
+    func assertResting(_ message: String, line: UInt = #line) {
+      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
+      XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
+      XCTAssertEqual(panel.level, .floating, message, line: line)
+    }
+    func assertPrimary(_ message: String, line: UInt = #line) {
+      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
+    }
+    XCTAssertTrue(panel.styleMask.contains(.resizable))
+    assertResting("at rest")
+
+    // Prompter > Presenter Full Screen.
+    controller.toggleFullScreen()
+    XCTAssertEqual(panel.transitions, 1)
+    assertPrimary("asking for full screen makes it Primary for the transition")
+    panel.fullScreen = true
+    controller.windowWillEnterFullScreen(note(NSWindow.willEnterFullScreenNotification))
+    controller.windowDidEnterFullScreen(note(NSWindow.didEnterFullScreenNotification))
+    XCTAssertEqual(panel.level, .normal)
+    assertPrimary("during full screen")
+
+    // The red button, or Cmd-W, in full screen.
+    XCTAssertFalse(controller.windowShouldClose(panel), "the window must not close inside its Space")
+    XCTAssertEqual(panel.transitions, 2, "it leaves full screen first")
+    XCTAssertTrue(controller.closesAfterFullScreen)
+    XCTAssertFalse(panel.orderedOut)
+    panel.fullScreen = false
+    controller.windowDidExitFullScreen(note(NSWindow.didExitFullScreenNotification))
+    XCTAssertTrue(panel.orderedOut, "then it closes")
+    XCTAssertFalse(controller.closesAfterFullScreen)
+    assertResting("after the exit")
+
+    // The green button goes to full screen too, and a failed entry puts Auxiliary back.
+    panel.shown = true
+    panel.orderedOut = false
+    let zoom = try XCTUnwrap(panel.standardWindowButton(.zoomButton))
+    XCTAssertTrue(zoom.target === panel)
+    XCTAssertEqual(zoom.action, #selector(NSWindow.toggleFullScreen(_:)))
+    XCTAssertTrue(NSApplication.shared.sendAction(zoom.action!, to: zoom.target, from: zoom))
+    XCTAssertEqual(panel.transitions, 3)
+    assertPrimary("the green button asks for full screen")
+    controller.windowDidFailToEnterFullScreen(panel)
+    assertResting("after a failed entry")
+
+    // View > Enter Full Screen (Ctrl-Cmd-F) stays available at rest and lands in the same place.
+    let viewItem = NSMenuItem(title: "", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+    XCTAssertTrue(panel.validateMenuItem(viewItem))
+    XCTAssertEqual(viewItem.title, "Enter Full Screen")
+    XCTAssertTrue(NSApplication.shared.sendAction(#selector(NSWindow.toggleFullScreen(_:)), to: panel, from: viewItem))
+    XCTAssertEqual(panel.transitions, 4)
+    panel.fullScreen = true
+    controller.windowDidEnterFullScreen(note(NSWindow.didEnterFullScreenNotification))
+    XCTAssertTrue(panel.validateMenuItem(viewItem))
+    XCTAssertEqual(viewItem.title, "Exit Full Screen")
+
+    // A close AppKit could not act on yet is tried again once the entry has finished...
+    controller.closeNow()
+    XCTAssertEqual(panel.transitions, 5)
+    XCTAssertTrue(controller.closesAfterFullScreen)
+    controller.windowDidEnterFullScreen(note(NSWindow.didEnterFullScreenNotification))
+    XCTAssertEqual(panel.transitions, 6, "the close is retried after the entry")
+    // ...and a failed exit clears it, leaving a presenter that is still in its Space.
+    controller.windowDidFailToExitFullScreen(panel)
+    XCTAssertFalse(controller.closesAfterFullScreen, "a failed exit must not close the next exit")
+    XCTAssertFalse(panel.orderedOut)
+    XCTAssertEqual(panel.level, .normal)
+    assertPrimary("still full screen after a failed exit")
+    panel.fullScreen = false
+    controller.windowDidFailToExitFullScreen(panel)
+    assertResting("a failed exit that did leave full screen rests again")
+    XCTAssertFalse(panel.orderedOut)
+    XCTAssertTrue(controller.windowShouldClose(panel), "a windowed presenter closes normally")
+  }
+
+  /// The real change handler: turning video on fits a windowed presenter once. Opening with video
+  /// already on, a closed or minimised presenter, full screen and turning video off never resize.
+  func testTurningVideoOnFitsTheWindowOnlyWhenItIsWindowedOnScreen() throws {
+    let (model, _) = videoModel()
+    model.setRotation(.quarter)
+    model.presentsWithVideo = true
+    let controller = PresenterController(camera: model)
+    let (panel, start, fitted) = try windowedPanel(controller)
+    settle()
+    assertFrame(panel.frame, start, "opening with video already on")
+
+    for (name, hide, show): (String, (FakePanel) -> Void, (FakePanel) -> Void) in [
+      ("closed", { $0.shown = false }, { $0.shown = true }),
+      ("minimised", { $0.minimised = true }, { $0.minimised = false }),
+      ("full screen", { $0.fullScreen = true }, { $0.fullScreen = false }),
+    ] {
+      hide(panel)
+      controller.toggleVideo()
+      controller.toggleVideo()
+      XCTAssertTrue(model.presentsWithVideo)
+      settle()
+      controller.matchCameraSize()  // Prompter > Match Camera Size is held back the same way
+      assertFrame(panel.frame, start, name)
+      show(panel)
+    }
+    controller.toggleVideo()
+    settle()
+    assertFrame(panel.frame, start, "video off")
+    controller.toggleVideo()
+    settle()
+    assertFrame(panel.frame, fitted, "video on in a windowed presenter")
+  }
+
+  /// The capsule button, Prompter > Present with Video and the inspector's Mode are one switch:
+  /// each flips the same stored property, and each reaches the presenter's fit.
+  func testTheCapsuleTheMenuAndTheInspectorModeAreOneSwitch() throws {
+    let (model, defaults) = videoModel()
+    model.setRotation(.quarter)
+    let controller = PresenterController(camera: model)
+    let (panel, start, fitted) = try windowedPanel(controller)
+    let menu = PresenterVideoItems(camera: model)
+    let inspectorMode = ObservedObject(wrappedValue: model).projectedValue.presentsWithVideo
+    XCTAssertFalse(menu.presentsWithVideo.wrappedValue)
+
+    controller.toggleVideo()  // the capsule button's action
+    XCTAssertTrue(menu.presentsWithVideo.wrappedValue, "the menu shows a tick")
+    XCTAssertTrue(inspectorMode.wrappedValue, "the inspector shows Prompter + video")
+    settle()
+    assertFrame(panel.frame, fitted, "the capsule")
+
+    panel.setFrame(start, display: false)
+    menu.presentsWithVideo.wrappedValue = false  // Prompter > Present with Video
+    XCTAssertFalse(model.presentsWithVideo, "the capsule shows video off")
+    XCTAssertFalse(inspectorMode.wrappedValue)
+    menu.presentsWithVideo.wrappedValue = true
+    settle()
+    assertFrame(panel.frame, fitted, "the menu")
+
+    panel.setFrame(start, display: false)
+    inspectorMode.wrappedValue = false
+    XCTAssertFalse(menu.presentsWithVideo.wrappedValue)
+    inspectorMode.wrappedValue = true
+    settle()
+    assertFrame(panel.frame, fitted, "the inspector")
+    XCTAssertTrue(CameraModel(defaults: defaults).presentsWithVideo, "the choice outlives the model")
+  }
+
+  /// Text width is kept between 0.3 and 1 however it arrives, persists, and narrows the real
+  /// reading view and the real in-place editor, with the anchor back on the guide line.
+  func testTextWidthIsClampedAndNarrowsTheRealReadingViewAndEditor() throws {
+    var clamped = PrompterSettings()
+    clamped.textWidth = 0.05
+    XCTAssertEqual(clamped.textWidth, 0.3)
+    clamped.textWidth = 4
+    XCTAssertEqual(clamped.textWidth, 1)
+    let decoder = JSONDecoder()
+    XCTAssertEqual(try decoder.decode(PrompterSettings.self, from: Data(#"{"textWidth":0.1}"#.utf8)).textWidth, 0.3)
+    XCTAssertEqual(try decoder.decode(PrompterSettings.self, from: Data(#"{"textWidth":9}"#.utf8)).textWidth, 1)
+    XCTAssertEqual(try decoder.decode(PrompterSettings.self, from: Data(#"{"horizontalMargin":80}"#.utf8)).textWidth, 1)
+
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.textWidth, 1)
-    let markdown = (1...20).map { "Line \($0) with useful words for a wide column." }.joined(separator: "\n\n")
+    let markdown = (1...20).map { "Passage \($0) with useful words for a wide column." }.joined(separator: "\n\n")
     let record = ScriptRecord(metadata: .init(title: "Width", fileName: "width.md", revision: 1,
       contentFingerprint: "one"), markdown: markdown)
     store.session.present(record: record, settings: store.settings)
-    store.session.seek(to: 40)
+    let target = try XCTUnwrap(store.session.document.spokenTokens.firstIndex { $0.normalised == "12" })
+    store.session.seek(to: target)
     store.settings.textWidth = 0.4
     store.session.updateSettings(store.settings)
-    XCTAssertEqual(store.session.tokenIndex, 40)
+    XCTAssertEqual(store.session.tokenIndex, target, "a width change never moves the anchor")
     XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
       .settings.textWidth, 0.4)
 
-    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 1600, height: 900))
-    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 1600, height: 6_000))
-    text.textContainer?.widthTracksTextView = true
-    scroll.documentView = text
-    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
-    coordinator.textView = text
-    coordinator.render(document: store.session.document, fontName: "Helvetica", fontSize: 44, textOpacity: 1)
-    coordinator.setSideInset(ScriptTextView.sideInset(width: 1600, textWidth: 1))
-    coordinator.align(scroll: scroll, tokenIndex: 40, guideFraction: 0.35)
-    let container = try XCTUnwrap(text.textContainer)
-    XCTAssertEqual(container.size.width, 1600 - 84, accuracy: 0.5)
-    let firstOrigin = scroll.contentView.bounds.origin.y
+    let size = NSSize(width: 1600, height: 900)
+    let document = store.session.document
+    func reader(_ textWidth: Double) -> ScriptTextView {
+      ScriptTextView(document: document, tokenIndex: target, guideFraction: 0.35, fontName: "Helvetica",
+        fontSize: 44, textOpacity: 1,
+        horizontalMargin: ScriptTextView.sideInset(width: size.width, textWidth: textWidth), onSeek: { _ in })
+    }
+    let readerHost = host(reader(1), size: size)
+    let text = try XCTUnwrap(firstTextView(in: readerHost))
+    let scroll = try XCTUnwrap(text.enclosingScrollView)
+    XCTAssertEqual(text.textContainerInset.width, 42, accuracy: 0.5)
+    try assertOnGuide(text, scroll: scroll, visibleIndex: rangeOfPassageNumber(12, in: text).location, "full width")
+    let wideOrigin = scroll.contentView.bounds.origin.y
 
-    coordinator.setSideInset(ScriptTextView.sideInset(width: 1600, textWidth: store.settings.textWidth))
-    coordinator.align(scroll: scroll, tokenIndex: 40, guideFraction: 0.35)
-    XCTAssertEqual(container.size.width, 640, accuracy: 0.5)
-    XCTAssertNotEqual(scroll.contentView.bounds.origin.y, firstOrigin, accuracy: 1, "the narrower column must reflow")
-    let mapping = try XCTUnwrap(coordinator.mappings.first { $0.1 == 40 })
+    readerHost.rootView = reader(store.settings.textWidth)
+    settle()
+    XCTAssertEqual(text.textContainerInset.width, 480, accuracy: 0.5)
+    XCTAssertEqual(try XCTUnwrap(text.textContainer).size.width, text.bounds.width - 960, accuracy: 0.5)
+    XCTAssertGreaterThan(abs(scroll.contentView.bounds.origin.y - wideOrigin), 20, "the narrow column must reflow")
+    try assertOnGuide(text, scroll: scroll, visibleIndex: rangeOfPassageNumber(12, in: text).location, "narrow")
+
+    let token = document.spokenTokens[target]
+    func editor(_ textWidth: Double) -> FormattedMarkdownEditor {
+      FormattedMarkdownEditor(markdown: .constant(markdown), fontName: "Helvetica", fontSize: 44,
+        typography: EditorTypography(horizontalInset: ScriptTextView.sideInset(width: size.width, textWidth: textWidth)),
+        anchorSourceOffset: token.sourceRange.location, guideFraction: 0.35)
+    }
+    let editorHost = host(editor(store.settings.textWidth), size: size)
+    let editing = try XCTUnwrap(firstTextView(in: editorHost))
+    let editingScroll = try XCTUnwrap(editing.enclosingScrollView)
+    XCTAssertEqual(editing.textContainerInset.width, 480, accuracy: 0.5)
+    XCTAssertEqual(try XCTUnwrap(editing.textContainer).size.width, editing.bounds.width - 960, accuracy: 0.5)
+    let visible = try XCTUnwrap(FormattedMarkdownEditModel(markdown: markdown)
+      .visibleIndex(forSourceOffset: token.sourceRange.location))
+    try assertOnGuide(editing, scroll: editingScroll, visibleIndex: visible, "in-place editor")
+    editorHost.rootView = editor(1)
+    settle()
+    XCTAssertEqual(editing.textContainerInset.width, 42, accuracy: 0.5, "the editor follows a width change")
+  }
+
+  private func host<V: View>(_ view: V, size: NSSize) -> NSHostingView<V> {
+    let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled],
+                          backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    let host = NSHostingView(rootView: view)
+    window.contentView = host
+    host.layoutSubtreeIfNeeded()
+    settle()
+    return host
+  }
+  private func firstTextView(in view: NSView) -> NSTextView? {
+    if let text = view as? NSTextView { return text }
+    for child in view.subviews { if let text = firstTextView(in: child) { return text } }
+    return nil
+  }
+  private func rangeOfPassageNumber(_ number: Int, in text: NSTextView) throws -> NSRange {
+    let whole = (text.string as NSString).range(of: "Passage \(number) ")
+    XCTAssertNotEqual(whole.location, NSNotFound)
+    return NSRange(location: whole.location + 8, length: String(number).count)
+  }
+  private func assertOnGuide(_ text: NSTextView, scroll: NSScrollView, visibleIndex: Int, _ message: String,
+                             line: UInt = #line) throws {
     let manager = try XCTUnwrap(text.layoutManager)
+    let container = try XCTUnwrap(text.textContainer)
     manager.ensureLayout(for: container)
-    let rect = manager.boundingRect(
-      forGlyphRange: manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil), in: container)
-    XCTAssertEqual(rect.midY + text.textContainerInset.height - scroll.contentView.bounds.origin.y,
-      ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height, fraction: 0.35), accuracy: 2)
-    XCTAssertEqual(ScriptTextView.sideInset(width: 300, textWidth: 0.9), 42, "never nearer an edge than 42 pt")
-  }
-
-  /// The capsule button flips the very property the inspector's Mode picker and the Prompter
-  /// menu bind to, so the three can never disagree, and the choice outlives the model.
-  func testThePresenterVideoToggleAndTheInspectorModeAreOneSwitch() {
-    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let model = CameraModel(defaults: UserDefaults(suiteName: suite)!)
-    let inspectorMode = ObservedObject(wrappedValue: model).projectedValue.presentsWithVideo
-    XCTAssertFalse(inspectorMode.wrappedValue)
-    model.presentsWithVideo.toggle()  // the capsule button, in Prompter only mode
-    XCTAssertTrue(inspectorMode.wrappedValue, "the inspector must show Prompter + video")
-    inspectorMode.wrappedValue = false
-    XCTAssertFalse(model.presentsWithVideo, "the capsule must show video off")
-    model.presentsWithVideo.toggle()
-    XCTAssertTrue(CameraModel(defaults: UserDefaults(suiteName: suite)!).presentsWithVideo)
-  }
-
-  /// Video on fits a windowed presenter to the camera once; full screen only shows the
-  /// picture, and video off never resizes.
-  func testTurningVideoOnFitsTheWindowOnlyOutsideFullScreen() {
-    XCTAssertTrue(PresenterController.fitsToCamera(videoOn: true, fullScreen: false))
-    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: true, fullScreen: true))
-    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: false, fullScreen: false))
-    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: false, fullScreen: true))
+    let glyph = manager.glyphRange(forCharacterRange: NSRange(location: visibleIndex, length: 1), actualCharacterRange: nil)
+    let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
+    let clip = scroll.contentView.bounds
+    XCTAssertGreaterThan(clip.origin.y, 1, "\(message): the passage must need scrolling", line: line)
+    XCTAssertEqual(rect.midY + text.textContainerInset.height - clip.origin.y,
+      ScriptTextView.visualGuideY(height: clip.height, fraction: 0.35), accuracy: 2, message, line: line)
   }
 
   /// Over video the backdrop uses its own, light dimming, so switching modes never blacks the
@@ -691,6 +901,25 @@ final class PresenterControllerTests: XCTestCase {
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
     XCTAssertEqual(reopened.backdropOpacity(withVideo: true), 0.6)
     XCTAssertEqual(reopened.backdropOpacity(withVideo: false), 0.82, "Prompter only is unchanged")
+  }
+
+  /// The inspector's single Background opacity control edits the stored value for the mode in
+  /// use and leaves the other mode's alone; both keep their saved keys.
+  func testOneBackgroundOpacityControlEditsTheValueForTheModeInUse() throws {
+    var settings = PrompterSettings()
+    settings.setBackdropOpacity(0.5, withVideo: false)
+    XCTAssertEqual(settings.backgroundOpacity, 0.5)
+    XCTAssertEqual(settings.videoDimming, 0.25, "Prompter only leaves the video value alone")
+    settings.setBackdropOpacity(0.6, withVideo: true)
+    XCTAssertEqual(settings.videoDimming, 0.6)
+    XCTAssertEqual(settings.backgroundOpacity, 0.5, "video leaves the Prompter-only value alone")
+    XCTAssertEqual(settings.backdropOpacity(withVideo: true), 0.6)
+    XCTAssertEqual(settings.backdropOpacity(withVideo: false), 0.5)
+    XCTAssertEqual(PrompterSettings.backdropOpacityRange(withVideo: true), 0...0.9, "the picture never blacks out")
+    XCTAssertEqual(PrompterSettings.backdropOpacityRange(withVideo: false), 0...1)
+    let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
+    XCTAssertEqual(stored["videoDimming"] as? Double, 0.6)
+    XCTAssertEqual(stored["backgroundOpacity"] as? Double, 0.5)
   }
 
   /// The reading line's opacity persists and is what the line is drawn with.
