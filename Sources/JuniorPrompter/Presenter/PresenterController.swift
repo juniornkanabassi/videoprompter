@@ -720,13 +720,22 @@ struct ScriptTextView: NSViewRepresentable {
       let attributed = NSMutableAttributedString()
       let textColour = NSColor(hex: textColorHex) ?? .white
       var headingRanges: [NSRange] = []
+      var blockRanges: [UUID: NSRange] = [:]
       for (index, block) in document.blocks.enumerated() {
         let rendered: AttributedString
         if block.kind == .listItem {
           var lines = AttributedString()
           for (lineIndex, line) in block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
             if lineIndex > 0 { lines.append(AttributedString("\n")) }
-            lines.append((try? AttributedString(markdown: String(line), options: .init(interpretedSyntax: .full))) ?? AttributedString(String(line)))
+            let text = String(line)
+            let shown = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .full))) ?? AttributedString(text)
+            // Markdown drops "1." but it is read aloud, so it is shown, mapped and dimmed like any word.
+            if let marker = Self.orderedListMarker(text),
+              !String(shown.characters).drop(while: \.isWhitespace).hasPrefix(marker)
+            {
+              lines.append(AttributedString(marker))
+            }
+            lines.append(shown)
           }
           rendered = lines
         } else {
@@ -739,6 +748,7 @@ struct ScriptTextView: NSViewRepresentable {
         if block.kind == .heading {
           headingRanges.append(NSRange(location: attributed.length, length: part.length))
         }
+        blockRanges[block.id] = NSRange(location: attributed.length, length: part.length)
         attributed.append(part)
         if index < document.blocks.count - 1 { attributed.append(NSAttributedString(string: "\n\n")) }
       }
@@ -791,9 +801,14 @@ struct ScriptTextView: NSViewRepresentable {
       lastReadConfirmedTokenIndex = nil
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
+        // Each word is looked for only inside its own passage. A spoken word the rendering does not
+        // show (a list's "1." before it was shown) otherwise matched the "1" of a "15" paragraphs
+        // later, and every word after it mapped there or nowhere: the presenter jumped ahead.
+        let block = blockRanges[token.blockID] ?? NSRange(location: 0, length: plain.length)
+        cursor = max(cursor, block.location)
         var found = NSRange(location: NSNotFound, length: 0)
-        while cursor < plain.length {
-          let search = NSRange(location: cursor, length: plain.length - cursor)
+        while cursor < NSMaxRange(block) {
+          let search = NSRange(location: cursor, length: NSMaxRange(block) - cursor)
           let candidate = plain.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive], range: search)
           guard candidate.location != NSNotFound else { break }
           if cueRanges.contains(where: { NSIntersectionRange($0, candidate).length > 0 }) {
@@ -914,6 +929,14 @@ struct ScriptTextView: NSViewRepresentable {
       lastGuideFraction = guideFraction
       lastAlignmentDestination = destination
       snapNextAlignment = false
+    }
+    /// The ordered markers that open a list line, as written: "1. " for "1. Intro", "1. 2020. " for
+    /// "1. 2020. A year", nil for bullets. At most nine digits, as CommonMark allows.
+    static func orderedListMarker(_ line: String) -> String? {
+      guard let run = line.range(of: #"^\s*(?:(?:[-+*]|\d{1,9}[.)])\s+)+"#, options: .regularExpression)
+      else { return nil }
+      let numbers = line[run].split(whereSeparator: \.isWhitespace).filter { $0.first?.isNumber == true }
+      return numbers.isEmpty ? nil : numbers.joined(separator: " ") + " "
     }
     private func cueRanges(in plain: NSString, document: PrompterDocument) -> [NSRange] {
       var result: [NSRange] = []
