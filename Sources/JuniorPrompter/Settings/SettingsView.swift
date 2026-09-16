@@ -58,6 +58,9 @@ struct InspectorView: View {
         LabeledContent("Guide position") {
           Slider(value: $store.settings.guideFraction, in: 0.1...0.85)
         }
+        LabeledContent("Guide opacity") {
+          Slider(value: $store.settings.guideOpacity, in: 0...1)
+        }
         DisclosureGroup("Advanced appearance") {
           Picker("Weight", selection: $store.settings.fontWeight) {
             Text("Regular").tag("Regular"); Text("Bold").tag("Bold")

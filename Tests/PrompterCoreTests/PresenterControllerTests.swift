@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import XCTest
 @testable import JuniorPrompter
 import PrompterCore
@@ -651,6 +652,51 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(rect.midY + text.textContainerInset.height - scroll.contentView.bounds.origin.y,
       ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height, fraction: 0.35), accuracy: 2)
     XCTAssertEqual(ScriptTextView.sideInset(width: 300, textWidth: 0.9), 42, "never nearer an edge than 42 pt")
+  }
+
+  /// The capsule button flips the very property the inspector's Mode picker and the Prompter
+  /// menu bind to, so the three can never disagree, and the choice outlives the model.
+  func testThePresenterVideoToggleAndTheInspectorModeAreOneSwitch() {
+    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let model = CameraModel(defaults: UserDefaults(suiteName: suite)!)
+    let inspectorMode = ObservedObject(wrappedValue: model).projectedValue.presentsWithVideo
+    XCTAssertFalse(inspectorMode.wrappedValue)
+    model.presentsWithVideo.toggle()  // the capsule button, in Prompter only mode
+    XCTAssertTrue(inspectorMode.wrappedValue, "the inspector must show Prompter + video")
+    inspectorMode.wrappedValue = false
+    XCTAssertFalse(model.presentsWithVideo, "the capsule must show video off")
+    model.presentsWithVideo.toggle()
+    XCTAssertTrue(CameraModel(defaults: UserDefaults(suiteName: suite)!).presentsWithVideo)
+  }
+
+  /// Video on fits a windowed presenter to the camera once; full screen only shows the
+  /// picture, and video off never resizes.
+  func testTurningVideoOnFitsTheWindowOnlyOutsideFullScreen() {
+    XCTAssertTrue(PresenterController.fitsToCamera(videoOn: true, fullScreen: false))
+    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: true, fullScreen: true))
+    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: false, fullScreen: false))
+    XCTAssertFalse(PresenterController.fitsToCamera(videoOn: false, fullScreen: true))
+  }
+
+  /// The reading line's opacity persists and is what the line is drawn with.
+  func testGuideOpacityPersistsAndReachesTheLine() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(store.settings.guideOpacity, 0.82, "the default keeps the current look")
+    store.settings.guideOpacity = 0.25
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
+    XCTAssertEqual(reopened.guideOpacity, 0.25)
+
+    func drawnAlpha(_ settings: PrompterSettings) throws -> CGFloat {
+      let renderer = ImageRenderer(content: GuideLine(settings: settings).frame(width: 8))
+      renderer.scale = 1
+      let image = try XCTUnwrap(renderer.cgImage)
+      return try XCTUnwrap(NSBitmapImageRep(cgImage: image).colorAt(x: 4, y: 1)).alphaComponent
+    }
+    XCTAssertEqual(try drawnAlpha(reopened), 0.25, accuracy: 0.02)
+    XCTAssertEqual(try drawnAlpha(PrompterSettings()), 0.82, accuracy: 0.02)
   }
 
   /// A 4K landscape feed turned 90° shows as 9:16, so the presenter becomes a tall window as

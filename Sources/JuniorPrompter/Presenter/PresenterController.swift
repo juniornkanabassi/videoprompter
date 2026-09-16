@@ -20,6 +20,14 @@ import SwiftUI
     (notification.object as? NSWindow)?.level = .floating
     if closesAfterFullScreen { closesAfterFullScreen = false; closeNow() }
   }
+  /// Video turned on in a windowed presenter fits the window to the camera once; in full screen
+  /// the picture just appears, and turning video off leaves the window alone.
+  static func fitsToCamera(videoOn: Bool, fullScreen: Bool) -> Bool { videoOn && !fullScreen }
+  func videoDidChange(_ on: Bool) {
+    guard Self.fitsToCamera(videoOn: on, fullScreen: isFullScreen) else { return }
+    // The new preview selects the camera, and so learns its size, in this same update.
+    DispatchQueue.main.async { self.matchCameraSize() }
+  }
   func toggleFullScreen() {
     guard let panel, panel.isVisible else { return }
     panel.toggleFullScreen(nil)
@@ -85,9 +93,11 @@ import SwiftUI
     rotation.fittedRect(aspect: picture, in: visibleFrame)
   }
   func matchCameraSize() {
-    guard let panel, !isFullScreen, let picture = SharedCameraSession.shared.pictureSize,
+    guard let panel, !isFullScreen,
       let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
     else { return }
+    // Until the camera reports its size, the stage view draws 16:9 too.
+    let picture = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
     panel.setFrame(
       Self.matchedCameraFrame(
         picture: picture, rotation: CameraModel.shared.guides.rotation,
@@ -318,13 +328,13 @@ private struct PresenterView: View {
         .scaleEffect(
           x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
         ).rotationEffect(.degrees(Double(store.settings.rotation)))
-        Rectangle().fill(.cyan.opacity(0.82)).frame(height: 2).offset(
-          y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction)
-        ).allowsHitTesting(false)
+        GuideLine(settings: store.settings).offset(
+          y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
+    .onChange(of: camera.presentsWithVideo) { _, on in PresenterController.shared.videoDidChange(on) }
     .overlay(alignment: .top) {
       ZStack {
         Image(systemName: "line.3.horizontal")
@@ -425,6 +435,14 @@ private struct PresenterView: View {
       paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
       horizontalInset: sideInset,
       alignment: settings.alignment == "Right" ? .right : settings.alignment == "Center" ? .center : .left)
+  }
+}
+
+/// The reading line across the presenter, drawn over the video too.
+struct GuideLine: View {
+  let settings: PrompterSettings
+  var body: some View {
+    Rectangle().fill(.cyan.opacity(settings.guideOpacity)).frame(height: 2).allowsHitTesting(false)
   }
 }
 
