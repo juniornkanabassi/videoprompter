@@ -16,7 +16,7 @@ final class CameraPickerTests: XCTestCase {
     var firstFrame: (@Sendable () -> Void)?
 
     var factory: CameraPickerPreview.Factory {
-      { [unowned self] uid, _, firstFrame in
+      { [unowned self] uid, _, _, firstFrame in
         opened.append(uid)
         live += 1
         self.firstFrame = firstFrame
@@ -126,6 +126,41 @@ final class CameraPickerTests: XCTestCase {
     XCTAssertFalse(preview.noSignal)
   }
 
+  /// Cam B is mounted on its side: its thumbnail turns by its own saved 90° and comes out
+  /// portrait, while a camera with nothing saved stays as it is.
+  func testThePreviewTakesEachCamerasOwnSavedRotation() throws {
+    let suite = "JuniorPrompter.picker.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let store = CameraGuideStore(defaults: UserDefaults(suiteName: suite)!)
+    var turned = CameraGuides()
+    turned.rotation = .quarter
+    store.set(turned, for: "cam-b")
+    turned.rotation = .half
+    store.set(turned, for: "cam-a")
+    let feeds = Feeds()
+    let preview = CameraPickerPreview(
+      sharedUID: { nil }, authorized: { true }, guides: store, makeFeed: feeds.factory)
+
+    preview.show("cam-b")
+    XCTAssertEqual(preview.rotation, .quarter)
+    let thumbnail = CameraThumbnailView()
+    thumbnail.frame = NSRect(x: 0, y: 0, width: 240, height: 135)
+    thumbnail.preview = preview.layer
+    thumbnail.rotation = preview.rotation
+    thumbnail.aspect = CGSize(width: 3840, height: 2160)
+    thumbnail.layout()
+    let shown = try XCTUnwrap(preview.layer).frame
+    XCTAssertEqual(shown.height, 135, accuracy: 0.5)
+    XCTAssertEqual(shown.width, 135 * 9 / 16, accuracy: 0.5)
+    XCTAssertEqual(shown.midX, 120, accuracy: 0.5)
+
+    preview.show("cam-a")
+    XCTAssertEqual(preview.rotation, .half)
+    preview.show("cam-c")
+    XCTAssertEqual(preview.rotation, .none)
+    preview.stop()
+  }
+
   func testTheButtonAlwaysNamesACamera() {
     let cameras = [
       CameraDevice(uid: "uid-built-in", name: "FaceTime HD Camera"),
@@ -143,7 +178,7 @@ final class CameraPickerTests: XCTestCase {
   /// own queue, never the main one, which is where 0.7.1 trapped.
   func testARealPreviewSessionClosesOffTheMainQueue() async {
     let closed = expectation(description: "closed")
-    let feed = CameraPreviewSession(uid: "no-such-camera", layer: AVCaptureVideoPreviewLayer()) {}
+    let feed = CameraPreviewSession(uid: "no-such-camera", layer: AVCaptureVideoPreviewLayer(), mirrored: true) {}
     feed.fallBack()
     feed.stop {
       dispatchPrecondition(condition: .notOnQueue(.main))

@@ -76,7 +76,7 @@ private struct CameraPickerList: View {
       return .handled
     }
     .onAppear { focused = true }
-    .onChange(of: highlighted) { _, uid in preview.show(uid) }
+    .onChange(of: highlighted) { _, uid in preview.show(uid, mirrored: model.mirrored) }
     .onDisappear { preview.stop() }
   }
 
@@ -113,7 +113,9 @@ private struct CameraPickerList: View {
     VStack(spacing: 6) {
       ZStack {
         Rectangle().fill(.black)
-        if let layer = preview.layer { PreviewLayerView(layer: layer) }
+        if let layer = preview.layer {
+          PreviewLayerView(layer: layer, rotation: preview.rotation, aspect: preview.aspect)
+        }
         if let note {
           Text(note).font(.callout).foregroundStyle(.white.opacity(0.85))
             .multilineTextAlignment(.center).padding(10)
@@ -173,7 +175,8 @@ private struct CameraPickerList: View {
     case dedicated(String)
   }
   typealias Factory = @MainActor (
-    _ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ firstFrame: @escaping @Sendable () -> Void
+    _ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ mirrored: Bool,
+    _ firstFrame: @escaping @Sendable () -> Void
   ) -> CameraPreviewFeed
 
   nonisolated static func source(for uid: String?, sharedUID: String?, authorized: Bool) -> Source {
@@ -186,12 +189,18 @@ private struct CameraPickerList: View {
   /// camera's name.
   @Published private(set) var layer: AVCaptureVideoPreviewLayer?
   @Published private(set) var noSignal = false
+  /// The shown camera's own saved rotation, so a camera mounted on its side previews upright.
+  @Published private(set) var rotation = CameraRotation.none
+  /// The picture's size before rotation. The shared session knows it; a camera opened here is
+  /// taken as 16:9 until proven otherwise, and the layer's aspect-fit keeps any other shape whole.
+  @Published private(set) var aspect = CGSize(width: 16, height: 9)
   /// The one dedicated session, if any.
   private(set) var feed: CameraPreviewFeed?
   private let timeout: Duration
   private let sharedUID: @MainActor () -> String?
   private let authorized: @MainActor () -> Bool
   private let makeFeed: Factory
+  private let guides: CameraGuideStore
   private var watchdog: Task<Void, Never>?
   /// Bumped on every stop, so a late first frame from a camera already left behind is ignored.
   private var generation = 0
@@ -202,15 +211,18 @@ private struct CameraPickerList: View {
     authorized: @escaping @MainActor () -> Bool = {
       AVCaptureDevice.authorizationStatus(for: .video) == .authorized
     },
-    makeFeed: @escaping Factory = { CameraPreviewSession(uid: $0, layer: $1, firstFrame: $2) }
+    guides: CameraGuideStore = CameraGuideStore(),
+    makeFeed: @escaping Factory = { CameraPreviewSession(uid: $0, layer: $1, mirrored: $2, firstFrame: $3) }
   ) {
     self.timeout = timeout
     self.sharedUID = sharedUID
     self.authorized = authorized
     self.makeFeed = makeFeed
+    self.guides = guides
   }
 
-  func show(_ uid: String?) {
+  /// `mirrored` is the Camera window's Mirror, which applies to whichever camera is shown.
+  func show(_ uid: String?, mirrored: Bool = false) {
     let next = Self.source(for: uid, sharedUID: sharedUID(), authorized: authorized())
     guard next != source else { return }
     stop()
@@ -219,6 +231,8 @@ private struct CameraPickerList: View {
     // Handed to the session's queue, which only joins it to the session and lets it go.
     nonisolated(unsafe) let layer = AVCaptureVideoPreviewLayer()
     layer.videoGravity = .resizeAspect
+    rotation = guides.guides(for: uid).rotation
+    aspect = CGSize(width: 16, height: 9)
     self.layer = layer
     switch next {
     case .none:
@@ -227,11 +241,12 @@ private struct CameraPickerList: View {
       // Held while it is previewed: the selected camera may not be showing anywhere yet.
       let shared = SharedCameraSession.shared
       shared.retain()
+      aspect = shared.pictureSize ?? aspect
       layer.setSessionWithNoConnection(shared.session)
-      shared.reconfigure { CameraPreviewConnection.connect(layer, to: $0) }
+      shared.reconfigure { CameraPreviewConnection.connect(layer, to: $0, mirrored: mirrored) }
     case .dedicated(let uid):
       let current = generation
-      feed = makeFeed(uid, layer) { [weak self] in
+      feed = makeFeed(uid, layer, mirrored) { [weak self] in
         Task { @MainActor in self?.frameArrived(current) }
       }
       watchdog = Task { [weak self, timeout] in
@@ -291,12 +306,17 @@ private struct CameraPickerList: View {
 }
 
 /// A preview layer joined to its session by hand, on the session's own queue, rather than
-/// wherever the layer's `session` property happens to be set.
+/// wherever the layer's `session` property happens to be set. Mirroring belongs to the
+/// connection, as in `CameraStageView`; the rotation is the layer's own transform.
 enum CameraPreviewConnection {
-  static func connect(_ layer: AVCaptureVideoPreviewLayer, to session: AVCaptureSession) {
+  static func connect(_ layer: AVCaptureVideoPreviewLayer, to session: AVCaptureSession, mirrored: Bool) {
     let port = session.inputs.lazy.flatMap(\.ports).first { $0.mediaType == .video }
     guard let port else { return }
     let connection = AVCaptureConnection(inputPort: port, videoPreviewLayer: layer)
+    if connection.isVideoMirroringSupported {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = mirrored
+    }
     session.beginConfiguration()
     if session.canAddConnection(connection) { session.addConnection(connection) }
     session.commitConfiguration()
@@ -333,17 +353,20 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   private var sawFrame = false
   private var isStopped: Bool { stopped.withLock { $0 } }
 
-  init(uid: String, layer: AVCaptureVideoPreviewLayer, firstFrame: @escaping @Sendable () -> Void) {
+  init(
+    uid: String, layer: AVCaptureVideoPreviewLayer, mirrored: Bool = false,
+    firstFrame: @escaping @Sendable () -> Void
+  ) {
     self.firstFrame = firstFrame
     super.init()
     layer.setSessionWithNoConnection(session)
     nonisolated(unsafe) let layer = layer
-    Self.queue.async { self.open(uid, layer) }
+    Self.queue.async { self.open(uid, layer, mirrored) }
   }
 
   /// `.medium` first, the lightest preset worth trying: a 4K v210 feed is heavy for a thumbnail.
   /// `fallBack` moves to `.high`, which runs Cam B at 1920x1080.
-  private func open(_ uid: String, _ layer: AVCaptureVideoPreviewLayer) {
+  private func open(_ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ mirrored: Bool) {
     guard !isStopped, let device = AVCaptureDevice(uniqueID: uid),
       let input = try? AVCaptureDeviceInput(device: device)
     else { return }
@@ -356,7 +379,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
     if session.canSetSessionPreset(.medium) { session.sessionPreset = .medium }
     if session.canAddOutput(output) { session.addOutput(output) }
     session.commitConfiguration()
-    CameraPreviewConnection.connect(layer, to: session)
+    CameraPreviewConnection.connect(layer, to: session, mirrored: mirrored)
     session.startRunning()
   }
 
@@ -406,32 +429,44 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   }
 }
 
-/// Hosts the preview layer, sized to the view.
+/// Hosts the preview layer, turned and aspect-fitted the way `CameraStageView` does it.
 private struct PreviewLayerView: NSViewRepresentable {
   let layer: AVCaptureVideoPreviewLayer
-  func makeNSView(context: Context) -> Host { Host() }
-  func updateNSView(_ view: Host, context: Context) { view.preview = layer }
+  let rotation: CameraRotation
+  let aspect: CGSize
+  func makeNSView(context: Context) -> CameraThumbnailView { CameraThumbnailView() }
+  func updateNSView(_ view: CameraThumbnailView, context: Context) {
+    view.preview = layer
+    view.rotation = rotation
+    view.aspect = aspect
+  }
+}
 
-  final class Host: NSView {
-    var preview: AVCaptureVideoPreviewLayer? {
-      didSet {
-        guard preview !== oldValue else { return }
-        oldValue?.removeFromSuperlayer()
-        if let preview { layer?.addSublayer(preview) }
-        needsLayout = true
-      }
+/// Internal for the geometry test.
+final class CameraThumbnailView: NSView {
+  var preview: AVCaptureVideoPreviewLayer? {
+    didSet {
+      guard preview !== oldValue else { return }
+      oldValue?.removeFromSuperlayer()
+      if let preview { layer?.addSublayer(preview) }
+      needsLayout = true
     }
-    init() {
-      super.init(frame: .zero)
-      wantsLayer = true
-    }
-    required init?(coder: NSCoder) { nil }
-    override func layout() {
-      super.layout()
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      preview?.frame = bounds
-      CATransaction.commit()
-    }
+  }
+  var rotation = CameraRotation.none { didSet { if rotation != oldValue { needsLayout = true } } }
+  var aspect = CGSize(width: 16, height: 9) { didSet { if aspect != oldValue { needsLayout = true } } }
+
+  init() {
+    super.init(frame: .zero)
+    wantsLayer = true
+  }
+  required init?(coder: NSCoder) { nil }
+
+  override func layout() {
+    super.layout()
+    guard let preview else { return }
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    CameraStageView.place(preview, on: rotation.fittedRect(aspect: aspect, in: bounds), turnedBy: rotation)
+    CATransaction.commit()
   }
 }

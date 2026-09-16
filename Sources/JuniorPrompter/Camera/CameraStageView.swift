@@ -83,14 +83,7 @@ final class CameraStageView: NSView {
       preview.setAffineTransform(.identity)
       preview.frame = bounds
     } else {
-      // Lay the layer out unturned, then turn it about its own centre: it lands exactly on the
-      // aspect-fitted rectangle, so a turned 16:9 feed shows as 9:16 with nothing cropped.
-      preview.bounds = CGRect(
-        origin: .zero,
-        size: guides.rotation.swapsAxes
-          ? CGSize(width: picture.height, height: picture.width) : picture.size)
-      preview.position = CGPoint(x: picture.midX, y: picture.midY)
-      preview.setAffineTransform(CGAffineTransform(rotationAngle: guides.rotation.radians))
+      Self.place(preview, on: picture, turnedBy: guides.rotation)
     }
     // Sublayers do not inherit the window's scale: at 1x a hairline on a Retina screen blurs.
     let scale = window?.backingScaleFactor ?? 1
@@ -103,6 +96,17 @@ final class CameraStageView: NSView {
     guideLayer.path = CameraOverlay.guidePath(picture: picture, guides: guides)
     shade.path = CameraOverlay.shadePath(picture: picture, guides: guides)
     CATransaction.commit()
+  }
+
+  /// Lays the layer out unturned, then turns it about its own centre: it lands exactly on the
+  /// aspect-fitted `picture`, so a turned 16:9 feed shows as 9:16 with nothing cropped. The
+  /// camera picker's thumbnail uses it too.
+  static func place(_ layer: CALayer, on picture: CGRect, turnedBy rotation: CameraRotation) {
+    layer.bounds = CGRect(
+      origin: .zero,
+      size: rotation.swapsAxes ? CGSize(width: picture.height, height: picture.width) : picture.size)
+    layer.position = CGPoint(x: picture.midX, y: picture.midY)
+    layer.setAffineTransform(CGAffineTransform(rotationAngle: rotation.radians))
   }
 
   override func viewDidChangeBackingProperties() {
