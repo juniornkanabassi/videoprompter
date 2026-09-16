@@ -24,7 +24,7 @@ public struct MarkdownBlock: Codable, Hashable, Identifiable, Sendable {
 
 public struct PrompterDocument: Codable, Hashable, Sendable {
   private static let tokenRegex = try! NSRegularExpression(
-    pattern: #"[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*"#)
+    pattern: #"[\p{L}\p{N}][\p{L}\p{N}\p{M}]*(?:['’][\p{L}\p{N}][\p{L}\p{N}\p{M}]*)*"#)
   private static let linkRegex = try! NSRegularExpression(pattern: #"!?\[[^\]\n]+\]\([^\)\n]+\)"#)
   private static let inlineCodeRegex = try! NSRegularExpression(pattern: #"`[^`\n]*`"#)
   private static let stageDirectionRegex = try! NSRegularExpression(
@@ -46,7 +46,8 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
     }
   }
   public static func normalise(_ value: String) -> String {
-    value.folding(
+    // NFC first: decomposed script text (PDF imports) and composed recogniser output fold alike.
+    value.precomposedStringWithCanonicalMapping.folding(
       options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
       locale: Locale(identifier: "en_GB")
     ).replacingOccurrences(of: "’", with: "'").lowercased()

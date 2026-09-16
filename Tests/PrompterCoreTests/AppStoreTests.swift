@@ -341,29 +341,32 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(explicitReopened.settings.fontSize, 37)
   }
 
-  func testScriptsTrackedCountsCreatedAndDuplicatedScripts() async throws {
+  /// Create, duplicate, move to Trash and restore, as the library and a relaunch see them.
+  func testCreateDuplicateTrashAndRestoreKeepTheLibraryInStep() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     _ = try await store.library!.create(title: "Existing", markdown: "one")
     await store.reload()
-    XCTAssertEqual(store.scriptsTracked, 1)
+    XCTAssertEqual(store.scripts.count, 1)
 
     store.create(title: "Created", markdown: "two")
     try await Task.sleep(for: .milliseconds(200))
-    XCTAssertEqual(store.scriptsTracked, 2)
+    XCTAssertEqual(store.scripts.count, 2)
     store.duplicate()
     try await Task.sleep(for: .milliseconds(200))
-    XCTAssertEqual(store.scriptsTracked, 3)
+    XCTAssertEqual(store.scripts.count, 3)
     let duplicatedID = try XCTUnwrap(store.selectedID)
     store.delete([duplicatedID])
     try await Task.sleep(for: .milliseconds(300))
-    XCTAssertEqual(store.scriptsTracked, 3)
+    XCTAssertEqual(store.scripts.count, 2)
+    XCTAssertEqual(store.trash.map(\.id), [duplicatedID])
     store.restore(duplicatedID)
     try await Task.sleep(for: .milliseconds(100))
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await reopened.reload()
-    XCTAssertEqual(reopened.scriptsTracked, 3)
+    XCTAssertEqual(reopened.scripts.count, 3)
+    XCTAssertTrue(reopened.trash.isEmpty)
   }
 
   func testExternalConflictCanKeepExternalAndLocalDraft() async throws {

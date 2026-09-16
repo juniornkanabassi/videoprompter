@@ -33,7 +33,11 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   var paragraphSpacing = 0.34
   /// The script column as a fraction of the presenter's width, centred. It replaced the old
   /// fixed "Horizontal margin" (points), which could not narrow a full-screen column.
-  var textWidth = 1.0
+  var textWidth = 1.0 { didSet { textWidth = Self.clampedTextWidth(textWidth) } }
+  static let textWidthRange = 0.3...1.0
+  static func clampedTextWidth(_ value: Double) -> Double {
+    value.isNaN ? 1 : min(max(value, textWidthRange.lowerBound), textWidthRange.upperBound)
+  }
   var alignment = "Left"
   var showCues = false
   var highlightActiveWord = false
@@ -42,9 +46,16 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   private enum CodingKeys: String, CodingKey { case id,name,fontName,fontSize,textOpacity,backgroundOpacity,videoDimming,guideFraction,guideOpacity,horizontalMirror,verticalMirror,rotation,mode,speed,audioDeviceUID,inputGain,soundThreshold,speechLanguage,fontWeight,textColorHex,backgroundColorHex,lineSpacing,paragraphSpacing,textWidth,alignment,showCues,highlightActiveWord,presenterSnappingEnabled,allowsBackwardVoiceTracking }
   init() {}
   func backdropOpacity(withVideo: Bool) -> Double { withVideo ? videoDimming : backgroundOpacity }
+  /// The inspector's one Background opacity control edits the value for the mode in use, so it is
+  /// never a dead slider; each mode keeps its own stored value. Video stops at 0.9 so the
+  /// picture is never blacked out.
+  mutating func setBackdropOpacity(_ value: Double, withVideo: Bool) {
+    if withVideo { videoDimming = value } else { backgroundOpacity = value }
+  }
+  static func backdropOpacityRange(withVideo: Bool) -> ClosedRange<Double> { withVideo ? 0...0.9 : 0...1 }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"; speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; soundThreshold = try c.decodeIfPresent(Double.self, forKey: .soundThreshold) ?? 0.055; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1; alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? false; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
+    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"; speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; soundThreshold = try c.decodeIfPresent(Double.self, forKey: .soundThreshold) ?? 0.055; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = Self.clampedTextWidth(try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1); alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? false; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
   }
 }
 
@@ -83,7 +94,6 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
-  var scriptsTracked: Int { Set(scripts.map(\.id)).union(trash.map(\.id)).count }
 
   private(set) var library: MarkdownLibrary?
   let session = SessionStore()
@@ -171,10 +181,12 @@ private enum PresenterSaveError: LocalizedError {
   var visible: [ScriptRecord] {
     let scoped = selectedFolderID.map { id in scripts.filter { $0.metadata.folderID == id } } ?? scripts
     guard !search.isEmpty else { return scoped }
+    // Case and accents both fold, as in the library's own search: "Barca" finds "Barça".
+    func matches(_ text: String) -> Bool {
+      text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive], locale: .current) != nil
+    }
     return scoped.filter {
-      $0.metadata.title.localizedCaseInsensitiveContains(search)
-        || $0.markdown.localizedCaseInsensitiveContains(search)
-        || $0.metadata.tags.contains { $0.localizedCaseInsensitiveContains(search) }
+      matches($0.metadata.title) || matches($0.markdown) || $0.metadata.tags.contains(where: matches)
     }
   }
 
@@ -250,6 +262,11 @@ private enum PresenterSaveError: LocalizedError {
         selectedID = item.metadata.id
       } catch { errorMessage = String(describing: error) }
     }
+  }
+  /// File > Import from Clipboard and the toolbar's copy of it.
+  func importClipboard() {
+    guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
+    create(title: "Pasted Script", markdown: markdown)
   }
   func duplicate() {
     guard let library, let selected else { return }
@@ -606,21 +623,31 @@ private enum PresenterSaveError: LocalizedError {
             NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: responder, from: item)
           }.keyboardShortcut("f", modifiers: .command)
         }
+        SidebarCommands()
+        InspectorCommands()
+        CommandGroup(after: .newItem) {
+          Button("New Script") { store.create() }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .disabled(!store.libraryAvailable)
+          Button("Duplicate Script") { store.duplicate() }
+            .keyboardShortcut("d", modifiers: .command)
+            .disabled(store.selected == nil)
+          Divider()
+          Button("Import Script…") { NotificationCenter.default.post(name: .juniorPrompterImport, object: nil) }
+            .keyboardShortcut("i", modifiers: .command)
+            .disabled(!store.libraryAvailable)
+          Button("Import from Clipboard") { store.importClipboard() }
+            .disabled(!store.libraryAvailable)
+        }
         CommandMenu("Prompter") {
           Button("Present Script") { PresenterController.shared.present(store: store) }
-            .keyboardShortcut("P", modifiers: [.command, .option])
-          Button("New Script") { store.create() }.keyboardShortcut(
-            "N", modifiers: [.command, .shift])
-          Button("Import Script") { NotificationCenter.default.post(name: .juniorPrompterImport, object: nil) }
-            .keyboardShortcut("I", modifiers: [.command])
-          Button("Import Clipboard") {
-            if let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty {
-              store.create(title: "Pasted Script", markdown: markdown)
-            }
-          }
-          Divider()
-          Button("Play or Pause") { store.session.toggle() }.keyboardShortcut(
-            .space, modifiers: [.command, .option])
+            .keyboardShortcut("p", modifiers: [.command, .option])
+            .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
+            .disabled(store.selected == nil)
+          // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
+          // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
+          Button("Play or Pause") { store.session.toggle() }
+            .keyboardShortcut("s", modifiers: [.command, .option])
           Divider()
           PresenterVideoItems()
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
@@ -634,12 +661,16 @@ private enum PresenterSaveError: LocalizedError {
 
 /// The video background's two menu items. A view of its own so the toggle follows
 /// `CameraModel.shared` without the whole app scene observing it.
-private struct PresenterVideoItems: View {
-  @ObservedObject private var camera = CameraModel.shared
+struct PresenterVideoItems: View {
+  @ObservedObject private var camera: CameraModel
+  init(camera: CameraModel = .shared) { _camera = ObservedObject(wrappedValue: camera) }
+  /// Prompter > Present with Video. Internal so the test flips the menu's own switch.
+  var presentsWithVideo: Binding<Bool> { $camera.presentsWithVideo }
   var body: some View {
-    Toggle("Present with Video", isOn: $camera.presentsWithVideo)
-      .keyboardShortcut("V", modifiers: [.command, .shift])
+    Toggle("Present with Video", isOn: presentsWithVideo)
+      .keyboardShortcut("v", modifiers: [.command, .shift])
     Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
+      .disabled(!camera.presentsWithVideo)
   }
 }
 
@@ -648,7 +679,7 @@ private struct CameraCommands: Commands {
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
     CommandGroup(after: .windowList) {
-      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut("C", modifiers: [.command, .shift])
+      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut("c", modifiers: [.command, .shift])
     }
   }
 }

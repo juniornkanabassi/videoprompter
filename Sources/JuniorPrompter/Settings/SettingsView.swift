@@ -40,30 +40,22 @@ struct InspectorView: View {
               }
           }
           Toggle("Mirror camera", isOn: $camera.mirrored)
-          LabeledContent("Video dimming") {
-            Slider(value: $store.settings.videoDimming, in: 0...0.9)
-          }
         }.task { camera.start() }
       }
       Section("Text") {
         Picker("Font", selection: $store.settings.fontName) {
           ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
         }
-        Slider(value: $store.settings.fontSize, in: 18...120)
-        LabeledContent("Text size", value: "\(Int(store.settings.fontSize)) pt")
-        LabeledContent("Text width") {
-          Slider(value: $store.settings.textWidth, in: 0.3...1)
-        }
-        LabeledContent("Background opacity") {
-          Slider(value: $store.settings.backgroundOpacity, in: 0...1)
-        }
-        LabeledContent("Text opacity") { Slider(value: $store.settings.textOpacity, in: 0.2...1) }
-        LabeledContent("Guide position") {
-          Slider(value: $store.settings.guideFraction, in: 0.1...0.85)
-        }
-        LabeledContent("Guide opacity") {
-          Slider(value: $store.settings.guideOpacity, in: 0...1)
-        }
+        ValueSlider("Text size", value: $store.settings.fontSize, in: 18...120,
+                    readout: "\(Int(store.settings.fontSize)) pt")
+        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }
+        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text opacity") }
+        // One control, not a Prompter-only slider that did nothing over video beside a Video one.
+        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
+          Text("Background opacity")
+        }.help("Kept separately for Prompter only and Prompter + video")
+        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Guide position") }
+        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Guide opacity") }
         DisclosureGroup("Advanced appearance") {
           Picker("Weight", selection: $store.settings.fontWeight) {
             Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
@@ -91,12 +83,12 @@ struct InspectorView: View {
           ForEach(["Voice", "Timed", "Manual", "Sound"], id: \.self, content: Text.init)
         }
         if store.settings.mode == "Timed" || store.settings.mode == "Sound" {
-          Slider(value: $store.settings.speed, in: 20...300)
-          LabeledContent("Speed", value: "\(Int(store.settings.speed)) wpm")
+          ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
+                      readout: "\(Int(store.settings.speed)) wpm")
         }
         if store.settings.mode == "Sound" {
-          Slider(value: $store.settings.soundThreshold, in: 0...0.5)
-          LabeledContent("Sound threshold", value: String(format: "%.3f", store.settings.soundThreshold))
+          ValueSlider("Sound threshold", value: $store.settings.soundThreshold, in: 0...0.5,
+                      readout: String(format: "%.3f", store.settings.soundThreshold))
           Text("Advances while sound is above threshold; does not match words.").font(.caption).foregroundStyle(.secondary)
         }
         if store.settings.mode == "Voice" {
@@ -115,7 +107,7 @@ struct InspectorView: View {
       Section("Microphone") {
         HStack {
           Picker(
-            "Microphone",
+            "Input device",
             selection: Binding(
               get: { store.settings.audioDeviceUID ?? "" },
               set: {
@@ -132,10 +124,10 @@ struct InspectorView: View {
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
           Button { devices = AudioCapture.inputDevices() } label: {
-            Image(systemName: "arrow.clockwise")
+            Label("Refresh microphones", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
           }
           .buttonStyle(.borderless)
-          .accessibilityLabel("Refresh microphones")
+          .help("Refresh microphones")
         }
         LabeledContent("Input gain") {
           Slider(
@@ -162,14 +154,19 @@ struct InspectorView: View {
           }
         }
         InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping)
-        LabeledContent("Peak level", value: Self.decibelText(session.audioPeakDBFS))
+        // The clipping warning shares this row: a row of its own came and went with the signal and
+        // shook everything below it during a test.
+        LabeledContent("Peak level") {
+          HStack {
+            if session.isClipping {
+              Label("Clipping", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+            }
+            Text(Self.decibelText(session.audioPeakDBFS)).monospacedDigit()
+          }
+        }
         Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
           .font(.caption)
           .foregroundStyle(.secondary)
-        if session.isClipping {
-          Label("Input is clipping", systemImage: "exclamationmark.triangle.fill").foregroundStyle(
-            .red)
-        }
         if let notice = session.microphoneTestNotice {
           Label(notice, systemImage: "exclamationmark.triangle.fill")
             .foregroundStyle(.secondary)
@@ -183,39 +180,24 @@ struct InspectorView: View {
             presetName = ""
           }
         }
-          ForEach(store.presets) { preset in
-            HStack {
-              Button(preset.name) { store.applyPreset(preset) }.buttonStyle(.plain)
+        ForEach(store.presets) { preset in
+          HStack {
+            Button(preset.name) { store.applyPreset(preset) }.buttonStyle(.plain)
+              .help("Apply this preset")
             Spacer()
             Button {
               store.deletePreset(preset.id)
             } label: {
-              Image(systemName: "trash")
+              Label("Delete \(preset.name)", systemImage: "trash").labelStyle(.iconOnly)
             }.buttonStyle(.plain)
-            }.contextMenu {
-              Button("Rename") { renamePreset = preset; renameValue = preset.name }
-              Button("Duplicate") { store.duplicatePreset(preset.id) }
-              Button("Update from Current Settings") { store.updatePreset(preset.id) }
-              Button("Delete", role: .destructive) { store.deletePreset(preset.id) }
-            }
-          }
-      }
-      Section("Session") {
-        LabeledContent("Words accepted", value: "\(session.acceptedWords)")
-        if store.settings.mode == "Voice" { LabeledContent("Estimated WPM", value: "\(session.estimatedWPM)") }
-        LabeledContent("Session milestone", value: "Next \(session.sessionMilestone) words")
-        LabeledContent("Scripts tracked") {
-          VStack(alignment: .trailing, spacing: 2) {
-            Text("\(store.scriptsTracked)")
-            Text("Includes recently deleted")
-              .font(.caption)
-              .foregroundStyle(.secondary)
+              .help("Delete preset")
+          }.contextMenu {
+            Button("Rename") { renamePreset = preset; renameValue = preset.name }
+            Button("Duplicate") { store.duplicatePreset(preset.id) }
+            Button("Update from Current Settings") { store.updatePreset(preset.id) }
+            Button("Delete", role: .destructive) { store.deletePreset(preset.id) }
           }
         }
-        LabeledContent(
-          "Active time",
-          value: Duration.seconds(session.activeDuration).formatted(
-            .time(pattern: .minuteSecond)))
       }
     }.formStyle(.grouped).padding(12).frame(minWidth: 255).task {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
@@ -236,8 +218,33 @@ struct InspectorView: View {
     }
   }
 
+  private var backdropOpacity: Binding<Double> {
+    Binding(
+      get: { store.settings.backdropOpacity(withVideo: camera.presentsWithVideo) },
+      set: { store.settings.setBackdropOpacity($0, withVideo: camera.presentsWithVideo) })
+  }
+
   private static func decibelText(_ value: Float) -> String {
     value.isFinite ? String(format: "%.1f dBFS", value) : "−∞ dBFS"
+  }
+}
+
+/// A slider with its value read out beside it, on one labelled row.
+private struct ValueSlider: View {
+  let title: String
+  @Binding var value: Double
+  let range: ClosedRange<Double>
+  let readout: String
+  init(_ title: String, value: Binding<Double>, in range: ClosedRange<Double>, readout: String) {
+    self.title = title; _value = value; self.range = range; self.readout = readout
+  }
+  var body: some View {
+    LabeledContent(title) {
+      HStack {
+        Slider(value: $value, in: range) { Text(title) }.labelsHidden()
+        Text(readout).monospacedDigit().foregroundStyle(.secondary)
+      }
+    }
   }
 }
 
