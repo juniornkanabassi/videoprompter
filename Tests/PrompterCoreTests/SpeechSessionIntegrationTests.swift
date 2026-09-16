@@ -567,12 +567,14 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       }
     }
     if !replayScrollBack {
-      let heard = WordLatency.heard(ledger.events.compactMap { event in
+      let revisions = ledger.events.compactMap { event -> (WordLatency.Revision, Double?)? in
         guard event.type == "candidate", let locale = event.locale, let id = event.replacementID,
-          let start = event.audioStart, let end = event.audioEnd, let words = event.words else { return nil }
-        return .init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: words)
-      })
-      let spoken = WordLatency.spoken(heard, script: tokens)
+          let start = event.audioStart, let end = event.audioEnd, let text = event.text else { return nil }
+        return (.init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: event.words ?? [],
+          tail: PrompterDocument(markdown: text).spokenTokens.suffix(3).map(\.normalised)), event.wallSecondsSinceFirstAudio)
+      }
+      let alignment = WordLatency.align(revisions.map(\.0), arrivals: revisions.map(\.1), script: tokens)
+      let spoken = alignment.spoken
       let shown = rendersPresenter ? ledger.painted : ledger.published
       for token in tokens.indices {
         ledger.events.append(.init(
@@ -585,7 +587,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       }
       print("Script length \(tokens.count), words with a spoken time \(spoken.compactMap { $0 }.count), "
         + "final token \(session.tokenIndex), accepted \(session.acceptedWords), drops \(ledger.droppedBuffers). "
-        + "\(rendersPresenter ? "Dim painted" : "Session publish"): \(WordLatency.report(display: shown, spoken: spoken, heard: heard, script: tokens))")
+        + "\(rendersPresenter ? "Dim painted" : "Session publish"): \(WordLatency.report(display: shown, alignment: alignment, script: tokens))")
       if let hold = zip(progress, progress.dropFirst()).max(by: {
         ($0.1.wallSecondsSinceFirstAudio ?? 0) - ($0.0.wallSecondsSinceFirstAudio ?? 0)
           < ($1.1.wallSecondsSinceFirstAudio ?? 0) - ($1.0.wallSecondsSinceFirstAudio ?? 0)
@@ -598,7 +600,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         }
         print("Session publish to dim painted: \(WordLatency.describe(publishToPaint))")
       }
-      let early = WordLatency.early(display: shown, spoken: spoken, heard: heard, script: tokens)
+      let early = WordLatency.early(display: shown, alignment: alignment, script: tokens)
       XCTAssertTrue(early.isEmpty, "Dimmed \(early.count) words before they were said, first \(early.first?.token ?? -1). See \(logURL.path).")
       if let bound = Double(environment["JUNIORPROMPTER_MAX_WORD_LATENCY_P90"] ?? "") {
         XCTAssertLessThanOrEqual(WordLatency.percentiles(WordLatency.latencies(display: shown, spoken: spoken)).p90, bound,
