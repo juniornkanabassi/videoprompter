@@ -47,6 +47,20 @@ struct CameraGuides: Codable, Equatable, Sendable {
   /// How dark everything outside the marker goes.
   var shadeOpacity = 0.5
 
+  /// Colour and opacity together, as the guide layer is stroked with.
+  var strokeColor: CGColor {
+    Self.color(colorHex, alpha: opacity) ?? Self.color("#3F8CFF", alpha: opacity)!
+  }
+  /// Everything outside the frame marker goes this much darker.
+  var shadeColor: CGColor { CGColor(red: 0, green: 0, blue: 0, alpha: shadeOpacity) }
+  static func color(_ hex: String, alpha: Double) -> CGColor? {
+    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+    guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+    return CGColor(
+      red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255,
+      blue: CGFloat(number & 255) / 255, alpha: alpha)
+  }
+
   init() {}
   /// Lenient, so a preference written by an older build keeps whatever it did set.
   init(from decoder: Decoder) throws {
