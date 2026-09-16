@@ -17,8 +17,7 @@ import SwiftUI
   private var isFullScreen: Bool { panel?.isInFullScreen == true }
   /// On screen, not minimised and not full screen: the only state a camera fit may resize.
   private var isWindowedOnScreen: Bool {
-    guard let panel else { return false }
-    return panel.isVisible && !panel.isMiniaturized && !panel.isInFullScreen
+    panel.map { $0.isVisible && !$0.isMiniaturized && !$0.isInFullScreen } ?? false
   }
 
   init(camera: CameraModel = .shared) {

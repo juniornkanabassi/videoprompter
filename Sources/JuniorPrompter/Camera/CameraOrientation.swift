@@ -68,14 +68,8 @@ final class CameraAutoOrientation: NSObject, AVCaptureVideoDataOutputSampleBuffe
 
   /// The largest face Vision found at this orientation, or nothing when it found none.
   static func candidate(_ rotation: CameraRotation, faces: [Face]) -> Candidate? {
-    guard
-      let largest = faces.max(by: {
-        $0.boundingBox.width * $0.boundingBox.height < $1.boundingBox.width * $1.boundingBox.height
-      })
-    else { return nil }
-    return Candidate(
-      rotation: rotation, confidence: largest.confidence,
-      area: largest.boundingBox.width * largest.boundingBox.height)
+    faces.map { Candidate(rotation: rotation, confidence: $0.confidence, area: $0.boundingBox.width * $0.boundingBox.height) }
+      .max { $0.area < $1.area }
   }
 
   /// A face found at a wrong orientation is either absent, small or unsure, so the product of

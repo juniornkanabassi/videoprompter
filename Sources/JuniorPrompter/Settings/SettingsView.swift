@@ -102,19 +102,12 @@ struct InspectorView: View {
       }
       Section("Microphone") {
         HStack {
-          Picker(
-            "Input device",
-            selection: Binding(
-              get: { store.settings.audioDeviceUID ?? "" },
-              set: {
-                session.stopMicrophoneTest()
-                store.settings.audioDeviceUID = $0.isEmpty ? nil : $0
-              })
+          Picker("Input device", selection: Binding(
+            get: { store.settings.audioDeviceUID ?? "" },
+            set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
           ) {
             Text("Choose a microphone").tag("")
-            if let uid = store.settings.audioDeviceUID,
-              !devices.contains(where: { $0.uid == uid })
-            {
+            if let uid = store.settings.audioDeviceUID, !devices.contains(where: { $0.uid == uid }) {
               Text("Selected microphone unavailable").tag(uid)
             }
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
@@ -125,21 +118,16 @@ struct InspectorView: View {
             .help("Refresh microphones")
         }
         LabeledContent("Input gain") {
-          Slider(
-            value: Binding(
-              get: { store.settings.inputGain },
-              set: {
-                store.settings.inputGain = $0
-                session.setMicrophoneTestGain($0)
-              }), in: 0.25...4)
+          Slider(value: Binding(
+            get: { store.settings.inputGain },
+            set: { store.settings.inputGain = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4)
         }
         HStack {
           Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
             if session.isTestingMicrophone {
               session.stopMicrophoneTest()
             } else {
-              session.startMicrophoneTest(
-                deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
+              session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
             }
           }
           .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
@@ -156,7 +144,8 @@ struct InspectorView: View {
             if session.isClipping {
               Label("Clipping", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
             }
-            Text(Self.decibelText(session.audioPeakDBFS)).monospacedDigit()
+            Text(session.audioPeakDBFS.isFinite ? String(format: "%.1f dBFS", session.audioPeakDBFS) : "−∞ dBFS")
+              .monospacedDigit()
           }
         }
         Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
@@ -170,10 +159,7 @@ struct InspectorView: View {
       Section("Presets") {
         HStack {
           TextField("Preset name", text: $presetName)
-          Button("Save") {
-            store.savePreset(named: presetName)
-            presetName = ""
-          }
+          Button("Save") { store.savePreset(named: presetName); presetName = "" }
         }
         ForEach(store.presets) { preset in
           HStack {
@@ -214,10 +200,6 @@ struct InspectorView: View {
     Binding(
       get: { store.settings.backdropOpacity(withVideo: camera.presentsWithVideo) },
       set: { store.settings.setBackdropOpacity($0, withVideo: camera.presentsWithVideo) })
-  }
-
-  private static func decibelText(_ value: Float) -> String {
-    value.isFinite ? String(format: "%.1f dBFS", value) : "−∞ dBFS"
   }
 }
 
@@ -347,8 +329,7 @@ struct InputLevelMeter: View {
     .frame(height: 30)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Microphone peak level")
-    .accessibilityValue(
-      peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
+    .accessibilityValue(peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
     .accessibilityHint(isClipping ? "Input is clipping." : "Marks from minus 60 to 0 dBFS, with warning zones at minus 20 and minus 9.")
     // `ingest` ignores silence.
     .onChange(of: peakDBFS) { _, value in peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime) }

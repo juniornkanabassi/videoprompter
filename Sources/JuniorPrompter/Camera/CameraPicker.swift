@@ -67,14 +67,8 @@ private struct CameraPickerList: View {
     .focused($focused)
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
-    .onKeyPress(.return) {
-      if let highlighted { choose(highlighted) }
-      return .handled
-    }
-    .onKeyPress(.escape) {
-      close()
-      return .handled
-    }
+    .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
+    .onKeyPress(.escape) { close(); return .handled }
     .onAppear { focused = true }
     .onChange(of: highlighted) { _, uid in preview.show(uid, mirrored: model.mirrored) }
     .onDisappear { preview.stop() }

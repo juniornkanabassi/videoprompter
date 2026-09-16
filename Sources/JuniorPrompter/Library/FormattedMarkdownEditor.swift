@@ -717,14 +717,11 @@ struct FormattedMarkdownEditModel {
 
   private static func literalMarkdown(_ text: String, inCode: Bool) -> String? {
     if inCode { return text.contains("`") ? nil : text }
-    let escaped = text.replacingOccurrences(of: "\\", with: "\\\\")
-      .replacingOccurrences(of: "*", with: "\\*")
-      .replacingOccurrences(of: "_", with: "\\_")
-      .replacingOccurrences(of: "`", with: "\\`")
-      .replacingOccurrences(of: "[", with: "\\[")
-      .replacingOccurrences(of: "]", with: "\\]")
-      .replacingOccurrences(of: "&", with: "\\&")
-      .replacingOccurrences(of: "<", with: "\\<")
+    var escaped = text
+    // Backslash first, so the escapes added after it are not escaped again.
+    for character in ["\\", "*", "_", "`", "[", "]", "&", "<"] {
+      escaped = escaped.replacingOccurrences(of: character, with: "\\" + character)
+    }
     return escaped.split(separator: "\n", omittingEmptySubsequences: false).map { line in
       guard let first = line.first else { return String(line) }
       if line.range(of: "^\\d+[.)]\\s", options: .regularExpression) != nil {

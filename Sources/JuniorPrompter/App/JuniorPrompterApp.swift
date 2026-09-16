@@ -204,9 +204,7 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
     loaded = loaded.map { record in
-      protectedIDs.contains(record.id)
-        ? (scripts.first(where: { $0.id == record.id }) ?? record)
-        : record
+      protectedIDs.contains(record.id) ? (scripts.first(where: { $0.id == record.id }) ?? record) : record
     }
     scripts = loaded
     trash = await library.listTrash()

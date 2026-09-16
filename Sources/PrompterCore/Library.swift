@@ -406,12 +406,10 @@ public actor MarkdownLibrary {
   private static func resolveLink(_ metadata: ScriptMetadata) -> URL? {
     var stale = false
     if let data = metadata.linkedBookmark {
-      if let url = try? URL(
-        resolvingBookmarkData: data, options: [.withSecurityScope], relativeTo: nil,
-        bookmarkDataIsStale: &stale) { return url }
-      if let url = try? URL(
-        resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) {
-        return url
+      for options: URL.BookmarkResolutionOptions in [.withSecurityScope, []] {
+        if let url = try? URL(resolvingBookmarkData: data, options: options, relativeTo: nil, bookmarkDataIsStale: &stale) {
+          return url
+        }
       }
     }
     // ponytail: a stale bookmark is never rewritten; relink by hand if a moved file stops resolving.
