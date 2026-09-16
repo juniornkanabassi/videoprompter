@@ -4,6 +4,12 @@ private let commonWords: Set<String> = [
   "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
   "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
+/// Dictation spells small numbers out ("missed five of their seven", "the second leg") where a
+/// script usually writes digits ("5", "7", "2nd").
+private let spelledNumbers: [String: String] = [
+  "zero": "0", "one": "1", "two": "2", "three": "3", "four": "4", "five": "5", "six": "6",
+  "seven": "7", "eight": "8", "nine": "9", "ten": "10", "first": "1st", "second": "2nd", "third": "3rd",
+]
 
 public struct PhraseMatch: Equatable, Sendable {
   public var tokenIndex: Int
@@ -123,7 +129,7 @@ public struct PhraseMatcher: Sendable {
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
       guard informativeCount > 0 else { continue }
-      for start in lo..<hi where target[start] == evidence[0] {
+      for start in lo..<hi where same(evidence[0], target[start]) {
         var ti = start
         var matched = 0
         var last = start
@@ -132,7 +138,7 @@ public struct PhraseMatcher: Sendable {
         var leadingIntact = true
         for word in evidence {
           let before = ti
-          while ti < hi && target[ti] != word { ti += 1 }
+          while ti < hi && !same(word, target[ti]) { ti += 1 }
           if ti < hi {
             leadingIntact = leadingIntact && ti == before
             if leadingIntact, word.count > 2, !common.contains(word) { leadingInformative += 1 }
@@ -226,9 +232,15 @@ public struct PhraseMatcher: Sendable {
   /// words it stands for. "I'm" continues a script's "I'm" as well as its "I am".
   private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
     guard index < target.count else { return nil }
-    if target[index] == word { return 1 }
+    if same(word, target[index]) { return 1 }
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
+  }
+  /// Whether a recognised word is this script token: the same word, or the same number written the
+  /// other way. Without it every "five" against a script's "5" broke the run, and the words after
+  /// it waited for a later phrase to clear the forward thresholds.
+  private func same(_ word: String, _ token: String) -> Bool {
+    word == token || spelledNumbers[word] == token || spelledNumbers[token] == word
   }
   private func contractionComponents(_ word: String) -> [String] {
     switch word {
