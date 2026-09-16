@@ -12,7 +12,6 @@ public actor MarkdownLibrary {
     var scripts: [ScriptMetadata] = []
     var trash: [TrashEntry] = []
     var folders: [ScriptFolder] = []
-    enum CodingKeys: String, CodingKey { case schemaVersion, scripts, trash, folders }
     init() {}
     init(from decoder: Decoder) throws {
       let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -52,15 +51,12 @@ public actor MarkdownLibrary {
         throw PrompterCoreError.unsafePath(indexURL.path)
       }
       let data = try Data(contentsOf: indexURL)
-      if (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["schemaVersion"] as? Int == 1 {
+      let schema = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["schemaVersion"] as? Int
+      if schema == 1 {
         let backup = rootURL.appendingPathComponent("LibraryIndex.schema1-\(UUID().uuidString).json")
         try data.write(to: backup, options: .withoutOverwriting)
       }
-      if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        let schema = object["schemaVersion"] as? Int, schema > 2
-      {
-        throw PrompterCoreError.unknownSchema(schema)
-      }
+      if let schema, schema > 2 { throw PrompterCoreError.unknownSchema(schema) }
       do {
         let decoded = try JSONDecoder().decode(Index.self, from: data)
         try Self.validate(decoded)
@@ -82,8 +78,7 @@ public actor MarkdownLibrary {
       }
       try fm.createDirectory(at: directory, withIntermediateDirectories: true)
     }
-    var known = Set(index.scripts.map(\.fileName))
-    known.formUnion(index.trash.map { $0.metadata.fileName })
+    var known = Set(index.scripts.map(\.fileName) + index.trash.map(\.metadata.fileName))
     index.scripts.append(contentsOf: try Self.discoverScripts(in: scriptsURL, known: &known))
     for url in try fm.contentsOfDirectory(
       at: trashURL, includingPropertiesForKeys: [.isSymbolicLinkKey])
@@ -111,61 +106,51 @@ public actor MarkdownLibrary {
     let scanned = Self.modificationDate(of: scriptsURL)
     if let scanned, lastScriptsScan == scanned { return [] }
     lastScriptsScan = scanned
-    var known = Set(index.scripts.map(\.fileName))
-    known.formUnion(index.trash.map { $0.metadata.fileName })
+    var known = Set(index.scripts.map(\.fileName) + index.trash.map(\.metadata.fileName))
     let discovered = try Self.discoverScripts(in: scriptsURL, known: &known)
     guard !discovered.isEmpty else { return [] }
+    let old = index
     index.scripts.append(contentsOf: discovered)
-    do {
-      try persistIndex()
-    } catch {
-      index.scripts.removeLast(discovered.count)
-      throw error
-    }
+    try persist(restoring: old)
     return discovered
   }
   public func listFolders() -> [ScriptFolder] { index.folders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
   public func createFolder(name: String) throws -> ScriptFolder {
     let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { throw PrompterCoreError.invalidTitle }
-    let old = index.folders
-    let folder = ScriptFolder(name: clean); index.folders.append(folder)
-    do { try persistIndex() } catch { index.folders = old; throw error }
+    let old = index
+    let folder = ScriptFolder(name: clean)
+    index.folders.append(folder)
+    try persist(restoring: old)
     return folder
   }
   public func renameFolder(_ id: UUID, name: String) throws {
     let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty, let index = index.folders.firstIndex(where: { $0.id == id }) else { throw PrompterCoreError.invalidTitle }
-    let old = self.index.folders[index]; self.index.folders[index].name = clean
-    do { try persistIndex() } catch { self.index.folders[index] = old; throw error }
+    guard !clean.isEmpty, let i = index.folders.firstIndex(where: { $0.id == id }) else { throw PrompterCoreError.invalidTitle }
+    let old = index
+    index.folders[i].name = clean
+    try persist(restoring: old)
   }
   public func deleteFolder(_ id: UUID) throws {
-    let oldScripts = index.scripts, oldTrash = index.trash, oldFolders = index.folders
+    let old = index
     index.scripts = index.scripts.map { var value = $0; if value.folderID == id { value.folderID = nil }; return value }
     index.trash = index.trash.map { var value = $0; if value.metadata.folderID == id { value.metadata.folderID = nil }; return value }
     index.folders.removeAll { $0.id == id }
-    do { try persistIndex() } catch { index.scripts = oldScripts; index.trash = oldTrash; index.folders = oldFolders; throw error }
+    try persist(restoring: old)
   }
   public func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) throws {
     if let folderID, !index.folders.contains(where: { $0.id == folderID }) { throw PrompterCoreError.scriptNotFound(folderID) }
-    let old = index.scripts
+    let old = index
     for i in index.scripts.indices where ids.contains(index.scripts[i].id) { index.scripts[i].folderID = folderID }
-    do { try persistIndex() } catch { index.scripts = old; throw error }
+    try persist(restoring: old)
   }
   public func listTrash() -> [TrashEntry] { index.trash.sorted { $0.deletedAt > $1.deletedAt } }
   public func scriptURL(for id: UUID) throws -> URL {
-    guard let item = index.scripts.first(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
-    return try validatedURL(item.fileName, in: scriptsURL)
+    try validatedURL(index.scripts[position(of: id)].fileName, in: scriptsURL)
   }
   public func read(_ id: UUID) throws -> ScriptRecord {
-    guard let metadata = index.scripts.first(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
-    let markdown = try Self.coordinatedRead(
-      try validatedURL(metadata.fileName, in: scriptsURL), coordinated: coordinatesExternalChanges)
-    return ScriptRecord(metadata: metadata, markdown: markdown)
+    let metadata = index.scripts[try position(of: id)]
+    return ScriptRecord(metadata: metadata, markdown: try readText(validatedURL(metadata.fileName, in: scriptsURL)))
   }
   public func create(
     title: String, markdown: String = "", folderID: UUID? = nil, tags: [String] = []
@@ -180,9 +165,7 @@ public actor MarkdownLibrary {
       id: id, title: clean, fileName: file, createdAt: now, modifiedAt: now, revision: 0,
       folderID: folderID, tags: tags, contentFingerprint: fingerprint)
     try validateManagedDirectories()
-    try Self.writeAtomic(
-      markdown, to: scriptsURL.appendingPathComponent(file), coordinated: coordinatesExternalChanges
-    )
+    try Self.writeAtomic(markdown, to: scriptsURL.appendingPathComponent(file), coordinated: coordinatesExternalChanges)
     index.scripts.append(metadata)
     do { try persistIndex() } catch {
       try? FileManager.default.removeItem(at: scriptsURL.appendingPathComponent(file))
@@ -191,21 +174,15 @@ public actor MarkdownLibrary {
     }
     return ScriptRecord(metadata: metadata, markdown: markdown)
   }
-  public func save(_ id: UUID, markdown: String, expectedFingerprint: String) throws -> ScriptRecord
-  {
-    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
+  public func save(_ id: UUID, markdown: String, expectedFingerprint: String) throws -> ScriptRecord {
+    let position = try position(of: id)
     let url = try validatedURL(index.scripts[position].fileName, in: scriptsURL)
     try validateManagedDirectories()
     let oldMetadata = index.scripts[position]
     func saveWithinAccess(_ target: URL) throws {
       let disk = try String(contentsOf: target, encoding: .utf8)
       guard Self.fingerprint(disk) == expectedFingerprint else {
-        let conflictURL = conflictsURL.appendingPathComponent(
-          "\(oldMetadata.fileName.dropLast(3))-local-\(UUID().uuidString.lowercased()).md")
-        try Self.writeAtomic(markdown, to: conflictURL, coordinated: false)
-        throw PrompterCoreError.externalConflict(conflictFile: conflictURL.lastPathComponent)
+        throw PrompterCoreError.externalConflict(conflictFile: try writeConflict(markdown, for: oldMetadata))
       }
       try Data(markdown.utf8).write(to: target, options: .atomic)
       index.scripts[position].modifiedAt = Date()
@@ -250,22 +227,17 @@ public actor MarkdownLibrary {
     updated.revision &+= 1
     updated.modifiedAt = Date()
     if let i = index.scripts.firstIndex(where: { $0.id == id }) {
-      let old = index.scripts[i]
+      let old = index
       index.scripts[i] = updated
-      do { try persistIndex() } catch {
-        index.scripts[i] = old
-        throw error
-      }
+      try persist(restoring: old)
     }
     return ScriptRecord(metadata: updated, markdown: record.markdown)
   }
   public func updateMetadata(
     _ id: UUID, title: String? = nil, folderID: UUID?? = nil, tags: [String]? = nil
   ) throws -> ScriptMetadata {
-    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
-    let old = index.scripts[position]
+    let position = try position(of: id)
+    let old = index
     if let title {
       let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !clean.isEmpty else { throw PrompterCoreError.invalidTitle }
@@ -278,10 +250,7 @@ public actor MarkdownLibrary {
       ).sorted()
     }
     index.scripts[position].modifiedAt = Date()
-    do { try persistIndex() } catch {
-      index.scripts[position] = old
-      throw error
-    }
+    try persist(restoring: old)
     return index.scripts[position]
   }
   public func duplicate(_ id: UUID, title: String? = nil) throws -> ScriptRecord {
@@ -301,16 +270,13 @@ public actor MarkdownLibrary {
         matches.append(item)
         continue
       }
-      let content = try Self.coordinatedRead(
-        validatedURL(item.fileName, in: scriptsURL), coordinated: coordinatesExternalChanges)
+      let content = try readText(validatedURL(item.fileName, in: scriptsURL))
       if PrompterDocument.normalise(content).contains(needle) { matches.append(item) }
     }
     return matches
   }
   public func delete(_ id: UUID) throws {
-    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
+    let position = try position(of: id)
     let metadata = index.scripts[position]
     let source = try validatedURL(metadata.fileName, in: scriptsURL)
     let destination = try validatedURL(metadata.fileName, in: trashURL)
@@ -352,33 +318,28 @@ public actor MarkdownLibrary {
 
   /// Mirror this script to an external Markdown file, so edits on either side reach the other.
   public func link(_ id: UUID, to url: URL) throws -> ScriptMetadata {
-    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
-    let old = index.scripts[position]
+    let position = try position(of: id)
+    let old = index
     index.scripts[position].linkedPath = url.standardizedFileURL.path
     index.scripts[position].linkedBookmark =
       (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
     // The fingerprint records what the library copy holds, not what the file holds now: an
     // import seeds the copy from the preview, and a file changed since that preview would
     // otherwise look unchanged and be silently overwritten with the stale preview text.
-    index.scripts[position].linkedFingerprint = (try? Self.coordinatedRead(
-      validatedURL(old.fileName, in: scriptsURL), coordinated: coordinatesExternalChanges))
-      .map(Self.fingerprint)
+    index.scripts[position].linkedFingerprint =
+      (try? readText(validatedURL(index.scripts[position].fileName, in: scriptsURL))).map(Self.fingerprint)
     lastLinkSync[id] = nil
-    do { try persistIndex() } catch { index.scripts[position] = old; throw error }
+    try persist(restoring: old)
     return index.scripts[position]
   }
   public func unlink(_ id: UUID) throws -> ScriptMetadata {
-    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else {
-      throw PrompterCoreError.scriptNotFound(id)
-    }
-    let old = index.scripts[position]
+    let position = try position(of: id)
+    let old = index
     index.scripts[position].linkedPath = nil
     index.scripts[position].linkedBookmark = nil
     index.scripts[position].linkedFingerprint = nil
     lastLinkSync[id] = nil
-    do { try persistIndex() } catch { index.scripts[position] = old; throw error }
+    try persist(restoring: old)
     return index.scripts[position]
   }
   /// Conflict files written since the last call, for the caller to show once.
@@ -403,10 +364,8 @@ public actor MarkdownLibrary {
     let libraryURL = try validatedURL(metadata.fileName, in: scriptsURL)
     // A missing or unreadable file leaves the library copy exactly as it is; the
     // indicator reads `linkedPath` and shows the link as broken.
-    guard let disk = try? Self.withLinkAccess(link, {
-      try Self.coordinatedRead($0, coordinated: coordinatesExternalChanges)
-    }) else { return }
-    let local = try Self.coordinatedRead(libraryURL, coordinated: coordinatesExternalChanges)
+    guard let disk = try? Self.withLinkAccess(link, readText) else { return }
+    let local = try readText(libraryURL)
     let diskPrint = Self.fingerprint(disk)
     let localPrint = Self.fingerprint(local)
     if diskPrint == localPrint {
@@ -416,21 +375,15 @@ public actor MarkdownLibrary {
       return
     }
     if diskPrint == metadata.linkedFingerprint {
-      try Self.withLinkAccess(link) {
-        try Self.coordinatedWrite(Data(local.utf8), to: $0, coordinated: coordinatesExternalChanges)
-      }
+      try Self.withLinkAccess(link) { try writeText(local, to: $0) }
       index.scripts[position].linkedFingerprint = localPrint
       try persistIndex()
       return
     }
     if localPrint != metadata.linkedFingerprint {
-      let conflictURL = conflictsURL.appendingPathComponent(
-        "\(metadata.fileName.dropLast(3))-local-\(UUID().uuidString.lowercased()).md")
-      try Self.writeAtomic(local, to: conflictURL, coordinated: false)
-      linkConflicts.append(conflictURL.lastPathComponent)
+      linkConflicts.append(try writeConflict(local, for: metadata))
     }
-    try Self.coordinatedWrite(
-      Data(disk.utf8), to: libraryURL, coordinated: coordinatesExternalChanges)
+    try writeText(disk, to: libraryURL)
     index.scripts[position].linkedFingerprint = diskPrint
     try persistIndex()
   }
@@ -439,15 +392,10 @@ public actor MarkdownLibrary {
   private func pushToLinkedFile(_ position: Int, markdown: String) {
     let metadata = index.scripts[position]
     guard metadata.linkedPath != nil, let link = Self.resolveLink(metadata),
-      let disk = try? Self.withLinkAccess(link, {
-        try Self.coordinatedRead($0, coordinated: coordinatesExternalChanges)
-      }), Self.fingerprint(disk) == metadata.linkedFingerprint
+      let disk = try? Self.withLinkAccess(link, readText), Self.fingerprint(disk) == metadata.linkedFingerprint
     else { return }
     do {
-      try Self.withLinkAccess(link) {
-        try Self.coordinatedWrite(
-          Data(markdown.utf8), to: $0, coordinated: coordinatesExternalChanges)
-      }
+      try Self.withLinkAccess(link) { try writeText(markdown, to: $0) }
       index.scripts[position].linkedFingerprint = Self.fingerprint(markdown)
       try persistIndex()
     } catch {
@@ -482,6 +430,27 @@ public actor MarkdownLibrary {
     try validateManagedDirectories()
     try Self.writeAtomic(index, to: indexURL, coordinated: coordinatesExternalChanges)
   }
+  /// Saves the index; on failure puts back `old`, the index from before the change, and rethrows.
+  private func persist(restoring old: Index) throws {
+    do { try persistIndex() } catch { index = old; throw error }
+  }
+  private func position(of id: UUID) throws -> Int {
+    guard let position = index.scripts.firstIndex(where: { $0.id == id }) else { throw PrompterCoreError.scriptNotFound(id) }
+    return position
+  }
+  private func readText(_ url: URL) throws -> String {
+    try Self.coordinatedRead(url, coordinated: coordinatesExternalChanges)
+  }
+  private func writeText(_ text: String, to url: URL) throws {
+    try Self.coordinatedWrite(Data(text.utf8), to: url, coordinated: coordinatesExternalChanges)
+  }
+  /// Keeps the in-app version beside the library as `<name>-local-<uuid>.md`; returns the file name.
+  private func writeConflict(_ markdown: String, for metadata: ScriptMetadata) throws -> String {
+    let url = conflictsURL.appendingPathComponent(
+      "\(metadata.fileName.dropLast(3))-local-\(UUID().uuidString.lowercased()).md")
+    try Self.writeAtomic(markdown, to: url, coordinated: false)
+    return url.lastPathComponent
+  }
   private static func discoverScripts(in directory: URL, known: inout Set<String>) throws -> [ScriptMetadata] {
     var discovered: [ScriptMetadata] = []
     for url in try FileManager.default.contentsOfDirectory(
@@ -513,29 +482,25 @@ public actor MarkdownLibrary {
   }
   private func validatedURL(_ name: String, in directory: URL) throws -> URL {
     try validateManagedDirectories()
-    guard name == URL(fileURLWithPath: name).lastPathComponent, !name.contains("/"),
-      !name.contains("\\"), name.lowercased().hasSuffix(".md")
-    else { throw PrompterCoreError.unsafePath(name) }
+    guard Self.isPlainMarkdownName(name) else { throw PrompterCoreError.unsafePath(name) }
     let url = directory.appendingPathComponent(name)
     if Self.isSymbolicLink(url) { throw PrompterCoreError.unsafePath(url.path) }
     return url
   }
   private func validateManagedDirectories() throws {
-    for directory in [scriptsURL, trashURL, conflictsURL] {
-      guard !Self.isSymbolicLink(directory) else {
-        throw PrompterCoreError.unsafePath(directory.path)
-      }
+    for url in [scriptsURL, trashURL, conflictsURL, indexURL] where Self.isSymbolicLink(url) {
+      throw PrompterCoreError.unsafePath(url.path)
     }
-    guard !Self.isSymbolicLink(indexURL) else { throw PrompterCoreError.unsafePath(indexURL.path) }
+  }
+  private static func isPlainMarkdownName(_ name: String) -> Bool {
+    name == URL(fileURLWithPath: name).lastPathComponent && !name.contains("/") && !name.contains("\\")
+      && name.lowercased().hasSuffix(".md")
   }
   private static func validate(_ value: Index) throws {
     var ids = Set<UUID>()
     var names = Set<String>()
     for item in value.scripts + value.trash.map(\.metadata) {
-      guard ids.insert(item.id).inserted, names.insert(item.fileName).inserted,
-        item.fileName == URL(fileURLWithPath: item.fileName).lastPathComponent,
-        !item.fileName.contains("/"), !item.fileName.contains("\\"),
-        item.fileName.lowercased().hasSuffix(".md")
+      guard ids.insert(item.id).inserted, names.insert(item.fileName).inserted, isPlainMarkdownName(item.fileName)
       else { throw PrompterCoreError.corruptIndex }
     }
   }

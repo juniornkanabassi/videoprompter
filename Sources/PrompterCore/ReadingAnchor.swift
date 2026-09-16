@@ -68,13 +68,8 @@ public enum ReadingAnchorRemapper {
       } else {
         exactOffset = min(anchor.tokenOffset, block.spokenTokens.count - 1)
       }
-      let made = makeAnchor(
-        scriptID: anchor.scriptID, revision: newRevision, document: new,
-        globalTokenIndex: new.blocks.prefix(while: { $0.id != block.id }).reduce(0) {
-          $0 + $1.spokenTokens.count
-        } + exactOffset, guideFraction: anchor.guideFraction)
-      return .init(
-        anchor: made, disposition: localMap[anchor.tokenOffset] == nil ? .context : .exact)
+      let blockStart = new.blocks.prefix(while: { $0.id != block.id }).reduce(0) { $0 + $1.spokenTokens.count }
+      return moved(anchor, to: blockStart + exactOffset, in: new, newRevision, localMap[anchor.tokenOffset] == nil ? .context : .exact)
     }
     let oldIndex = globalIndex(of: anchor, in: old) ?? 0
     let oldWords = old.spokenTokens.map(\.normalised)
@@ -82,26 +77,26 @@ public enum ReadingAnchorRemapper {
     if let moved = contextMatch(anchor, in: new, newRevision: newRevision) { return moved }
     let mapping = lcsMap(oldWords, newWords)
     if let prior = mapping.keys.filter({ $0 < oldIndex }).max(), let mapped = mapping[prior] {
-      return .init(
-        anchor: makeAnchor(
-          scriptID: anchor.scriptID, revision: newRevision, document: new,
-          globalTokenIndex: min(newWords.count - 1, mapped + 1), guideFraction: anchor.guideFraction
-        ), disposition: .currentPassageDeleted)
+      return moved(anchor, to: min(newWords.count - 1, mapped + 1), in: new, newRevision, .currentPassageDeleted)
     }
     if let next = mapping.keys.filter({ $0 > oldIndex }).min(), let mapped = mapping[next] {
-      return .init(
-        anchor: makeAnchor(
-          scriptID: anchor.scriptID, revision: newRevision, document: new, globalTokenIndex: mapped,
-          guideFraction: anchor.guideFraction), disposition: .nearestFollowing)
+      return moved(anchor, to: mapped, in: new, newRevision, .nearestFollowing)
     }
     let proportional = min(
-      newWords.count - 1,
-      Int(Double(oldIndex) / Double(max(1, oldWords.count)) * Double(newWords.count)))
-    return .init(
+      newWords.count - 1, Int(Double(oldIndex) / Double(max(1, oldWords.count)) * Double(newWords.count)))
+    return moved(anchor, to: proportional, in: new, newRevision, .currentPassageDeleted)
+  }
+
+  /// The anchor rebuilt at `index` of `new`, with its script and guide kept.
+  private static func moved(
+    _ anchor: ReadingAnchor, to index: Int, in new: PrompterDocument, _ newRevision: UInt64,
+    _ disposition: AnchorRemapDisposition
+  ) -> AnchorRemapResult {
+    .init(
       anchor: makeAnchor(
-        scriptID: anchor.scriptID, revision: newRevision, document: new,
-        globalTokenIndex: proportional, guideFraction: anchor.guideFraction),
-      disposition: .currentPassageDeleted)
+        scriptID: anchor.scriptID, revision: newRevision, document: new, globalTokenIndex: index,
+        guideFraction: anchor.guideFraction),
+      disposition: disposition)
   }
 
   /// The one place in `new` whose neighbours match the anchor's saved context, if it is unique.
@@ -119,11 +114,7 @@ public enum ReadingAnchorRemapper {
         && before.count + after.count >= 2
     }
     guard candidates.count == 1 else { return nil }
-    return .init(
-      anchor: makeAnchor(
-        scriptID: anchor.scriptID, revision: newRevision, document: new,
-        globalTokenIndex: candidates[0], guideFraction: anchor.guideFraction),
-      disposition: .context)
+    return moved(anchor, to: candidates[0], in: new, newRevision, .context)
   }
 
   private static func lcsMap(_ a: [String], _ b: [String]) -> [Int: Int] {

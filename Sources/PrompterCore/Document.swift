@@ -79,28 +79,21 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
         kind = .listItem
       } else if trimmed.hasPrefix(">") {
         kind = .quote
-      } else if trimmed.range(of: #"^(?:-{3,}|\*{3,}|_{3,})$"#, options: .regularExpression) != nil
-      {
+      } else if trimmed.range(of: #"^(?:-{3,}|\*{3,}|_{3,})$"#, options: .regularExpression) != nil {
         kind = .thematicBreak
       } else {
         kind = .paragraph
       }
-      result.append(
-        Draft(
-          kind: kind, range: UTF16SourceRange(location: lower, length: upper - lower), text: text))
+      result.append(Draft(kind: kind, range: UTF16SourceRange(location: lower, length: upper - lower), text: text))
     }
     for (i, sub) in lines.enumerated() {
       let line = String(sub)
       let length = (line as NSString).length
-      let blank = line.trimmingCharacters(in: .whitespaces).isEmpty
-      let fence =
-        line.trimmingCharacters(in: .whitespaces).hasPrefix("```")
-        || line.trimmingCharacters(in: .whitespaces).hasPrefix("~~~")
-      if blank && !inFence {
-        if let s = start {
-          append(s, end)
-          start = nil
-        }
+      let trimmed = line.trimmingCharacters(in: .whitespaces)
+      let fence = trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~")
+      if trimmed.isEmpty && !inFence {
+        if let s = start { append(s, end) }
+        start = nil
       } else {
         if start == nil { start = cursor }
         end = cursor + length
@@ -151,13 +144,9 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
       (ns, $0.range)
     }
   }
-  private static func tokens(in text: String, base: Int, excluding: [NSRange], blockID: UUID)
-    -> [DocumentToken]
-  {
+  private static func tokens(in text: String, base: Int, excluding: [NSRange], blockID: UUID) -> [DocumentToken] {
     tokenMatches(text).compactMap { ns, range in
-      guard !excluding.contains(where: { NSIntersectionRange($0, range).length > 0 }) else {
-        return nil
-      }
+      guard !excluding.contains(where: { NSIntersectionRange($0, range).length > 0 }) else { return nil }
       let value = ns.substring(with: range)
       return DocumentToken(
         text: value, normalised: normalise(value),
@@ -179,19 +168,13 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
       let marker = raw.range(of: "](")
       if marker.location != NSNotFound {
         let start = match.range.location + marker.location + 1
-        ranges.append(
-          NSRange(location: start, length: match.range.location + match.range.length - start))
+        ranges.append(NSRange(location: start, length: NSMaxRange(match.range) - start))
       }
     }
     for match in stageDirectionRegex.matches(in: text, range: full)
     where !links.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) {
       ranges.append(match.range)
-      let inner = match.range(at: 1)
-      cues.append(
-        (
-          ns.substring(with: inner),
-          .init(location: base + match.range.location, length: match.range.length)
-        ))
+      cues.append((ns.substring(with: match.range(at: 1)), .init(location: base + match.range.location, length: match.range.length)))
     }
     return (ranges, cues)
   }
