@@ -169,23 +169,25 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.seekRevision, initialRevision + 1)
   }
 
-  func testPauseCancelsBufferedSpeechCandidateFlush() async {
+  func testSpeechArrivingAfterPauseIsIgnored() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(record: record(), settings: settings)
     session.play(captureAudio: false)
+    session.pause()
     session.acceptSpeechCandidate(
       SpeechCandidate(
-        replacementID: "pending", generation: 1, locale: Locale(identifier: "en-GB"),
+        replacementID: "late", generation: 1, locale: Locale(identifier: "en-GB"),
         text: "One two three", range: CMTimeRange(
           start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1000)), isFinal: false))
-    session.pause()
-    try? await Task.sleep(for: .milliseconds(50))
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.tokenIndex, 0)
   }
 
-  func testSeekDropsQueuedSpeechAndKeepsVoiceSessionRunning() async {
+  /// Speech is credited the moment it arrives, so there is no queue for a seek to drop. What a seek
+  /// must still guarantee: the reader's move wins, a revision from before it cannot move him again,
+  /// and fresh speech continues from where he moved to.
+  func testSeekOverridesEarlierSpeechAndKeepsVoiceSessionRunning() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
     let script = ScriptRecord(
@@ -197,15 +199,15 @@ final class SessionStoreTests: XCTestCase {
       SpeechCandidate(replacementID: id, generation: 1, locale: Locale(identifier: "en-GB"), text: text,
         range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false)
     }
-    session.acceptSpeechCandidate(candidate("queued", "one two three"))
-    session.seek(to: 2)
-    try? await Task.sleep(for: .milliseconds(40))
-    XCTAssertEqual(session.tokenIndex, 2)
-    XCTAssertNil(session.lastConfirmedTokenIndex)
+    session.acceptSpeechCandidate(candidate("before", "one two three"))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 2, "Credited on arrival, with no coalescing wait.")
+    session.seek(to: 1)
+    XCTAssertEqual(session.tokenIndex, 1)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 0)
     XCTAssertEqual(session.state, .running)
-    session.acceptSpeechCandidate(candidate("stale", "one two three"))
-    session.acceptSpeechCandidate(candidate("current", "three four"))
-    try? await Task.sleep(for: .milliseconds(40))
+    session.acceptSpeechCandidate(candidate("before", "one two three"))
+    XCTAssertEqual(session.tokenIndex, 1)
+    session.acceptSpeechCandidate(candidate("after", "two three four"))
     XCTAssertEqual(session.lastConfirmedTokenIndex, 3)
     XCTAssertEqual(session.tokenIndex, 4)
   }

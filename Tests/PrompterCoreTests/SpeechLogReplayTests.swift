@@ -3,6 +3,138 @@ import XCTest
 
 @testable import PrompterCore
 
+/// One recognised word and its audio time range, as the recogniser reported it.
+struct TimedWord: Codable {
+  let text: String
+  let start: Double
+  let end: Double
+}
+
+/// Per-word latency: the instant a script word is shown dimmed minus the instant it finished being
+/// spoken. The spoken time comes from the recogniser's own word time ranges, not from when a revision
+/// arrived, so the recogniser's listening lag is counted.
+enum WordLatency {
+  struct Revision {
+    let locale: String
+    let replacementID: String
+    let audioStart: Double
+    let audioEnd: Double
+    let words: [TimedWord]
+  }
+  struct Spoken {
+    let start: Double
+    let end: Double
+  }
+  typealias Heard = [(word: String, time: Spoken)]
+
+  /// Everything he was heard saying, per locale, with times. Only finalised dictation results carry a
+  /// time range per word (a volatile result is one run spanning its whole range), so those are the
+  /// source, taking the last revision of each result range. A run holding several words is shared
+  /// out by character count.
+  static func heard(_ revisions: [Revision]) -> [Heard] {
+    Set(revisions.map(\.locale)).sorted().map { locale in
+      var latest: [String: Revision] = [:]
+      for revision in revisions where revision.locale == locale && revision.words.count > 1 {
+        latest[revision.replacementID] = revision
+      }
+      return latest.values.sorted { $0.audioStart < $1.audioStart }.flatMap(\.words).flatMap { word in
+        let tokens = PrompterDocument(markdown: word.text).spokenTokens
+        let share = (word.end - word.start) / Double(max(1, tokens.reduce(0) { $0 + $1.text.count }))
+        var through = 0
+        return tokens.map { token in
+          let before = Double(through)
+          through += token.text.count
+          return (token.normalised, Spoken(start: word.start + share * before, end: word.start + share * Double(through)))
+        }
+      }
+    }
+  }
+
+  /// When each script token was spoken: the heard words aligned to the script by longest common
+  /// subsequence, the locale that aligns the most tokens winning and the others filling its gaps.
+  static func spoken(_ heard: [Heard], script: [DocumentToken]) -> [Spoken?] {
+    let target = script.map(\.normalised)
+    let alignments = heard.map { words -> [Spoken?] in
+      let n = target.count, m = words.count
+      var table = Array(repeating: Array(repeating: 0, count: m + 1), count: n + 1)
+      for i in stride(from: n - 1, through: 0, by: -1) {
+        for j in stride(from: m - 1, through: 0, by: -1) {
+          table[i][j] = target[i] == words[j].word ? table[i + 1][j + 1] + 1 : max(table[i + 1][j], table[i][j + 1])
+        }
+      }
+      var times = [Spoken?](repeating: nil, count: n)
+      var i = 0, j = 0
+      while i < n, j < m {
+        if target[i] == words[j].word {
+          times[i] = words[j].time
+          i += 1
+          j += 1
+        } else if table[i + 1][j] >= table[i][j + 1] {
+          i += 1
+        } else {
+          j += 1
+        }
+      }
+      return times
+    }.sorted { $0.compactMap { $0 }.count > $1.compactMap { $0 }.count }
+    guard let primary = alignments.first else { return [] }
+    return primary.indices.map { index in primary[index] ?? alignments.lazy.compactMap { $0[index] }.first }
+  }
+
+  static func latencies(display: [Double?], spoken: [Spoken?]) -> [Double] {
+    zip(display, spoken).compactMap { shown, spoken in
+      guard let shown, let spoken else { return nil }
+      return shown - spoken.end
+    }
+  }
+
+  /// Words dimmed before he said them: shown more than the timing noise before their aligned spoken
+  /// start, although neither the word nor one of the next two had been heard in the five seconds
+  /// before (for those two, before they too were dimmed, within a second). Hearing it keeps a re-read or a false start from counting (the alignment
+  /// can only pick one of the readings); hearing a word just after it covers a word he said that
+  /// the recogniser missed ("Hansi Flick" heard as "Honda"). A jump ahead still shows, because the
+  /// words it passes over were not heard.
+  static func early(display: [Double?], spoken: [Spoken?], heard: [Heard], script: [DocumentToken]) -> [(token: Int, lead: Double)] {
+    display.indices.compactMap { token in
+      guard let shown = display[token], let start = spoken[token]?.start, shown < start - 0.3 else { return nil }
+      let recent = (token...min(script.count - 1, token + 2)).contains { other in
+        guard let dimmed = display[other], dimmed <= shown + 1 else { return false }
+        return heard.contains { $0.contains {
+          $0.word == script[other].normalised && $0.time.start > shown - 5 && $0.time.start < dimmed
+        } }
+      }
+      return recent ? nil : (token, start - shown)
+    }
+  }
+
+  static func report(display: [Double?], spoken: [Spoken?], heard: [Heard], script: [DocumentToken]) -> String {
+    let early = early(display: display, spoken: spoken, heard: heard, script: script)
+    let worst = display.indices.compactMap { token -> (Int, Double)? in
+      guard let shown = display[token], let end = spoken[token]?.end else { return nil }
+      return (token, shown - end)
+    }.max { $0.1 < $1.1 }
+    var slowest = "none"
+    if let (token, lag) = worst {
+      let words = script[max(0, token - 3)...min(script.count - 1, token + 1)].map(\.text).joined(separator: " ")
+      slowest = String(format: "%.3fs on token %d (\"%@\", spoken ending %.2fs)", lag, token, words, spoken[token]?.end ?? 0)
+    }
+    return "per-word latency \(describe(latencies(display: display, spoken: spoken))); "
+      + "dimmed ahead of the reader \(early.count): \(early.map { "\($0.token) \(script[$0.token].text) by \(String(format: "%.2f", $0.lead))s" }); "
+      + "slowest \(slowest)"
+  }
+
+  static func percentiles(_ values: [Double]) -> (p50: Double, p90: Double, max: Double) {
+    let sorted = values.sorted()
+    guard !sorted.isEmpty else { return (0, 0, 0) }
+    return (sorted[sorted.count / 2], sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.9))], sorted[sorted.count - 1])
+  }
+
+  static func describe(_ values: [Double]) -> String {
+    let p = percentiles(values)
+    return String(format: "n=%d p50 %.3fs p90 %.3fs max %.3fs", values.count, p.p50, p.p90, p.max)
+  }
+}
+
 final class SpeechLogReplayTests: XCTestCase {
   private struct Line: Decodable {
     let start: Double
@@ -20,6 +152,10 @@ final class SpeechLogReplayTests: XCTestCase {
     let isFinal: Bool?
     let locale: String?
     let text: String?
+    let wallSecondsSinceFirstAudio: Double?
+    let words: [TimedWord]?
+    let tokenIndex: Int?
+    let publishedSeconds: Double?
   }
   func testActualDualLocaleLogExcerptReachesEndWithoutPhoneticFalseJump() throws {
     let expected =
@@ -57,9 +193,10 @@ final class SpeechLogReplayTests: XCTestCase {
     else {
       throw XCTSkip("Set candidate replay log and script paths to run an external replay.")
     }
-    let lines = try String(contentsOfFile: logPath, encoding: .utf8).split(separator: "\n").compactMap {
+    let all = try String(contentsOfFile: logPath, encoding: .utf8).split(separator: "\n").compactMap {
       try JSONDecoder().decode(CandidateLogLine.self, from: Data($0.utf8))
-    }.filter { $0.type == "candidate" }
+    }
+    let lines = all.filter { $0.type == "candidate" }
     guard let first = lines.first,
       let generation = first.generation,
       first.replacementID != nil
@@ -79,6 +216,10 @@ final class SpeechLogReplayTests: XCTestCase {
     var lags: [Double] = []
     var holds: [String] = []
     var worst: String = "none"
+    // First instant each token is dimmed, if this replay had been live: the arrival of the revision
+    // that credited it.
+    var shown = [Double?](repeating: nil, count: tokens.count)
+    var reached = -1
     for (index, line) in lines.enumerated() {
       guard let lineGeneration = line.generation, let replacementID = line.replacementID,
         let audioStart = line.audioStart, let audioEnd = line.audioEnd,
@@ -89,6 +230,14 @@ final class SpeechLogReplayTests: XCTestCase {
           replacementID: replacementID, generation: lineGeneration, text: text, isFinal: isFinal,
           timestamp: audioEnd, localeIdentifier: locale, audioStart: audioStart, audioEnd: audioEnd),
         script: tokens)
+      if update.status == .advanced, update.tokenIndex != previous {
+        let heard = PrompterDocument(markdown: text).spokenTokens.map(\.normalised)
+        holds.append("moved \(audioEnd) \(previous)->\(update.tokenIndex) \(locale) | heard: \(heard.suffix(8).joined(separator: " "))")
+      }
+      if update.status == .advanced, update.tokenIndex > reached, let wall = line.wallSecondsSinceFirstAudio {
+        for token in (reached + 1)...update.tokenIndex { shown[token] = wall }
+        reached = update.tokenIndex
+      }
       if update.tokenIndex > previous {
         steps.append(update.tokenIndex - previous)
         let lag = firstDeclinedAudioEnd.map { audioEnd - $0 } ?? 0
@@ -125,8 +274,26 @@ final class SpeechLogReplayTests: XCTestCase {
     // rest of its phrase, mean 0.35s, median 0.24s, p90 1.08s with 85 of 188 immediate. The residual is dominated by the recogniser's own delivery lag, not by the
     // matcher: the declined candidates in a long wait are ones whose transcript has not yet reached
     // the next script word at all. The bound guards the matcher's share against regression.
+    if lines.contains(where: { $0.words != nil }) {
+      let heard = WordLatency.heard(lines.compactMap { line in
+        guard let locale = line.locale, let id = line.replacementID, let start = line.audioStart,
+          let end = line.audioEnd, let words = line.words else { return nil }
+        return .init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: words)
+      })
+      let spoken = WordLatency.spoken(heard, script: tokens)
+      print("Replayed (revision arrival that dims the word): \(WordLatency.report(display: shown, spoken: spoken, heard: heard, script: tokens))")
+      XCTAssertTrue(WordLatency.early(display: shown, spoken: spoken, heard: heard, script: tokens).isEmpty,
+        "The replay dimmed words before they were said.")
+      var painted = [Double?](repeating: nil, count: tokens.count)
+      for line in all where line.type == "token_display" {
+        if let token = line.tokenIndex, tokens.indices.contains(token) { painted[token] = line.wallSecondsSinceFirstAudio }
+      }
+      if painted.contains(where: { $0 != nil }) {
+        print("Recorded (dim painted in the rendered run): \(WordLatency.report(display: painted, spoken: spoken, heard: heard, script: tokens))")
+      }
+    }
     if environment["JUNIORPROMPTER_CANDIDATE_REPLAY_VERBOSE"] == "1" {
-      for line in holds.prefix(80) { print(line) }
+      for line in holds { print(line) }
     }
     if !lags.isEmpty {
       let bound = Double(environment["JUNIORPROMPTER_MAX_ACCEPTANCE_LAG_P90"] ?? "") ?? 1.3

@@ -31,6 +31,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var renderedOffsetY: Double? = nil
     var renderedOffsetSource: String? = nil
     var acceptanceLatencySeconds: Double? = nil
+    var words: [TimedWord]? = nil
+    var publishedSeconds: Double? = nil
   }
 
   @MainActor private final class ReplayLedger {
@@ -39,6 +41,33 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var submittedBuffers = 0
     var droppedBuffers = 0
     var acceptanceLatencies: [Double] = []
+    /// First wall instant each token was published as confirmed, and first instant it was painted dim.
+    var published: [Double?] = []
+    var painted: [Double?] = []
+    var dimObserver: NSObjectProtocol?
+    var tokenEnds: [Int] = []
+  }
+
+  /// How far into the script the presenter's text storage is painted dim: the last token whose text
+  /// ends at or before the last dimmed character. The rendered text is searched for each token the way
+  /// the presenter maps them, so this reads what is on the page rather than the session's state.
+  private static func paintedThrough(_ storage: NSTextStorage, tokens: [DocumentToken], opacity: Double, ends: inout [Int]) -> Int {
+    let text = storage.string as NSString
+    if ends.isEmpty {
+      var cursor = 0
+      for token in tokens {
+        let found = text.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive],
+          range: NSRange(location: cursor, length: text.length - cursor))
+        guard found.location != NSNotFound else { break }
+        cursor = NSMaxRange(found)
+        ends.append(cursor)
+      }
+    }
+    var lastDimmed = 0
+    storage.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+      if let colour = value as? NSColor, colour.alphaComponent < opacity * 0.7 { lastDimmed = max(lastDimmed, NSMaxRange(range)) }
+    }
+    return ends.lastIndex { $0 <= lastDimmed } ?? -1
   }
 
   private func scrollView(in view: NSView?) -> NSScrollView? {
@@ -88,9 +117,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       stream.continuation.finish()
     }
     defer { producer.cancel() }
-    try await provider.start(input: stream.stream) { candidate in
-      Task { @MainActor in session.acceptSpeechCandidate(candidate) }
-    }
+    try await provider.start(input: stream.stream) { candidate in session.acceptSpeechCandidate(candidate) }
     try await producer.value
     try await Task.sleep(for: .milliseconds(150))
     print("Speech integration acceptedWords=\(session.acceptedWords) finalTokenIndex=\(session.tokenIndex)/\(session.document.spokenTokens.count - 1)")
@@ -101,15 +128,41 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   func testActualWAVThroughProductionProviderAndSession() async throws {
     let environment = ProcessInfo.processInfo.environment
     try XCTSkipUnless(environment["JUNIORPROMPTER_RUN_ACTUAL_SPEECH_REPLAY"] == "1")
+    try await replayRecording(
+      URL(fileURLWithPath: environment["JUNIORPROMPTER_SPEECH_REPLAY_WAV"]
+        ?? "/Users/junior.nkanabassi/Downloads/JuniorPrompter/JuniorPrompter v0.3.0 (9) Test Script Reading.wav"),
+      script: URL(fileURLWithPath: environment["JUNIORPROMPTER_SPEECH_REPLAY_SCRIPT"]
+        ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/demo-test-script-exact.md"))
+  }
+
+  private let acceptanceInputs = URL(fileURLWithPath:
+    "/Users/junior.nkanabassi/Documents/JuniorOS/02 Projects/Development/JuniorPrompter/00 Project State/Acceptance inputs")
+
+  /// Short 173: six minutes of natural reading with mistakes, false starts, going back to re-read,
+  /// hard names and numbers. Same production path and the same environment as the replay above.
+  func testShort173ReadingThroughProductionProviderAndSession() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_173_REPLAY"] == "1")
+    // The spaces after both dashes in the file name are non-breaking, so find it rather than spell it.
+    let downloads = URL(fileURLWithPath: "/Users/junior.nkanabassi/Downloads/JuniorPrompter")
+    let wav = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: downloads, includingPropertiesForKeys: nil)
+      .first { $0.lastPathComponent.hasPrefix("173") && $0.pathExtension == "wav" })
+    try await replayRecording(wav, script: acceptanceInputs.appendingPathComponent("173 script.md"))
+  }
+
+  /// Short 172: an edited rough cut with the pauses removed, so the precision case: names, accents,
+  /// curly apostrophes, a Markdown title line and a numbered list.
+  func testShort172ReadingThroughProductionProviderAndSession() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_172_REPLAY"] == "1")
+    try await replayRecording(
+      URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/172-rough-cut-reading.wav"),
+      script: acceptanceInputs.appendingPathComponent("172 script.md"))
+  }
+
+  private func replayRecording(_ wavURL: URL, script scriptURL: URL) async throws {
+    let environment = ProcessInfo.processInfo.environment
     guard let logPath = environment["JUNIORPROMPTER_SPEECH_REPLAY_LOG_PATH"] else {
       throw XCTSkip("Set JUNIORPROMPTER_SPEECH_REPLAY_LOG_PATH to keep recognition logs outside the repository.")
     }
-    let wavURL = URL(fileURLWithPath: environment[
-      "JUNIORPROMPTER_SPEECH_REPLAY_WAV"
-    ] ?? "/Users/junior.nkanabassi/Downloads/JuniorPrompter v0.3.0 (9) Test Script Reading.wav")
-    let scriptURL = URL(fileURLWithPath: environment[
-      "JUNIORPROMPTER_SPEECH_REPLAY_SCRIPT"
-    ] ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/demo-test-script-exact.md")
     let startOffset = max(0, Double(environment["JUNIORPROMPTER_SPEECH_REPLAY_START_OFFSET"] ?? "0") ?? 0)
     let logURL = URL(fileURLWithPath: logPath)
     guard !FileManager.default.fileExists(atPath: logURL.path) else {
@@ -196,6 +249,22 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     session.play(captureAudio: false)
 
     let ledger = ReplayLedger()
+    let tokens = session.document.spokenTokens
+    ledger.published = Array(repeating: nil, count: tokens.count)
+    ledger.painted = Array(repeating: nil, count: tokens.count)
+    // Exact publish instants: the sink runs synchronously inside the property's willSet.
+    let confirmedSink = session.$lastConfirmedTokenIndex.sink { value in
+      MainActor.assumeIsolated {
+        guard let value, let first = ledger.firstAudioWall else { return }
+        let now = ProcessInfo.processInfo.systemUptime - first
+        for token in 0...min(value, tokens.count - 1) where ledger.published[token] == nil { ledger.published[token] = now }
+      }
+    }
+    defer {
+      confirmedSink.cancel()
+      if let observer = ledger.dimObserver { NotificationCenter.default.removeObserver(observer) }
+    }
+    let textOpacity = renderedStore?.settings.textOpacity ?? 1
     defer {
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
@@ -229,6 +298,21 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         let elapsed = ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 }
         if let renderedPanel, let scrollView = scrollView(in: renderedPanel.contentView) {
           presenterStayedVisible = presenterStayedVisible && renderedPanel.isVisible
+          if ledger.dimObserver == nil, let storage = (scrollView.documentView as? NSTextView)?.textStorage {
+            // Posted synchronously from the presenter's own attribute write, so this is the dim instant.
+            nonisolated(unsafe) let storage = storage
+            ledger.dimObserver = NotificationCenter.default.addObserver(
+              forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+            ) { _ in
+              MainActor.assumeIsolated {
+                guard let first = ledger.firstAudioWall else { return }
+                let now = ProcessInfo.processInfo.systemUptime - first
+                let through = Self.paintedThrough(storage, tokens: tokens, opacity: textOpacity, ends: &ledger.tokenEnds)
+                guard through >= 0 else { return }
+                for token in 0...through where ledger.painted[token] == nil { ledger.painted[token] = now }
+              }
+            }
+          }
           let presentationOffset = scrollView.contentView.layer?.presentation()?.bounds.origin.y
           let offset = Double(presentationOffset ?? scrollView.contentView.bounds.origin.y)
           if previousRenderedOffset != offset {
@@ -367,8 +451,9 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     defer { producer.cancel() }
     let providerTask = Task {
       try await provider.start(input: stream.stream) { candidate in
+        // Delivered on the main actor, exactly as production receives it.
         let delivered = ProcessInfo.processInfo.systemUptime
-        Task { @MainActor in
+        do {
           let elapsed = ledger.firstAudioWall.map { delivered - $0 }
           ledger.events.append(.init(
             type: "candidate", generation: candidate.generation, replacementID: candidate.replacementID,
@@ -380,7 +465,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
             recognitionDeliveryLag: elapsed.map { $0 - candidate.range.end.seconds },
             tokenIndex: session.tokenIndex,
             acceptedWords: session.acceptedWords, droppedBuffers: nil, submittedBuffers: nil,
-            isFinal: candidate.isFinal, locale: candidate.locale.identifier, text: candidate.text))
+            isFinal: candidate.isFinal, locale: candidate.locale.identifier, text: candidate.text,
+            words: candidate.transcript.runs.compactMap { run in
+              run.audioTimeRange.map {
+                TimedWord(text: String(candidate.transcript[run.range].characters), start: $0.start.seconds, end: $0.end.seconds)
+              }
+            }))
           session.acceptSpeechCandidate(candidate)
         }
       }
@@ -464,6 +554,45 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       if let bound = Double(environment["JUNIORPROMPTER_MAX_ACCEPTANCE_LATENCY_P90"] ?? "") {
         XCTAssertLessThanOrEqual(p90, bound,
           "Spoken-word-to-dim latency regressed: p90 \(p90)s over \(bound)s. See \(logURL.path).")
+      }
+    }
+    if !replayScrollBack {
+      let heard = WordLatency.heard(ledger.events.compactMap { event in
+        guard event.type == "candidate", let locale = event.locale, let id = event.replacementID,
+          let start = event.audioStart, let end = event.audioEnd, let words = event.words else { return nil }
+        return .init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: words)
+      })
+      let spoken = WordLatency.spoken(heard, script: tokens)
+      let shown = rendersPresenter ? ledger.painted : ledger.published
+      for token in tokens.indices {
+        ledger.events.append(.init(
+          type: "token_display", generation: nil, replacementID: nil,
+          wallSecondsSinceFirstAudio: shown[token], audioStart: spoken[token]?.start, audioEnd: spoken[token]?.end,
+          recognitionDeliveryLag: nil, tokenIndex: token, acceptedWords: nil, droppedBuffers: nil,
+          submittedBuffers: nil, isFinal: nil, locale: nil,
+          text: "First instant the token was shown dim (painted when rendered, else published) and published confirmed; audio range is when it was spoken.",
+          publishedSeconds: ledger.published[token]))
+      }
+      print("Script length \(tokens.count), words with a spoken time \(spoken.compactMap { $0 }.count), "
+        + "final token \(session.tokenIndex), accepted \(session.acceptedWords), drops \(ledger.droppedBuffers). "
+        + "\(rendersPresenter ? "Dim painted" : "Session publish"): \(WordLatency.report(display: shown, spoken: spoken, heard: heard, script: tokens))")
+      if let hold = zip(progress, progress.dropFirst()).max(by: {
+        ($0.1.wallSecondsSinceFirstAudio ?? 0) - ($0.0.wallSecondsSinceFirstAudio ?? 0)
+          < ($1.1.wallSecondsSinceFirstAudio ?? 0) - ($1.0.wallSecondsSinceFirstAudio ?? 0)
+      }) {
+        print(String(format: "Longest stall %.3fs at wall %.2fs, on token %d", largestHold, hold.0.wallSecondsSinceFirstAudio ?? 0, hold.0.tokenIndex ?? -1))
+      }
+      if rendersPresenter {
+        let publishToPaint = zip(ledger.published, ledger.painted).compactMap { published, painted in
+          published.flatMap { p in painted.map { $0 - p } }
+        }
+        print("Session publish to dim painted: \(WordLatency.describe(publishToPaint))")
+      }
+      let early = WordLatency.early(display: shown, spoken: spoken, heard: heard, script: tokens)
+      XCTAssertTrue(early.isEmpty, "Dimmed \(early.count) words before they were said, first \(early.first?.token ?? -1). See \(logURL.path).")
+      if let bound = Double(environment["JUNIORPROMPTER_MAX_WORD_LATENCY_P90"] ?? "") {
+        XCTAssertLessThanOrEqual(WordLatency.percentiles(WordLatency.latencies(display: shown, spoken: spoken)).p90, bound,
+          "Per-word dim latency regressed over \(bound)s. See \(logURL.path).")
       }
     }
     XCTAssertEqual(

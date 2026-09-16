@@ -42,9 +42,6 @@ final class SessionStore: ObservableObject {
   private var tracker = RecognitionTracker()
   private var runTask: Task<Void, Never>?
   private var durationTask: Task<Void, Never>?
-  private var candidateBuffer: [SpeechCandidate] = []
-  private var bufferedCandidateSeekRevision = 0
-  private var candidateFlush: Task<Void, Never>?
   private var latestAudioEnd: TimeInterval = 0
   private var lastSoundAdvance: TimeInterval = 0
   private var speechGeneration: UInt64?
@@ -170,18 +167,8 @@ final class SessionStore: ObservableObject {
     if incrementSeekRevision {
       seekRevision &+= 1
       lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
-      let queued = candidateBuffer.map { value in
-        RecognitionEvent(
-          replacementID: value.replacementID, generation: value.generation, text: value.text,
-          isFinal: value.isFinal, timestamp: value.range.end.seconds,
-          localeIdentifier: value.locale.identifier, audioStart: value.range.start.seconds,
-          audioEnd: value.range.end.seconds)
-      }
-      candidateBuffer.removeAll()
-      candidateFlush?.cancel()
-      candidateFlush = nil
       if isActivelyRunning, settings.mode == "Voice" {
-        tracker.reanchor(to: tokenIndex, minimumAudioStart: latestAudioEnd, baselining: queued)
+        tracker.reanchor(to: tokenIndex, minimumAudioStart: latestAudioEnd)
       } else {
         tracker.seek(to: tokenIndex)
       }
@@ -320,6 +307,8 @@ final class SessionStore: ObservableObject {
     isClipping = clipping
   }
 
+  /// Each result is matched the moment it arrives. There is no coalescing window: batching the two
+  /// locales' results cost every word its wait, and the tracker ranks them just as well one by one.
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
@@ -328,36 +317,14 @@ final class SessionStore: ObservableObject {
       speechGeneration = candidate.generation
       tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex)
     }
-    bufferedCandidateSeekRevision = seekRevision
-    candidateBuffer.removeAll {
-      $0.locale.identifier == candidate.locale.identifier
-        && $0.replacementID == candidate.replacementID
-    }
-    candidateBuffer.append(candidate)
-    guard candidateFlush == nil else { return }
-    candidateFlush = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(25))
-      guard !Task.isCancelled else { return }
-      self?.flushCandidates()
-    }
-  }
-
-  private func flushCandidates() {
-    let seekRevision = bufferedCandidateSeekRevision
-    let candidates = candidateBuffer
-    candidateBuffer.removeAll()
-    candidateFlush = nil
-    guard seekRevision == self.seekRevision, !candidates.isEmpty else { return }
-    let events = candidates.map { value in
-      RecognitionEvent(
-        replacementID: value.replacementID, generation: value.generation, text: value.text,
-        isFinal: value.isFinal, timestamp: value.range.end.seconds,
-        localeIdentifier: value.locale.identifier, audioStart: value.range.start.seconds,
-        audioEnd: value.range.end.seconds)
-    }
+    let event = RecognitionEvent(
+      replacementID: candidate.replacementID, generation: candidate.generation, text: candidate.text,
+      isFinal: candidate.isFinal, timestamp: candidate.range.end.seconds,
+      localeIdentifier: candidate.locale.identifier, audioStart: candidate.range.start.seconds,
+      audioEnd: candidate.range.end.seconds)
     let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
     let trackerBeforeMatch = tracker
-    let update = tracker.consumeCandidates(events, script: document.spokenTokens)
+    let update = tracker.consume(event, script: document.spokenTokens)
     switch update.status {
     case .advanced:
       guard settings.allowsBackwardVoiceTracking || update.tokenIndex >= old else {
@@ -412,9 +379,6 @@ final class SessionStore: ObservableObject {
     runTask = nil
     durationTask?.cancel()
     durationTask = nil
-    candidateFlush?.cancel()
-    candidateFlush = nil
-    candidateBuffer.removeAll()
     latestAudioEnd = 0
     analyzerContinuation?.finish()
     analyzerContinuation = nil
@@ -546,10 +510,8 @@ final class SessionStore: ObservableObject {
             return
           }
           try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
-            Task { @MainActor in
-              guard let self, self.lifecycleGeneration == generation else { return }
-              self.acceptSpeechCandidate(candidate)
-            }
+            guard let self, self.lifecycleGeneration == generation else { return }
+            self.acceptSpeechCandidate(candidate)
           }
         }
       } catch is CancellationError {} catch {
