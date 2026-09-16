@@ -130,12 +130,18 @@ public struct PhraseMatcher: Sendable {
         var trailingMatches = 0
         var leadingInformative = 0
         var leadingIntact = true
+        // The same rule for a skip inside the phrase: the run that resumes after it.
+        var landing: (informative: Int, intact: Bool)?
         for word in evidence {
           let before = ti
           while ti < hi && target[ti] != word { ti += 1 }
           if ti < hi {
             leadingIntact = leadingIntact && ti == before
-            if leadingIntact, word.count > 2, !common.contains(word) { leadingInformative += 1 }
+            if ti - max(before, current + 1) >= 8 { landing = (0, true) } else if ti != before { landing?.intact = false }
+            if word.count > 2, !common.contains(word) {
+              if leadingIntact { leadingInformative += 1 }
+              if landing?.intact == true { landing?.informative += 1 }
+            }
             matched += 1
             last = ti
             ti += 1
@@ -148,6 +154,7 @@ public struct PhraseMatcher: Sendable {
             ti = before
             trailingMatches = 0
             leadingIntact = false
+            landing?.intact = false
           }
         }
         let coverage = Double(matched) / Double(evidence.count)
@@ -158,6 +165,9 @@ public struct PhraseMatcher: Sendable {
         // same words a paragraph ahead and dimmed everything in between. A short skip keeps the
         // looser rules: that is the recogniser dropping or garbling a word or two.
         if start > current + 8, leadingInformative < 3 { continue }
+        // "than him and if you still", heard for "... if you're still", began where he was and then
+        // found "you still" nine words on, in "and you still think", dimming the words between.
+        if let landing, landing.informative < 3 { continue }
         // A lone word after a gap is weak evidence wherever the phrase starts: "ties that ... they"
         // credited the "they" four words on, over the "knocked them out" he had not said.
         guard gaps == 0 || trailingMatches >= 2 || last <= current + 1 else { continue }
