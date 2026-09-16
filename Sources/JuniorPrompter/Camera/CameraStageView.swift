@@ -103,7 +103,7 @@ final class CameraStageView: NSView {
 
   /// A window that is closed, minimised or fully covered holds nothing: a 4K capture is not free,
   /// and with both windows showing the camera the session is still opened only once.
-  private func setHolding(_ on: Bool) {
+  func setHolding(_ on: Bool) {
     guard on != holding else { return }
     holding = on
     if on {

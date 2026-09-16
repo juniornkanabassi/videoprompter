@@ -541,4 +541,67 @@ final class PresenterControllerTests: XCTestCase {
     RunLoop.main.run(until: Date().addingTimeInterval(0.34))
     XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
   }
+
+  // MARK: Present with video
+
+  func testThePresentWithVideoChoiceSurvivesAReopenedModel() {
+    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let store = UserDefaults(suiteName: suite)!
+    let model = CameraModel(defaults: store)
+    XCTAssertFalse(model.presentsWithVideo, "present without video is the existing behaviour")
+    model.presentsWithVideo = true
+    XCTAssertTrue(CameraModel(defaults: store).presentsWithVideo)
+  }
+
+  /// The toggle lives on `CameraModel`, nowhere near the reading state, so turning the video
+  /// background on and off cannot move the anchor or restart the speech session.
+  func testTogglingTheVideoBackgroundLeavesTheAnchorAndTheSessionAlone() {
+    let markdown = (1...20).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n")
+    let record = ScriptRecord(metadata: .init(title: "Video", fileName: "video.md", revision: 1,
+      contentFingerprint: "one"), markdown: markdown)
+    let session = SessionStore()
+    session.present(record: record, settings: PrompterSettings())
+    let target = try! XCTUnwrap(session.document.spokenTokens.firstIndex { $0.normalised == "12" })
+    session.seek(to: target)
+    let running = session.isActivelyRunning
+    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let model = CameraModel(defaults: UserDefaults(suiteName: suite)!)
+    model.presentsWithVideo = true
+    model.presentsWithVideo = false
+    XCTAssertEqual(session.tokenIndex, target)
+    XCTAssertEqual(session.activeToken?.normalised, "12")
+    XCTAssertEqual(session.isActivelyRunning, running)
+    XCTAssertNil(session.anchorNotice)
+  }
+
+  /// `closeNow` orders the panel out rather than closing it, which on its own would leave the
+  /// hosting view — and so the camera — holding the shared session open for ever.
+  func testClosingThePresenterWithVideoOnLetsTheSharedCameraSessionGo() {
+    XCTAssertEqual(SharedCameraSession.shared.holderCount, 0, "another test left a holder behind")
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200),
+                          styleMask: [], backing: .buffered, defer: true)
+    let stage = CameraStageView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+    window.contentView = stage
+    stage.setHolding(true)
+    XCTAssertEqual(SharedCameraSession.shared.holderCount, 1)
+    window.contentView = NSView()
+    XCTAssertEqual(SharedCameraSession.shared.holderCount, 0)
+  }
+
+  /// A 4K landscape feed turned 90° shows as 9:16, so the presenter becomes a tall window as
+  /// large as the screen allows.
+  func testMatchCameraSizeTurnsAVerticalFeedIntoAVerticalWindow() {
+    let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+    let feed = CGSize(width: 3840, height: 2160)
+    let turned = PresenterController.matchedCameraFrame(picture: feed, rotation: .quarter, in: screen)
+    XCTAssertEqual(turned.width, 607.5, accuracy: 0.001)
+    XCTAssertEqual(turned.height, 1080, accuracy: 0.001)
+    XCTAssertEqual(turned.midX, 960, accuracy: 0.001)
+    XCTAssertEqual(turned.midY, 540, accuracy: 0.001)
+    let upright = PresenterController.matchedCameraFrame(picture: feed, rotation: .none, in: screen)
+    XCTAssertEqual(upright.width, 1920, accuracy: 0.001)
+    XCTAssertEqual(upright.height, 1080, accuracy: 0.001)
+  }
 }

@@ -93,6 +93,23 @@ final class CameraTests: XCTestCase {
     XCTAssertEqual(SharedCameraSession.preferredFormat(in: deckLink, active: fmt(1920, 1080, kCVPixelFormatType_32BGRA)), 2)
   }
 
+  /// 0.7.1 SIGTRAPped on every launch because this choice, and the format mapping that feeds it,
+  /// were main-actor-isolated while the session ran them on its own serial queue: the Swift
+  /// executor check called `dispatch_assert_queue_fail`. Run it exactly where the session does.
+  func testTheFormatChoiceRunsOffTheMainActorLikeTheCaptureQueueDoes() {
+    let formats = deckLink
+    let active = fmt(3840, 2160, kCVPixelFormatType_422YpCbCr10)
+    let chosen = expectation(description: "the cheaper coding is chosen off the main actor")
+    nonisolated(unsafe) var picked: Int?
+    DispatchQueue(label: "JuniorPrompter.test.camera.session").async {
+      dispatchPrecondition(condition: .notOnQueue(.main))
+      picked = SharedCameraSession.preferredFormat(in: formats, active: active)
+      chosen.fulfill()
+    }
+    wait(for: [chosen], timeout: 5)
+    XCTAssertEqual(picked, 5)
+  }
+
   func testAnAlreadyCheapFormatIsLeftAlone() {
     XCTAssertNil(SharedCameraSession.preferredFormat(in: deckLink, active: fmt(3840, 2160, kCVPixelFormatType_422YpCbCr8)))
     // A built-in camera's 4:2:0 is cheaper than anything on offer at that size.

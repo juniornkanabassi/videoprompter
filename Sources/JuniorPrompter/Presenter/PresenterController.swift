@@ -50,7 +50,31 @@ import SwiftUI
     guard let draft, draft.isEditing else { closeNow(); return }
     draft.requestClose()
   }
-  func closeNow() { activeSession?.pause(); panel?.orderOut(nil) }
+  func closeNow() {
+    activeSession?.pause()
+    panel?.orderOut(nil)
+    // `orderOut` does not close the window, so the hosting view would keep holding the camera
+    // session. Taking the content view out moves it to no window, which releases the holder;
+    // `present` builds a fresh hosting view every time anyway.
+    panel?.contentView = NSView()
+  }
+
+  /// Resize the presenter to the shape of the feed as it is shown — a feed turned 90° gives a
+  /// vertical window — as large as the screen it is on allows.
+  static func matchedCameraFrame(picture: CGSize, rotation: CameraRotation, in visibleFrame: NSRect)
+    -> NSRect
+  {
+    rotation.fittedRect(aspect: picture, in: visibleFrame)
+  }
+  func matchCameraSize() {
+    guard let panel, let picture = SharedCameraSession.shared.pictureSize,
+      let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+    else { return }
+    panel.setFrame(
+      Self.matchedCameraFrame(
+        picture: picture, rotation: CameraModel.shared.guides.rotation,
+        in: screen.visibleFrame), display: true)
+  }
   private func makePanel() -> NSPanel {
     let value = NSPanel(
       contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
@@ -220,10 +244,19 @@ private struct PresenterView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
+  @ObservedObject private var camera = CameraModel.shared
   @State private var editorNotice: String?
   var body: some View {
     GeometryReader { geometry in
       ZStack(alignment: .top) {
+        if camera.presentsWithVideo {
+          // The live picture is the bottom layer only. The background colour above it is the
+          // script's backdrop, so colour, opacity, guide line, mirror, rotation and in-place
+          // editing all keep working exactly as they do without video.
+          CameraPreview(model: camera)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .task { camera.start() }
+        }
         Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).opacity(store.settings.backgroundOpacity)
         Group {
           if draft.isEditing {
@@ -295,6 +328,9 @@ private struct PresenterView: View {
           Button(action: session.restart) { Image(systemName: "arrow.counterclockwise") }
             .accessibilityLabel("Restart")
         }.disabled(draft.isEditing).accessibilityHidden(draft.isEditing)
+        Button { camera.presentsWithVideo.toggle() } label: {
+          Image(systemName: camera.presentsWithVideo ? "video.fill" : "video.slash")
+        }.accessibilityLabel(camera.presentsWithVideo ? "Present without video" : "Present with video")
         Button {
           if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
         } label: {

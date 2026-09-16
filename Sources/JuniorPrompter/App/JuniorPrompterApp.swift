@@ -615,11 +615,24 @@ private enum PresenterSaveError: LocalizedError {
           Divider()
           Button("Play or Pause") { store.session.toggle() }.keyboardShortcut(
             .space, modifiers: [.command, .option])
+          Divider()
+          PresenterVideoItems()
         }
         CameraCommands()
       }
     Window("Camera", id: "camera") { CameraView() }
       .defaultSize(width: 760, height: 480)
+  }
+}
+
+/// The video background's two menu items. A view of its own so the toggle follows
+/// `CameraModel.shared` without the whole app scene observing it.
+private struct PresenterVideoItems: View {
+  @ObservedObject private var camera = CameraModel.shared
+  var body: some View {
+    Toggle("Present with Video", isOn: $camera.presentsWithVideo)
+      .keyboardShortcut("V", modifiers: [.command, .shift])
+    Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
   }
 }
 
