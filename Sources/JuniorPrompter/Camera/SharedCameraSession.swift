@@ -166,7 +166,9 @@ struct CameraHolders {
   /// through here, so nothing reconfigures this session from any other thread.
   func reconfigure(_ change: @escaping @Sendable (AVCaptureSession) -> Void) {
     let session = self.session
-    queue.async { change(session) }
+    let probe = self.probe
+    // Held like every other reconfiguration, or adding a preview connection resets the format.
+    queue.async { probe.holdingFormat(session) { change(session) } }
   }
 
   private func setRunning(_ on: Bool) {
