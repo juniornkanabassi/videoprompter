@@ -125,6 +125,13 @@ struct CameraHolders {
   /// For the test that covering one window must not stop the other's Auto.
   var isAutoOrienting: Bool { auto != nil }
 
+  /// Runs `change` on the session's own serial queue. The camera picker joins its preview layer
+  /// through here, so nothing reconfigures this session from any other thread.
+  func reconfigure(_ change: @escaping @Sendable (AVCaptureSession) -> Void) {
+    let session = self.session
+    queue.async { change(session) }
+  }
+
   private func setRunning(_ on: Bool) {
     let session = self.session
     queue.async {
