@@ -121,8 +121,10 @@ public struct PhraseMatcher: Sendable {
     }
     return nil
   }
-  private func forwardMatch(words: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
-    let target = script.map(\.normalised)
+  private func forwardMatch(words spoken: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
+    // Compared by key, so the inner loop stays a plain string comparison.
+    let target = script.map { key($0.normalised) }
+    let words = spoken.map(key)
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
@@ -131,7 +133,7 @@ public struct PhraseMatcher: Sendable {
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
       guard informativeCount > 0 else { continue }
-      for start in lo..<hi where same(evidence[0], target[start]) {
+      for start in lo..<hi where target[start] == evidence[0] {
         var ti = start
         var matched = 0
         var last = start
@@ -142,7 +144,7 @@ public struct PhraseMatcher: Sendable {
         var landing: (informative: Int, intact: Bool)?
         for word in evidence {
           let before = ti
-          while ti < hi && !same(word, target[ti]) { ti += 1 }
+          while ti < hi && target[ti] != word { ti += 1 }
           if ti < hi {
             let informative = word.count > 2 && !common.contains(word) ? 1 : 0
             leadingIntact = leadingIntact && ti == before
@@ -284,11 +286,14 @@ public struct PhraseMatcher: Sendable {
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
   }
-  /// Whether a recognised word is this script token: the same word, the same number written the
-  /// other way ("five" for "5", "second" for "2nd"), or a year for its short form ("2025" for the
-  /// "25" of "2024-25"). Without it every "five" against a "5" broke the run.
+  /// The form words are compared in: a spelled number is its digits ("five" is "5", "second" is
+  /// "2nd"), so dictation and the script match whichever way each writes it. Without it every
+  /// "five" against a "5" broke the run.
+  private func key(_ word: String) -> String { spelledNumbers[word] ?? word }
+  /// Whether a recognised word next to the reader is this script token: the same key, or a year
+  /// for its short form ("2025" for the "25" of "2024-25").
   private func same(_ word: String, _ token: String) -> Bool {
-    word == token || spelledNumbers[word] == token || spelledNumbers[token] == word
+    key(word) == key(token)
       || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
   }
   private func contractionComponents(_ word: String) -> [String] {

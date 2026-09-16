@@ -333,7 +333,7 @@ final class SpeechLogReplayTests: XCTestCase {
   }
 
   /// Short 173: six minutes with false starts and re-reading, where four phrases once jumped the
-  /// presenter up to sixty words ahead. Replays at p50 0.417 s, p90 0.725 s; the 11.45 s maximum is
+  /// presenter up to sixty words ahead. Replays at p50 0.419 s, p90 0.739 s; the 11.45 s maximum is
   /// "has gotten" said as "have gotten weaker", a pause, and the sentence read again.
   func testShort173RecordingNeverJumpsAhead() throws {
     try assertRecording("short-173", p50: 0.43, p90: 0.75, max: 11.5)
