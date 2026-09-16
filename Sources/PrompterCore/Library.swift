@@ -30,6 +30,8 @@ public actor MarkdownLibrary {
   private let coordinatesExternalChanges: Bool
   private var index: Index
   private var linkConflicts: [String] = []
+  /// Last seen modification date of each linked file, so an untouched file is not re-read.
+  private var lastLinkSync: [UUID: Date] = [:]
 
   public init(rootURL: URL, coordinatesExternalChanges: Bool = true) throws {
     self.rootURL = rootURL
@@ -337,9 +339,13 @@ public actor MarkdownLibrary {
     index.scripts[position].linkedPath = url.standardizedFileURL.path
     index.scripts[position].linkedBookmark =
       (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
-    index.scripts[position].linkedFingerprint = (try? Self.withLinkAccess(url) {
-      try Self.coordinatedRead($0, coordinated: coordinatesExternalChanges)
-    }).map(Self.fingerprint)
+    // The fingerprint records what the library copy holds, not what the file holds now: an
+    // import seeds the copy from the preview, and a file changed since that preview would
+    // otherwise look unchanged and be silently overwritten with the stale preview text.
+    index.scripts[position].linkedFingerprint = (try? Self.coordinatedRead(
+      validatedURL(old.fileName, in: scriptsURL), coordinated: coordinatesExternalChanges))
+      .map(Self.fingerprint)
+    lastLinkSync[id] = nil
     do { try persistIndex() } catch { index.scripts[position] = old; throw error }
     return index.scripts[position]
   }
@@ -351,6 +357,7 @@ public actor MarkdownLibrary {
     index.scripts[position].linkedPath = nil
     index.scripts[position].linkedBookmark = nil
     index.scripts[position].linkedFingerprint = nil
+    lastLinkSync[id] = nil
     do { try persistIndex() } catch { index.scripts[position] = old; throw error }
     return index.scripts[position]
   }
@@ -371,6 +378,11 @@ public actor MarkdownLibrary {
       index.scripts[position].linkedPath != nil,
       let link = Self.resolveLink(index.scripts[position])
     else { return }
+    // Two coordinated reads per linked script every two seconds is most of the poll's cost,
+    // and an untouched file cannot have changed either side.
+    let modified = Self.modificationDate(of: link)
+    guard lastLinkSync[id] != modified || modified == nil else { return }
+    defer { lastLinkSync[id] = Self.modificationDate(of: link) }
     let metadata = index.scripts[position]
     let libraryURL = try validatedURL(metadata.fileName, in: scriptsURL)
     // A missing or unreadable file leaves the library copy exactly as it is; the
@@ -422,7 +434,10 @@ public actor MarkdownLibrary {
       }
       index.scripts[position].linkedFingerprint = Self.fingerprint(markdown)
       try persistIndex()
-    } catch {}
+    } catch {
+      // Let the next poll retry rather than skip the file on an unchanged date.
+      lastLinkSync[metadata.id] = nil
+    }
   }
   private static func resolveLink(_ metadata: ScriptMetadata) -> URL? {
     var stale = false
@@ -437,6 +452,9 @@ public actor MarkdownLibrary {
     }
     // ponytail: a stale bookmark is never rewritten; relink by hand if a moved file stops resolving.
     return metadata.linkedPath.map { URL(fileURLWithPath: $0) }
+  }
+  private static func modificationDate(of url: URL) -> Date? {
+    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
   }
   private static func withLinkAccess<T>(_ url: URL, _ body: (URL) throws -> T) rethrows -> T {
     let scoped = url.startAccessingSecurityScopedResource()
@@ -527,28 +545,24 @@ public actor MarkdownLibrary {
   private static func writeAtomic(_ value: String, to url: URL, coordinated: Bool) throws {
     try coordinatedWrite(Data(value.utf8), to: url, coordinated: coordinated)
   }
+  /// Writes in place under the coordinator. It deliberately does not stage a sibling and
+  /// `replaceItemAt` it: the sibling landed in the user's own vault folder, and replacing the
+  /// item gave the file a new identity, which breaks bookmarks and other apps' open handles.
   private static func coordinatedWrite(_ data: Data, to url: URL, coordinated: Bool) throws {
-    guard coordinated, FileManager.default.fileExists(atPath: url.path) else {
+    guard coordinated else {
       try data.write(to: url, options: .atomic)
       return
     }
-    let staged = url.deletingLastPathComponent().appendingPathComponent(
-      ".jp-stage-\(UUID().uuidString)")
-    try data.write(to: staged, options: .withoutOverwriting)
     var result: Result<Void, Error>!
     var coordinationError: NSError?
-    NSFileCoordinator().coordinate(
-      writingItemAt: url, options: .forReplacing, error: &coordinationError
-    ) { coordinated in
-      result = Result { _ = try FileManager.default.replaceItemAt(coordinated, withItemAt: staged) }
+    NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) {
+      // ponytail: written in place, not atomically. An atomic write is a rename over the
+      // original, which makes the file a new one and leaves bookmarks stale (proved by
+      // `testCoordinatedWriteBackKeepsTheFileItself`). The coordinator keeps other apps out
+      // for the duration; a crash mid-write is the residual risk.
+      coordinated in result = Result { try data.write(to: coordinated) }
     }
-    if let coordinationError {
-      try? FileManager.default.removeItem(at: staged)
-      throw coordinationError
-    }
-    do { try result.get() } catch {
-      try? FileManager.default.removeItem(at: staged)
-      throw error
-    }
+    if let coordinationError { throw coordinationError }
+    try result.get()
   }
 }

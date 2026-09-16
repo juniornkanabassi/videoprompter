@@ -219,9 +219,13 @@ final class LinkedFileTests: XCTestCase {
     XCTAssertNil(unlinked.linkedPath)
   }
 
+  /// An unlinked script must leave every file outside the library alone, including one that
+  /// happens to carry the same text: an empty folder proves nothing on its own.
   func testUnlinkedScriptsAreUntouched() async throws {
     let (library, root, outside) = try makeLibrary()
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let bystander = outside.appendingPathComponent("notes.md")
+    try Data("someone else's file".utf8).write(to: bystander)
     let record = try await library.create(title: "Plain", markdown: "plain body")
     let unchanged = try await library.externalChange(for: record.id)
     XCTAssertNil(unchanged)
@@ -230,6 +234,73 @@ final class LinkedFileTests: XCTestCase {
     let saved = try await library.save(
       record.id, markdown: "edited", expectedFingerprint: record.metadata.contentFingerprint)
     XCTAssertEqual(saved.markdown, "edited")
-    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: outside.path).isEmpty)
+    _ = try await library.externalChange(for: record.id)
+    XCTAssertEqual(try String(contentsOf: bystander, encoding: .utf8), "someone else's file")
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: outside.path), ["notes.md"],
+      "an unlinked script wrote outside the library")
+    let listed = await library.listScripts()
+    let metadata = try XCTUnwrap(listed.first { $0.id == record.id })
+    XCTAssertNil(metadata.linkedPath)
+    XCTAssertNil(metadata.linkedFingerprint)
+    let conflicts = await library.takeLinkConflicts()
+    XCTAssertTrue(conflicts.isEmpty)
+  }
+
+  /// The write back is the one path that runs under `NSFileCoordinator` in the real app, and it
+  /// must leave the file itself in place: staging a sibling and replacing the item changed the
+  /// file's identity, which breaks bookmarks and other apps' open handles.
+  func testCoordinatedWriteBackKeepsTheFileItself() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-linked-\(UUID().uuidString)", isDirectory: true)
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: true)
+    let file = outside.appendingPathComponent("script.md")
+    try Data("first draft".utf8).write(to: file)
+    let bookmark = try file.bookmarkData()
+    let record = try await library.create(title: "Script", markdown: "first draft")
+    _ = try await library.link(record.id, to: file)
+
+    let saved = try await library.save(
+      record.id, markdown: "typed in the app",
+      expectedFingerprint: record.metadata.contentFingerprint)
+    XCTAssertEqual(saved.markdown, "typed in the app")
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "typed in the app")
+
+    var stale = false
+    let resolved = try URL(
+      resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+    XCTAssertFalse(stale, "the write back invalidated the bookmark")
+    XCTAssertEqual(resolved.standardizedFileURL.path, file.standardizedFileURL.path)
+    XCTAssertEqual(try String(contentsOf: resolved, encoding: .utf8), "typed in the app")
+    XCTAssertEqual(
+      try FileManager.default.contentsOfDirectory(atPath: outside.path), ["script.md"],
+      "the write back left a staging file in the user's folder")
+    let settled = try await library.externalChange(for: record.id)
+    XCTAssertNil(settled)
+  }
+
+  /// A file edited between the import preview and the Import button must not be overwritten by
+  /// the preview text the library copy was seeded from: the disk version wins instead.
+  func testAFileChangedSinceThePreviewIsNotOverwrittenByIt() async throws {
+    let (library, root, outside) = try makeLibrary()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let file = outside.appendingPathComponent("script.md")
+    try Data("preview text".utf8).write(to: file)
+    // The preview was taken, then the file moved on before Import was pressed.
+    let record = try await library.create(title: "Script", markdown: "preview text")
+    try Data("changed after the preview".utf8).write(to: file)
+    _ = try await library.link(record.id, to: file)
+
+    let resolved = try await library.externalChange(for: record.id)
+    XCTAssertEqual(resolved?.markdown, "changed after the preview")
+    XCTAssertEqual(
+      try String(contentsOf: file, encoding: .utf8), "changed after the preview",
+      "the stale preview overwrote the file")
+    let settled = try await library.externalChange(for: record.id)
+    XCTAssertNil(settled)
   }
 }
