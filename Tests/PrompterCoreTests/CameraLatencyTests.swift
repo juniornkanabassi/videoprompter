@@ -34,6 +34,21 @@ final class CameraLatencyTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(Choice(in: deckLink, signal: hd, signalDuration: ntsc30)), choice)
   }
 
+  func testNativeFormatOverrideKeepsDetectedDimensionsAndCoding() throws {
+    let choice = try XCTUnwrap(Choice(in: deckLink, signal: uhd, signalDuration: ntsc30, useNativeFormat: true))
+    XCTAssertEqual(choice.wanted.format, 5)
+    XCTAssertEqual(choice.wanted.frameDuration, ntsc30)
+  }
+
+  func testLatencyLogWindowParsingIsBounded() {
+    XCTAssertEqual(CameraLatency.logWindow(nil), 10)
+    XCTAssertEqual(CameraLatency.logWindow("invalid"), 10)
+    XCTAssertEqual(CameraLatency.logWindow("nan"), 10)
+    XCTAssertEqual(CameraLatency.logWindow("0.5"), 1)
+    XCTAssertEqual(CameraLatency.logWindow("90"), 60)
+    XCTAssertEqual(CameraLatency.logWindow("15"), 15)
+  }
+
   /// Never upscaled, and a shape with no smaller listed twin keeps its own size.
   func testASmallerOrOddSignalKeepsItsOwnSize() throws {
     let sd = try XCTUnwrap(Choice(in: deckLink, signal: fmt(720, 486, kCVPixelFormatType_422YpCbCr10), signalDuration: ntsc30))
@@ -92,7 +107,7 @@ final class CameraLatencyTests: XCTestCase {
     let (delivered, shown) = CameraLatency.delays(samples, refreshes: [10.050, 10.0167, 10.0334])
     assertClose(delivered, [20, 17, 134])
     assertClose(shown, [33.4, 17], "a frame after the last refresh is left out")
-    XCTAssertTrue(CameraLatency.report(samples, refreshes: [10.05]).hasPrefix("3 frames"))
+    XCTAssertTrue(CameraLatency.report(samples, refreshes: [10.05], dropped: 2, duration: 10).contains("AVCapture output drops 2 (0.20/s)"))
   }
 
   func testPercentilesAreNearestRank() {

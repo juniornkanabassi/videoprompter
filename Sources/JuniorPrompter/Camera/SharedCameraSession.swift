@@ -193,13 +193,13 @@ extension SharedCameraSession.FormatChoice {
   /// same format at its default rate. Nil when the signal's size is not in the table.
   init?(
     in formats: [SharedCameraSession.VideoFormat], signal: SharedCameraSession.VideoFormat,
-    signalDuration: CMTime
+    signalDuration: CMTime, useNativeFormat: Bool = false
   ) {
     func fits(_ f: SharedCameraSession.VideoFormat) -> Bool {
       Int64(f.width) * Int64(signal.height) == Int64(signal.width) * Int64(f.height)
         && f.width <= signal.width && max(f.width, f.height) <= 1920 && min(f.width, f.height) <= 1080
     }
-    let target = formats.filter(fits).max { $0.width < $1.width } ?? signal
+    let target = useNativeFormat ? signal : formats.filter(fits).max { $0.width < $1.width } ?? signal
     guard
       let index = SharedCameraSession.preferredFormat(in: formats, active: target)
         ?? formats.firstIndex(of: target)
@@ -225,11 +225,14 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// long frames take from capture to the app and to the next screen refresh.
   static let logsLatency =
     ProcessInfo.processInfo.environment["JUNIORPROMPTER_CAMERA_LATENCY_LOG"] == "1"
+  static let usesNativeFormat =
+    ProcessInfo.processInfo.environment["JUNIORPROMPTER_CAMERA_NATIVE_FORMAT"] == "1"
   static let watchdog: TimeInterval = 1.5
-  static let logWindow: TimeInterval = 10
+  static let logWindow = CameraLatency.logWindow(ProcessInfo.processInfo.environment["JUNIORPROMPTER_CAMERA_LATENCY_SECONDS"])
 
   private struct Shared {
     var frames = 0
+    var dropped = 0
     /// Host-clock seconds; frames delivered before it are logged.
     var logUntil = 0.0
     /// Added to a presentation time to put it on the host clock.
@@ -270,7 +273,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let formats = device.formats
     guard let signal,
       var choice = SharedCameraSession.FormatChoice(
-        in: formats.map(Self.row), signal: Self.row(signal.format), signalDuration: signal.duration)
+        in: formats.map(Self.row), signal: Self.row(signal.format), signalDuration: signal.duration,
+        useNativeFormat: Self.usesNativeFormat)
     else { return }
     if failed.contains(device.uniqueID) { choice = choice.settled }
     current = (device, formats, choice)
@@ -316,6 +320,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
         $0.logUntil = host + Self.logWindow
         $0.samples = []
         $0.refreshes = []
+        $0.dropped = 0
       }
     }
     if !session.outputs.contains(output) {
@@ -340,9 +345,13 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let pinned = current.choice.wanted.frameDuration
     sessionQueue.asyncAfter(deadline: .now() + Self.logWindow + 0.5) { [self] in
       guard generation == self.generation else { return }
-      let (samples, refreshes) = shared.withLock { ($0.samples, $0.refreshes) }
+      let (samples, refreshes, dropped) = shared.withLock { ($0.samples, $0.refreshes, $0.dropped) }
+      let format = current.choice.wanted.format
+      let selected = current.formats.indices.contains(format) ? Self.row(current.formats[format]) : nil
       NSLog(
-        "JuniorPrompter camera latency: %@; pinned frame duration %@", CameraLatency.report(samples, refreshes: refreshes),
+        "JuniorPrompter camera latency: %@; selected %@; pinned frame duration %@",
+        CameraLatency.report(samples, refreshes: refreshes, dropped: dropped, duration: Self.logWindow),
+        selected.map { "\($0.width)x\($0.height) \($0.subType)" } ?? "unknown",
         pinned.isValid ? String(format: "%.2f ms", pinned.seconds * 1000) : "default")
       detach(from: session)
     }
@@ -374,6 +383,13 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
         $0.samples.append(.init(capture: presented + $0.toHost, delivered: delivered))
       }
     }
+  }
+
+  func captureOutput(
+    _ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer,
+    from connection: AVCaptureConnection
+  ) {
+    shared.withLock { $0.dropped += 1 }
   }
 
   private static func row(_ format: AVCaptureDevice.Format) -> SharedCameraSession.VideoFormat {
@@ -408,6 +424,11 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
 
 /// The latency log's arithmetic, apart from the capture so it can be tested.
 enum CameraLatency {
+  static func logWindow(_ raw: String?) -> Double {
+    guard let value = raw.flatMap(Double.init), value.isFinite else { return 10 }
+    return min(max(value, 1), 60)
+  }
+
   /// Host-clock seconds.
   struct Sample: Equatable, Sendable {
     let capture: Double
@@ -434,13 +455,15 @@ enum CameraLatency {
     )
   }
 
-  static func report(_ samples: [Sample], refreshes: [Double]) -> String {
+  static func report(_ samples: [Sample], refreshes: [Double], dropped: Int = 0, duration: Double = 1) -> String {
     let (delivered, shown) = delays(samples, refreshes: refreshes)
     let intervals = zip(samples.dropFirst(), samples).map { ($0.capture - $1.capture) * 1000 }
     func ms(_ values: [Double], _ p: Double) -> String {
       percentile(values, p).map { String(format: "%.1f", $0) } ?? "-"
     }
-    return "\(samples.count) frames; capture to app p50 \(ms(delivered, 0.5)) ms p90 \(ms(delivered, 0.9)) ms; "
+    let dropRate = String(format: "%.2f", Double(dropped) / max(duration, 1e-9))
+    return "\(samples.count) frames; AVCapture output drops \(dropped) (\(dropRate)/s); "
+      + "capture to app p50 \(ms(delivered, 0.5)) ms p90 \(ms(delivered, 0.9)) ms; "
       + "capture to next refresh p50 \(ms(shown, 0.5)) ms p90 \(ms(shown, 0.9)) ms; "
       + "frame interval p50 \(ms(intervals, 0.5)) ms"
   }
