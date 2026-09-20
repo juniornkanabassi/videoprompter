@@ -278,6 +278,13 @@ private struct EditorView: View {
           }.buttonStyle(.link).disabled(!present)
           Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link)
         }.padding(.horizontal, 24).padding(.vertical, 6)
+      } else {
+        HStack {
+          Label("Stored in JuniorPrompter", systemImage: "doc.text")
+            .font(.caption).foregroundStyle(.secondary)
+          Spacer()
+          Button("Link File…") { relinking = true }.buttonStyle(.link)
+        }.padding(.horizontal, 24).padding(.vertical, 6)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
         Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")

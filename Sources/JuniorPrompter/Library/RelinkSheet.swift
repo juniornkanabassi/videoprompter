@@ -24,11 +24,13 @@ struct RelinkSheet: View {
   @State private var problem: String?
 
   private var savedPath: String { script.metadata.linkedPath ?? "" }
+  private var isNewLink: Bool { script.metadata.linkedPath == nil }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Relink “\(script.metadata.title)”").font(.headline)
-      Text("The linked file is no longer at \(savedPath).").font(.callout).foregroundStyle(.secondary)
+      Text("\(isNewLink ? "Link" : "Relink") “\(script.metadata.title)”").font(.headline)
+      Text(isNewLink ? "Choose the Markdown file this script should follow." : "The linked file is no longer at \(savedPath).")
+        .font(.callout).foregroundStyle(.secondary)
       if let chosen { confirmation(chosen) } else { picker }
       if let problem { Text(problem).font(.callout).foregroundStyle(.orange) }
       HStack {
@@ -41,7 +43,7 @@ struct RelinkSheet: View {
   private var picker: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
-        Button("Search for It") { Task { await search() } }.disabled(searching)
+        if !isNewLink { Button("Search for It") { Task { await search() } }.disabled(searching) }
         Button("Choose File…") { chooseFile() }
         if searching { ProgressView().controlSize(.small) }
       }
@@ -94,7 +96,9 @@ struct RelinkSheet: View {
     panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
     panel.allowsMultipleSelection = false
     panel.canChooseDirectories = false
-    panel.message = "Choose the moved Markdown file for “\(script.metadata.title)”."
+    panel.message = isNewLink
+      ? "Choose the Markdown file for “\(script.metadata.title)”."
+      : "Choose the moved Markdown file for “\(script.metadata.title)”."
     guard panel.runModal() == .OK, let url = panel.url else { return }
     Task { await select(url) }
   }

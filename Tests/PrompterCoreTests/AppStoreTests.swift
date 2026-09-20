@@ -197,6 +197,23 @@ final class AppStoreTests: XCTestCase {
     XCTAssertNil(changed, "the adopted text must not look like a fresh external edit")
   }
 
+  func testRelinkCanAttachAnUnlinkedLegacyScript() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let record = try await library.create(title: "Legacy", markdown: "library text")
+    let file = outside.appendingPathComponent("legacy.md")
+    try Data("file text".utf8).write(to: file)
+
+    let outcome = try await library.relink(id: record.id, to: file, resolution: .useFile)
+
+    XCTAssertEqual(outcome.current.markdown, "file text")
+    XCTAssertEqual(outcome.current.metadata.linkedPath, file.standardizedFileURL.path)
+    XCTAssertEqual(try conflictTexts(root.appendingPathComponent("Conflicts")), ["library text"])
+    let state = try await library.linkState(for: record.id)
+    XCTAssertFalse(state.isBroken)
+  }
+
   func testRelinkKeepBothLeavesTheScriptUnlinkedAndImportsTheFile() async throws {
     let (store, root, outside) = makeStore()
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
