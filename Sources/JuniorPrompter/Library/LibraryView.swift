@@ -39,7 +39,7 @@ struct LibraryView: View {
           }
         }
         Section("Scripts") {
-          ForEach(store.visible) { script in ScriptRow(script: script) }
+          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id]) }
         }
         if !store.trash.isEmpty {
           Section("Recently Deleted") {
@@ -207,12 +207,13 @@ struct LibraryView: View {
 
 private struct ScriptRow: View {
   let script: ScriptRecord
+  let link: LinkState?
   var body: some View {
     VStack(alignment: .leading, spacing: 3) {
       HStack(spacing: 4) {
         Label(script.metadata.title, systemImage: "doc.text")
         if let path = script.metadata.linkedPath {
-          let present = FileManager.default.fileExists(atPath: path)
+          let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
             .font(.caption).foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
             .accessibilityLabel(present ? "Linked file" : "Linked file missing")
@@ -233,6 +234,7 @@ private struct EditorView: View {
   @State private var title = ""
   @State private var tags = ""
   @State private var editNotice: String?
+  @State private var relinking = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -259,7 +261,8 @@ private struct EditorView: View {
           .padding(.horizontal, 24).padding(.vertical, 8)
       }
       if let path = script.metadata.linkedPath {
-        let present = FileManager.default.fileExists(atPath: path)
+        let state = store.linkStates[script.metadata.id]
+        let present = !(state?.isBroken ?? false)
         HStack(spacing: 8) {
           Label(
             present ? "Linked to \(path)" : "Linked file missing: \(path)",
@@ -269,8 +272,9 @@ private struct EditorView: View {
             .lineLimit(1)
             .truncationMode(.middle).help(path)
           Spacer()
+          if !present { Button("Relink…") { relinking = true }.buttonStyle(.link) }
           Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            NSWorkspace.shared.activateFileViewerSelecting([state?.url ?? URL(fileURLWithPath: path)])
           }.buttonStyle(.link).disabled(!present)
           Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link)
         }.padding(.horizontal, 24).padding(.vertical, 6)
@@ -293,6 +297,7 @@ private struct EditorView: View {
     }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
+    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script) }
     .id(script.metadata.id)
   }
 }

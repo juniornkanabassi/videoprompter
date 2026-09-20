@@ -96,6 +96,163 @@ final class AppStoreTests: XCTestCase {
     XCTAssertNil(store.errorMessage)
   }
 
+  /// Edits typed right as the previous save runs: every save must read the fingerprint the one
+  /// before it left, keep its revision metadata, and end with no conflict and the newest text.
+  func testOverlappingEditsSaveInOrderWithoutConflict() async throws {
+    let (store, root, _) = makeStore()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let record = try await store.library!.create(title: "Race", markdown: "v0")
+    await store.reload()
+    for i in 1...5 {
+      store.updateMarkdown("v\(i)", for: record.id)
+      try await Task.sleep(for: .milliseconds(452))
+    }
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    XCTAssertNil(store.errorMessage)
+    XCTAssertFalse(store.hasFailedSaves)
+    let disk = try await store.library!.read(record.id)
+    XCTAssertEqual(disk.markdown, "v5")
+    let shown = try XCTUnwrap(store.scripts.first { $0.id == record.id })
+    XCTAssertEqual(shown.markdown, "v5")
+    XCTAssertEqual(shown.metadata, disk.metadata, "the visible revision must be the newest saved one")
+    XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Conflicts").path).isEmpty)
+  }
+
+  func testLinkStateFollowsTheFile() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let file = outside.appendingPathComponent("moved.md")
+    try Data("body".utf8).write(to: file)
+    let plain = try await library.create(title: "Plain", markdown: "body")
+    let linked = try await library.create(title: "Linked", markdown: "body")
+    _ = try await library.link(linked.id, to: file)
+    var states = await library.linkStates()
+    XCTAssertNil(states[plain.id])
+    let plainState = try await library.linkState(for: plain.id)
+    XCTAssertEqual(plainState, .unlinked)
+    guard case .resolved(let url) = states[linked.id] else { return XCTFail("expected a resolved link") }
+    XCTAssertEqual(url.lastPathComponent, "moved.md")
+    // A bookmark follows a rename, so only a deleted file leaves the link broken.
+    try FileManager.default.removeItem(at: file)
+    states = await library.linkStates()
+    XCTAssertEqual(states[linked.id]?.isBroken, true)
+    await store.refreshLinkStates()
+    XCTAssertEqual(store.linkStates[linked.id]?.isBroken, true)
+  }
+
+  func testRelinkKeepLibraryOverwritesTheFileAfterCopyingIt() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let (record, moved) = try await brokenLink(library, outside, library: "library text", file: "file text")
+    let conflicts = root.appendingPathComponent("Conflicts")
+
+    // A recovery copy that cannot be written leaves both sides and the link alone.
+    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: conflicts.path)
+    do {
+      _ = try await library.relink(id: record.id, to: moved, resolution: .keepLibrary)
+      XCTFail("Expected the failed recovery copy to stop the relink")
+    } catch {}
+    try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: conflicts.path)
+    XCTAssertEqual(try String(contentsOf: moved, encoding: .utf8), "file text")
+    let kept = try await library.read(record.id).markdown
+    XCTAssertEqual(kept, "library text")
+    let stillBroken = try await library.linkState(for: record.id).isBroken
+    XCTAssertTrue(stillBroken)
+
+    let outcome = try await library.relink(id: record.id, to: moved, resolution: .keepLibrary)
+    XCTAssertEqual(try String(contentsOf: moved, encoding: .utf8), "library text")
+    XCTAssertEqual(outcome.current.markdown, "library text")
+    XCTAssertEqual(outcome.current.metadata.linkedPath, moved.standardizedFileURL.path)
+    XCTAssertEqual(outcome.current.metadata.linkedFingerprint, MarkdownLibrary.fingerprint("library text"))
+    XCTAssertEqual(try conflictTexts(conflicts), ["file text"])
+    let nowBroken = try await library.linkState(for: record.id).isBroken
+    XCTAssertFalse(nowBroken)
+  }
+
+  func testRelinkUseFileAdoptsTheFileAfterCopyingTheLibraryText() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let (record, moved) = try await brokenLink(library, outside, library: "library text", file: "file text")
+    let outcome = try await library.relink(id: record.id, to: moved, resolution: .useFile)
+    let adopted = try await library.read(record.id).markdown
+    XCTAssertEqual(adopted, "file text")
+    XCTAssertEqual(try String(contentsOf: moved, encoding: .utf8), "file text")
+    XCTAssertEqual(outcome.current.metadata.contentFingerprint, MarkdownLibrary.fingerprint("file text"))
+    XCTAssertEqual(outcome.current.metadata.linkedFingerprint, MarkdownLibrary.fingerprint("file text"))
+    XCTAssertGreaterThan(outcome.current.metadata.revision, record.metadata.revision)
+    XCTAssertEqual(try conflictTexts(root.appendingPathComponent("Conflicts")), ["library text"])
+    let changed = try await library.externalChange(for: record.id)
+    XCTAssertNil(changed, "the adopted text must not look like a fresh external edit")
+  }
+
+  func testRelinkKeepBothLeavesTheScriptUnlinkedAndImportsTheFile() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let (record, moved) = try await brokenLink(library, outside, library: "library text", file: "file text")
+    let outcome = try await library.relink(id: record.id, to: moved, resolution: .keepBoth)
+    let kept = try await library.read(record.id).markdown
+    XCTAssertEqual(kept, "library text")
+    XCTAssertNil(outcome.current.metadata.linkedPath)
+    XCTAssertNil(outcome.current.metadata.linkedFingerprint)
+    let imported = try XCTUnwrap(outcome.imported)
+    XCTAssertEqual(imported.markdown, "file text")
+    XCTAssertEqual(imported.metadata.linkedPath, moved.standardizedFileURL.path)
+    XCTAssertEqual(try String(contentsOf: moved, encoding: .utf8), "file text")
+    let count = await library.listScripts().count
+    XCTAssertEqual(count, 2)
+  }
+
+  func testRelinkRejectsSymlinksAndNonMarkdown() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = store.library!
+    let (record, moved) = try await brokenLink(library, outside, library: "library text", file: "file text")
+    let link = outside.appendingPathComponent("link.md")
+    try FileManager.default.createSymbolicLink(at: link, withDestinationURL: moved)
+    let text = outside.appendingPathComponent("notes.txt")
+    try Data("file text".utf8).write(to: text)
+    for bad in [link, text] {
+      do {
+        _ = try await library.relink(id: record.id, to: bad, resolution: .useFile)
+        XCTFail("Expected \(bad.lastPathComponent) to be rejected")
+      } catch PrompterCoreError.unsafePath {}
+    }
+    let kept = try await library.read(record.id).markdown
+    XCTAssertEqual(kept, "library text")
+  }
+
+  private func makeStore() -> (AppStore, URL, URL) {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+    try? FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    return (AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults), root, outside)
+  }
+  /// A script linked to a file that has since moved: returns the script and the file's new place.
+  private func brokenLink(
+    _ library: MarkdownLibrary, _ outside: URL, library text: String, file: String
+  ) async throws -> (ScriptRecord, URL) {
+    let original = outside.appendingPathComponent("script.md")
+    try Data(text.utf8).write(to: original)
+    let record = try await library.create(title: "Script", markdown: text)
+    _ = try await library.link(record.id, to: original)
+    let moved = outside.appendingPathComponent("moved/script.md")
+    try FileManager.default.createDirectory(at: moved.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try FileManager.default.removeItem(at: original)
+    try Data(file.utf8).write(to: moved)
+    return (record, moved)
+  }
+  private func conflictTexts(_ directory: URL) throws -> [String] {
+    try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+      .map { try String(contentsOf: $0, encoding: .utf8) }
+  }
+
   func testFlushPendingSavePersistsImmediateEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!

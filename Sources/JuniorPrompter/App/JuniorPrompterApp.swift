@@ -101,6 +101,8 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
+  /// The library's own answer for each linked script; the views never ask the file system.
+  @Published private(set) var linkStates: [UUID: LinkState] = [:]
 
   private(set) var library: MarkdownLibrary?
   let session = SessionStore()
@@ -229,6 +231,7 @@ private enum PresenterSaveError: LocalizedError {
       protectedIDs.contains(record.id) ? (scripts.first(where: { $0.id == record.id }) ?? record) : record
     }
     scripts = loaded
+    await refreshLinkStates()
     trash = await library.listTrash()
     folders = await library.listFolders()
     if let selectedID, loaded.contains(where: { $0.metadata.id == selectedID }) {
@@ -277,6 +280,7 @@ private enum PresenterSaveError: LocalizedError {
       if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
       scripts.insert(item, at: 0)
       selectedID = item.metadata.id
+      await refreshLinkStates()
     }
   }
   /// File > Import from Clipboard and the toolbar's copy of it.
@@ -324,10 +328,14 @@ private enum PresenterSaveError: LocalizedError {
     session.applyEditedRecord(draft)
     pendingDrafts[id] = value
     guard !presenterSaveIDs.contains(id) else { return }
-    scheduleMarkdownSave(value, for: id, expectedFingerprint: scripts[position].metadata.contentFingerprint)
+    scheduleMarkdownSave(value, for: id)
   }
-  private func scheduleMarkdownSave(_ value: String, for id: UUID, expectedFingerprint: String) {
-    saveTasks[id]?.cancel()
+  /// Saves of one script run strictly one after another. A save already inside the library cannot
+  /// be cancelled, so a newer one cancels only the debounce, waits for it, and reads the
+  /// fingerprint it left behind when it actually runs, not the one seen when it was typed.
+  private func scheduleMarkdownSave(_ value: String, for id: UUID) {
+    let previous = saveTasks[id]
+    previous?.cancel()
     let taskToken = UUID()
     saveTaskTokens[id] = taskToken
     saveTasks[id] = Task { [weak self] in
@@ -337,25 +345,30 @@ private enum PresenterSaveError: LocalizedError {
           self?.saveTaskTokens[id] = nil
         }
       }
+      await previous?.value
       do {
         try await Task.sleep(for: .milliseconds(450))
-        guard !Task.isCancelled, let self, let library = self.library else { return }
-        let saved = try await library.save(id, markdown: value, expectedFingerprint: expectedFingerprint)
-        guard !Task.isCancelled,
-          let current = self.scripts.firstIndex(where: { $0.metadata.id == id }),
-          self.scripts[current].markdown == value
+        guard !Task.isCancelled, let self, let library = self.library,
+          let expected = self.scripts.first(where: { $0.metadata.id == id })?.metadata.contentFingerprint
         else { return }
-        self.scripts[current] = saved
-        self.failedSaveIDs.remove(id)
-        self.hasFailedSaves = !self.failedSaveIDs.isEmpty
-        self.pendingDrafts[id] = nil
-        self.session.applyEditedRecord(saved)
+        self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id)
       } catch is CancellationError {} catch {
         self?.failedSaveIDs.insert(id)
         self?.hasFailedSaves = true
         self?.errorMessage = "The edit was preserved but could not replace the file. \(error)"
       }
     }
+  }
+  /// A save that reached disk always brings its revision metadata, even if the user has typed
+  /// since. The pending draft is dropped only when it is exactly what was just saved.
+  private func applySaved(_ saved: ScriptRecord, for id: UUID) {
+    guard let index = scripts.firstIndex(where: { $0.id == id }) else { return }
+    scripts[index].metadata = saved.metadata
+    guard pendingDrafts[id] == saved.markdown else { return }
+    pendingDrafts[id] = nil
+    failedSaveIDs.remove(id)
+    hasFailedSaves = !failedSaveIDs.isEmpty
+    session.applyEditedRecord(scripts[index])
   }
   func savePresentedMarkdown(
     _ value: String, for id: UUID, expectedFingerprint: String, expectedRevision: UInt64
@@ -382,17 +395,16 @@ private enum PresenterSaveError: LocalizedError {
         latest.markdown = queued
         scripts[index] = latest
         session.applyEditedRecord(latest)
-        scheduleMarkdownSave(queued, for: id, expectedFingerprint: saved.metadata.contentFingerprint)
+        scheduleMarkdownSave(queued, for: id)
       } else if scripts[index] == baseline {
         scripts[index] = saved
         session.applyEditedRecord(saved)
       } else {
+        scripts[index].metadata = saved.metadata
         throw PresenterSaveError.changedDuringSave
       }
     } catch {
-      if let queued = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) {
-        scheduleMarkdownSave(queued, for: id, expectedFingerprint: current.metadata.contentFingerprint)
-      }
+      if let queued = pendingDrafts[id] { scheduleMarkdownSave(queued, for: id) }
       finishPresenterSave(id)
       throw error
     }
@@ -429,12 +441,9 @@ private enum PresenterSaveError: LocalizedError {
       guard !presenterSaveIDs.contains(id) else { continue }
       guard let draft = pendingDrafts[id], let current = scripts.first(where: { $0.id == id }) else { continue }
       do {
-        let saved = try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint)
-        guard let index = scripts.firstIndex(where: { $0.id == id }), scripts[index].markdown == draft else { continue }
-        scripts[index] = saved
-        failedSaveIDs.remove(id)
-        hasFailedSaves = !failedSaveIDs.isEmpty
-        pendingDrafts[id] = nil
+        applySaved(
+          try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint),
+          for: id)
       } catch { hasFailedSaves = true; errorMessage = "The edit was preserved but could not replace the file. \(error)" }
     }
   }
@@ -474,7 +483,40 @@ private enum PresenterSaveError: LocalizedError {
     hasFailedSaves = !failedSaveIDs.isEmpty
   }
   /// Stop mirroring the external file. The script keeps the content it already has.
-  func unlink(_ id: UUID) { updateMetadata(id) { try await $0.unlink(id) } }
+  func unlink(_ id: UUID) {
+    withLibrary { [self] library in
+      let metadata = try await library.unlink(id)
+      if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
+      await refreshLinkStates()
+    }
+  }
+  func refreshLinkStates() async {
+    guard let library else { return }
+    let states = await library.linkStates()
+    if states != linkStates { linkStates = states }
+  }
+  /// Point a script whose file moved at its new place; `resolution` says which text survives.
+  func relink(_ id: UUID, to url: URL, resolution: RelinkResolution) async -> Bool {
+    guard let library else { return false }
+    guard await flushPendingSaves() else {
+      errorMessage = "Save the pending edits before relinking."
+      return false
+    }
+    do {
+      let outcome = try await library.relink(id: id, to: url, resolution: resolution)
+      if let i = scripts.firstIndex(where: { $0.id == id }) {
+        scripts[i] = outcome.current
+        if resolution == .useFile { session.applyEditedRecord(outcome.current) }
+      }
+      if let imported = outcome.imported { scripts.insert(imported, at: 0) }
+      unavailableScriptIDs.remove(id)
+      await refreshLinkStates()
+      return true
+    } catch {
+      errorMessage = "The file could not be relinked. Nothing was changed. \(error)"
+      return false
+    }
+  }
   func rename(_ value: String, for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, title: value) } }
   func setTags(_ tags: [String], for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, tags: tags) } }
   private func updateMetadata(
@@ -571,6 +613,7 @@ private enum PresenterSaveError: LocalizedError {
         }
       }
     }
+    await refreshLinkStates()
     let conflicts = await library.takeLinkConflicts()
     if !conflicts.isEmpty {
       let notice =
