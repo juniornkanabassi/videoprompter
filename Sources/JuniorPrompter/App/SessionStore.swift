@@ -42,6 +42,7 @@ final class SessionStore: ObservableObject {
   private var lastSoundAdvance: TimeInterval = 0
   private var speechGeneration: UInt64?
   private var minimumSpeechGeneration: UInt64 = 0
+  private var pendingSpeechCandidate: (event: RecognitionEvent, tracker: RecognitionTracker)?
   private let speechProvider = SpeechProvider()
   private var audioCapture: AudioCapture?
   private var speechTask: Task<Void, Never>?
@@ -69,6 +70,7 @@ final class SessionStore: ObservableObject {
       tracker = RecognitionTracker(generation: 0, tokenIndex: 0)
       speechGeneration = nil
       minimumSpeechGeneration = 0
+      pendingSpeechCandidate = nil
       acceptedWords = 0
       anchorNotice = nil
       state = .paused
@@ -160,6 +162,7 @@ final class SessionStore: ObservableObject {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
     if incrementSeekRevision {
+      pendingSpeechCandidate = nil
       seekRevision &+= 1
       lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
       if isActivelyRunning, settings.mode == "Voice" {
@@ -302,8 +305,6 @@ final class SessionStore: ObservableObject {
     isClipping = clipping
   }
 
-  /// Each result is matched the moment it arrives. There is no coalescing window: batching the two
-  /// locales' results cost every word its wait, and the tracker ranks them just as well one by one.
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
@@ -317,13 +318,37 @@ final class SessionStore: ObservableObject {
       isFinal: candidate.isFinal, timestamp: candidate.range.end.seconds,
       localeIdentifier: candidate.locale.identifier, audioStart: candidate.range.start.seconds,
       audioEnd: candidate.range.end.seconds)
+    if let pending = pendingSpeechCandidate,
+      pending.event.generation == event.generation,
+      pending.event.localeIdentifier != event.localeIdentifier,
+      overlapping(pending.event, event)
+    {
+      tracker = pending.tracker
+      pendingSpeechCandidate = nil
+      applySpeechUpdate(tracker.consumeCandidates([pending.event, event], script: document.spokenTokens))
+      return
+    }
     let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
     let trackerBeforeMatch = tracker
     let update = tracker.consume(event, script: document.spokenTokens)
+    pendingSpeechCandidate = candidate.isFinal ? (event, trackerBeforeMatch) : nil
+    applySpeechUpdate(update, old: old, trackerBeforeMatch: trackerBeforeMatch)
+  }
+
+  private func overlapping(_ lhs: RecognitionEvent, _ rhs: RecognitionEvent) -> Bool {
+    let overlap = max(0, min(lhs.audioEnd, rhs.audioEnd) - max(lhs.audioStart, rhs.audioStart))
+    let union = max(lhs.audioEnd, rhs.audioEnd) - min(lhs.audioStart, rhs.audioStart)
+    return union > 0 && overlap / union >= 0.72
+  }
+
+  private func applySpeechUpdate(
+    _ update: RecognitionUpdate, old: Int? = nil, trackerBeforeMatch: RecognitionTracker? = nil
+  ) {
+    let old = old ?? (lastConfirmedTokenIndex ?? (tokenIndex - 1))
     switch update.status {
     case .advanced:
       guard settings.allowsBackwardVoiceTracking || update.tokenIndex >= old else {
-        tracker = trackerBeforeMatch
+        if let trackerBeforeMatch { tracker = trackerBeforeMatch }
         state = .uncertain("Backward voice tracking is off")
         return
       }
@@ -357,6 +382,7 @@ final class SessionStore: ObservableObject {
   }
   private func stopTasks() {
     lifecycleGeneration &+= 1
+    pendingSpeechCandidate = nil
     runTask?.cancel()
     runTask = nil
     latestAudioEnd = 0

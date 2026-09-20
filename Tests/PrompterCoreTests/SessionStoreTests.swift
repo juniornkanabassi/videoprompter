@@ -95,6 +95,25 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 9)
   }
 
+  func testOverlappingEnglishAndFrenchFinalsChooseTheStrongerCandidate() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    let script = ScriptRecord(
+      metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
+      markdown: "the quick brown fox jumps over the lazy dog")
+    session.present(record: script, settings: settings)
+    session.play(captureAudio: false)
+    let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "en", generation: 1, locale: Locale(identifier: "en-GB"),
+      text: "the quick", range: range, isFinal: true))
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "fr", generation: 1, locale: Locale(identifier: "fr-FR"),
+      text: "the quick brown fox", range: range, isFinal: true))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 3)
+    XCTAssertEqual(session.tokenIndex, 4)
+  }
+
   func testSoundModeUsesThresholdAndConfiguredSpeed() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Sound"; settings.speed = 600; settings.soundThreshold = 0.2
