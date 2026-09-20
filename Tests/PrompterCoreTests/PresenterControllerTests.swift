@@ -93,10 +93,11 @@ final class PresenterControllerTests: XCTestCase {
   /// draft still cancels straight away.
   func testEscapeConfirmsOnlyWhenTheDraftWasTyped() {
     var settings = PrompterSettings()
-    settings.mode = "Timed"
+    settings.mode = "Manual"
     let record = ScriptRecord(metadata: .init(title: "Run", fileName: "run.md", revision: 1,
       contentFingerprint: "one"), markdown: "one two three four")
     let session = SessionStore()
+    session.clock = { 0 }
     session.present(record: record, settings: settings)
     session.play()
     let draft = PresenterDraft(record: record)
@@ -166,10 +167,11 @@ final class PresenterControllerTests: XCTestCase {
   /// The pencil pauses tracking in place and finishing carries on from where it was.
   func testInPlaceEditPausesTrackingAndFinishingResumesIt() {
     var settings = PrompterSettings()
-    settings.mode = "Timed"
+    settings.mode = "Manual"
     let record = ScriptRecord(metadata: .init(title: "Run", fileName: "run.md", revision: 1,
       contentFingerprint: "one"), markdown: "one two three four")
     let session = SessionStore()
+    session.clock = { 0 }
     session.present(record: record, settings: settings)
     session.play()
     XCTAssertTrue(session.isActivelyRunning)
@@ -615,6 +617,163 @@ final class PresenterControllerTests: XCTestCase {
     NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
     XCTAssertEqual(seeks.count, 1)
     coordinator.stopObservingUserScrolls()
+  }
+
+  // MARK: Manual mode painting
+
+  private static let manualLines = (1...30).map { "Line \($0) with words." }.joined(separator: "\n\n")
+
+  /// A coordinator drawing thirty short lines in a scroll view hosted by a window that is never
+  /// shown, with `position` standing in for the session's Manual timeline.
+  private func manualRig(
+    markdown: String = PresenterControllerTests.manualLines, position: @escaping () -> Double
+  ) -> (scroll: NSScrollView, text: NSTextView, coordinator: ScriptTextView.Coordinator, window: NSWindow) {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
+    let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))
+    scroll.documentView = text
+    let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.contentView = scroll
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = text
+    coordinator.render(
+      document: PrompterDocument(markdown: markdown), fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    coordinator.setManualSource(position)
+    return (scroll, text, coordinator, window)
+  }
+
+  /// Where the scroll must be for one word to sit on the guide, measured independently of the
+  /// coordinator's own interpolation.
+  private func guideScroll(
+    _ index: Int, _ rig: (scroll: NSScrollView, text: NSTextView, coordinator: ScriptTextView.Coordinator, window: NSWindow)
+  ) -> CGFloat {
+    let mapping = rig.coordinator.mappings.first { $0.1 == index }!
+    let manager = rig.text.layoutManager!
+    manager.ensureLayout(for: rig.text.textContainer!)
+    let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+    let rect = manager.boundingRect(forGlyphRange: glyph, in: rig.text.textContainer!)
+    let guideY = max(54, rig.scroll.contentView.bounds.height * 0.35)
+    return max(0, rect.midY + rig.text.textContainerInset.height - guideY)
+  }
+
+  func testManualPositionInterpolatesBetweenTokenMappingsAndReduceMotionStillProgresses() {
+    let system = ScriptTextView.Coordinator.reducesMotion
+    ScriptTextView.Coordinator.reducesMotion = { true }
+    addTeardownBlock { @MainActor in ScriptTextView.Coordinator.reducesMotion = system }
+    var position = 0.0
+    let rig = manualRig { position }
+    rig.coordinator.alignManual(in: rig.scroll)
+    let y = { rig.scroll.contentView.bounds.origin.y }
+    let indices = rig.coordinator.mappings.map(\.1)
+    // The first word of each line, found from the layout rather than assumed.
+    let lineStarts = indices.enumerated().filter { offset, index in
+      offset == 0 || abs(guideScroll(index, rig) - guideScroll(indices[offset - 1], rig)) > 2
+    }.map(\.element)
+    XCTAssertGreaterThan(lineStarts.count, 10)
+    let (a, b, c) = (lineStarts[5], lineStarts[6], lineStarts[7])
+
+    position = Double(a)
+    rig.coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), guideScroll(a, rig), accuracy: 0.5, "a line's first word lands on the guide")
+    XCTAssertEqual(rig.coordinator.tokenIndex, 0, "painting never touches the published frontier")
+
+    position = Double(a) + Double(b - a) / 2
+    rig.coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), (guideScroll(a, rig) + guideScroll(b, rig)) / 2, accuracy: 0.5,
+      "halfway through a line the scroll is halfway to the next one")
+
+    position = Double(b - 1) + 0.5
+    rig.coordinator.alignManual(in: rig.scroll)
+    let expected = guideScroll(a, rig) + (guideScroll(b, rig) - guideScroll(a, rig)) * (position - Double(a)) / Double(b - a)
+    XCTAssertEqual(y(), expected, accuracy: 0.5, "a fraction inside the last word of a line")
+
+    // Sampled a quarter word at a time, the scroll rises at every step across three lines.
+    var previous = -CGFloat.infinity
+    var t = Double(a)
+    while t <= Double(c) {
+      position = t
+      rig.coordinator.alignManual(in: rig.scroll)
+      XCTAssertGreaterThan(y(), previous, "no plateau at position \(t)")
+      previous = y()
+      t += 0.25
+    }
+    XCTAssertEqual(y(), guideScroll(c, rig), accuracy: 0.5)
+
+    position = 1_000
+    rig.coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), guideScroll(indices.last!, rig), accuracy: 0.5, "past the end it holds on the last line")
+    position = 0
+    rig.coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), guideScroll(0, rig), accuracy: 0.5)
+  }
+
+  func testManualDisplayLinkExistsOnlyWhileManualRunsAndIsGoneAfterPauseAndDismantle() {
+    let rig = manualRig { 0 }
+    let coordinator = rig.coordinator
+    XCTAssertFalse(coordinator.isDisplayLinkActive, "nothing until Play")
+    coordinator.isActivelyRunning = true
+    coordinator.updateDisplayLink(for: rig.scroll)
+    XCTAssertTrue(coordinator.isDisplayLinkActive)
+    coordinator.updateDisplayLink(for: rig.scroll)
+    XCTAssertTrue(coordinator.isDisplayLinkActive, "one link, not one per update")
+    coordinator.isActivelyRunning = false
+    coordinator.updateDisplayLink(for: rig.scroll)
+    XCTAssertFalse(coordinator.isDisplayLinkActive, "paused, stopped and completed all end it")
+
+    coordinator.isActivelyRunning = true
+    coordinator.updateDisplayLink(for: rig.scroll)
+    XCTAssertTrue(coordinator.isDisplayLinkActive)
+    ScriptTextView.dismantleNSView(rig.scroll, coordinator: coordinator)
+    XCTAssertFalse(coordinator.isDisplayLinkActive, "a dismantled view does no per-frame work")
+
+    // Voice hands the presenter no Manual source and never gets a link, running or not.
+    coordinator.setManualSource(nil)
+    coordinator.updateDisplayLink(for: rig.scroll)
+    XCTAssertFalse(coordinator.isDisplayLinkActive)
+  }
+
+  func testLiveUserScrollPausesManualAndSeeksButProgrammaticMovementDoesNot() {
+    var now = 100.0
+    let session = SessionStore()
+    session.clock = { now }
+    var settings = PrompterSettings(); settings.mode = "Manual"; settings.speed = 60
+    session.present(
+      record: ScriptRecord(
+        metadata: .init(title: "Lines", fileName: "lines.md"), markdown: Self.manualLines),
+      settings: settings)
+    let rig = manualRig { session.manualPosition() }
+    let coordinator = rig.coordinator
+    coordinator.onSeek = session.seek
+    coordinator.onUserScroll = session.seekFromUserScroll
+    coordinator.observeUserScrolls(in: rig.scroll)
+    defer { coordinator.stopObservingUserScrolls() }
+    session.play()
+    let revision = session.seekRevision
+
+    // Playback and alignment move the scroll and post nothing user-driven.
+    now = 110
+    coordinator.alignManual(in: rig.scroll)
+    coordinator.applyManualPosition(12.5, in: rig.scroll)
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
+    XCTAssertEqual(session.state, .running)
+    XCTAssertEqual(session.seekRevision, revision)
+
+    // A hand on the scroll wheel pauses and seeks to the word at the guide.
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.seekRevision, revision + 1)
+    let landed = session.tokenIndex
+    XCTAssertGreaterThan(landed, 12)
+    XCTAssertEqual(session.manualPosition(), Double(landed), accuracy: 1e-9)
+    now = 500
+    XCTAssertEqual(session.manualPosition(), Double(landed), accuracy: 1e-9, "no resume until Play")
+    session.play()
+    now = 501
+    XCTAssertEqual(session.manualPosition(), Double(landed) + 1, accuracy: 1e-9)
+    session.pause()
   }
 
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {

@@ -20,11 +20,12 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   var horizontalMirror = false
   var verticalMirror = false
   var rotation = 0
+  /// "Voice" or "Manual". Older builds also saved "Timed" and "Sound"; decoding maps them.
   var mode = "Voice"
+  /// Manual's words per minute.
   var speed = 120.0
   var audioDeviceUID: String?
   var inputGain = 1.0
-  var soundThreshold = 0.055
   var speechLanguage = "Mixed"
   var fontWeight = "Regular"
   var textColorHex = "#FFFFFF"
@@ -34,6 +35,10 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   /// The script column as a fraction of the presenter's width, centred. It replaced the old
   /// fixed "Horizontal margin" (points), which could not narrow a full-screen column.
   var textWidth = 1.0 { didSet { textWidth = Self.clampedTextWidth(textWidth) } }
+  /// Modes older builds saved. Timed and the old Manual become the new Manual; Sound and anything
+  /// unknown become Voice.
+  static let legacyModes: Set<String> = ["Timed", "Manual", "Sound"]
+  static func normalisedMode(_ raw: String) -> String { ["Timed", "Manual"].contains(raw) ? "Manual" : "Voice" }
   static let textWidthRange = 0.3...1.0
   static func clampedTextWidth(_ value: Double) -> Double {
     value.isNaN ? 1 : min(max(value, textWidthRange.lowerBound), textWidthRange.upperBound)
@@ -54,7 +59,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   static func backdropOpacityRange(withVideo: Bool) -> ClosedRange<Double> { withVideo ? 0...0.9 : 0...1 }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"; speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; soundThreshold = try c.decodeIfPresent(Double.self, forKey: .soundThreshold) ?? 0.055; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = Self.clampedTextWidth(try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1); alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? false; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
+    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = Self.normalisedMode(try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"); speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = Self.clampedTextWidth(try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1); alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? false; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
   }
 }
 
@@ -90,6 +95,9 @@ private enum PresenterSaveError: LocalizedError {
   @Published var previewFontName = "Lexend Deca" { didSet { persistSettings() } }
   @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
   @Published var errorMessage: String?
+  /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
+  @Published private(set) var modeMigrationNotice: String?
+  private static let modeMigrationKey = "modeMigrationNoticeVersion"
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
@@ -125,6 +133,20 @@ private enum PresenterSaveError: LocalizedError {
     self.defaults = isolatedDefaults
     func stored<T: Decodable>(_ key: String) -> T? {
       isolatedDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
+    // Decoding folds legacy modes into Voice and Manual and the assignments below save that over
+    // them, so the notice looks at the stored modes first. A launch with nothing to migrate is
+    // marked as seen, so a later saved "Manual" is not mistaken for a legacy one.
+    if isolatedDefaults.integer(forKey: Self.modeMigrationKey) < 1 {
+      struct SavedMode: Decodable { var mode: String? }
+      let saved = (isolatedDefaults.data(forKey: "settings").flatMap { try? JSONDecoder().decode(SavedMode.self, from: $0) }
+        .map { [$0] } ?? [])
+        + (isolatedDefaults.data(forKey: "presets").flatMap { try? JSONDecoder().decode([SavedMode].self, from: $0) } ?? [])
+      if saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") }) {
+        modeMigrationNotice = "Tracking now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Play to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
+      } else {
+        isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
+      }
     }
     // Read all three first: a @Published didSet runs even here, and it saves all three.
     let savedPresets: [PrompterSettings]? = stored("presets")
@@ -491,8 +513,13 @@ private enum PresenterSaveError: LocalizedError {
     updated.name = presets[index].name
     presets[index] = updated
   }
+  func dismissModeMigrationNotice() {
+    modeMigrationNotice = nil
+    defaults.set(1, forKey: Self.modeMigrationKey)
+  }
   func applyPreset(_ preset: PrompterSettings) {
     var applied = preset
+    applied.mode = PrompterSettings.normalisedMode(applied.mode)
     applied.name = settings.name
     applied.audioDeviceUID = settings.audioDeviceUID
     applied.speechLanguage = settings.speechLanguage

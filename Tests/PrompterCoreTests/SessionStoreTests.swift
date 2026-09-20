@@ -40,10 +40,10 @@ final class SessionStoreTests: XCTestCase {
     session.pause()
   }
 
-  func testTogglePausesAndResumesTimedSession() {
+  func testTogglePausesAndResumesManualSession() {
     let session = SessionStore()
     var settings = PrompterSettings()
-    settings.mode = "Timed"
+    settings.mode = "Manual"
     session.present(record: record(), settings: settings)
     session.play()
     XCTAssertEqual(session.state, .running)
@@ -51,25 +51,317 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .paused)
     session.toggle()
     XCTAssertEqual(session.state, .running)
+    session.pause()
   }
 
-  func testSwitchingToTimedKeepsAnActiveSessionRunning() async {
-    let session = SessionStore()
-    session.present(record: record(), settings: PrompterSettings())
+  func testSwitchingToManualKeepsAnActiveSessionRunningFromTheCurrentWord() {
+    var now = 100.0
+    let session = manualSession(speed: 60, at: { now })
+    var voice = PrompterSettings(); voice.mode = "Voice"
+    session.updateSettings(voice)
     session.play(captureAudio: false)
-    var settings = PrompterSettings(); settings.mode = "Timed"; settings.speed = 600
-    session.updateSettings(settings)
+    session.seek(to: 3)
+    var manual = voice; manual.mode = "Manual"; manual.speed = 60
+    session.updateSettings(manual)
     XCTAssertEqual(session.state, .running)
-    try? await Task.sleep(for: .milliseconds(500))
-    XCTAssertGreaterThan(session.tokenIndex, 0)
+    XCTAssertEqual(session.manualPosition(), 3, accuracy: 1e-9)
+    now += 2
+    XCTAssertEqual(session.manualPosition(), 5, accuracy: 1e-9)
     session.pause()
   }
 
   func testOldSettingsDecodeWithMixedLanguageDefault() throws {
     let value = try JSONDecoder().decode(PrompterSettings.self, from: Data(#"{"mode":"Voice","speed":120}"#.utf8))
     XCTAssertEqual(value.speechLanguage, "Mixed")
-    XCTAssertEqual(value.soundThreshold, 0.055)
     XCTAssertTrue(value.allowsBackwardVoiceTracking)
+  }
+
+  // MARK: Mode migration
+
+  private func decodedMode(_ raw: String) throws -> String {
+    try JSONDecoder().decode(PrompterSettings.self, from: Data(#"{"mode":"\#(raw)","soundThreshold":0.3}"#.utf8)).mode
+  }
+
+  func testSavedModesMigrateToVoiceAndManualAndIgnoreTheOldThreshold() throws {
+    XCTAssertEqual(try decodedMode("Voice"), "Voice")
+    XCTAssertEqual(try decodedMode("Timed"), "Manual")
+    XCTAssertEqual(try decodedMode("Manual"), "Manual")
+    XCTAssertEqual(try decodedMode("Sound"), "Voice")
+    XCTAssertEqual(try decodedMode("Telepathy"), "Voice", "an unknown mode falls back to Voice")
+    let encoded = try String(decoding: JSONEncoder().encode(PrompterSettings()), as: UTF8.self)
+    XCTAssertFalse(encoded.contains("soundThreshold"))
+  }
+
+  private func migrationStore(_ defaults: UserDefaults, root: URL) -> AppStore {
+    AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+  }
+  private func freshDefaults() -> UserDefaults {
+    let name = "JuniorPrompterTests.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
+    return UserDefaults(suiteName: name)!
+  }
+
+  func testLegacySettingsAndPresetsMigrateAndApplyingAnOldPresetUsesTheNewMode() {
+    let defaults = freshDefaults()
+    defaults.set(Data(#"{"mode":"Timed","speed":90}"#.utf8), forKey: "settings")
+    defaults.set(Data(#"[{"name":"Old sound","mode":"Sound"},{"name":"Old manual","mode":"Manual"}]"#.utf8), forKey: "presets")
+    let store = migrationStore(defaults, root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+    XCTAssertEqual(store.settings.mode, "Manual")
+    XCTAssertEqual(store.settings.speed, 90)
+    XCTAssertEqual(store.presets.map(\.mode), ["Voice", "Manual"])
+    var stale = store.presets[0]
+    stale.mode = "Timed"
+    store.applyPreset(stale)
+    XCTAssertEqual(store.settings.mode, "Manual", "an old preset applies with the normalised mode")
+    stale.mode = "Sound"
+    store.applyPreset(stale)
+    XCTAssertEqual(store.settings.mode, "Voice")
+  }
+
+  func testMigrationNoticeShowsOnceAndOnlyForALegacyMode() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    // Nothing saved, or only Voice: no notice.
+    let clean = freshDefaults()
+    XCTAssertNil(migrationStore(clean, root: root).modeMigrationNotice)
+    clean.set(Data(#"{"mode":"Voice"}"#.utf8), forKey: "settings")
+    XCTAssertNil(migrationStore(clean, root: root).modeMigrationNotice)
+
+    for legacy in ["Timed", "Sound", "Manual"] {
+      let defaults = freshDefaults()
+      defaults.set(Data(#"{"mode":"\#(legacy)"}"#.utf8), forKey: "settings")
+      let store = migrationStore(defaults, root: root)
+      XCTAssertNotNil(store.modeMigrationNotice, "\(legacy) was saved by an older build")
+      XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 0, "not remembered until dismissed")
+      store.dismissModeMigrationNotice()
+      XCTAssertNil(store.modeMigrationNotice)
+      XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 1)
+      XCTAssertNil(migrationStore(defaults, root: root).modeMigrationNotice, "shown once")
+    }
+    // A legacy mode only in a preset counts too.
+    let preset = freshDefaults()
+    preset.set(Data(#"[{"mode":"Sound"}]"#.utf8), forKey: "presets")
+    XCTAssertNotNil(migrationStore(preset, root: root).modeMigrationNotice)
+  }
+
+  // MARK: Manual timeline
+
+  /// Ten words at 60 wpm: one token a second, so the position reads as elapsed seconds.
+  private func manualSession(speed: Double = 60, at clock: @escaping () -> TimeInterval)
+    -> SessionStore
+  {
+    let session = SessionStore()
+    session.clock = clock
+    var settings = PrompterSettings(); settings.mode = "Manual"; settings.speed = speed
+    session.present(
+      record: ScriptRecord(
+        metadata: ScriptMetadata(title: "Ten", fileName: "ten.md"),
+        markdown: "one two three four five six seven eight nine ten"),
+      settings: settings)
+    return session
+  }
+
+  func testManualAdvancesFractionallyOnTheMonotonicClockAndPublishesWholeTokens() {
+    var now = 100.0
+    let session = manualSession { now }
+    XCTAssertEqual(session.manualPosition(), 0)
+    session.play()
+    XCTAssertEqual(session.state, .running)
+    now = 100.5
+    XCTAssertEqual(session.manualPosition(), 0.5, accuracy: 1e-9)
+    XCTAssertEqual(session.tokenIndex, 0, "the published frontier moves a token at a time")
+    now = 102.5
+    XCTAssertEqual(session.manualPosition(), 2.5, accuracy: 1e-9)
+    session.syncManualFrontier()
+    XCTAssertEqual(session.tokenIndex, 2)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 1)
+    XCTAssertEqual(session.manualPosition(), 2.5, accuracy: 1e-9, "syncing does not move the fraction")
+    session.pause()
+  }
+
+  func testManualSpeedChangeContinuesFromTheCurrentFractionWithoutAJump() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 102.5
+    var faster = session.settings; faster.speed = 120
+    session.updateSettings(faster)
+    XCTAssertEqual(session.manualPosition(), 2.5, accuracy: 1e-9)
+    now = 103
+    XCTAssertEqual(session.manualPosition(), 3.5, accuracy: 1e-9, "two tokens a second from 2.5")
+    var slower = faster; slower.speed = 30
+    session.updateSettings(slower)
+    now = 105
+    XCTAssertEqual(session.manualPosition(), 4.5, accuracy: 1e-9)
+    // Unrelated settings changes do not rebase.
+    var french = slower; french.speechLanguage = "French"
+    session.updateSettings(french)
+    now = 107
+    XCTAssertEqual(session.manualPosition(), 5.5, accuracy: 1e-9)
+    session.pause()
+  }
+
+  func testManualPauseFreezesTheExactFractionAndResumeContinuesThere() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 103.25
+    session.pause()
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.manualPosition(), 3.25, accuracy: 1e-9)
+    XCTAssertEqual(session.tokenIndex, 3)
+    now = 500
+    XCTAssertEqual(session.manualPosition(), 3.25, accuracy: 1e-9, "paused time does not count")
+    session.play()
+    XCTAssertEqual(session.manualPosition(), 3.25, accuracy: 1e-9)
+    now = 501
+    XCTAssertEqual(session.manualPosition(), 4.25, accuracy: 1e-9)
+    session.play()
+    XCTAssertEqual(session.manualPosition(), 4.25, accuracy: 1e-9, "a second Play does not restart the clock")
+    session.pause()
+  }
+
+  func testManualSeekPassageAndRestartRebaseAndAPausedSeekStaysPaused() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 101.7
+    let revision = session.seekRevision
+    session.seek(to: 6)
+    XCTAssertEqual(session.seekRevision, revision + 1)
+    XCTAssertEqual(session.manualPosition(), 6, accuracy: 1e-9)
+    XCTAssertEqual(session.state, .running)
+    now = 102
+    XCTAssertEqual(session.manualPosition(), 6.3, accuracy: 1e-9)
+    session.pause()
+    session.seek(to: 2)
+    XCTAssertEqual(session.state, .paused, "a paused seek stays paused")
+    now = 200
+    XCTAssertEqual(session.manualPosition(), 2, accuracy: 1e-9)
+    session.play()
+    session.nextPassage()
+    XCTAssertEqual(session.manualPosition(), 9, accuracy: 1e-9, "one passage: next goes to the last word")
+    session.previousPassage()
+    XCTAssertEqual(session.manualPosition(), 0, accuracy: 1e-9)
+    now = 203
+    session.restart()
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.manualPosition(), 0, accuracy: 1e-9)
+    XCTAssertEqual(session.tokenIndex, 0)
+  }
+
+  func testManualReachingTheEndConfirmsTheLastWordAndStopsThenPlayRestarts() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 109.5
+    session.syncManualFrontier()
+    XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.isActivelyRunning, "the last word is still being read")
+    XCTAssertEqual(session.manualPosition(), 9, accuracy: 1e-9, "the position stops on the last word")
+    now = 110
+    session.syncManualFrontier()
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertFalse(session.isActivelyRunning)
+    XCTAssertTrue(session.manualCompleted)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 9)
+    XCTAssertEqual(session.tokenIndex, 9)
+    now = 300
+    session.syncManualFrontier()
+    XCTAssertEqual(session.manualPosition(), 9, accuracy: 1e-9)
+    // Play after completion starts from the beginning.
+    session.play()
+    XCTAssertFalse(session.manualCompleted)
+    XCTAssertEqual(session.state, .running)
+    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertNil(session.lastConfirmedTokenIndex)
+    XCTAssertEqual(session.manualPosition(), 0, accuracy: 1e-9)
+    now = 301
+    XCTAssertEqual(session.manualPosition(), 1, accuracy: 1e-9)
+    // Completing again, a seek comes before Play: it starts from the seek.
+    now = 320
+    session.syncManualFrontier()
+    XCTAssertTrue(session.manualCompleted)
+    session.seek(to: 4)
+    XCTAssertFalse(session.manualCompleted)
+    session.play()
+    XCTAssertEqual(session.manualPosition(), 4, accuracy: 1e-9)
+    session.pause()
+  }
+
+  func testManualProgressesWithNoPresenterThroughItsOwnTimer() async throws {
+    var now = 100.0
+    let session = manualSession(speed: 300) { now }
+    session.play()
+    now = 101
+    for _ in 0..<40 where session.tokenIndex < 5 { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertEqual(session.tokenIndex, 5, "five tokens a second, published by the session with no view")
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 4)
+    now = 110
+    for _ in 0..<40 where session.isActivelyRunning { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertFalse(session.isActivelyRunning, "the timer finishes the script")
+    XCTAssertTrue(session.manualCompleted)
+  }
+
+  func testFinishingAnEditRebasesManualAtTheRemappedWord() throws {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 102.5
+    var edited = try XCTUnwrap(session.activeRecord)
+    edited.markdown += " eleven"
+    edited.metadata.revision += 1
+    session.applyEditedRecord(edited)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.tokenIndex, 2)
+    XCTAssertEqual(session.manualPosition(), 2, accuracy: 1e-9)
+    session.play()
+    now = 103.5
+    XCTAssertEqual(session.manualPosition(), 3, accuracy: 1e-9)
+    session.pause()
+  }
+
+  func testUserScrollPausesManualAndSeeksButVoiceKeepsRunning() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.play()
+    now = 101.5
+    session.seekFromUserScroll(to: 7)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.tokenIndex, 7)
+    XCTAssertEqual(session.manualPosition(), 7, accuracy: 1e-9)
+    now = 150
+    XCTAssertEqual(session.manualPosition(), 7, accuracy: 1e-9, "resumes only when Play is pressed")
+    session.play()
+    now = 151
+    XCTAssertEqual(session.manualPosition(), 8, accuracy: 1e-9)
+    session.pause()
+
+    var voice = PrompterSettings(); voice.mode = "Voice"
+    session.updateSettings(voice)
+    session.play(captureAudio: false)
+    session.seekFromUserScroll(to: 2)
+    XCTAssertTrue(session.isActivelyRunning)
+    XCTAssertEqual(session.tokenIndex, 2)
+    session.pause()
+  }
+
+  func testVoiceAdvancesOnlyFromSpeechNotFromTheClock() {
+    var now = 100.0
+    let session = manualSession { now }
+    var voice = PrompterSettings(); voice.mode = "Voice"; voice.speed = 300
+    session.updateSettings(voice)
+    session.play(captureAudio: false)
+    now = 1_000
+    session.syncManualFrontier()
+    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertTrue(session.isActivelyRunning)
+    XCTAssertFalse(session.manualCompleted)
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "a", generation: 1, locale: Locale(identifier: "en-GB"), text: "one two three",
+      range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 2)
+    XCTAssertEqual(session.tokenIndex, 3)
+    session.pause()
   }
 
   func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {
@@ -114,21 +406,6 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 4)
   }
 
-  func testSoundModeUsesThresholdAndConfiguredSpeed() {
-    let session = SessionStore()
-    var settings = PrompterSettings(); settings.mode = "Sound"; settings.speed = 600; settings.soundThreshold = 0.2
-    session.present(record: record(), settings: settings)
-    session.play(captureAudio: false)
-    session.acceptSoundLevel(0.1, at: 1)
-    XCTAssertEqual(session.tokenIndex, 0)
-    session.acceptSoundLevel(0.3, at: 1)
-    XCTAssertEqual(session.tokenIndex, 1)
-    session.acceptSoundLevel(0.3, at: 1.05)
-    XCTAssertEqual(session.tokenIndex, 1)
-    session.acceptSoundLevel(0.3, at: 1.11)
-    XCTAssertEqual(session.tokenIndex, 2)
-  }
-
   func testContinuousInterimCandidatesFlushBeforeStreamStops() async {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
@@ -151,14 +428,17 @@ final class SessionStoreTests: XCTestCase {
   }
 
   func testExplicitSeekIncrementsRevisionButAutomaticAdvanceDoesNot() {
-    let session = SessionStore()
-    var settings = PrompterSettings(); settings.mode = "Timed"
-    session.present(record: record(), settings: settings)
+    var now = 100.0
+    let session = manualSession { now }
     let initialRevision = session.seekRevision
     session.seek(to: 1)
     XCTAssertEqual(session.seekRevision, initialRevision + 1)
-    session.advanceOneToken()
+    session.play()
+    now = 103
+    session.syncManualFrontier()
+    XCTAssertEqual(session.tokenIndex, 4)
     XCTAssertEqual(session.seekRevision, initialRevision + 1)
+    session.pause()
   }
 
   func testSpeechArrivingAfterPauseIsIgnored() {
@@ -206,7 +486,7 @@ final class SessionStoreTests: XCTestCase {
 
   func testLanguageChangePreservesReadingAnchor() {
     let session = SessionStore()
-    var settings = PrompterSettings(); settings.mode = "Timed"
+    var settings = PrompterSettings(); settings.mode = "Manual"
     session.present(record: record(), settings: settings)
     session.seek(to: 1)
     let before = session.anchor
@@ -236,7 +516,7 @@ final class SessionStoreTests: XCTestCase {
 
   func testMicrophoneTestWithoutDeviceDoesNotChangeSession() {
     let session = SessionStore()
-    var settings = PrompterSettings(); settings.mode = "Timed"
+    var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(record: record(), settings: settings)
     let anchor = session.anchor
     session.startMicrophoneTest(deviceUID: nil, gain: 1)
@@ -245,49 +525,5 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 0)
     XCTAssertEqual(session.acceptedWords, 0)
     XCTAssertEqual(session.microphoneTestNotice, "Choose an available microphone to test.")
-  }
-
-  func testLiveSoundCapturePausesWhenSelectedDeviceDisappears() async throws {
-    try XCTSkipUnless(
-      ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_LIVE_MIC_DEVICE_LOSS"] == "1")
-    try XCTSkipUnless(AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
-                      "Live microphone regression requires existing audio permission.")
-    let requestedUID = ProcessInfo.processInfo.environment["JUNIORPROMPTER_LIVE_MIC_DEVICE_UID"]
-    guard let device = AudioCapture.inputDevices().first(where: { requestedUID == nil || $0.uid == requestedUID }) else {
-      throw XCTSkip("Live microphone regression requires an available input device.")
-    }
-
-    let session = SessionStore()
-    var settings = PrompterSettings()
-    settings.mode = "Sound"
-    settings.audioDeviceUID = device.uid
-    settings.soundThreshold = 0
-    settings.speed = 600
-    session.present(record: record(), settings: settings)
-    session.play()
-    defer { session.pause() }
-
-    let deadline = ContinuousClock.now + .seconds(5)
-    while session.tokenIndex == 0 && ContinuousClock.now < deadline {
-      try await Task.sleep(for: .milliseconds(100))
-    }
-    guard session.tokenIndex > 0 else {
-      XCTFail("Live capture did not deliver a buffer.")
-      return
-    }
-
-    let anchor = try XCTUnwrap(session.anchor)
-    session.microphoneDevicesDidChange([])
-    let pauseDeadline = ContinuousClock.now + .seconds(2)
-    while session.anchorNotice == nil && ContinuousClock.now < pauseDeadline {
-      try await Task.sleep(for: .milliseconds(50))
-    }
-    XCTAssertEqual(session.state, .paused)
-    XCTAssertEqual(session.anchor, anchor)
-    XCTAssertEqual(session.settings.audioDeviceUID, device.uid)
-    XCTAssertEqual(session.anchorNotice, "The selected microphone was disconnected. Tracking paused.")
-    let pausedIndex = session.tokenIndex
-    try await Task.sleep(for: .milliseconds(250))
-    XCTAssertEqual(session.tokenIndex, pausedIndex)
   }
 }

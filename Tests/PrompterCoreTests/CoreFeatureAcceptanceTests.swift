@@ -298,6 +298,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     await store.reload()
     store.selectedID = record.id
     store.settings.mode = mode
+    // A frozen clock: Manual would otherwise scroll on while these tests read positions.
+    store.session.clock = { 0 }
     let selected = try XCTUnwrap(store.selected)
     store.session.present(record: selected, settings: store.settings)
     return (store, selected)

@@ -39,7 +39,15 @@ final class SessionStore: ObservableObject {
   private var tracker = RecognitionTracker()
   private var runTask: Task<Void, Never>?
   private var latestAudioEnd: TimeInterval = 0
-  private var lastSoundAdvance: TimeInterval = 0
+  /// Monotonic seconds. Injectable so Manual's timeline is tested without sleeping.
+  var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+  /// Manual's timeline: `manualBase` is the fractional token position (token index plus progress
+  /// through that token) at `manualStart`, and it advances at `speed / 60` tokens a second only
+  /// while running. Every seek, edit, speed or mode change rebases it, so it never jumps.
+  private var manualBase = 0.0
+  private var manualStart: TimeInterval = 0
+  /// Manual ran off the end. The next Play starts again from the beginning unless a seek came first.
+  private(set) var manualCompleted = false
   private var speechGeneration: UInt64?
   private var minimumSpeechGeneration: UInt64 = 0
   private var pendingSpeechCandidate: (event: RecognitionEvent, tracker: RecognitionTracker)?
@@ -64,6 +72,7 @@ final class SessionStore: ObservableObject {
       document = PrompterDocument(markdown: record.markdown)
       lastConfirmedTokenIndex = nil
       tokenIndex = 0
+      rebaseManual(to: 0)
       anchor = ReadingAnchorRemapper.makeAnchor(
         scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
         globalTokenIndex: 0, guideFraction: settings.guideFraction)
@@ -82,7 +91,18 @@ final class SessionStore: ObservableObject {
   func updateSettings(_ value: PrompterSettings) {
     let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
     let speedChanged = settings.speed != value.speed
+    // Manual first catches up to now at the old speed, so a new speed continues from here.
+    let now = clock()
+    if isManual, state == .running { syncManualFrontier(at: now) }
+    let position = rawManualPosition(at: now)
+    let modeSwitched = settings.mode != value.mode
     settings = value
+    if modeSwitched {
+      rebaseManual(to: Double(tokenIndex), at: now)
+    } else if speedChanged, isManual {
+      manualBase = position
+      manualStart = now
+    }
     audioCapture?.setGain(Float(value.inputGain))
     if var current = anchor {
       current.guideFraction = value.guideFraction
@@ -90,9 +110,9 @@ final class SessionStore: ObservableObject {
     }
     if isActivelyRunning, modeChanged {
       stopTasks()
-      if value.mode == "Timed" { state = .running }
+      if isManual { state = .running }
       restartModeTask()
-      if value.mode == "Voice" || value.mode == "Sound" { startAudioMode() }
+      if value.mode == "Voice" { startAudioMode() }
     } else if isActivelyRunning, speedChanged {
       restartModeTask()
     }
@@ -120,6 +140,7 @@ final class SessionStore: ObservableObject {
     }
     document = new
     activeRecord = record
+    rebaseManual(to: Double(tokenIndex))
     lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
     tracker.invalidate(startingAt: tokenIndex)
     if let speechGeneration { minimumSpeechGeneration = speechGeneration + 1 }
@@ -131,11 +152,22 @@ final class SessionStore: ObservableObject {
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
     stopMicrophoneTest()
     anchorNotice = nil
+    if isManual {
+      if manualCompleted {
+        seek(to: 0)
+      } else {
+        // Already running (a second Play) keeps its progress; paused just starts the clock.
+        let now = clock()
+        if state == .running { syncManualFrontier(at: now) }
+        rebaseManual(to: min(rawManualPosition(at: now), Double(document.spokenTokens.count)), at: now)
+      }
+    }
     state = .running
     restartModeTask()
-    if captureAudio && (settings.mode == "Voice" || settings.mode == "Sound") { startAudioMode() }
+    if captureAudio && settings.mode == "Voice" { startAudioMode() }
   }
   func pause() {
+    freezeManual()
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
   }
@@ -151,6 +183,7 @@ final class SessionStore: ObservableObject {
     anchor = nil
     lastConfirmedTokenIndex = nil
     tokenIndex = 0
+    rebaseManual(to: 0)
     anchorNotice = nil
     state = .stopped
   }
@@ -162,6 +195,7 @@ final class SessionStore: ObservableObject {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
     if incrementSeekRevision {
+      rebaseManual(to: Double(tokenIndex))
       pendingSpeechCandidate = nil
       seekRevision &+= 1
       lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
@@ -181,19 +215,62 @@ final class SessionStore: ObservableObject {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
   }
   func previousPassage() { seek(to: passageBoundary(before: tokenIndex) ?? 0) }
-  func advanceOneToken() {
-    lastConfirmedTokenIndex = tokenIndex
-    move(to: min(tokenIndex + 1, max(0, document.spokenTokens.count - 1)), incrementSeekRevision: false)
+  /// A scroll the reader made by hand. In Manual it pauses first, so the seek to the word at the
+  /// guide holds until Play; Voice keeps running from the new word. Programmatic movement never
+  /// comes through here.
+  func seekFromUserScroll(to index: Int) {
+    if isManual { pause() }
+    seek(to: index)
   }
 
-  func acceptSoundLevel(
-    _ level: Float, at time: TimeInterval = ProcessInfo.processInfo.systemUptime
-  ) {
-    guard isActivelyRunning, settings.mode == "Sound", level >= Float(settings.soundThreshold),
-      time - lastSoundAdvance >= 60 / max(1, settings.speed)
-    else { return }
-    lastSoundAdvance = time
-    advanceOneToken()
+  var isManual: Bool { settings.mode == "Manual" }
+  private var tokensPerSecond: Double { max(1, settings.speed) / 60 }
+
+  private func rebaseManual(to position: Double, at time: TimeInterval? = nil) {
+    manualBase = position
+    manualStart = time ?? clock()
+    manualCompleted = false
+  }
+  /// The unclamped Manual position: it passes the last token's index while that token is read.
+  private func rawManualPosition(at time: TimeInterval) -> Double {
+    guard isManual, state == .running else { return manualBase }
+    return manualBase + max(0, time - manualStart) * tokensPerSecond
+  }
+  /// The exact fractional position the presenter paints, read from the monotonic timeline on every
+  /// display refresh; it publishes nothing.
+  func manualPosition(at time: TimeInterval? = nil) -> Double {
+    min(rawManualPosition(at: time ?? clock()), Double(max(0, document.spokenTokens.count - 1)))
+  }
+  /// Publishes the whole-token frontier (current word, words read) and finishes at the end. The
+  /// timer task calls it a token at a time, also with no presenter open; the fraction is not stored.
+  func syncManualFrontier(at time: TimeInterval? = nil) {
+    guard isManual, state == .running, !document.spokenTokens.isEmpty else { return }
+    let raw = rawManualPosition(at: time ?? clock())
+    let count = document.spokenTokens.count
+    guard raw < Double(count) else { return completeManual() }
+    let index = Int(raw)
+    guard index != tokenIndex else { return }
+    lastConfirmedTokenIndex = index > 0 ? index - 1 : nil
+    move(to: index, incrementSeekRevision: false)
+  }
+  /// The last token has been read: confirmed, no longer running, and the next Play starts over.
+  private func completeManual() {
+    let last = document.spokenTokens.count - 1
+    lastConfirmedTokenIndex = last
+    move(to: last, incrementSeekRevision: false)
+    state = .paused
+    stopTasks()
+    manualBase = Double(last)
+    manualCompleted = true
+  }
+  /// Pausing keeps the exact fraction, so Play carries on from the same place.
+  private func freezeManual() {
+    guard isManual, state == .running else { return }
+    let now = clock()
+    syncManualFrontier(at: now)
+    guard state == .running else { return }
+    manualBase = rawManualPosition(at: now)
+    manualStart = now
   }
 
   func startMicrophoneTest(deviceUID: String?, gain: Double) {
@@ -370,15 +447,21 @@ final class SessionStore: ObservableObject {
   private func restartModeTask() {
     runTask?.cancel()
     runTask = nil
-    guard state == .running, settings.mode == "Timed" else { return }
-    let interval = max(0.1, 60 / max(1, settings.speed))
+    guard state == .running, isManual else { return }
+    // Wakes once per token, at its boundary, and ends with pause, stop or completion. It only
+    // publishes the whole-token frontier; the display link reads the fraction itself.
     runTask = Task { [weak self] in
       while !Task.isCancelled {
-        try? await Task.sleep(for: .seconds(interval))
+        guard let delay = self?.secondsToNextManualToken() else { return }
+        try? await Task.sleep(for: .seconds(delay))
         guard !Task.isCancelled else { return }
-        self?.advanceOneToken()
+        self?.syncManualFrontier()
       }
     }
+  }
+  private func secondsToNextManualToken() -> TimeInterval {
+    let position = rawManualPosition(at: clock())
+    return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
     lifecycleGeneration &+= 1
@@ -457,43 +540,29 @@ final class SessionStore: ObservableObject {
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
-        let mode = self.settings.mode
-        let format: AVAudioFormat
-        if mode == "Voice" {
-          self.state = .uncertain("Preparing on-device English and French speech models")
-          format = try await self.speechProvider.prepare(
-            locales: try await self.speechLocales(),
-            contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
-          guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
-          self.state = .running
-        } else {
-          guard
-            let value = AVAudioFormat(
-              commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
-          else { throw AudioCaptureError.conversionUnavailable }
-          format = value
-        }
+        self.state = .uncertain("Preparing on-device English and French speech models")
+        let format = try await self.speechProvider.prepare(
+          locales: try await self.speechLocales(),
+          contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
+        guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
+        self.state = .running
         let capture = AudioCapture(
           device: device, outputFormat: format, gain: Float(self.settings.inputGain))
         self.audioCapture = capture
         let pair = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
-        if mode == "Voice" { self.analyzerContinuation = pair.continuation }
+        self.analyzerContinuation = pair.continuation
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
           onBuffer: { [weak self] buffer, _, level, peak, clipping in
             // One main-actor hop per buffer, not two: at ~47 Hz the second hop was pure overhead.
-            var submittedEnd: TimeInterval?
-            if mode == "Voice" {
-              let start = counter.next(buffer.frameLength)
-              pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
-              submittedEnd = start.seconds + Double(buffer.frameLength) / format.sampleRate
-            }
+            let start = counter.next(buffer.frameLength)
+            pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
+            let submittedEnd = start.seconds + Double(buffer.frameLength) / format.sampleRate
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
-              if let submittedEnd { self.noteSubmittedAudioEnd(through: submittedEnd) }
+              self.noteSubmittedAudioEnd(through: submittedEnd)
               self.audioLevel = level
               self.publishMeter(peak: peak, clipping: clipping)
-              if mode == "Sound" { self.acceptSoundLevel(level) }
             }
           },
           onStop: { [weak self] error in
@@ -510,15 +579,13 @@ final class SessionStore: ObservableObject {
               }
             }
           })
-        if mode == "Voice" {
-          guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else {
-            capture.stop()
-            return
-          }
-          try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
-            guard let self, self.lifecycleGeneration == generation else { return }
-            self.acceptSpeechCandidate(candidate)
-          }
+        guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else {
+          capture.stop()
+          return
+        }
+        try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
+          guard let self, self.lifecycleGeneration == generation else { return }
+          self.acceptSpeechCandidate(candidate)
         }
       } catch is CancellationError {} catch {
         guard self.lifecycleGeneration == generation else { return }

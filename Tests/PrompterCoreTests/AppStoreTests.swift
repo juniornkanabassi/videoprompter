@@ -401,7 +401,8 @@ final class AppStoreTests: XCTestCase {
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     let record = try await store.library!.create(title: "Reading", markdown: "one two three four")
     await store.reload()
-    var settings = PrompterSettings(); settings.mode = "Timed"
+    var settings = PrompterSettings(); settings.mode = "Manual"
+    store.session.clock = { 0 }
     store.session.present(record: record, settings: settings)
     store.session.seek(to: 1)
     store.session.play()

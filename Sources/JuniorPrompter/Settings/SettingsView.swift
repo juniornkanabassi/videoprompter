@@ -76,16 +76,11 @@ struct InspectorView: View {
       }
       Section("Motion") {
         Picker("Tracking", selection: $store.settings.mode) {
-          ForEach(["Voice", "Timed", "Manual", "Sound"], id: \.self, content: Text.init)
+          ForEach(["Voice", "Manual"], id: \.self, content: Text.init)
         }
-        if store.settings.mode == "Timed" || store.settings.mode == "Sound" {
+        if store.settings.mode == "Manual" {
           ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
                       readout: "\(Int(store.settings.speed)) wpm")
-        }
-        if store.settings.mode == "Sound" {
-          ValueSlider("Sound threshold", value: $store.settings.soundThreshold, in: 0...0.5,
-                      readout: String(format: "%.3f", store.settings.soundThreshold))
-          Text("Advances while sound is above threshold; does not match words.").font(.caption).foregroundStyle(.secondary)
         }
         if store.settings.mode == "Voice" {
           Toggle("Allow backward voice tracking", isOn: $store.settings.allowsBackwardVoiceTracking)
@@ -189,6 +184,12 @@ struct InspectorView: View {
     }.onDisappear {
       deviceObserver = nil
       session.stopMicrophoneTest()
+    }.alert("Tracking modes changed", isPresented: Binding(
+      get: { store.modeMigrationNotice != nil }, set: { if !$0 { store.dismissModeMigrationNotice() } })
+    ) {
+      Button("OK") {}
+    } message: {
+      Text(store.modeMigrationNotice ?? "")
     }.alert("Rename Preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
       TextField("Preset name", text: $renameValue)
       Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }

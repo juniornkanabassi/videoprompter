@@ -392,7 +392,8 @@ private struct PresenterView: View {
               lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
               horizontalMargin: sideInset, alignment: store.settings.alignment,
               showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
-              onSeek: session.seek
+              manualPosition: session.isManual ? { session.manualPosition() } : nil,
+              onSeek: session.seek, onUserScroll: session.seekFromUserScroll
             )
           }
         }
@@ -566,7 +567,12 @@ struct ScriptTextView: NSViewRepresentable {
   var alignment = "Left"
   var showCues = true
   var highlightActiveWord = false
+  /// Manual mode only: the session's exact fractional token position, painted on a display link
+  /// while running. Voice passes nil and keeps its eased, word-at-a-time alignment.
+  var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
+  /// A scroll the reader made by hand; falls back to `onSeek`.
+  var onUserScroll: ((Int) -> Void)?
   /// The column is `textWidth` of the presenter's width, centred, and never nearer an edge
   /// than the old fixed 42 pt margin. Only the text uses it; the camera stays full size.
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
@@ -578,6 +584,7 @@ struct ScriptTextView: NSViewRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
     coordinator.stopObservingUserScrolls()
+    coordinator.stopManualScrolling()
   }
   func makeNSView(context: Context) -> NSScrollView {
     let scroll = NSScrollView()
@@ -594,8 +601,7 @@ struct ScriptTextView: NSViewRepresentable {
     text.onLayout = { [weak scroll] in
       guard let scroll else { return }
       context.coordinator.invalidateAlignment()
-      context.coordinator.align(
-        scroll: scroll, tokenIndex: context.coordinator.tokenIndex, guideFraction: context.coordinator.guideFraction)
+      context.coordinator.alignToCurrent(in: scroll)
     }
     scroll.documentView = text
     context.coordinator.textView = text
@@ -607,6 +613,8 @@ struct ScriptTextView: NSViewRepresentable {
     let coordinator = context.coordinator
     coordinator.setSideInset(horizontalMargin)
     coordinator.onSeek = onSeek
+    coordinator.onUserScroll = onUserScroll
+    coordinator.setManualSource(manualPosition)
     coordinator.tokenIndex = tokenIndex
     coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
     coordinator.guideFraction = guideFraction
@@ -616,6 +624,7 @@ struct ScriptTextView: NSViewRepresentable {
       coordinator.snapToGuide()
     }
     coordinator.isActivelyRunning = isActivelyRunning
+    coordinator.updateDisplayLink(for: scroll)
     let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
     if coordinator.needsRender(document: document, style: style) {
       coordinator.render(
@@ -629,10 +638,14 @@ struct ScriptTextView: NSViewRepresentable {
     DispatchQueue.main.async {
       guard coordinator.updateGeneration == generation else { return }
       coordinator.updateReadState()
-      coordinator.align(scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction)
+      if coordinator.manualPosition != nil {
+        coordinator.alignManual(in: scroll)
+      } else {
+        coordinator.align(scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction)
+      }
     }
   }
-  @MainActor final class Coordinator {
+  @MainActor final class Coordinator: NSObject {
     weak var textView: NSTextView?
     var onSeek: (Int) -> Void
     var mappings: [(NSRange, Int)] = []
@@ -658,7 +671,47 @@ struct ScriptTextView: NSViewRepresentable {
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
-    init(onSeek: @escaping (Int) -> Void) { self.onSeek = onSeek }
+    var onUserScroll: ((Int) -> Void)?
+    /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
+    private(set) var manualPosition: (() -> Double)?
+    private var displayLink: CADisplayLink?
+    private weak var manualScroll: NSScrollView?
+    var isDisplayLinkActive: Bool { displayLink != nil }
+    init(onSeek: @escaping (Int) -> Void) {
+      self.onSeek = onSeek
+      super.init()
+    }
+    func setManualSource(_ source: (() -> Double)?) {
+      // Crossing between Manual and Voice hands the scroll position over: re-align from scratch.
+      if (source == nil) != (manualPosition == nil) {
+        invalidateAlignment()
+        endsVoiceAnimation = source != nil
+      }
+      manualPosition = source
+    }
+    private var endsVoiceAnimation = false
+    /// The display link exists only while Manual is running and this view is alive: paused, stopped,
+    /// completed and dismantled all remove it, so an idle presenter does no per-frame work.
+    func updateDisplayLink(for scroll: NSScrollView) {
+      guard isActivelyRunning, manualPosition != nil else { return stopManualScrolling() }
+      guard displayLink == nil else { return }
+      let link = scroll.displayLink(target: self, selector: #selector(displayLinkFired(_:)))
+      link.add(to: .main, forMode: .common)
+      displayLink = link
+      manualScroll = scroll
+    }
+    func stopManualScrolling() {
+      displayLink?.invalidate()
+      displayLink = nil
+    }
+    @objc private func displayLinkFired(_ link: CADisplayLink) {
+      guard isActivelyRunning, manualPosition != nil, let scroll = manualScroll else {
+        return stopManualScrolling()
+      }
+      // A hand on the scroll wheel wins; its first event pauses the session and this link with it.
+      guard !isLiveScrolling else { return }
+      alignManual(in: scroll)
+    }
     func stopObservingUserScrolls() {
       scrollObservers.forEach(NotificationCenter.default.removeObserver)
       scrollObservers.removeAll()
@@ -823,7 +876,7 @@ struct ScriptTextView: NSViewRepresentable {
       }) else { return }
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
-      onSeek(nearest.1)
+      (onUserScroll ?? onSeek)(nearest.1)
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
@@ -846,13 +899,14 @@ struct ScriptTextView: NSViewRepresentable {
       invalidateAlignment()
       snapNextAlignment = true
     }
-    func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double) {
-      guard (lastAligned != tokenIndex || lastGuideFraction != guideFraction), let textView,
-        let mapping = mappings.first(where: { $0.1 == tokenIndex }),
-        let manager = textView.layoutManager, let container = textView.textContainer
-      else { return }
+    /// The layout ready to measure, with the top and bottom inset that let any word reach the guide.
+    private func prepareGuide(_ scroll: NSScrollView, fraction: Double)
+      -> (manager: NSLayoutManager, container: NSTextContainer, guideY: CGFloat)?
+    {
+      guard let textView, let manager = textView.layoutManager, let container = textView.textContainer
+      else { return nil }
       let height = scroll.contentView.bounds.height
-      let guideY = layoutGuideY(height: height, fraction: guideFraction)
+      let guideY = layoutGuideY(height: height, fraction: fraction)
       let edgeInset = max(80, max(guideY, height - guideY))
       // Same reason: re-laying the whole script out on every advance is the presenter's most
       // expensive recurring work, and the edge inset only changes when the window resizes.
@@ -860,9 +914,71 @@ struct ScriptTextView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       }
       manager.ensureLayout(for: container)
-      let glyph = manager.glyphRange(forCharacterRange: mapping.0, actualCharacterRange: nil)
+      return (manager, container, guideY)
+    }
+    /// Where the scroll must sit to put this rendered range on the guide.
+    private func scrollY(
+      of range: NSRange, manager: NSLayoutManager, container: NSTextContainer, guideY: CGFloat
+    ) -> CGFloat {
+      let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
       let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
-      let target = max(0, rect.midY + textView.textContainerInset.height - guideY)
+      return max(0, rect.midY + (textView?.textContainerInset.height ?? 0) - guideY)
+    }
+    /// The scroll for a fractional token position, interpolated between the token mappings so motion
+    /// is continuous. Words on one line share a scroll position, so interpolating only between
+    /// neighbouring words would hold still for a line and then jump one line in one word's time:
+    /// instead the scroll runs from a line's first word to the next line's first word across the
+    /// words in between. Each line's first word lands exactly on the guide; words with no rendered
+    /// range are skipped.
+    func manualScrollY(at position: Double, in scroll: NSScrollView) -> CGFloat? {
+      guard !mappings.isEmpty, let (manager, container, guideY) = prepareGuide(scroll, fraction: guideFraction),
+        let inset = textView?.textContainerInset.height
+      else { return nil }
+      // Unclamped, so the lines above the first scrollable one still count as different lines.
+      func y(_ index: Int) -> CGFloat {
+        let glyph = manager.glyphRange(forCharacterRange: mappings[index].0, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyph, in: container).midY + inset - guideY
+      }
+      // ponytail: linear scan per frame; binary-search `mappings` if very long scripts show it in a profile.
+      let current = max(0, (mappings.firstIndex { Double($0.1) > position } ?? mappings.count) - 1)
+      let here = y(current)
+      var first = current
+      while first > 0, abs(y(first - 1) - here) < 2 { first -= 1 }
+      var next = current + 1
+      while next < mappings.count, abs(y(next) - here) < 2 { next += 1 }
+      guard next < mappings.count else { return max(0, here) }
+      let from = Double(mappings[first].1), to = Double(mappings[next].1)
+      let fraction = min(max((position - from) / (to - from), 0), 1)
+      return max(0, here + (y(next) - here) * CGFloat(fraction))
+    }
+    /// Puts the session's Manual position on the guide. Used for every Manual alignment, running or
+    /// not, so a pause holds the exact fraction; no easing, so Reduce Motion has nothing to remove.
+    func alignManual(in scroll: NSScrollView) {
+      guard let position = manualPosition?() else { return }
+      applyManualPosition(position, in: scroll)
+    }
+    func applyManualPosition(_ position: Double, in scroll: NSScrollView) {
+      guard let target = manualScrollY(at: position, in: scroll) else { return }
+      if endsVoiceAnimation {
+        // Voice's easing may still be in flight from before the mode changed.
+        scroll.contentView.layer?.removeAllAnimations()
+        endsVoiceAnimation = false
+      }
+      let origin = scroll.contentView.bounds.origin
+      guard abs(origin.y - target) > 0.01 else { return }
+      scroll.contentView.setBoundsOrigin(NSPoint(x: origin.x, y: target))
+      scroll.reflectScrolledClipView(scroll.contentView)
+    }
+    /// The layout changed under the current word: Voice re-aligns on it, Manual on its position.
+    func alignToCurrent(in scroll: NSScrollView) {
+      if manualPosition != nil { alignManual(in: scroll) } else { align(scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction) }
+    }
+    func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double) {
+      guard (lastAligned != tokenIndex || lastGuideFraction != guideFraction),
+        let mapping = mappings.first(where: { $0.1 == tokenIndex }),
+        let (manager, container, guideY) = prepareGuide(scroll, fraction: guideFraction)
+      else { return }
+      let target = scrollY(of: mapping.0, manager: manager, container: container, guideY: guideY)
       let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment && !Self.reducesMotion()
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       let isSameDestination = lastAlignmentDestination.map {
