@@ -597,6 +597,47 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertTrue(surface.activeWordIsOnGuide(session), "the next word to read sits on the guide")
   }
 
+  /// A reader who skips unsaid script words and lands on a distinctive later phrase: the session
+  /// takes the landing word as the frontier, the presenter dims everything through it (the
+  /// skipped words included, the later words not), and a deliberate re-read still moves back.
+  func testForwardSkipDimsSkippedWordsAndBackwardRereadStillWorks() async throws {
+    let (store, _) = try await presenting("""
+      Welcome everyone tonight. First we cover the quiet opening chapter and some dull background material. \
+      Then remarkable Barcelona defensive collapse happened suddenly. Finally thanks for watching today.
+      """)
+    let session = store.session
+    XCTAssertTrue(store.settings.allowsBackwardVoiceTracking)
+    let surface = Surface(store: store)
+    defer { surface.close() }
+    await surface.settle()
+    session.play(captureAudio: false)
+    let reader = Dictation(session, generation: 1)
+
+    await reader.say("Welcome everyone tonight")
+    XCTAssertEqual(session.lastConfirmedTokenIndex, try index(of: "tonight", in: session))
+
+    // Skip "First we cover ... material Then" and land on the distinctive phrase.
+    reader.breath()
+    let landing = try index(of: "suddenly", in: session)
+    let skippedWord = try index(of: "chapter", in: session)
+    await reader.say("remarkable Barcelona defensive collapse happened suddenly")
+    XCTAssertEqual(session.lastConfirmedTokenIndex, landing, "the valid later phrase is the frontier")
+    await surface.settle()
+    XCTAssertEqual(surface.wronglyDimmed(session), [], "every word through the landing is dimmed, none after")
+    let ranges = wordRanges(session.document.spokenTokens, in: surface.text.string)
+    XCTAssertLessThan(surface.alpha(at: try XCTUnwrap(ranges[skippedWord]).location), 0.6, "a skipped word is dimmed")
+    XCTAssertGreaterThan(
+      surface.alpha(at: try XCTUnwrap(ranges[try index(of: "Finally", in: session)]).location), 0.9,
+      "words after the landing stay unread")
+
+    // Deliberately reading back: tracking follows and the presenter un-dims what is unread again.
+    reader.breath()
+    await reader.say("First we cover the quiet opening chapter")
+    XCTAssertEqual(session.lastConfirmedTokenIndex, skippedWord, "the re-read moved the frontier back")
+    await surface.settle()
+    XCTAssertEqual(surface.wronglyDimmed(session), [], "words after the re-read are unread again")
+  }
+
   // MARK: Punctuation and cues
 
   func testPunctuationAndBracketCuesNeverBlockProgress() async throws {
