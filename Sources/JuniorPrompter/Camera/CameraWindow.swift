@@ -10,6 +10,19 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
   var id: String { uid }
 }
 
+/// What the presenter shows. Older versions stored only whether video was on, as a Bool.
+enum PresenterDisplayMode: String, CaseIterable, Identifiable {
+  case prompterOnly, prompterWithVideo, videoOnly
+  var id: String { rawValue }
+  var label: String {
+    switch self {
+    case .prompterOnly: "Prompter only"
+    case .prompterWithVideo: "Prompter + video"
+    case .videoOnly: "Video only"
+    }
+  }
+}
+
 @MainActor final class CameraModel: ObservableObject {
   /// One model for the Camera window, the Camera menu and the presenter's video background:
   /// they show the same camera with the same rotation and the same guides.
@@ -30,10 +43,18 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
   }
   @Published var mirrored: Bool { didSet { defaults.set(mirrored, forKey: "cameraMirrored") } }
   @Published var alwaysOnTop: Bool { didSet { defaults.set(alwaysOnTop, forKey: "cameraAlwaysOnTop") } }
-  /// Whether the presenter shows the script over the live picture rather than over its own
-  /// background. The presenter's own controls are unaffected either way.
-  @Published var presentsWithVideo: Bool {
-    didSet { defaults.set(presentsWithVideo, forKey: "presenterWithVideo") }
+  /// Script only, script over the live picture, or the live picture alone. The presenter's own
+  /// controls are unaffected. The old Bool key is still written, so an older build reads it too.
+  @Published var displayMode: PresenterDisplayMode {
+    didSet {
+      defaults.set(displayMode.rawValue, forKey: "presenterDisplayMode")
+      defaults.set(displayMode != .prompterOnly, forKey: "presenterWithVideo")
+    }
+  }
+  /// Whether the picture is shown at all: the capsule button, the menu and the camera ask this.
+  var presentsWithVideo: Bool {
+    get { displayMode != .prompterOnly }
+    set { if newValue != presentsWithVideo { displayMode = newValue ? .prompterWithVideo : .prompterOnly } }
   }
   @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
   private let defaults: UserDefaults
@@ -50,7 +71,8 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
     guides = guideStore.guides(for: uid)
     mirrored = defaults.bool(forKey: "cameraMirrored")
     alwaysOnTop = defaults.bool(forKey: "cameraAlwaysOnTop")
-    presentsWithVideo = defaults.bool(forKey: "presenterWithVideo")
+    displayMode = defaults.string(forKey: "presenterDisplayMode").flatMap(PresenterDisplayMode.init)
+      ?? (defaults.bool(forKey: "presenterWithVideo") ? .prompterWithVideo : .prompterOnly)
   }
 
   deinit { observers.forEach(NotificationCenter.default.removeObserver) }

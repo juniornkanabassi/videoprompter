@@ -915,6 +915,28 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertTrue(CameraModel(defaults: store).presentsWithVideo)
   }
 
+  /// The stored Bool of 0.10 and earlier becomes a display mode without loss, Video only survives a
+  /// relaunch, and the old key still says whether video is on for an older build.
+  func testDisplayModeMigratesTheStoredBoolAndKeepsItWritten() {
+    for (legacy, expected) in [(false, PresenterDisplayMode.prompterOnly), (true, .prompterWithVideo)] {
+      let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+      addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+      let store = UserDefaults(suiteName: suite)!
+      store.set(legacy, forKey: "presenterWithVideo")
+      let model = CameraModel(defaults: store)
+      XCTAssertEqual(model.displayMode, expected, "stored \(legacy)")
+      XCTAssertEqual(store.bool(forKey: "presenterWithVideo"), legacy, "opening rewrites nothing")
+      model.displayMode = .videoOnly
+      XCTAssertEqual(CameraModel(defaults: store).displayMode, .videoOnly)
+      XCTAssertTrue(store.bool(forKey: "presenterWithVideo"), "an older build still shows video")
+      XCTAssertTrue(model.presentsWithVideo, "the camera is shown in Video only")
+      model.presentsWithVideo = true
+      XCTAssertEqual(model.displayMode, .videoOnly, "already showing video: nothing to change")
+      model.presentsWithVideo = false
+      XCTAssertEqual(CameraModel(defaults: store).displayMode, .prompterOnly)
+    }
+  }
+
   /// The toggle lives on `CameraModel`, nowhere near the reading state, so turning the video
   /// background on and off cannot move the anchor or restart the speech session.
   func testTogglingTheVideoBackgroundLeavesTheAnchorAndTheSessionAlone() {
@@ -1053,6 +1075,7 @@ final class PresenterControllerTests: XCTestCase {
     // View > Enter Full Screen (Ctrl-Cmd-F) stays available at rest and lands in the same place.
     let viewItem = NSMenuItem(title: "", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
     XCTAssertTrue(panel.validateMenuItem(viewItem))
+    XCTAssertTrue(panel.validateUserInterfaceItem(viewItem), "and on the validation path the menu may use instead")
     XCTAssertEqual(viewItem.title, "Enter Full Screen")
     XCTAssertTrue(NSApplication.shared.sendAction(#selector(NSWindow.toggleFullScreen(_:)), to: panel, from: viewItem))
     XCTAssertEqual(panel.transitions, 4)
@@ -1122,25 +1145,25 @@ final class PresenterControllerTests: XCTestCase {
     let (panel, start, fitted) = try windowedPanel(controller)
     let menu = PresenterVideoItems(camera: model)
     let inspectorMode = ObservedObject(wrappedValue: model).projectedValue.presentsWithVideo
-    XCTAssertFalse(menu.presentsWithVideo.wrappedValue)
+    XCTAssertFalse(menu.choice(.prompterWithVideo).wrappedValue)
 
     controller.toggleVideo()  // the capsule button's action
-    XCTAssertTrue(menu.presentsWithVideo.wrappedValue, "the menu shows a tick")
+    XCTAssertTrue(menu.choice(.prompterWithVideo).wrappedValue, "the menu shows a tick")
     XCTAssertTrue(inspectorMode.wrappedValue, "the inspector shows Prompter + video")
     settle()
     assertFrame(panel.frame, fitted, "the capsule")
 
     panel.setFrame(start, display: false)
-    menu.presentsWithVideo.wrappedValue = false  // Prompter > Present with Video
+    menu.choice(.prompterWithVideo).wrappedValue = false  // Prompter > Present with Video
     XCTAssertFalse(model.presentsWithVideo, "the capsule shows video off")
     XCTAssertFalse(inspectorMode.wrappedValue)
-    menu.presentsWithVideo.wrappedValue = true
+    menu.choice(.prompterWithVideo).wrappedValue = true
     settle()
     assertFrame(panel.frame, fitted, "the menu")
 
     panel.setFrame(start, display: false)
     inspectorMode.wrappedValue = false
-    XCTAssertFalse(menu.presentsWithVideo.wrappedValue)
+    XCTAssertFalse(menu.choice(.prompterWithVideo).wrappedValue)
     inspectorMode.wrappedValue = true
     settle()
     assertFrame(panel.frame, fitted, "the inspector")

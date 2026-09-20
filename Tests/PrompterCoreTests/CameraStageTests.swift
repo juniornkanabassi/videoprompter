@@ -190,6 +190,29 @@ final class CameraStageTests: XCTestCase {
     }
   }
 
+  /// The S1II's 6K open gate is 3:2, but a DeckLink may hand over UHD instead, and a signal change
+  /// moves it again. The guides follow whichever whole frame is delivered, in both rotations,
+  /// without waiting for a resize.
+  func testGuidesFollowTheDeliveredFrameWhenItsShapeChanges() throws {
+    let original = session.pictureSize
+    defer { session.pictureSize = original }
+    for rotation in [CameraRotation.none, .quarter] {
+      var guides = CameraGuides()
+      guides.rotation = rotation
+      guides.thirds = true
+      let host = window()
+      let view = stage(guides)
+      host.contentView?.addSubview(view)
+      for frame in [CGSize(width: 5952, height: 3968), CGSize(width: 3840, height: 2160)] {
+        session.pictureSize = frame
+        view.layoutSubtreeIfNeeded()
+        let drawn = try XCTUnwrap(view.guideLayer.path).boundingBoxOfPath
+        assertEqual(drawn, rotation.fittedRect(aspect: frame, in: view.bounds), "\(rotation.label) \(frame)")
+      }
+      dismantle(view)
+    }
+  }
+
   private func assertEqual(
     _ a: CGRect, _ b: CGRect, _ message: String, file: StaticString = #filePath, line: UInt = #line
   ) {

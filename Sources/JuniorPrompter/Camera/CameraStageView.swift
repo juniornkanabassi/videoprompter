@@ -35,8 +35,12 @@ final class CameraStageView: NSView {
     layer?.addSublayer(preview)
     layer?.addSublayer(shade)
     layer?.addSublayer(guideLayer)
+    // Removed by AppKit when the view goes; the picture's shape follows the delivered frame.
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(pictureSizeChanged), name: .cameraPictureSizeDidChange, object: nil)
   }
   required init?(coder: NSCoder) { nil }
+  @objc private func pictureSizeChanged() { needsLayout = true }
 
   func apply(uid: String?, guides: CameraGuides, mirrored: Bool) {
     // Before the guard: `select` ignores a camera it already has, and retries one it could not

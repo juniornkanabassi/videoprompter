@@ -357,7 +357,7 @@ final class SessionStore: ObservableObject {
   }
 
   func setMicrophoneTestGain(_ gain: Double) {
-    guard isTestingMicrophone else { return }
+    // The test's capture or the reading session's: whichever is listening hears the drag at once.
     audioCapture?.setGain(Float(gain))
   }
 

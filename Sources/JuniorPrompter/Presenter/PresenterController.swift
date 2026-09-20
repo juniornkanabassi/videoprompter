@@ -25,7 +25,7 @@ import SwiftUI
     super.init()
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
     // property. `dropFirst` skips the value the presenter opens with.
-    videoObserver = camera.$presentsWithVideo.dropFirst().removeDuplicates().sink { [weak self] on in
+    videoObserver = camera.$displayMode.dropFirst().map { $0 != .prompterOnly }.removeDuplicates().sink { [weak self] on in
       MainActor.assumeIsolated { self?.videoDidChange(on) }
     }
   }
@@ -243,6 +243,10 @@ class PresenterPanel: NSPanel {
     item.title = isInFullScreen ? "Exit Full Screen" : "Enter Full Screen"
     return true
   }
+  /// The same answer on AppKit's other validation path, which the menu may take instead.
+  override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
+    item.action == #selector(toggleFullScreen(_:)) || super.validateUserInterfaceItem(item)
+  }
 }
 
 @MainActor final class PresenterDraft: ObservableObject {
@@ -351,6 +355,8 @@ private struct PresenterView: View {
   @ObservedObject var draft: PresenterDraft
   @ObservedObject private var camera = CameraModel.shared
   @State private var editorNotice: String?
+  /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
+  private var showsScript: Bool { camera.displayMode != .videoOnly || draft.isEditing }
   var body: some View {
     GeometryReader { geometry in
       let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
@@ -364,6 +370,8 @@ private struct PresenterView: View {
             .ignoresSafeArea()
             .task { camera.start() }
         }
+        // Video only: the camera stage and its own guides, with no backdrop, script or reading guide.
+        if showsScript {
         Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
           .opacity(store.settings.backdropOpacity(withVideo: camera.presentsWithVideo))
           .ignoresSafeArea()
@@ -402,6 +410,7 @@ private struct PresenterView: View {
         ).rotationEffect(.degrees(Double(store.settings.rotation)))
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
+        }
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
@@ -436,7 +445,7 @@ private struct PresenterView: View {
             .buttonStyle(.borderedProminent)
           CapsuleButton("Next passage", systemImage: "forward.end.fill", action: session.nextPassage)
           CapsuleButton("Back to the start", systemImage: "arrow.counterclockwise", action: session.restart)
-        }.disabled(draft.isEditing)
+        }.disabled(!showsScript || draft.isEditing)
         CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
                       systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash") {
           PresenterController.shared.toggleVideo()
@@ -445,7 +454,7 @@ private struct PresenterView: View {
                       systemImage: draft.isEditing ? "checkmark" : "pencil",
                       shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil) {
           if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
-        }.disabled(draft.isSaving)
+        }.disabled(draft.isSaving || !showsScript)
         if draft.isEditing {
           CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction) { draft.requestCancel() }
             .disabled(draft.isSaving)

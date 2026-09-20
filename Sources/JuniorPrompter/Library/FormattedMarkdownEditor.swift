@@ -172,12 +172,59 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       // A binding echo after a native edit has the same source model. Re-rendering it
       // would reset AppKit's selection and undo grouping.
       guard model.markdown != markdown || changedFont else { return }
-      if model.markdown != markdown {
+      // A different source that did not come from typing here (Obsidian saved the linked file):
+      // what is on screen stays where it is, however much text arrived before it.
+      let old = model
+      let top = old.markdown != markdown ? viewportTop(of: view, in: old) : nil
+      if old.markdown != markdown {
         editorUndoManager.removeAllActions()
         model = FormattedMarkdownEditModel(markdown: markdown)
       }
       render(view, keeping: view.selectedRange())
       applyEmptyTypingAttributes(to: view)
+      if let top { restoreViewport(view, top, from: old.markdown) }
+    }
+
+    /// The source offset of the first line showing, and how far below the top edge that line sits.
+    /// Nil at the very top, where there is nothing to keep.
+    private func viewportTop(of view: NSTextView, in model: FormattedMarkdownEditModel) -> (offset: Int, inset: CGFloat)? {
+      guard let scroll = view.enclosingScrollView, let manager = view.layoutManager,
+        let container = view.textContainer, view.string.utf16.count > 0
+      else { return nil }
+      let clip = scroll.contentView.bounds
+      guard clip.minY > 0 else { return nil }
+      let glyph = manager.glyphIndex(
+        for: NSPoint(x: view.textContainerInset.width, y: clip.minY - view.textContainerInset.height), in: container)
+      guard let offset = model.sourceOffset(forVisibleIndex: manager.characterIndexForGlyph(at: glyph)) else { return nil }
+      let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+      return (offset, line.minY + view.textContainerInset.height - clip.minY)
+    }
+
+    private func restoreViewport(_ view: NSTextView, _ top: (offset: Int, inset: CGFloat), from old: String) {
+      guard let scroll = view.enclosingScrollView, let manager = view.layoutManager,
+        let container = view.textContainer,
+        let index = model.visibleIndex(forSourceOffset: Self.mappedOffset(top.offset, from: old, to: model.markdown)),
+        index < view.string.utf16.count
+      else { return }
+      manager.ensureLayout(for: container)
+      let line = manager.lineFragmentRect(forGlyphAt: manager.glyphIndexForCharacter(at: index), effectiveRange: nil)
+      let clip = scroll.contentView
+      clip.setBoundsOrigin(NSPoint(x: clip.bounds.origin.x,
+        y: max(0, line.minY + view.textContainerInset.height - top.inset)))
+      scroll.reflectScrolledClipView(clip)
+    }
+
+    /// Where a source offset of `old` lands in `new`: unchanged before the edit, shifted by the
+    /// change in length after it, and at the start of the replaced span inside it.
+    static func mappedOffset(_ offset: Int, from old: String, to new: String) -> Int {
+      let a = Array(old.utf16), b = Array(new.utf16)
+      var prefix = 0
+      while prefix < min(a.count, b.count), a[prefix] == b[prefix] { prefix += 1 }
+      var suffix = 0
+      while suffix < min(a.count, b.count) - prefix, a[a.count - 1 - suffix] == b[b.count - 1 - suffix] { suffix += 1 }
+      if offset <= prefix { return offset }
+      if offset >= a.count - suffix { return offset + b.count - a.count }
+      return prefix
     }
 
     func undoManager(for view: NSTextView) -> UndoManager? { editorUndoManager }
@@ -583,6 +630,12 @@ struct FormattedMarkdownEditModel {
   /// First visible character at or after a markdown offset, for placing a guide.
   func visibleIndex(forSourceOffset offset: Int) -> Int? {
     sourceOffsets.firstIndex { $0.map { $0 >= offset } ?? false }
+  }
+
+  /// The Markdown offset of the rendered character at `index`, or of the next one that has one.
+  func sourceOffset(forVisibleIndex index: Int) -> Int? {
+    guard index >= 0, index < sourceOffsets.count else { return nil }
+    return sourceOffsets[index...].lazy.compactMap { $0 }.first
   }
 
   /// Markdown offset to rendered index, for the presenter to place spoken tokens and cues in

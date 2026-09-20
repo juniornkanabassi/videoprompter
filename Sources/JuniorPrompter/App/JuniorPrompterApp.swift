@@ -683,6 +683,7 @@ private enum PresenterSaveError: LocalizedError {
           Divider()
           PresenterVideoItems()
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
+            .keyboardShortcut("f", modifiers: [.command, .control])
         }
         CameraCommands()
       }
@@ -696,11 +697,18 @@ private enum PresenterSaveError: LocalizedError {
 struct PresenterVideoItems: View {
   @ObservedObject private var camera: CameraModel
   init(camera: CameraModel = .shared) { _camera = ObservedObject(wrappedValue: camera) }
-  /// Prompter > Present with Video. Internal so the test flips the menu's own switch.
-  var presentsWithVideo: Binding<Bool> { $camera.presentsWithVideo }
+  /// Prompter > Prompter Only / Present with Video / Video Only. Internal so the test flips the
+  /// menu's own switches. Ticking the chosen one again goes back to Prompter only.
+  func choice(_ mode: PresenterDisplayMode) -> Binding<Bool> {
+    Binding(
+      get: { camera.displayMode == mode },
+      set: { camera.displayMode = $0 ? mode : .prompterOnly })
+  }
   var body: some View {
-    Toggle("Present with Video", isOn: presentsWithVideo)
+    Toggle("Prompter Only", isOn: choice(.prompterOnly))
+    Toggle("Present with Video", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
+    Toggle("Video Only", isOn: choice(.videoOnly))
     Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
       .disabled(!camera.presentsWithVideo)
   }

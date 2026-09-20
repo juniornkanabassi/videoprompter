@@ -387,6 +387,46 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(value, "salut 😁 bonjour")
   }
 
+  /// Obsidian saves the linked file while the editor is scrolled down: text inserted or deleted
+  /// before the visible passage must not move it, and nothing changes at the very top.
+  @MainActor func testExternalUpdateKeepsTheVisiblePassageWhereItIs() throws {
+    let original = (1...40).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n")
+    var value = original
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "Helvetica", fontSize: 24)
+    let coordinator = editor.makeCoordinator()
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 400))
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 4_000))
+    view.isVerticallyResizable = true
+    view.textContainer?.containerSize = NSSize(width: 760, height: CGFloat.greatestFiniteMagnitude)
+    view.textContainer?.widthTracksTextView = true
+    scroll.documentView = view
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24)
+    let manager = try XCTUnwrap(view.layoutManager)
+    let container = try XCTUnwrap(view.textContainer)
+    func lineTop(_ word: String) -> CGFloat {
+      manager.ensureLayout(for: container)
+      let range = (view.string as NSString).range(of: word)
+      return manager.lineFragmentRect(forGlyphAt: manager.glyphIndexForCharacter(at: range.location), effectiveRange: nil).minY
+    }
+    func shown(_ word: String) -> CGFloat { lineTop(word) - scroll.contentView.bounds.minY }
+    scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: lineTop("Passage 25 ") - 120))
+    scroll.reflectScrolledClipView(scroll.contentView)
+    let before = shown("Passage 25 ")
+
+    value = "Inserted one.\n\nInserted two.\n\nInserted three.\n\n" + original
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24)
+    XCTAssertEqual(shown("Passage 25 "), before, accuracy: 1, "an insertion before it")
+
+    value = original.replacingOccurrences(of: "Passage 1 with several readable words.\n\n", with: "")
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24)
+    XCTAssertEqual(shown("Passage 25 "), before, accuracy: 1, "a deletion before it")
+
+    XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(50, from: "abc", to: "abc"), 50)
+    XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(9, from: "abc def ghi", to: "abc XY def ghi"), 12)
+    XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(9, from: "abc def ghi", to: "abc ghi"), 5)
+  }
+
   @MainActor func testExternalSourceReplacementClearsEditorUndoHistory() {
     var value = "one"
     let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),

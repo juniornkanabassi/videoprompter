@@ -11,6 +11,8 @@ struct InspectorView: View {
   @State private var presetName = ""
   @State private var devices: [AudioInputDevice] = []
   @State private var deviceObserver: AudioInputDeviceObserver?
+  /// Input gain while it is being dragged; nil once it has been written to the settings.
+  @State private var gainDraft: Double?
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
   @State private var supportedSpeechLocales: [Locale] = []
@@ -18,9 +20,8 @@ struct InspectorView: View {
   var body: some View {
     Form {
       Section("Mode") {
-        Picker("Mode", selection: $camera.presentsWithVideo) {
-          Text("Prompter only").tag(false)
-          Text("Prompter + video").tag(true)
+        Picker("Mode", selection: $camera.displayMode) {
+          ForEach(PresenterDisplayMode.allCases) { Text($0.label).tag($0) }
         }.pickerStyle(.segmented).labelsHidden()
       }
       if camera.presentsWithVideo {
@@ -112,10 +113,19 @@ struct InspectorView: View {
             .buttonStyle(.borderless)
             .help("Refresh microphones")
         }
+        // The capture hears each tick at once; the settings, and with them the whole inspector, the
+        // presenter and the saved copy, only follow once the drag pauses. A fixed-size slider with
+        // no readout, so nothing here changes the layout while it moves.
         LabeledContent("Input gain") {
           Slider(value: Binding(
-            get: { store.settings.inputGain },
-            set: { store.settings.inputGain = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4)
+            get: { gainDraft ?? store.settings.inputGain },
+            set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
+          ) { editing in if !editing { commitGain() } }
+            .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
+        }
+        .task(id: gainDraft) {
+          guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
+          commitGain()
         }
         HStack {
           Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
@@ -182,6 +192,7 @@ struct InspectorView: View {
         session.microphoneDevicesDidChange(available)
       }
     }.onDisappear {
+      commitGain()
       deviceObserver = nil
       session.stopMicrophoneTest()
     }.alert("Tracking modes changed", isPresented: Binding(
@@ -195,6 +206,12 @@ struct InspectorView: View {
       Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
       Button("Cancel", role: .cancel) { renamePreset = nil }
     }
+  }
+
+  private func commitGain() {
+    guard let gain = gainDraft else { return }
+    gainDraft = nil
+    store.settings.inputGain = gain
   }
 
   private var backdropOpacity: Binding<Double> {

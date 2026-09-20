@@ -3,6 +3,10 @@ import CoreGraphics
 import QuartzCore
 import Synchronization
 
+extension Notification.Name {
+  static let cameraPictureSizeDidChange = Notification.Name("JuniorPrompter.cameraPictureSizeDidChange")
+}
+
 /// Start when the first holder arrives, stop when the last one leaves.
 struct CameraHolders {
   private(set) var count = 0
@@ -94,8 +98,38 @@ struct CameraHolders {
   var holderCount: Int { holders.count }
   /// The camera actually attached.
   private(set) var attachedUID: String?
-  /// The picture's own size, before rotation, for the aspect-fit of a turned feed.
-  private(set) var pictureSize: CGSize?
+  /// The picture's own size, before rotation, for the aspect-fit of a turned feed. First the
+  /// device's active format, then the frame the input port really delivers: a DeckLink hands over
+  /// whatever the signal is (UHD, not the camera's 3:2 open gate), and a signal change moves it.
+  /// Stage views relayout on `.cameraPictureSizeDidChange`.
+  /// Internal so the geometry test can stand in for a delivered frame.
+  var pictureSize: CGSize? {
+    didSet { if pictureSize != oldValue { NotificationCenter.default.post(name: .cameraPictureSizeDidChange, object: self) } }
+  }
+
+  init() {
+    NotificationCenter.default.addObserver(
+      forName: AVCaptureInput.Port.formatDescriptionDidChangeNotification, object: nil, queue: .main
+    ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshDeliveredSize() } }
+  }
+
+  /// The delivered frame's presentation size (pixel aspect applied, nothing cropped), read on the
+  /// session queue and applied only if the camera is still the one asked about.
+  private func refreshDeliveredSize() {
+    let session = self.session
+    let uid = attachedUID
+    queue.async {
+      let port = session.inputs.compactMap { $0 as? AVCaptureDeviceInput }
+        .flatMap(\.ports).first { $0.mediaType == .video }
+      guard let description = port?.formatDescription else { return }
+      let size = CMVideoFormatDescriptionGetPresentationDimensions(
+        description, usePixelAspectRatio: true, useCleanAperture: false)
+      Task { @MainActor in
+        guard self.attachedUID == uid, size.width > 0, size.height > 0 else { return }
+        self.pictureSize = size
+      }
+    }
+  }
 
   /// A window that shows the camera holds the session while it is on screen and lets go when it
   /// is ordered out, closed or minimised: a 4K capture is not free.
@@ -130,6 +164,8 @@ struct CameraHolders {
       let d = CMVideoFormatDescriptionGetDimensions($0.activeFormat.formatDescription)
       return CGSize(width: CGFloat(d.width), height: CGFloat(d.height))
     }
+    // Queued behind the swap above, so it reads the pinned format's real frame.
+    refreshDeliveredSize()
   }
 
   /// Auto orientation runs only while it is switched on and something is showing the camera.
