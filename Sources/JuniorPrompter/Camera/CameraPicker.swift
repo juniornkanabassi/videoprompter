@@ -30,7 +30,7 @@ struct CameraPicker: View {
         Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(.secondary)
       }
     }
-    .help("Choose a camera")
+    .help(label)
     .accessibilityLabel("Camera")
     .accessibilityValue(label)
     .accessibilityHint("Lists the cameras with a live preview of each")

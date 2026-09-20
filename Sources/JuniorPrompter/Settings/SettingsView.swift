@@ -20,22 +20,22 @@ struct InspectorView: View {
   var body: some View {
     Form {
       Section("Mode") {
-        Picker("Mode", selection: $camera.displayMode) {
-          ForEach(PresenterDisplayMode.allCases) { Text($0.label).tag($0) }
-        }.pickerStyle(.segmented).labelsHidden()
+        // Segmented while the three labels fit, a menu when the pane is narrower.
+        ViewThatFits(in: .horizontal) {
+          modePicker.pickerStyle(.segmented)
+          modePicker.pickerStyle(.menu)
+        }
       }
       if camera.presentsWithVideo {
         Section("Video") {
           LabeledContent("Camera") { CameraPicker(model: camera) }
-          HStack {
-            Picker("Rotation", selection: camera.rotationChoice) {
-              ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-            }
-            Button("Guides") { showsGuideSettings.toggle() }
-              .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-                CameraGuideSettings(model: camera).frame(width: 300).padding()
-              }
+          Picker("Rotation", selection: camera.rotationChoice) {
+            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
           }
+          Button("Guides") { showsGuideSettings.toggle() }
+            .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
+              CameraGuideSettings(model: camera).frame(width: 300).padding()
+            }
           Toggle("Mirror camera", isOn: $camera.mirrored)
         }.task { camera.start() }
       }
@@ -98,6 +98,7 @@ struct InspectorView: View {
       }
       Section("Microphone") {
         HStack {
+          // The menu sizes to its longest name; let it give way and show the choice as a tooltip.
           Picker("Input device", selection: Binding(
             get: { store.settings.audioDeviceUID ?? "" },
             set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
@@ -108,6 +109,10 @@ struct InspectorView: View {
             }
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
+          .frame(maxWidth: .infinity)
+          .help(store.settings.audioDeviceUID.map { uid in
+            devices.first { $0.uid == uid }?.name ?? "Selected microphone unavailable"
+          } ?? "Choose a microphone")
           Button("Refresh microphones", systemImage: "arrow.clockwise") { devices = AudioCapture.inputDevices() }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
@@ -147,10 +152,11 @@ struct InspectorView: View {
         LabeledContent("Peak level") {
           HStack {
             if session.isClipping {
-              Label("Clipping", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+              Label("Clipping", systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.iconOnly).foregroundStyle(.red).help("Clipping")
             }
             Text(session.audioPeakDBFS.isFinite ? String(format: "%.1f dBFS", session.audioPeakDBFS) : "−∞ dBFS")
-              .monospacedDigit()
+              .monospacedDigit().lineLimit(1).fixedSize()
           }
         }
         Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
@@ -169,7 +175,8 @@ struct InspectorView: View {
         ForEach(store.presets) { preset in
           HStack {
             Button(preset.name) { store.applyPreset(preset) }.buttonStyle(.plain)
-              .help("Apply this preset")
+              .lineLimit(1).truncationMode(.tail)
+              .help("Apply \(preset.name)")
             Spacer()
             Button("Delete \(preset.name)", systemImage: "trash") { store.deletePreset(preset.id) }
               .labelStyle(.iconOnly).buttonStyle(.plain)
@@ -182,7 +189,7 @@ struct InspectorView: View {
           }
         }
       }
-    }.formStyle(.grouped).padding(12).frame(minWidth: 255).task {
+    }.formStyle(.grouped).task {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
     }.onAppear {
       devices = AudioCapture.inputDevices()
@@ -206,6 +213,12 @@ struct InspectorView: View {
       Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
       Button("Cancel", role: .cancel) { renamePreset = nil }
     }
+  }
+
+  private var modePicker: some View {
+    Picker("Mode", selection: $camera.displayMode) {
+      ForEach(PresenterDisplayMode.allCases) { Text($0.label).tag($0) }
+    }.labelsHidden()
   }
 
   private func commitGain() {

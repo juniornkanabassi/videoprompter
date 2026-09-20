@@ -84,7 +84,9 @@ struct LibraryView: View {
     }
     .navigationSplitViewStyle(.balanced)
     .inspector(isPresented: $store.inspector) {
-      InspectorView(store: store).frame(minWidth: 300, idealWidth: 320)
+      // The column width is what the split view honours; a `frame` inside it let the form
+      // out-size the pane and slide under the editor.
+      InspectorView(store: store).inspectorColumnWidth(min: 280, ideal: 320, max: 480)
     }
     .navigationTitle("JuniorPrompter")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
@@ -242,7 +244,7 @@ private struct EditorView: View {
         TextField("Title", text: $title).textFieldStyle(.plain).font(.title2.weight(.semibold))
           .onSubmit { store.rename(title, for: script.metadata.id) }
         Spacer()
-        TextField("Tags", text: $tags).textFieldStyle(.roundedBorder).frame(maxWidth: 190).onSubmit
+        TextField("Tags", text: $tags).textFieldStyle(.roundedBorder).frame(minWidth: 80, maxWidth: 190).onSubmit
         { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
       }.padding(24)
       Divider()
