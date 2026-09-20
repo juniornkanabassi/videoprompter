@@ -413,18 +413,24 @@ struct FormattedMarkdownEditModel {
           }
           continue
         }
-        let rich = (try? AttributedString(markdown: raw,
-          options: .init(interpretedSyntax: .full, appliesSourcePositionAttributes: true)))
-          ?? AttributedString(raw)
+        // A list line keeps its first marker as written and only the rest is Markdown, so a
+        // second number ("3. 2020. A year") stays text instead of becoming a nested list.
+        let marker = block.kind == .listItem ? Self.listMarker(in: raw) : nil
+        let text = marker.map { (raw as NSString).substring(from: NSMaxRange($0.sourceRange)) } ?? raw
+        let base = lineOffset + (marker.map { NSMaxRange($0.sourceRange) } ?? 0)
+        let rich = (try? AttributedString(markdown: text,
+          options: .init(interpretedSyntax: marker == nil ? .full : .inlineOnlyPreservingWhitespace,
+            appliesSourcePositionAttributes: true)))
+          ?? AttributedString(text)
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rich))
         // Foundation Markdown omits trailing spaces from a paragraph's rendered text.
         // Keep any omitted literal spaces visible and source-mapped while the user is typing.
-        let rawTrailingSpaces = raw.reversed().prefix { $0 == " " || $0 == "\t" }.count
+        let rawTrailingSpaces = text.reversed().prefix { $0 == " " || $0 == "\t" }.count
         let renderedTrailingSpaces = part.string.reversed().prefix { $0 == " " || $0 == "\t" }.count
         if rawTrailingSpaces > renderedTrailingSpaces {
-          part.append(NSAttributedString(string: String(raw.suffix(rawTrailingSpaces - renderedTrailingSpaces))))
+          part.append(NSAttributedString(string: String(text.suffix(rawTrailingSpaces - renderedTrailingSpaces))))
         }
-        if block.kind == .listItem, let marker = Self.listMarker(in: raw) {
+        if let marker {
           output.append(NSAttributedString(string: marker.text))
           offsets += (marker.sourceRange.location..<NSMaxRange(marker.sourceRange)).map { lineOffset + $0 }
         }
@@ -444,7 +450,7 @@ struct FormattedMarkdownEditModel {
           headings.append(NSRange(location: output.length, length: part.length))
         }
         output.append(part)
-        offsets += Self.sourceOffsets(for: part, source: raw, base: lineOffset)
+        offsets += Self.sourceOffsets(for: part, source: text, base: base)
         lineOffset += (raw as NSString).length
         if index < lines.count - 1 {
           output.append(NSAttributedString(string: "\n"))
@@ -577,6 +583,14 @@ struct FormattedMarkdownEditModel {
   /// First visible character at or after a markdown offset, for placing a guide.
   func visibleIndex(forSourceOffset offset: Int) -> Int? {
     sourceOffsets.firstIndex { $0.map { $0 >= offset } ?? false }
+  }
+
+  /// Markdown offset to rendered index, for the presenter to place spoken tokens and cues in
+  /// the same string the editor shows.
+  func visibleIndices() -> [Int: Int] {
+    var result: [Int: Int] = [:]
+    for (index, offset) in sourceOffsets.enumerated() { if let offset { result[offset] = index } }
+    return result
   }
 
   func rendered(fontName: String = "System Serif", fontSize: Double = 14,

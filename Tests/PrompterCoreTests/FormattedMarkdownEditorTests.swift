@@ -61,6 +61,17 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(afterSecond.rendered().string, "- Updated point\n2. French point")
   }
 
+  func testASecondNumberAfterAListMarkerStaysTextAndInlineFormattingSurvives() {
+    let model = FormattedMarkdownEditModel(markdown: "3. 2020. A year\n- **bold** and *italic* and `code`")
+    let rendered = model.rendered()
+    XCTAssertEqual(rendered.string, "3. 2020. A year\n- bold and italic and code")
+    let bold = NSRange(rendered.string.range(of: "bold")!, in: rendered.string)
+    XCTAssertTrue((rendered.attribute(.font, at: bold.location, effectiveRange: nil) as? NSFont)?
+      .fontDescriptor.symbolicTraits.contains(.bold) == true)
+    let year = NSRange(rendered.string.range(of: "2020")!, in: rendered.string)
+    XCTAssertEqual(model.replacing(year, with: "2021")?.markdown, "3. 2021. A year\n- **bold** and *italic* and `code`")
+  }
+
   func testCodeDoesNotInterpretMarkdownDelimiters() {
     let inline = FormattedMarkdownEditModel(markdown: "before `**text**` after")
     XCTAssertEqual(inline.rendered().string, "before **text** after")

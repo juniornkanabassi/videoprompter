@@ -454,7 +454,7 @@ final class PresenterControllerTests: XCTestCase {
     let document = PrompterDocument(markdown: "- First point\n- Deuxième point\n\n1. One\n2. Two")
     coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
 
-    XCTAssertEqual(view.string, "First point\nDeuxième point\n\n1. One\n2. Two")
+    XCTAssertEqual(view.string, "- First point\n- Deuxième point\n\n1. One\n2. Two")
     XCTAssertEqual(coordinator.mappings.map { document.spokenTokens[$0.1].text },
       ["First", "point", "Deuxième", "point", "1", "One", "2", "Two"])
     XCTAssertEqual(coordinator.mappings.map { (view.string as NSString).substring(with: $0.0) },
@@ -490,10 +490,6 @@ final class PresenterControllerTests: XCTestCase {
     let dimmed = text.textStorage?.attribute(.foregroundColor, at: marker.location, effectiveRange: nil) as? NSColor
     XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.38, accuracy: 0.02, "a read number dims like a read word")
 
-    XCTAssertEqual(ScriptTextView.Coordinator.orderedListMarker("  12) Twelve"), "12) ")
-    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("- Bullet"))
-    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("2020 was a year"))
-    XCTAssertNil(ScriptTextView.Coordinator.orderedListMarker("1234567890. Not a list"))
   }
 
   /// A spoken word the reading view does not show must not be looked for in later passages: a
@@ -510,6 +506,92 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(coordinator.mappings.map(\.1), tokens.indices.filter { !hidden.contains($0) })
     let locations = coordinator.mappings.map(\.0.location)
     XCTAssertEqual(locations, locations.sorted())
+  }
+
+  /// The reading view and the editor lay one Markdown out the same way: same characters, paragraph
+  /// styles, line fragments and height at equal width, font, spacing, alignment and inset.
+  func testPresenterAndEditorShareOneMarkdownLayout() throws {
+    let width: CGFloat = 320
+    func measure(_ view: NSTextView) -> (fragments: [NSRect], height: CGFloat, styles: [[Double]]) {
+      // Spacing is a float product (0.8 × 24 is 19.200000000000003), so styles are compared below with accuracy.
+      let manager = view.layoutManager!
+      manager.ensureLayout(for: view.textContainer!)
+      var fragments: [NSRect] = []
+      manager.enumerateLineFragments(forGlyphRange: NSRange(location: 0, length: manager.numberOfGlyphs)) { rect, _, _, _, _ in
+        fragments.append(rect)
+      }
+      var styles: [[Double]] = []
+      let storage = view.textStorage!
+      storage.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+        let style = value as? NSParagraphStyle
+        let row = [style?.lineSpacing ?? -1, style?.paragraphSpacing ?? -1, Double(style?.alignment.rawValue ?? -1)]
+        styles += Array(repeating: row, count: range.length)
+      }
+      return (fragments, manager.usedRect(for: view.textContainer!).height, styles)
+    }
+    func makeView() -> NSTextView {
+      let view = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 600))
+      view.textContainerInset = NSSize(width: 40, height: 80)
+      view.textContainer?.widthTracksTextView = true
+      return view
+    }
+    let cases: [(String, String)] = [
+      ("single newline", "one two\nthree four"),
+      ("blank line", "one two\n\nthree four"),
+      ("trailing newline", "one two three\n"),
+      ("heading and paragraph", "# A heading here\n\nThe paragraph that follows the heading."),
+      ("ordered list", "1. First item\n2. Second item\n\nAfter the list"),
+      ("unordered list", "- First item\n- Second item\n\nAfter the list"),
+      ("link", "See [the linked words](https://example.com) for more"),
+      ("stage direction", "Hello [pause for effect] world again"),
+      ("mixed", "**bold** and *italic* and `code` in one line of text"),
+    ]
+    for (name, markdown) in cases {
+      let typography = EditorTypography(lineSpacing: 12, paragraphSpacing: 19.2, horizontalInset: 40, alignment: .left)
+      let editor = makeView()
+      editor.textStorage?.setAttributedString(FormattedMarkdownEditModel(markdown: markdown)
+        .rendered(fontName: "Helvetica", fontSize: 24, typography: typography))
+      let expected = measure(editor)
+      for showCues in [true, false] {
+        let presenter = makeView()
+        let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+        coordinator.textView = presenter
+        coordinator.render(document: PrompterDocument(markdown: markdown), fontName: "Helvetica", fontSize: 24,
+          textOpacity: 1, lineSpacing: 0.5, paragraphSpacing: 0.8, showCues: showCues)
+        let actual = measure(presenter)
+        XCTAssertEqual(presenter.string, editor.string, name)
+        XCTAssertEqual(actual.styles.count, expected.styles.count, name)
+        for (left, right) in zip(actual.styles, expected.styles) {
+          XCTAssertEqual(left[0], right[0], accuracy: 0.001, name)  // line spacing
+          XCTAssertEqual(left[1], right[1], accuracy: 0.001, name)  // paragraph spacing
+          XCTAssertEqual(left[2], right[2], name)  // alignment, exactly
+        }
+        // Hidden cues collapse on purpose, so only the shown-cue presenter has the editor's line boxes.
+        guard showCues else { continue }
+        XCTAssertEqual(actual.fragments, expected.fragments, name)
+        XCTAssertEqual(actual.height, expected.height, accuracy: 0.01, name)
+      }
+    }
+  }
+
+  func testTokenMappingsIdentifyEachSpokenTokenInRepeatedTextAndLists() {
+    let markdown = "the cat and the cat\n\n- the cat\n- the dog\n\n1. the cat\n2. the dog\n\nthe cat and the cat"
+    let document = PrompterDocument(markdown: markdown)
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 900))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1)
+    let tokens = document.spokenTokens
+    XCTAssertEqual(coordinator.mappings.map(\.1), Array(tokens.indices))
+    let plain = view.string as NSString
+    XCTAssertEqual(coordinator.mappings.map { plain.substring(with: $0.0).trimmingCharacters(in: .punctuationCharacters) },
+      tokens.map(\.text))
+    // Each token lands in its own block, not at an earlier repeat of the same words.
+    let model = FormattedMarkdownEditModel(markdown: markdown)
+    let visible = model.visibleIndices()
+    for (range, index) in coordinator.mappings {
+      XCTAssertEqual(range.location, visible[tokens[index].sourceRange.location], "token \(index)")
+    }
   }
 
   func testOnlyLiveScrollNotificationsReanchorAtTheGuide() {

@@ -697,69 +697,36 @@ struct ScriptTextView: NSViewRepresentable {
       self.textOpacity = textOpacity
       self.highlightActiveWord = highlightActiveWord
       textColour = NSColor(hex: textColorHex) ?? .white
-      let attributed = NSMutableAttributedString()
-      func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .full))) ?? AttributedString(text)
-      }
-      var headingRanges: [NSRange] = []
-      var blockRanges: [UUID: NSRange] = [:]
-      for (index, block) in document.blocks.enumerated() {
-        let rendered: AttributedString
-        if block.kind == .listItem {
-          var lines = AttributedString()
-          for (lineIndex, line) in block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-            if lineIndex > 0 { lines.append(AttributedString("\n")) }
-            let text = String(line)
-            let shown = markdown(text)
-            // Markdown drops "1." but it is read aloud, so it is shown, mapped and dimmed like any word.
-            if let marker = Self.orderedListMarker(text),
-              !String(shown.characters).drop(while: \.isWhitespace).hasPrefix(marker)
-            {
-              lines.append(AttributedString(marker))
-            }
-            lines.append(shown)
-          }
-          rendered = lines
-        } else {
-          rendered = markdown(block.rawMarkdown)
-        }
-        let part = NSMutableAttributedString(attributedString: NSAttributedString(rendered))
-        part.addAttribute(.foregroundColor, value: textColour.withAlphaComponent(textOpacity), range: NSRange(location: 0, length: part.length))
-        let range = NSRange(location: attributed.length, length: part.length)
-        if block.kind == .heading { headingRanges.append(range) }
-        blockRanges[block.id] = range
-        attributed.append(part)
-        if index < document.blocks.count - 1 { attributed.append(NSAttributedString(string: "\n\n")) }
-      }
+      // The editor's own layout, so the same Markdown has the same characters, paragraph styles and
+      // height in both. Only presenter state (weight, cues, read colours) is applied after it.
+      let model = FormattedMarkdownEditModel(markdown: document.markdown)
+      let attributed = NSMutableAttributedString(attributedString: model.rendered(
+        fontName: fontName, fontSize: fontSize,
+        typography: EditorTypography(
+          textColor: textColour.withAlphaComponent(textOpacity),
+          lineSpacing: max(3, fontSize * lineSpacing), paragraphSpacing: max(10, fontSize * paragraphSpacing),
+          alignment: NSTextAlignment(setting: alignment))))
       let full = NSRange(location: 0, length: attributed.length)
       // Presenter clicks seek within the script, including linked words.
       attributed.removeAttribute(.link, range: full)
-      let base = NSFont(name: fontName, size: fontSize) ?? .systemFont(ofSize: fontSize)
-      attributed.enumerateAttribute(.font, in: full) { value, range, _ in
-        let existing = value as? NSFont
-        let ratio = existing.map { max(0.8, min(1.6, $0.pointSize / 13)) } ?? 1
-        let traits = existing.map { NSFontManager.shared.traits(of: $0) }
-          ?? NSFontTraitMask()
-        let family = existing.flatMap { $0.fontName.lowercased().contains("mono") ? $0.fontName : nil }
-        let styledBase = family.flatMap { NSFont(name: $0, size: fontSize * ratio) } ?? base
-        let requested = fontWeight == "Bold" ? traits.union(.boldFontMask) : traits
-        let styled = NSFontManager.shared.convert(styledBase, toHaveTrait: requested)
-        attributed.addAttribute(.font, value: styled, range: range)
+      if fontWeight == "Bold" {
+        attributed.enumerateAttribute(.font, in: full) { value, range, _ in
+          guard let font = value as? NSFont else { return }
+          attributed.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask), range: range)
+        }
       }
-      for range in headingRanges {
-        guard let font = attributed.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont
-        else { continue }
-        let heading = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
-        attributed.addAttribute(.font, value: NSFontManager.shared.convert(heading, toSize: fontSize * 1.35), range: range)
+      let visible = model.visibleIndices()
+      var blockRanges: [UUID: NSRange] = [:]
+      for block in document.blocks {
+        let source = block.sourceRange
+        let indices = (source.location..<(source.location + source.length)).compactMap { visible[$0] }
+        if let low = indices.min(), let high = indices.max() {
+          blockRanges[block.id] = NSRange(location: low, length: high - low + 1)
+        }
       }
-      let paragraph = NSMutableParagraphStyle()
-      paragraph.lineSpacing = max(3, fontSize * lineSpacing)
-      paragraph.paragraphSpacing = max(10, fontSize * paragraphSpacing)
-      paragraph.alignment = NSTextAlignment(setting: alignment)
-      attributed.addAttribute(.paragraphStyle, value: paragraph, range: full)
       mappings = []
       let plain = attributed.string as NSString
-      let cueRanges = cueRanges(in: plain, document: document)
+      let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
         attributed.addAttribute(.foregroundColor, value: showCues ? textColour.withAlphaComponent(textOpacity * 0.42) : .clear, range: range)
       }
@@ -777,13 +744,15 @@ struct ScriptTextView: NSViewRepresentable {
       }
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
-        // Each word is looked for only inside its own passage. A spoken word the rendering does not
-        // show (a list's "1." before it was shown) otherwise matched the "1" of a "15" paragraphs
-        // later, and every word after it mapped there or nowhere: the presenter jumped ahead.
-        let block = blockRanges[token.blockID] ?? NSRange(location: 0, length: plain.length)
+        // A word maps straight from its source offset. Failing that it is looked for only inside its
+        // own passage: a spoken word the rendering does not show (a code fence's language tag)
+        // otherwise matched the same text paragraphs later, and every word after it mapped there
+        // or nowhere: the presenter jumped ahead.
+        guard let block = blockRanges[token.blockID] else { continue }
+        var found = Self.visibleRange(token.sourceRange, in: visible, matching: token.text, in: plain)
+          ?? NSRange(location: NSNotFound, length: 0)
         cursor = max(cursor, block.location)
-        var found = NSRange(location: NSNotFound, length: 0)
-        while cursor < NSMaxRange(block) {
+        while found.location == NSNotFound, cursor < NSMaxRange(block) {
           let search = NSRange(location: cursor, length: NSMaxRange(block) - cursor)
           let candidate = plain.range(of: token.text, options: [.caseInsensitive, .diacriticInsensitive], range: search)
           guard candidate.location != NSNotFound else { break }
@@ -791,7 +760,6 @@ struct ScriptTextView: NSViewRepresentable {
             cursor = candidate.location + candidate.length
           } else {
             found = candidate
-            break
           }
         }
         if found.location != NSNotFound {
@@ -916,26 +884,39 @@ struct ScriptTextView: NSViewRepresentable {
       lastAlignmentDestination = destination
       snapNextAlignment = false
     }
-    /// The ordered markers that open a list line, as written: "1. " for "1. Intro", "1. 2020. " for
-    /// "1. 2020. A year", nil for bullets. At most nine digits, as CommonMark allows.
-    static func orderedListMarker(_ line: String) -> String? {
-      guard let run = line.range(of: #"^\s*(?:(?:[-+*]|\d{1,9}[.)])\s+)+"#, options: .regularExpression)
+    /// The rendered range of a source range that maps character for character to `text`, else nil.
+    private static func visibleRange(
+      _ source: UTF16SourceRange, in visible: [Int: Int], matching text: String, in plain: NSString
+    ) -> NSRange? {
+      guard source.length > 0, let start = visible[source.location],
+        let end = visible[source.location + source.length - 1], end - start == source.length - 1
       else { return nil }
-      let numbers = line[run].split(whereSeparator: \.isWhitespace).filter { $0.first?.isNumber == true }
-      return numbers.isEmpty ? nil : numbers.joined(separator: " ") + " "
+      let range = NSRange(location: start, length: source.length)
+      return plain.substring(with: range).compare(text, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        ? range : nil
     }
-    private func cueRanges(in plain: NSString, document: PrompterDocument) -> [NSRange] {
+    private func cueRanges(
+      in plain: NSString, document: PrompterDocument, blocks: [UUID: NSRange], visible: [Int: Int]
+    ) -> [NSRange] {
       var result: [NSRange] = []
-      var cursor = 0
-      for cue in document.blocks.flatMap(\.stageDirections) {
-        guard cursor <= plain.length else { break }
-        let search = NSRange(location: cursor, length: plain.length - cursor)
-        let bracketed = "[\(cue.text)]"
-        let match = plain.range(of: bracketed, options: [.caseInsensitive, .diacriticInsensitive], range: search)
-        let range = match.location == NSNotFound
-          ? plain.range(of: cue.text, options: [.caseInsensitive, .diacriticInsensitive], range: search)
-          : match
-        if range.location != NSNotFound { result.append(range); cursor = range.location + range.length }
+      for block in document.blocks {
+        guard let bounds = blocks[block.id] else { continue }
+        var cursor = bounds.location
+        for cue in block.stageDirections {
+          let bracketed = "[\(cue.text)]"
+          if let range = Self.visibleRange(cue.sourceRange, in: visible, matching: bracketed, in: plain) {
+            result.append(range)
+            cursor = max(cursor, NSMaxRange(range))
+            continue
+          }
+          guard cursor < NSMaxRange(bounds) else { continue }
+          let search = NSRange(location: cursor, length: NSMaxRange(bounds) - cursor)
+          let match = plain.range(of: bracketed, options: [.caseInsensitive, .diacriticInsensitive], range: search)
+          let range = match.location == NSNotFound
+            ? plain.range(of: cue.text, options: [.caseInsensitive, .diacriticInsensitive], range: search)
+            : match
+          if range.location != NSNotFound { result.append(range); cursor = NSMaxRange(range) }
+        }
       }
       return result
     }
