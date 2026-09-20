@@ -827,6 +827,23 @@ final class PresenterControllerTests: XCTestCase {
     session.pause()
   }
 
+  func testEmptyLiveScrollGestureDoesNotFreezeRunningManualMode() {
+    let rig = manualRig { 3 }
+    let coordinator = rig.coordinator
+    coordinator.observeUserScrolls(in: rig.scroll)
+    defer { coordinator.stopObservingUserScrolls() }
+    coordinator.isActivelyRunning = true
+
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
+
+    XCTAssertFalse(coordinator.isHandScrolled)
+    let expected = try! XCTUnwrap(coordinator.manualScrollY(at: 3, in: rig.scroll))
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, expected, accuracy: 0.5)
+  }
+
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))

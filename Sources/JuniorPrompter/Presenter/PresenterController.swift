@@ -740,7 +740,11 @@ struct ScriptTextView: NSViewRepresentable {
           MainActor.assumeIsolated { self.userDidScroll(scroll) }
         },
         center.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
-          MainActor.assumeIsolated { self?.isLiveScrolling = false }
+          MainActor.assumeIsolated {
+            guard let self else { return }
+            self.isLiveScrolling = false
+            if self.isActivelyRunning, self.pendingUserSeeks == 0 { self.isHandScrolled = false }
+          }
         },
       ]
     }
