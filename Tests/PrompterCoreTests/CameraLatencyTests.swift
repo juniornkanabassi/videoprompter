@@ -110,6 +110,14 @@ final class CameraLatencyTests: XCTestCase {
     XCTAssertTrue(CameraLatency.report(samples, refreshes: [10.05], dropped: 2, duration: 10).contains("AVCapture output drops 2 (0.20/s)"))
   }
 
+  func testLateIntervalsAreThoseAboveOneAndAHalfPinnedDurations() {
+    let samples = [0.000, 0.033, 0.066, 0.146, 0.179].map { CameraLatency.Sample(capture: $0, delivered: $0 + 0.01) }
+    let report = CameraLatency.report(samples, refreshes: [], dropped: 3, duration: 2, pinned: ntsc30)
+    XCTAssertTrue(report.contains("drops 3 (1.50/s)"), report)
+    XCTAssertTrue(report.contains("late intervals 1 (0.50/s)"), report)
+    XCTAssertFalse(CameraLatency.report(samples, refreshes: []).contains("late intervals"))
+  }
+
   func testPercentilesAreNearestRank() {
     let values = (1...10).map(Double.init).shuffled()
     XCTAssertEqual(CameraLatency.percentile(values, 0.5), 5)

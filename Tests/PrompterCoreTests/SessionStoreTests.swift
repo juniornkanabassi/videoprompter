@@ -132,6 +132,7 @@ final class SessionStoreTests: XCTestCase {
       let store = migrationStore(defaults, root: root)
       XCTAssertNotNil(store.modeMigrationNotice, "\(legacy) was saved by an older build")
       XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 0, "not remembered until dismissed")
+      XCTAssertNotNil(migrationStore(defaults, root: root).modeMigrationNotice, "a relaunch keeps it until dismissed")
       store.dismissModeMigrationNotice()
       XCTAssertNil(store.modeMigrationNotice)
       XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 1)
@@ -404,6 +405,47 @@ final class SessionStoreTests: XCTestCase {
       text: "the quick brown fox", range: range, isFinal: true))
     XCTAssertEqual(session.lastConfirmedTokenIndex, 3)
     XCTAssertEqual(session.tokenIndex, 4)
+  }
+
+  /// A weaker overlapping sibling that would replay behind the accepted frontier must neither move
+  /// the reader back nor leave the tracker or state poisoned, with backward tracking on or off.
+  private func assertWeakerSiblingKeepsAcceptedFrontier(allowsBackward: Bool) {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    settings.allowsBackwardVoiceTracking = allowsBackward
+    let script = ScriptRecord(
+      metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
+      markdown: "one two three four five six seven eight nine ten")
+    session.present(record: script, settings: settings)
+    session.seek(to: 7)
+    session.play(captureAudio: false)
+    let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "en", generation: 1, locale: Locale(identifier: "en-GB"),
+      text: "eight nine", range: range, isFinal: true))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 8)
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "fr", generation: 1, locale: Locale(identifier: "fr-FR"),
+      text: "one two three four", range: range, isFinal: true))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 8)
+    XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertEqual(session.state, .running)
+    // The tracker still sits at the accepted frontier, so the next words continue from it.
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "next", generation: 1, locale: Locale(identifier: "en-GB"),
+      text: "ten", range: CMTimeRange(
+        start: CMTime(seconds: 2, preferredTimescale: 1), duration: CMTime(seconds: 1, preferredTimescale: 1)),
+      isFinal: true))
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 9)
+    session.pause()
+  }
+
+  func testWeakerOverlappingSiblingCannotRegressAcceptedFrontier() {
+    assertWeakerSiblingKeepsAcceptedFrontier(allowsBackward: true)
+  }
+
+  func testBackwardDisabledOverlappingSiblingRestoresTracker() {
+    assertWeakerSiblingKeepsAcceptedFrontier(allowsBackward: false)
   }
 
   func testContinuousInterimCandidatesFlushBeforeStreamStops() async {

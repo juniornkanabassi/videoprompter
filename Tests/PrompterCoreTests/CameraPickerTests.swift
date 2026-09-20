@@ -187,3 +187,15 @@ final class CameraPickerTests: XCTestCase {
     await fulfillment(of: [closed], timeout: 2)
   }
 }
+
+/// The preview gives the device its original format back only while the device is still on the
+/// exact one the preview applied; a format chosen later is not the preview's to undo.
+final class CameraPickerFormatOwnershipTests: XCTestCase {
+  func testOriginalFormatIsRestoredOnlyWhileTheDeviceStillHasThePreviewsOwn() {
+    typealias Session = CameraPreviewSession
+    XCTAssertEqual(Session.formatToRestore(original: "4K", applied: "medium", current: "medium"), "4K")
+    XCTAssertNil(Session.formatToRestore(original: "4K", applied: "medium", current: "1080"), "chosen later")
+    XCTAssertNil(Session.formatToRestore(original: "4K", applied: nil, current: "4K"), "never applied")
+    XCTAssertNil(Session.formatToRestore(original: "4K", applied: "4K", current: "4K"), "nothing changed")
+  }
+}

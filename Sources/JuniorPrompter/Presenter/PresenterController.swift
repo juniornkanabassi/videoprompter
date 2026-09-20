@@ -618,9 +618,9 @@ struct ScriptTextView: NSViewRepresentable {
     coordinator.tokenIndex = tokenIndex
     coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
     coordinator.guideFraction = guideFraction
-    if coordinator.verticalMirror != verticalMirror || coordinator.seekRevision != seekRevision {
+    let seeked = coordinator.noteSeekRevision(seekRevision)
+    if coordinator.verticalMirror != verticalMirror || seeked {
       coordinator.verticalMirror = verticalMirror
-      coordinator.seekRevision = seekRevision
       coordinator.snapToGuide()
     }
     coordinator.isActivelyRunning = isActivelyRunning
@@ -666,8 +666,16 @@ struct ScriptTextView: NSViewRepresentable {
     private var lastReadTokenIndex: Int?
     private var lastReadConfirmedTokenIndex: Int?
     var updateGeneration = 0
-    var seekRevision = 0
-    var isActivelyRunning = false
+    private(set) var seekRevision = 0
+    var isActivelyRunning = false {
+      // Play resumes Manual alignment after a hand scroll.
+      didSet { if isActivelyRunning, !oldValue { isHandScrolled = false; pendingUserSeeks = 0 } }
+    }
+    /// Manual only: set by the first live-scroll event and held until Play, so `updateNSView`,
+    /// `onLayout` and the display link cannot pull the reader's scroll back to the timeline.
+    private(set) var isHandScrolled = false
+    /// Seek revisions the hand scroll itself caused, which must not lift the suppression.
+    private var pendingUserSeeks = 0
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
@@ -684,6 +692,7 @@ struct ScriptTextView: NSViewRepresentable {
     func setManualSource(_ source: (() -> Double)?) {
       // Crossing between Manual and Voice hands the scroll position over: re-align from scratch.
       if (source == nil) != (manualPosition == nil) {
+        isHandScrolled = false
         invalidateAlignment()
         endsVoiceAnimation = source != nil
       }
@@ -721,7 +730,10 @@ struct ScriptTextView: NSViewRepresentable {
       let center = NotificationCenter.default
       scrollObservers = [
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
-          MainActor.assumeIsolated { self?.isLiveScrolling = true }
+          MainActor.assumeIsolated {
+            self?.isLiveScrolling = true
+            if self?.manualPosition != nil { self?.isHandScrolled = true }
+          }
         },
         center.addObserver(forName: NSScrollView.didLiveScrollNotification, object: scroll, queue: .main) { [weak self, weak scroll] _ in
           guard let self, let scroll else { return }
@@ -731,6 +743,18 @@ struct ScriptTextView: NSViewRepresentable {
           MainActor.assumeIsolated { self?.isLiveScrolling = false }
         },
       ]
+    }
+    /// Takes the session's seek revision and returns whether it changed. A seek the hand scroll
+    /// caused keeps Manual suppressed; any other (a click, Next passage, Restart) is explicit, so
+    /// alignment follows it again.
+    func noteSeekRevision(_ revision: Int) -> Bool {
+      let bumps = revision &- seekRevision
+      guard bumps != 0 else { return false }
+      seekRevision = revision
+      let fromHand = min(max(bumps, 0), pendingUserSeeks)
+      pendingUserSeeks -= fromHand
+      if bumps > fromHand { isHandScrolled = false }
+      return true
     }
     /// Whether this document or style differs from what is drawn. It runs on every SwiftUI update,
     /// i.e. every word, so it compares instead of hashing the script: an unchanged document shares
@@ -876,6 +900,7 @@ struct ScriptTextView: NSViewRepresentable {
       }) else { return }
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
+      if manualPosition != nil { pendingUserSeeks += 1 }
       (onUserScroll ?? onSeek)(nearest.1)
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
@@ -954,7 +979,7 @@ struct ScriptTextView: NSViewRepresentable {
     /// Puts the session's Manual position on the guide. Used for every Manual alignment, running or
     /// not, so a pause holds the exact fraction; no easing, so Reduce Motion has nothing to remove.
     func alignManual(in scroll: NSScrollView) {
-      guard let position = manualPosition?() else { return }
+      guard !isHandScrolled, let position = manualPosition?() else { return }
       applyManualPosition(position, in: scroll)
     }
     func applyManualPosition(_ position: Double, in scroll: NSScrollView) {

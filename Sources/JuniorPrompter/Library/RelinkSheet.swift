@@ -47,7 +47,7 @@ struct RelinkSheet: View {
       }
       if let candidates {
         if candidates.isEmpty {
-          Text("No matching file was found. Choose it yourself.").font(.callout)
+          Text("No matching file was found. A file on an external or unindexed volume may need Choose File.").font(.callout)
         } else {
           Text(candidates.count == 1 ? "One likely match:" : "Several files match. Pick the right one, or choose it yourself:")
             .font(.callout)

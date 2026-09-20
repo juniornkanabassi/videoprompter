@@ -235,6 +235,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     var dropped = 0
     /// Host-clock seconds; frames delivered before it are logged.
     var logUntil = 0.0
+    /// The configured probe window's exact host-clock bounds.
+    var logStart = 0.0
     /// Added to a presentation time to put it on the host clock.
     var toHost = 0.0
     var samples: [CameraLatency.Sample] = []
@@ -317,6 +319,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
       $0.frames = 0
       $0.toHost = toHost
       if Self.logsLatency {
+        $0.logStart = host
         $0.logUntil = host + Self.logWindow
         $0.samples = []
         $0.refreshes = []
@@ -345,12 +348,16 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let pinned = current.choice.wanted.frameDuration
     sessionQueue.asyncAfter(deadline: .now() + Self.logWindow + 0.5) { [self] in
       guard generation == self.generation else { return }
-      let (samples, refreshes, dropped) = shared.withLock { ($0.samples, $0.refreshes, $0.dropped) }
+      let (samples, refreshes, dropped, measured) = shared.withLock {
+        ($0.samples, $0.refreshes, $0.dropped, $0.logUntil - $0.logStart)
+      }
       let format = current.choice.wanted.format
       let selected = current.formats.indices.contains(format) ? Self.row(current.formats[format]) : nil
       NSLog(
         "JuniorPrompter camera latency: %@; selected %@; pinned frame duration %@",
-        CameraLatency.report(samples, refreshes: refreshes, dropped: dropped, duration: Self.logWindow),
+        CameraLatency.report(
+          samples, refreshes: refreshes, dropped: dropped,
+          duration: measured > 0 ? measured : Self.logWindow, pinned: pinned),
         selected.map { "\($0.width)x\($0.height) \($0.subType)" } ?? "unknown",
         pinned.isValid ? String(format: "%.2f ms", pinned.seconds * 1000) : "default")
       detach(from: session)
@@ -389,7 +396,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     _ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
-    shared.withLock { $0.dropped += 1 }
+    let now = CACurrentMediaTime()
+    shared.withLock { if now < $0.logUntil { $0.dropped += 1 } }
   }
 
   private static func row(_ format: AVCaptureDevice.Format) -> SharedCameraSession.VideoFormat {
@@ -455,14 +463,21 @@ enum CameraLatency {
     )
   }
 
-  static func report(_ samples: [Sample], refreshes: [Double], dropped: Int = 0, duration: Double = 1) -> String {
+  /// `duration` is the measured window, and `pinned` the frame duration the format was pinned to:
+  /// an interval over 1.5 times it counts as a late frame.
+  static func report(
+    _ samples: [Sample], refreshes: [Double], dropped: Int = 0, duration: Double = 1,
+    pinned: CMTime = .invalid
+  ) -> String {
     let (delivered, shown) = delays(samples, refreshes: refreshes)
     let intervals = zip(samples.dropFirst(), samples).map { ($0.capture - $1.capture) * 1000 }
     func ms(_ values: [Double], _ p: Double) -> String {
       percentile(values, p).map { String(format: "%.1f", $0) } ?? "-"
     }
     let dropRate = String(format: "%.2f", Double(dropped) / max(duration, 1e-9))
-    return "\(samples.count) frames; AVCapture output drops \(dropped) (\(dropRate)/s); "
+    let late = pinned.isValid ? intervals.filter { $0 > pinned.seconds * 1500 }.count : nil
+    let lateText = late.map { "late intervals \($0) (\(String(format: "%.2f", Double($0) / max(duration, 1e-9)))/s); " } ?? ""
+    return "\(samples.count) frames; AVCapture output drops \(dropped) (\(dropRate)/s); " + lateText
       + "capture to app p50 \(ms(delivered, 0.5)) ms p90 \(ms(delivered, 0.9)) ms; "
       + "capture to next refresh p50 \(ms(shown, 0.5)) ms p90 \(ms(shown, 0.9)) ms; "
       + "frame interval p50 \(ms(intervals, 0.5)) ms"

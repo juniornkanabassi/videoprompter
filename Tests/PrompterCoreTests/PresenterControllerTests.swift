@@ -776,6 +776,57 @@ final class PresenterControllerTests: XCTestCase {
     session.pause()
   }
 
+  func testHandScrolledManualIsNotPulledBackUntilPlayOrAnExplicitSeek() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Manual"
+    session.present(
+      record: ScriptRecord(
+        metadata: .init(title: "Lines", fileName: "lines.md"), markdown: Self.manualLines),
+      settings: settings)
+    let rig = manualRig { session.manualPosition() }
+    let coordinator = rig.coordinator
+    coordinator.onSeek = session.seek
+    coordinator.onUserScroll = session.seekFromUserScroll
+    coordinator.observeUserScrolls(in: rig.scroll)
+    defer { coordinator.stopObservingUserScrolls() }
+    session.play()
+    coordinator.isActivelyRunning = true
+    let y = { rig.scroll.contentView.bounds.origin.y }
+
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
+    let handY = y()
+    coordinator.isActivelyRunning = false  // what updateNSView reports after the pause
+    XCTAssertTrue(coordinator.isHandScrolled)
+    XCTAssertTrue(coordinator.noteSeekRevision(session.seekRevision), "the hand's own seek")
+
+    // updateNSView, onLayout and the display link all land here.
+    coordinator.alignManual(in: rig.scroll)
+    coordinator.alignToCurrent(in: rig.scroll)
+    XCTAssertEqual(y(), handY, accuracy: 0.01, "the reader's scroll is not pulled back")
+
+    // An explicit seek (Next passage, a click) aligns again.
+    session.seek(to: 3)
+    XCTAssertTrue(coordinator.noteSeekRevision(session.seekRevision))
+    let explicitTarget = try! XCTUnwrap(coordinator.manualScrollY(at: 3, in: rig.scroll))
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), explicitTarget, accuracy: 0.5)
+
+    // Play lifts the suppression too.
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
+    rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
+    let secondHandY = y()
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), secondHandY, accuracy: 0.01)
+    coordinator.isActivelyRunning = true
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(y(), explicitTarget, accuracy: 0.5)
+    session.pause()
+  }
+
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))

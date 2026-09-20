@@ -343,6 +343,8 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   private let firstFrame: @Sendable () -> Void
   /// The format the device had before a preset changed it. Touched on `queue` only.
   private var original: (device: AVCaptureDevice, format: AVCaptureDevice.Format)?
+  /// The format the device was using once this preview's preset took effect. Queue only.
+  private var applied: AVCaptureDevice.Format?
   /// Touched on `frames` only.
   private var sawFrame = false
   private var isStopped: Bool { stopped.withLock { $0 } }
@@ -375,6 +377,14 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
     session.commitConfiguration()
     CameraPreviewConnection.connect(layer, to: session, mirrored: mirrored)
     session.startRunning()
+    applied = device.activeFormat
+  }
+
+  /// The format to give back on stop: the original, but only while the device is still on the exact
+  /// one this preview applied. Anything else was chosen later by `SharedCameraSession` or the
+  /// probe, and is not this preview's to undo.
+  static func formatToRestore<Format: Equatable>(original: Format, applied: Format?, current: Format) -> Format? {
+    applied == current && current != original ? original : nil
   }
 
   func captureOutput(
@@ -398,6 +408,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
       session.beginConfiguration()
       session.sessionPreset = .high
       session.commitConfiguration()
+      applied = original?.device.activeFormat
     }
   }
 
@@ -413,11 +424,15 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
       session.outputs.forEach(session.removeOutput)
       session.inputs.forEach(session.removeInput)
       session.commitConfiguration()
-      if let (device, format) = original, (try? device.lockForConfiguration()) != nil {
-        device.activeFormat = format
+      if let (device, format) = original,
+        let restore = Self.formatToRestore(original: format, applied: applied, current: device.activeFormat),
+        (try? device.lockForConfiguration()) != nil
+      {
+        device.activeFormat = restore
         device.unlockForConfiguration()
       }
       original = nil
+      applied = nil
       done()
     }
   }

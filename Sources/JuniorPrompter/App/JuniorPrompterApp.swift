@@ -98,6 +98,9 @@ private enum PresenterSaveError: LocalizedError {
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
+  /// Written when a legacy mode is first seen, because the settings saved right after decoding
+  /// overwrite it; a relaunch before dismissal still finds this and shows the notice again.
+  private static let modeMigrationPendingKey = "modeMigrationNoticePending"
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
@@ -111,6 +114,8 @@ private enum PresenterSaveError: LocalizedError {
   private var presenterSaveIDs = Set<UUID>()
   var presenterSaveReservationHook: (() -> Void)?
   var presenterSaveReservationGate: (() async -> Void)?
+  /// Test seam: runs after a debounced save has resolved its fingerprint, just before it writes.
+  var saveGate: (() async -> Void)?
   private var presenterSaveWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
@@ -137,14 +142,18 @@ private enum PresenterSaveError: LocalizedError {
       isolatedDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
     }
     // Decoding folds legacy modes into Voice and Manual and the assignments below save that over
-    // them, so the notice looks at the stored modes first. A launch with nothing to migrate is
-    // marked as seen, so a later saved "Manual" is not mistaken for a legacy one.
+    // them, so the notice looks at the stored modes first and keeps a pending marker until it is
+    // dismissed. A launch with nothing to migrate is marked as seen, so a later saved "Manual" is
+    // not mistaken for a legacy one.
     if isolatedDefaults.integer(forKey: Self.modeMigrationKey) < 1 {
       struct SavedMode: Decodable { var mode: String? }
       let saved = (isolatedDefaults.data(forKey: "settings").flatMap { try? JSONDecoder().decode(SavedMode.self, from: $0) }
         .map { [$0] } ?? [])
         + (isolatedDefaults.data(forKey: "presets").flatMap { try? JSONDecoder().decode([SavedMode].self, from: $0) } ?? [])
-      if saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") }) {
+      if isolatedDefaults.bool(forKey: Self.modeMigrationPendingKey)
+        || saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") })
+      {
+        isolatedDefaults.set(true, forKey: Self.modeMigrationPendingKey)
         modeMigrationNotice = "Tracking now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Play to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
       } else {
         isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
@@ -351,6 +360,7 @@ private enum PresenterSaveError: LocalizedError {
         guard !Task.isCancelled, let self, let library = self.library,
           let expected = self.scripts.first(where: { $0.metadata.id == id })?.metadata.contentFingerprint
         else { return }
+        await self.saveGate?()
         self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id)
       } catch is CancellationError {} catch {
         self?.failedSaveIDs.insert(id)
@@ -558,6 +568,7 @@ private enum PresenterSaveError: LocalizedError {
   func dismissModeMigrationNotice() {
     modeMigrationNotice = nil
     defaults.set(1, forKey: Self.modeMigrationKey)
+    defaults.removeObject(forKey: Self.modeMigrationPendingKey)
   }
   func applyPreset(_ preset: PrompterSettings) {
     var applied = preset

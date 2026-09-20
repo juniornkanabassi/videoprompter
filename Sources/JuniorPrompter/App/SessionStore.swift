@@ -400,9 +400,20 @@ final class SessionStore: ObservableObject {
       pending.event.localeIdentifier != event.localeIdentifier,
       overlapping(pending.event, event)
     {
+      // Replay the pair from before the first result, but only keep it if it does not go behind
+      // what is already accepted; otherwise the weaker sibling would undo the stronger one.
+      let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
+      let current = tracker
       tracker = pending.tracker
       pendingSpeechCandidate = nil
-      applySpeechUpdate(tracker.consumeCandidates([pending.event, event], script: document.spokenTokens))
+      let update = tracker.consumeCandidates([pending.event, event], script: document.spokenTokens)
+      // The first final was already accepted. Its sibling may improve that result, but a held or
+      // weaker replay must not replace the accepted tracker or turn the session uncertain.
+      guard update.status == .advanced, update.tokenIndex >= old else {
+        tracker = current
+        return
+      }
+      applySpeechUpdate(update, old: old, trackerBeforeMatch: current)
       return
     }
     let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)

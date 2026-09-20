@@ -103,18 +103,26 @@ final class AppStoreTests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: root) }
     let record = try await store.library!.create(title: "Race", markdown: "v0")
     await store.reload()
-    for i in 1...5 {
-      store.updateMarkdown("v\(i)", for: record.id)
-      try await Task.sleep(for: .milliseconds(452))
+    // Hold the first save after it has resolved its fingerprint, type the next value, release.
+    let gate = PresenterSaveGate()
+    var held = false
+    store.saveGate = {
+      guard !held else { return }
+      held = true
+      await gate.wait()
     }
+    store.updateMarkdown("v1", for: record.id)
+    await gate.waitUntilEntered()
+    store.updateMarkdown("v2", for: record.id)
+    await gate.release()
     let flushed = await store.flushPendingSaves()
-    XCTAssertTrue(flushed)
+    XCTAssertTrue(flushed, "no save left running and no pending draft")
     XCTAssertNil(store.errorMessage)
     XCTAssertFalse(store.hasFailedSaves)
     let disk = try await store.library!.read(record.id)
-    XCTAssertEqual(disk.markdown, "v5")
+    XCTAssertEqual(disk.markdown, "v2")
     let shown = try XCTUnwrap(store.scripts.first { $0.id == record.id })
-    XCTAssertEqual(shown.markdown, "v5")
+    XCTAssertEqual(shown.markdown, "v2")
     XCTAssertEqual(shown.metadata, disk.metadata, "the visible revision must be the newest saved one")
     XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("Conflicts").path).isEmpty)
   }
