@@ -224,9 +224,10 @@ private struct CameraPickerList: View {
     guard next != .none else { return }
     // Handed to the session's queue, which only joins it to the session and lets it go.
     nonisolated(unsafe) let layer = AVCaptureVideoPreviewLayer()
-    layer.videoGravity = .resizeAspect
-    rotation = guides.guides(for: uid).rotation
-    aspect = CGSize(width: 16, height: 9)
+    let saved = guides.guides(for: uid)
+    layer.videoGravity = saved.inputAspect.videoGravity
+    rotation = saved.rotation
+    aspect = saved.inputAspect.pictureSize(delivered: CGSize(width: 16, height: 9))
     self.layer = layer
     switch next {
     case .none:
@@ -235,7 +236,7 @@ private struct CameraPickerList: View {
       // Held while it is previewed: the selected camera may not be showing anywhere yet.
       let shared = SharedCameraSession.shared
       shared.retain()
-      aspect = shared.pictureSize ?? aspect
+      aspect = saved.inputAspect.pictureSize(delivered: shared.pictureSize ?? CGSize(width: 16, height: 9))
       layer.setSessionWithNoConnection(shared.session)
       shared.reconfigure { CameraPreviewConnection.connect(layer, to: $0, mirrored: mirrored) }
     case .dedicated(let uid):

@@ -138,7 +138,8 @@ import SwiftUI
       let screen = panel.screen ?? NSScreen.main ?? NSScreen.screens.first
     else { return }
     // Until the camera reports its size, the stage view draws 16:9 too.
-    let picture = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
+    let picture = camera.guides.inputAspect.pictureSize(
+      delivered: SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9))
     panel.setFrame(Self.matchedCameraFrame(picture: picture, rotation: camera.guides.rotation, in: screen.visibleFrame), display: true)
   }
   private func makePanel() -> PresenterPanel {

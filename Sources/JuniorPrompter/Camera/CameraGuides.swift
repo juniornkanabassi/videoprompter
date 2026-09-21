@@ -1,3 +1,4 @@
+import AVFoundation
 import CoreGraphics
 import Foundation
 
@@ -25,10 +26,41 @@ struct CameraAspect: Codable, Equatable, Hashable, Identifiable, Sendable {
   ]
 }
 
+/// How the delivered frame's pixels are meant to be read. The S1II's 6K open gate is 3:2, and a
+/// DeckLink can hand the whole of it over squeezed into a 16:9 UHD frame; stretched back out,
+/// nothing is lost. Nothing cropped before the Mac can be brought back this way.
+enum CameraInputAspect: String, CaseIterable, Codable, Identifiable, Sendable {
+  case asDelivered, openGate3x2
+  var id: String { rawValue }
+  var label: String {
+    switch self {
+    case .asDelivered: "As delivered"
+    case .openGate3x2: "3:2 open gate"
+    }
+  }
+  /// The picture's shape before rotation: the delivered frame's own, or 3:2 however it arrived.
+  func pictureSize(delivered: CGSize) -> CGSize {
+    switch self {
+    case .asDelivered: delivered
+    case .openGate3x2: CGSize(width: 3, height: 2)
+    }
+  }
+  /// Aspect-fit keeps the delivered shape; the open gate fills the 3:2 rectangle it is laid on,
+  /// which is the unsqueeze. Geometry only: the layer scales the frame, nothing is copied.
+  var videoGravity: AVLayerVideoGravity {
+    switch self {
+    case .asDelivered: .resizeAspect
+    case .openGate3x2: .resize
+    }
+  }
+}
+
 /// What the camera overlay draws, remembered for each camera. Rotation lives here too: the
 /// DeckLink's vertical feed and the built-in FaceTime camera do not want the same one.
 struct CameraGuides: Codable, Equatable, Sendable {
   var rotation = CameraRotation.none
+  /// Read before rotation, so an unsqueezed open gate turned 90° is 2:3.
+  var inputAspect = CameraInputAspect.asDelivered
   /// Vision picks the rotation while this is on. A manual choice switches it back off.
   var automaticRotation = false
   var thirds = false
@@ -61,6 +93,8 @@ struct CameraGuides: Codable, Equatable, Sendable {
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
     rotation = CameraRotation(rawValue: try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0) ?? .none
+    inputAspect = try c.decodeIfPresent(String.self, forKey: .inputAspect)
+      .flatMap(CameraInputAspect.init) ?? .asDelivered
     automaticRotation = try c.decodeIfPresent(Bool.self, forKey: .automaticRotation) ?? false
     thirds = try c.decodeIfPresent(Bool.self, forKey: .thirds) ?? false
     axes = try c.decodeIfPresent(Bool.self, forKey: .axes) ?? false

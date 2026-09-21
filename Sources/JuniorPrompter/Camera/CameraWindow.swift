@@ -125,6 +125,11 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   static let rotationOptions: [(String, CameraRotation?)] =
     [("Auto", nil)] + CameraRotation.allCases.map { ($0.label, Optional($0)) }
 
+  /// The input-aspect control's choices and its help, shared by the Camera window and the inspector.
+  static let inputAspectOptions = CameraInputAspect.allCases.map { ($0.label, $0) }
+  static let inputAspectHelp = "3:2 open gate unsqueezes a full 3:2 sensor image delivered in a 16:9 frame. "
+    + "It cannot restore picture the camera or capture card has already cropped."
+
   /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
   /// On the model, because the Camera window's toolbar and the inspector both show it.
   var rotationChoice: Binding<CameraRotation?> {
@@ -206,6 +211,10 @@ struct CameraChoiceItems: ToolbarContent {
     ToolbarItem {
       ToolbarPopUp(title: "Rotation", options: CameraModel.rotationOptions, selection: $rotation)
     }
+    ToolbarItem {
+      ToolbarPopUp(title: "Input aspect", options: CameraModel.inputAspectOptions,
+                   selection: $model.guides.inputAspect, help: CameraModel.inputAspectHelp)
+    }
   }
 }
 
@@ -216,12 +225,14 @@ struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
   let title: String
   let options: [(String, Value)]
   @Binding var selection: Value
+  /// The tooltip, when the title alone does not explain the choice.
+  var help: String?
 
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeNSView(context: Context) -> NSPopUpButton {
     let popup = NSPopUpButton(frame: .zero, pullsDown: false)
     popup.setAccessibilityLabel(title)
-    popup.toolTip = title
+    popup.toolTip = help ?? title
     return popup
   }
   func updateNSView(_ popup: NSPopUpButton, context: Context) {

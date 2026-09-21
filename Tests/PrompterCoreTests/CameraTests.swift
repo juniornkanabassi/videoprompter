@@ -33,8 +33,11 @@ final class CameraTests: XCTestCase {
     model.selectedUID = "uid-obs"
     model.mirrored = true
     model.guides.thirds = true
+    XCTAssertEqual(model.guides.inputAspect, .asDelivered)
+    model.guides.inputAspect = .openGate3x2
     model.alwaysOnTop = true
     let reopened = CameraModel(defaults: store)
+    XCTAssertEqual(reopened.guides.inputAspect, .openGate3x2)
     XCTAssertEqual(reopened.selectedUID, "uid-obs")
     XCTAssertTrue(reopened.mirrored)
     XCTAssertTrue(reopened.guides.thirds)
@@ -121,16 +124,20 @@ final class CameraTests: XCTestCase {
     settle()
     var shown = popUps()
     // The camera is chosen with `CameraPicker` (its label is covered in CameraPickerTests);
-    // the rotation pop-up is the toolbar's one AppKit pop-up.
-    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Rotation"])
-    XCTAssertEqual(shown.last?.titleOfSelectedItem, "90°")
+    // the rotation and input-aspect pop-ups are the toolbar's AppKit ones.
+    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Rotation", "Input aspect"])
+    XCTAssertEqual(shown.first?.titleOfSelectedItem, "90°")
+    XCTAssertEqual(shown.last?.titleOfSelectedItem, "As delivered", "an existing picture is not altered")
+    XCTAssertEqual(shown.last?.toolTip, CameraModel.inputAspectHelp)
 
     feed.devices = cameras
     model.selectedUID = "uid-obs"
     model.rotationChoice.wrappedValue = nil
+    model.guides.inputAspect = .openGate3x2
     settle()
     shown = popUps()
-    XCTAssertEqual(shown.last?.titleOfSelectedItem, "Auto")
+    XCTAssertEqual(shown.first?.titleOfSelectedItem, "Auto")
+    XCTAssertEqual(shown.last?.titleOfSelectedItem, "3:2 open gate")
   }
 
   /// Two windows can show the camera at once. One of them being covered used to detach the
