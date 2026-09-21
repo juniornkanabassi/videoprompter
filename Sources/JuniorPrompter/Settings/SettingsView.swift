@@ -32,9 +32,6 @@ struct InspectorView: View {
           Picker("Rotation", selection: camera.rotationChoice) {
             ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
           }
-          Picker("Input aspect", selection: $camera.guides.inputAspect) {
-            ForEach(CameraModel.inputAspectOptions, id: \.1) { Text($0.0).tag($0.1) }
-          }.help(CameraModel.inputAspectHelp)
           Button("Guides") { showsGuideSettings.toggle() }
             .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
               CameraGuideSettings(model: camera).frame(width: 300).padding()

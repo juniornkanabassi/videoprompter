@@ -81,14 +81,11 @@ final class CameraStageView: NSView {
     // Where the picture lands follows from its size, its turn and the bounds, never from the
     // preview layer: its own video rectangle is empty until the first frame and lags a resize,
     // which left 0.8.1's guides spread over the whole window.
-    let aspect = guides.inputAspect.pictureSize(
-      delivered: SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9))
+    let aspect = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
     let picture = guides.rotation.fittedRect(aspect: aspect, in: bounds)
-    preview.videoGravity = guides.inputAspect.videoGravity
     if rotatesInConnection {
       preview.setAffineTransform(.identity)
-      // Aspect-fit places a delivered picture itself; a stretched one has to be laid on its rect.
-      preview.frame = guides.inputAspect == .asDelivered ? bounds : picture
+      preview.frame = bounds
     } else {
       Self.place(preview, on: picture, turnedBy: guides.rotation)
     }

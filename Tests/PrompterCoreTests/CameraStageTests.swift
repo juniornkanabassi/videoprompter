@@ -213,75 +213,67 @@ final class CameraStageTests: XCTestCase {
     }
   }
 
-  /// The S1II's whole 5952x3968 open gate squeezed into the DeckLink's 3840x2160. Read as 3:2 it
-  /// is unsqueezed, not cropped: 3:2 upright, 2:3 turned, with the preview, the guides, the
-  /// bullseye and a 9:16 marker all on that one rectangle, however the picture is turned.
-  func testAnOpenGateSqueezedIntoUHDIsShownAsThreeByTwo() throws {
+  /// Cam B's UHD frame is shown exactly as delivered: aspect-fit, never stretched or cropped, black
+  /// either side, 9:16 when turned a quarter either way, with a 9:16 marker inside that picture.
+  func testUHDIsShownWholeAndAspectFitInEachTurn() throws {
     let original = session.pictureSize
     defer { session.pictureSize = original }
-    session.pictureSize = CGSize(width: 3840, height: 2160)
-    let bounds = CGRect(x: 0, y: 0, width: 760, height: 520)
-    for rotation in CameraRotation.allCases {
+    let uhd = CGSize(width: 3840, height: 2160)
+    session.pictureSize = uhd
+    let ninebysixteen = CameraAspect(width: 9, height: 16)
+    for rotation in [CameraRotation.none, .quarter, .threeQuarters] {
       for turnedByConnection in [false, true] {
         let label = "\(rotation.label), turned by \(turnedByConnection ? "connection" : "layer")"
         var guides = CameraGuides()
         guides.rotation = rotation
-        guides.inputAspect = .openGate3x2
         guides.axes = true
-        guides.bullseye = true
-        guides.marker = CameraAspect(width: 9, height: 16)
+        guides.marker = ninebysixteen
         let host = window()
         let view = stage(guides)
         view.rotatesInConnection = turnedByConnection
         host.contentView?.addSubview(view)
+        view.setFrameSize(NSSize(width: 760, height: 520))
         view.layoutSubtreeIfNeeded()
         let preview = try XCTUnwrap(
           view.layer?.sublayers?.first { $0 is AVCaptureVideoPreviewLayer } as? AVCaptureVideoPreviewLayer)
-        let picture = rotation.fittedRect(aspect: CGSize(width: 3, height: 2), in: bounds)
-        XCTAssertEqual(picture.width / picture.height, rotation.swapsAxes ? 2.0 / 3 : 1.5, accuracy: 0.001, label)
-        XCTAssertEqual(preview.videoGravity, .resize, label)
-        assertEqual(preview.frame, picture, label)
-        if !turnedByConnection {
-          // Laid out as 3:2 before the turn, so the 16:9 frame is stretched, not cut.
-          XCTAssertEqual(preview.bounds.width / preview.bounds.height, 1.5, accuracy: 0.001, label)
-        }
-        let marker = CameraAspect(width: 9, height: 16).fitted(in: picture)
-        XCTAssertTrue(picture.insetBy(dx: -0.001, dy: -0.001).contains(marker), label)
+        XCTAssertEqual(preview.videoGravity, .resizeAspect, label)
+        let picture = rotation.fittedRect(aspect: uhd, in: view.bounds)
+        XCTAssertEqual(picture.width / picture.height, rotation.swapsAxes ? 2160.0 / 3840 : 3840.0 / 2160,
+                       accuracy: 0.001, label)
+        // Fitted and centred in this 760x520 view: upright 16:9 fills the width with bars above and
+        // below; turned 9:16 fills the height with bars left and right.
         if rotation.swapsAxes {
-          // Full height of the 2:3 picture, with open-gate picture either side of it.
-          XCTAssertEqual(marker.height, picture.height, accuracy: 0.001, label)
-          XCTAssertLessThan(marker.width, picture.width - 1, label)
+          XCTAssertEqual(picture.height, view.bounds.height, accuracy: 0.001, label)
+          XCTAssertLessThan(picture.width, view.bounds.width - 1, label)
+        } else {
+          XCTAssertEqual(picture.width, view.bounds.width, accuracy: 0.001, label)
+          XCTAssertLessThan(picture.height, view.bounds.height - 1, label)
         }
+        XCTAssertEqual(picture.midX, view.bounds.midX, accuracy: 0.001, label)
+        XCTAssertEqual(picture.midY, view.bounds.midY, accuracy: 0.001, label)
+        if turnedByConnection {
+          // The connection delivers the turned frame; aspect-fit places it within the bounds.
+          assertEqual(preview.frame, view.bounds, label)
+        } else {
+          assertEqual(preview.frame, picture, label)
+          // Laid out in the delivered frame's own shape before the turn, so aspect-fit fills it exactly.
+          XCTAssertEqual(preview.bounds.width / preview.bounds.height, 3840.0 / 2160, accuracy: 0.001, label)
+        }
+        XCTAssertEqual(view.layer?.backgroundColor, NSColor.black.cgColor, label)
+        let marker = ninebysixteen.fitted(in: picture)
+        XCTAssertTrue(picture.insetBy(dx: -0.001, dy: -0.001).contains(marker), label)
         assertEqual(try XCTUnwrap(view.guideLayer.path).boundingBoxOfPath, marker, label)
-        assertEqual(CameraOverlay.shadePath(picture: picture, guides: guides).boundingBoxOfPath, picture, label)
+        let shade = CameraOverlay.shadePath(picture: picture, guides: guides)
+        if rotation.swapsAxes {
+          // A turned UHD picture is itself 9:16: the marker is the whole picture, nothing to shade.
+          assertEqual(marker, picture, label)
+          XCTAssertTrue(shade.isEmpty, label)
+        } else {
+          assertEqual(shade.boundingBoxOfPath, picture, label)
+        }
         dismantle(view)
       }
     }
-  }
-
-  /// As delivered keeps 0.11.1's aspect-fit: the same UHD frame turned 90° is 9:16.
-  func testAsDeliveredKeepsTheNativeAspectFit() throws {
-    let original = session.pictureSize
-    defer { session.pictureSize = original }
-    session.pictureSize = CGSize(width: 3840, height: 2160)
-    var guides = CameraGuides()
-    guides.rotation = .quarter
-    guides.axes = true
-    let view = stage(guides)
-    window().contentView?.addSubview(view)
-    view.layoutSubtreeIfNeeded()
-    let preview = try XCTUnwrap(
-      view.layer?.sublayers?.first { $0 is AVCaptureVideoPreviewLayer } as? AVCaptureVideoPreviewLayer)
-    let picture = CameraRotation.quarter.fittedRect(aspect: CGSize(width: 3840, height: 2160), in: view.bounds)
-    XCTAssertEqual(picture.width / picture.height, 9.0 / 16, accuracy: 0.001)
-    XCTAssertEqual(preview.videoGravity, .resizeAspect)
-    assertEqual(preview.frame, picture, "layer turn")
-    assertEqual(try XCTUnwrap(view.guideLayer.path).boundingBoxOfPath, picture, "guides")
-    view.rotatesInConnection = true
-    view.needsLayout = true
-    view.layoutSubtreeIfNeeded()
-    assertEqual(preview.frame, view.bounds, "connection turn keeps the whole view")
-    dismantle(view)
   }
 
   private func assertEqual(

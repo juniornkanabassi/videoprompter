@@ -113,7 +113,6 @@ final class CameraOrientationTests: XCTestCase {
     XCTAssertEqual(store.guides(for: "uid-decklink"), CameraGuides())
     var deckLink = CameraGuides()
     deckLink.rotation = .quarter
-    deckLink.inputAspect = .openGate3x2
     deckLink.thirds = true
     deckLink.bullseye = true
     deckLink.colorHex = "#FF0000"
@@ -134,17 +133,17 @@ final class CameraOrientationTests: XCTestCase {
     XCTAssertEqual(fresh.opacity, 0.85)
     XCTAssertEqual(fresh.shadeOpacity, 0.5)
     XCTAssertNil(fresh.marker)
-    XCTAssertEqual(fresh.inputAspect, .asDelivered)
     XCTAssertEqual(store.guides(for: nil), CameraGuides())
   }
 
-  /// Guides saved before the input aspect existed keep the picture exactly as it was.
-  func testGuidesSavedByAnOlderBuildStayAsDelivered() throws {
-    let old = try JSONDecoder().decode(CameraGuides.self, from: Data(#"{"rotation":90,"thirds":true}"#.utf8))
-    XCTAssertEqual(old.inputAspect, .asDelivered)
-    XCTAssertEqual(old.rotation, .quarter)
-    let unknown = try JSONDecoder().decode(CameraGuides.self, from: Data(#"{"inputAspect":"anamorphic"}"#.utf8))
-    XCTAssertEqual(unknown.inputAspect, .asDelivered)
+  /// 0.12.0 saved an input aspect; it is read past, and the rest of the guides survive.
+  func testASavedOpenGateInputAspectIsIgnored() throws {
+    let old = try JSONDecoder().decode(
+      CameraGuides.self, from: Data(#"{"rotation":90,"inputAspect":"openGate3x2","thirds":true}"#.utf8))
+    var expected = CameraGuides()
+    expected.rotation = .quarter
+    expected.thirds = true
+    XCTAssertEqual(old, expected)
   }
 
   func testTheFrameMarkerIsInscribedInTheTurnedPicture() {
