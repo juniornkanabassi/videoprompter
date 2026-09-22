@@ -135,8 +135,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let environment = ProcessInfo.processInfo.environment
     try XCTSkipUnless(environment["JUNIORPROMPTER_RUN_ACTUAL_SPEECH_REPLAY"] == "1")
     try await replayRecording(
-      URL(fileURLWithPath: environment["JUNIORPROMPTER_SPEECH_REPLAY_WAV"]
-        ?? "/Users/junior.nkanabassi/Downloads/JuniorPrompter/JuniorPrompter v0.3.0 (9) Test Script Reading.wav"),
+      environment["JUNIORPROMPTER_SPEECH_REPLAY_WAV"].map { URL(fileURLWithPath: $0) }
+        ?? acceptanceInputs.appendingPathComponent("JuniorPrompter v0.3.0 (9) Test Script Reading.wav"),
       script: URL(fileURLWithPath: environment["JUNIORPROMPTER_SPEECH_REPLAY_SCRIPT"]
         ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/demo-test-script-exact.md"))
   }
@@ -149,8 +149,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   func testShort173ReadingThroughProductionProviderAndSession() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_173_REPLAY"] == "1")
     // The spaces after both dashes in the file name are non-breaking, so find it rather than spell it.
-    let downloads = URL(fileURLWithPath: "/Users/junior.nkanabassi/Downloads/JuniorPrompter")
-    let wav = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: downloads, includingPropertiesForKeys: nil)
+    let wav = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: acceptanceInputs, includingPropertiesForKeys: nil)
       .first { $0.lastPathComponent.hasPrefix("173") && $0.pathExtension == "wav" })
     try await replayRecording(wav, script: acceptanceInputs.appendingPathComponent("173 script.md"))
   }
