@@ -64,19 +64,33 @@ final class SessionStore: ObservableObject {
     latestAudioEnd = max(latestAudioEnd, end)
   }
 
+  /// Where each script was left, restored when it is presented again.
+  // ponytail: in memory only; write to defaults for relaunch persistence.
+  private var savedAnchors: [UUID: (anchor: ReadingAnchor?, index: Int)] = [:]
+
   func present(record: ScriptRecord, settings: PrompterSettings) {
     if activeRecord?.metadata.id != record.metadata.id {
       stopTasks()
+      if let old = activeRecord {
+        savedAnchors[old.metadata.id] = (ReadingAnchorRemapper.makeAnchor(
+          scriptID: old.metadata.id, revision: old.metadata.revision, document: document,
+          globalTokenIndex: tokenIndex, guideFraction: self.settings.guideFraction), tokenIndex)
+      }
       self.settings = settings
       activeRecord = record
       document = PrompterDocument(markdown: record.markdown)
-      lastConfirmedTokenIndex = nil
-      tokenIndex = 0
-      rebaseManual(to: 0)
+      // A fresh parse has new block IDs, so the anchor only resolves after an in-app edit; the
+      // plain index covers an unchanged script.
+      let saved = savedAnchors[record.metadata.id].map {
+        $0.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) } ?? $0.index } ?? 0
+      let start = min(max(0, saved), max(0, document.spokenTokens.count - 1))
+      lastConfirmedTokenIndex = start > 0 ? start - 1 : nil
+      tokenIndex = start
+      rebaseManual(to: Double(start))
       anchor = ReadingAnchorRemapper.makeAnchor(
         scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
-        globalTokenIndex: 0, guideFraction: settings.guideFraction)
-      tracker = RecognitionTracker(generation: 0, tokenIndex: 0)
+        globalTokenIndex: start, guideFraction: settings.guideFraction)
+      tracker = RecognitionTracker(generation: 0, tokenIndex: start)
       speechGeneration = nil
       minimumSpeechGeneration = 0
       pendingSpeechCandidate = nil

@@ -321,6 +321,20 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   // MARK: Load and present
 
   /// Import-like creation of both real scripts: lossless, and presented paused at the top.
+  @MainActor func testAScriptReopensWhereItWasLeft() {
+    let session = SessionStore()
+    var manual = PrompterSettings()
+    manual.mode = "Manual"
+    let one = record("Opening words.\n\nThe passage being read right now.\n\nClosing words.", title: "One")
+    session.present(record: one, settings: manual)
+    session.seek(to: 4)
+    session.present(record: record("A different script altogether.", title: "Two"), settings: manual)
+    XCTAssertEqual(session.tokenIndex, 0, "a new script starts at the top")
+    session.present(record: one, settings: manual)
+    XCTAssertEqual(session.tokenIndex, 4, "the first script resumes where it was left")
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 3, "the text before it counts as read")
+  }
+
   func testTheRealScriptsLoadLosslesslyAndPresentFromTheTop() async throws {
     let store = makeStore()
     for (name, first) in [("172 script.md", "Kylian"), ("173 script.md", "Barcelona")] {
@@ -1220,13 +1234,13 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertTrue(session.isActivelyRunning)
     XCTAssertEqual(PresenterDraft(record: try XCTUnwrap(session.activeRecord)).recordID, second.id)
 
-    // Back to the first script: its latest text, from the top.
+    // Back to the first script: its latest text, where it was left (word 3 of 4).
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
     store.selectedID = first.id
     session.present(record: try XCTUnwrap(store.selected), settings: store.settings)
     XCTAssertEqual(session.document.markdown, "Kylian Mbappé deserves nothing.")
-    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertEqual(session.tokenIndex, 3)
   }
 
   /// A notice about one script ("the current passage was deleted", "choose an audio input")
