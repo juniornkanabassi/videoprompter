@@ -72,6 +72,18 @@ final class UIZoomTests: XCTestCase {
                    NSSize(width: 150, height: 60))
   }
 
+  /// A popover hosts its own view tree, so the inspector's zoom has to be applied to its content:
+  /// the Guides popover's content grows with every step, exactly as the pane behind it does.
+  func testTheGuidesPopoverContentScalesWithTheLibrary() {
+    let actual = NSHostingView(rootView: CameraGuideSettings(model: CameraModel.shared).frame(width: 300).padding().uiZoom(1)).fittingSize
+    XCTAssertGreaterThan(actual.height, 0)
+    for scale in AppStore.uiZoomSteps {
+      let zoomed = NSHostingView(rootView: CameraGuideSettings(model: CameraModel.shared).frame(width: 300).padding().uiZoom(scale)).fittingSize
+      XCTAssertEqual(zoomed.width, actual.width * scale, accuracy: 1, "\(scale): width")
+      XCTAssertEqual(zoomed.height, actual.height * scale, accuracy: 1, "\(scale): height")
+    }
+  }
+
   /// The real library window at every step: the editor, sidebar and inspector scale together,
   /// no control spills out of the window, a click on every visible control reaches what it
   /// reaches at actual size, and the editor's own text size (Make Text Bigger) is untouched.
