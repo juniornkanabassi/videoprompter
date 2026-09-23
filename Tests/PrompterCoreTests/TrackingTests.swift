@@ -77,6 +77,22 @@ final class DocumentAndAnchorTests: XCTestCase {
       result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: new) })
     XCTAssertEqual(new.spokenTokens[mapped].text, "word8000")
   }
+
+  func testCalloutHasNoSpokenTokensOrCuesButAPlainQuoteDoes() {
+    let markdown = "Say this.\n\n> [!info] Graphic — the [quote]\n> On screen, **24.7%** of words.\n\n> A plain [cue] quote is read.\n\n> [!warning]- Folded\n> hidden\n\nThen this."
+    let document = PrompterDocument(markdown: markdown)
+    XCTAssertEqual(document.blocks.map(\.kind), [.paragraph, .callout, .quote, .callout, .paragraph])
+    XCTAssertTrue(document.blocks[1].spokenTokens.isEmpty)
+    XCTAssertTrue(document.blocks[1].stageDirections.isEmpty)
+    XCTAssertEqual(document.blocks[2].spokenTokens.map(\.text), ["A", "plain", "quote", "is", "read"])
+    XCTAssertEqual(document.blocks[2].stageDirections.map(\.text), ["cue"])
+    XCTAssertEqual(document.spokenTokens.map(\.text),
+      ["Say", "this", "A", "plain", "quote", "is", "read", "Then", "this"])
+    // Script text touching a callout, with no blank line, stays script.
+    let touching = PrompterDocument(markdown: "Before it.\n> [!info] Note\n> hidden\nAfter it.\n> plain quote stays")
+    XCTAssertEqual(touching.blocks.map(\.kind), [.paragraph, .callout, .paragraph])
+    XCTAssertEqual(touching.spokenTokens.map(\.text), ["Before", "it", "After", "it", "plain", "quote", "stays"])
+  }
 }
 
 final class RecognitionTests: XCTestCase {

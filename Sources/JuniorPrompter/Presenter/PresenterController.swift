@@ -789,7 +789,8 @@ struct ScriptTextView: NSViewRepresentable {
       textColour = NSColor(hex: textColorHex) ?? .white
       // The editor's own layout, so the same Markdown has the same characters, paragraph styles and
       // height in both. Only presenter state (weight, cues, read colours) is applied after it.
-      let model = FormattedMarkdownEditModel(markdown: document.markdown)
+      // Callouts are production notes, so the presenter leaves them out; offsets still map to the file.
+      let model = FormattedMarkdownEditModel(markdown: document.markdown, omittingCallouts: true)
       let attributed = NSMutableAttributedString(attributedString: model.rendered(
         fontName: fontName, fontSize: fontSize,
         typography: EditorTypography(

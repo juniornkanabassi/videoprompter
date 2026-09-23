@@ -418,14 +418,21 @@ struct FormattedMarkdownEditModel {
   private let renderedSource: NSAttributedString
   private let sourceOffsets: [Int?]
   private let headingRanges: [NSRange]
+  /// Rendered callout boxes, for `rendered()` to draw, and their Markdown ranges, for editing.
+  private let callouts: [(box: NSRange, title: NSRange, colour: NSColor)]
+  private let calloutSources: [NSRange]
   private static let linkRegex = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\n]*)\)"#)
 
-  init(markdown: String) {
+  /// `omittingCallouts` leaves callouts and the blank lines around them out of the text
+  /// entirely, as the presenter shows it; every other character keeps its Markdown offset.
+  init(markdown: String, omittingCallouts: Bool = false) {
     self.markdown = markdown
     let document = PrompterDocument(markdown: markdown)
     let output = NSMutableAttributedString()
     var offsets: [Int?] = []
     var headings: [NSRange] = []
+    var boxes: [(box: NSRange, title: NSRange, colour: NSColor)] = []
+    var omitted = false
     let source = markdown as NSString
     var cursor = 0
 
@@ -440,7 +447,19 @@ struct FormattedMarkdownEditModel {
     }
 
     for block in document.blocks {
-      appendLiteral(NSRange(location: cursor, length: block.sourceRange.location - cursor))
+      let isCallout = block.kind == .callout
+      if isCallout, omittingCallouts {
+        // Skipping the gap before a callout and keeping the one after it leaves one gap
+        // between the passages either side, however many callouts sit between them.
+        cursor = block.sourceRange.location + block.sourceRange.length
+        omitted = true
+        continue
+      }
+      if !(omitted && output.length == 0) {
+        appendLiteral(NSRange(location: cursor, length: block.sourceRange.location - cursor))
+      }
+      let boxStart = output.length
+      var title = NSRange(location: boxStart, length: 0)
       var lineOffset = block.sourceRange.location
       let lines = block.rawMarkdown.split(separator: "\n", omittingEmptySubsequences: false)
       for (index, line) in lines.enumerated() {
@@ -463,10 +482,13 @@ struct FormattedMarkdownEditModel {
         // A list line keeps its first marker as written and only the rest is Markdown, so a
         // second number ("3. 2020. A year") stays text instead of becoming a nested list.
         let marker = block.kind == .listItem ? Self.listMarker(in: raw) : nil
-        let text = marker.map { (raw as NSString).substring(from: NSMaxRange($0.sourceRange)) } ?? raw
-        let base = lineOffset + (marker.map { NSMaxRange($0.sourceRange) } ?? 0)
+        // A callout hides its `> ` prefixes and `[!type]` marker, as Obsidian does.
+        let hidden = isCallout ? Self.calloutPrefix(in: raw, first: index == 0) : 0
+        let text = marker.map { (raw as NSString).substring(from: NSMaxRange($0.sourceRange)) }
+          ?? (raw as NSString).substring(from: hidden)
+        let base = lineOffset + (marker.map { NSMaxRange($0.sourceRange) } ?? hidden)
         let rich = (try? AttributedString(markdown: text,
-          options: .init(interpretedSyntax: marker == nil ? .full : .inlineOnlyPreservingWhitespace,
+          options: .init(interpretedSyntax: marker == nil && !isCallout ? .full : .inlineOnlyPreservingWhitespace,
             appliesSourcePositionAttributes: true)))
           ?? AttributedString(text)
         let part = NSMutableAttributedString(attributedString: NSAttributedString(rich))
@@ -496,8 +518,18 @@ struct FormattedMarkdownEditModel {
         }) {
           headings.append(NSRange(location: output.length, length: part.length))
         }
+        let partStart = output.length
         output.append(part)
         offsets += Self.sourceOffsets(for: part, source: text, base: base)
+        if isCallout, index == 0 {
+          if part.length == 0 {
+            // No title: show the type, as Obsidian does. It has no Markdown to edit.
+            let label = Self.calloutType(in: raw).capitalized
+            output.append(NSAttributedString(string: label))
+            offsets += Array(repeating: nil, count: (label as NSString).length)
+          }
+          title = NSRange(location: partStart, length: output.length - partStart)
+        }
         lineOffset += (raw as NSString).length
         if index < lines.count - 1 {
           output.append(NSAttributedString(string: "\n"))
@@ -505,12 +537,66 @@ struct FormattedMarkdownEditModel {
           lineOffset += 1
         }
       }
+      if isCallout {
+        boxes.append((NSRange(location: boxStart, length: output.length - boxStart), title,
+          Self.calloutColour(Self.calloutType(in: block.rawMarkdown))))
+      }
       cursor = block.sourceRange.location + block.sourceRange.length
     }
     appendLiteral(NSRange(location: cursor, length: source.length - cursor))
     renderedSource = output
     sourceOffsets = offsets
     headingRanges = headings
+    callouts = boxes
+    calloutSources = document.blocks.filter { $0.kind == .callout }.map {
+      NSRange(location: $0.sourceRange.location, length: $0.sourceRange.length)
+    }
+  }
+
+  /// Length of a callout line's hidden prefix: `> [!type]+ ` on the first line, `> ` after it.
+  private static func calloutPrefix(in line: String, first: Bool) -> Int {
+    let pattern = first ? PrompterDocument.calloutPattern + #"[ \t]*"# : #"^[ \t]*>[ \t]?"#
+    return line.range(of: pattern, options: .regularExpression).map { NSRange($0, in: line).length } ?? 0
+  }
+
+  private static func calloutType(in text: String) -> String {
+    guard let range = text.range(of: #"(?<=\[!)\w+"#, options: .regularExpression) else { return "note" }
+    return String(text[range])
+  }
+
+  /// Obsidian's colour families; an unknown type is blue, like a note.
+  private static func calloutColour(_ type: String) -> NSColor {
+    switch type.lowercased() {
+    case "tip", "hint", "important", "success", "check", "done": return .systemGreen
+    case "warning", "caution", "attention", "question", "help", "faq": return .systemOrange
+    case "example": return .systemPurple
+    case "abstract", "summary", "tldr": return .systemCyan
+    case "danger", "error", "bug", "failure", "fail", "missing": return .systemRed
+    case "quote", "cite": return .systemGray
+    default: return .systemBlue
+    }
+  }
+
+  /// NSTextBlock compares by identity, so a fresh one per render would make every keystroke
+  /// restyle each callout; the same look reuses the same block. Rendering runs on the main thread.
+  nonisolated(unsafe) private static var calloutBoxes: [String: NSTextBlock] = [:]
+  private static func calloutBox(_ colour: NSColor, padding: Double, alternate: Bool) -> NSTextBlock {
+    let key = "\(colour)|\(padding)|\(alternate)"
+    if let box = calloutBoxes[key] { return box }
+    let box = NSTextBlock()
+    box.backgroundColor = colour.withAlphaComponent(0.12)
+    box.setBorderColor(colour)
+    box.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
+    box.setWidth(padding, type: .absoluteValueType, for: .padding)
+    box.setWidth(4, type: .absoluteValueType, for: .margin, edge: .minY)
+    box.setWidth(4, type: .absoluteValueType, for: .margin, edge: .maxY)
+    calloutBoxes[key] = box
+    return box
+  }
+
+  /// The callout whose Markdown holds `offset` after its first character, if any.
+  private func callout(containing offset: Int) -> NSRange? {
+    calloutSources.first { $0.location < offset && offset <= NSMaxRange($0) }
   }
 
   func applyingStyle(_ delimiter: String, to visibleRange: NSRange) -> FormattedMarkdownEditModel? {
@@ -675,11 +761,28 @@ struct FormattedMarkdownEditModel {
       paragraph.alignment = typography.alignment
       output.addAttribute(.paragraphStyle, value: paragraph, range: full)
     }
+    // After the paragraph styles above, which would otherwise replace the box.
+    for (index, callout) in callouts.enumerated() where callout.box.length > 0 {
+      // Alternating instances keep two touching callouts in two boxes.
+      let box = Self.calloutBox(callout.colour, padding: max(6, fontSize * 0.4), alternate: index % 2 == 1)
+      output.enumerateAttribute(.paragraphStyle, in: callout.box) { value, range, _ in
+        let style = ((value as? NSParagraphStyle) ?? .default).mutableCopy() as! NSMutableParagraphStyle
+        style.textBlocks = [box]
+        output.addAttribute(.paragraphStyle, value: style, range: range)
+      }
+      guard callout.title.length > 0 else { continue }
+      output.addAttribute(.foregroundColor, value: callout.colour, range: callout.title)
+      output.enumerateAttribute(.font, in: callout.title) { value, range, _ in
+        guard let font = value as? NSFont else { return }
+        output.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask), range: range)
+      }
+    }
     return output
   }
 
   func replacing(_ range: NSRange, with replacement: String) -> FormattedMarkdownEditModel? {
     guard range.location >= 0, NSMaxRange(range) <= sourceOffsets.count else { return nil }
+    if range.length == 0, replacement == "\n", let left = leavingCallout(at: range.location) { return left }
     if range.length == 0 {
       return insertionOffsets(at: range.location).lazy.compactMap {
         replacing([NSRange(location: $0, length: 0)], visibleRange: range, with: replacement)
@@ -710,15 +813,80 @@ struct FormattedMarkdownEditModel {
     } else {
       return nil
     }
+    // Inside a callout a new line stays in it, and a removed line break takes the next line's
+    // hidden `> ` with it, so the callout's lines are never split or left with a stray `>`.
+    let runs = mergingCalloutPrefixes(runs)
+    let literalText = callout(containing: runs[0].location) == nil
+      ? literal : literal.replacingOccurrences(of: "\n", with: "\n> ")
     let source = NSMutableString(string: markdown)
     for run in runs.dropFirst().reversed() { source.replaceCharacters(in: run, with: "") }
-    source.replaceCharacters(in: runs[0], with: literal)
-    let next = FormattedMarkdownEditModel(markdown: source as String)
+    source.replaceCharacters(in: runs[0], with: literalText)
+    return checked(source as String, replacing: visibleRange, with: replacement)
+  }
+
+  /// Source positions may be absent from literal runs. Accept a fallback alignment
+  /// only when re-rendering proves it changed exactly the requested visible text.
+  private func checked(_ source: String, replacing visibleRange: NSRange, with replacement: String)
+    -> FormattedMarkdownEditModel?
+  {
+    let next = FormattedMarkdownEditModel(markdown: source)
     let expected = NSMutableString(string: renderedSource.string)
     expected.replaceCharacters(in: visibleRange, with: replacement)
-    // Source positions may be absent from literal runs. Accept a fallback alignment
-    // only when re-rendering proves it changed exactly the requested visible text.
     return next.renderedSource.string == expected as String ? next : nil
+  }
+
+  /// Return on an empty last line of a callout leaves the callout, as in Obsidian: that `> `
+  /// line becomes a blank line and the caret starts a new paragraph below it.
+  private func leavingCallout(at index: Int) -> FormattedMarkdownEditModel? {
+    let source = markdown as NSString
+    for offset in insertionOffsets(at: index) {
+      guard let box = callout(containing: offset), offset == NSMaxRange(box) else { continue }
+      let lineStart = source.lineRange(for: NSRange(location: offset, length: 0)).location
+      let line = NSRange(location: lineStart, length: offset - lineStart)
+      guard lineStart > box.location,
+        source.substring(with: line).range(of: #"^[ \t]*>[ \t]*$"#, options: .regularExpression) != nil
+      else { continue }
+      let next = NSMutableString(string: markdown)
+      next.replaceCharacters(in: line, with: "\n")
+      return checked(next as String, replacing: NSRange(location: index, length: 0), with: "\n")
+    }
+    return nil
+  }
+
+  private func mergingCalloutPrefixes(_ runs: [NSRange]) -> [NSRange] {
+    let source = markdown as NSString
+    func merged(_ runs: [NSRange]) -> [NSRange] {
+      var result: [NSRange] = []
+      for run in runs {
+        if let last = result.last, NSMaxRange(last) >= run.location {
+          result[result.count - 1] = NSUnionRange(last, run)
+        } else {
+          result.append(run)
+        }
+      }
+      return result
+    }
+    let lines = merged(runs.map { run in
+      let end = NSMaxRange(run)
+      // Only a line break between two of the callout's own lines, not the one that ends it.
+      guard run.length > 0, source.character(at: end - 1) == 0x0A,
+        let box = callout(containing: end - 1), end - 1 < NSMaxRange(box)
+      else { return run }
+      let rest = source.substring(from: end)
+      guard let prefix = rest.range(of: #"^[ \t]*>[ \t]?"#, options: .regularExpression) else { return run }
+      return NSRange(location: run.location, length: run.length + NSRange(prefix, in: rest).length)
+    })
+    // A selection covering a callout's whole visible text takes the whole callout, hidden
+    // `> [!type]` header and formatting delimiters included.
+    var result = lines
+    for box in calloutSources {
+      let first = sourceOffsets.lazy.compactMap { $0 }.first { $0 >= box.location }
+      guard let i = result.firstIndex(where: { $0.location == first && $0.location > box.location }),
+        let j = result[i...].firstIndex(where: { NSMaxRange($0) >= NSMaxRange(box) })
+      else { continue }
+      result.replaceSubrange(i...j, with: [NSRange(location: box.location, length: NSMaxRange(result[j]) - box.location)])
+    }
+    return merged(result)
   }
 
   private func isListMarkerEdit(_ runs: [NSRange], replacement: String) -> Bool {

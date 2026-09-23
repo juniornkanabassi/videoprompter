@@ -1339,4 +1339,89 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(upright.width, 1920, accuracy: 0.001)
     XCTAssertEqual(upright.height, 1080, accuracy: 0.001)
   }
+
+  /// Callouts are production notes: gone from the presented text (not greyed), while every
+  /// spoken word after one still maps to its own characters and greys as it is read.
+  func testPresenterOmitsCalloutsAndReadGreyingStaysAlignedAfterThem() throws {
+    let markdown = "Intro words here.\n\n> [!info] Graphic — stats\n> **24.7%** possession [cue]\n\n> [!tip] Second\n> more notes\n\nAfter the graphic we speak."
+    let document = PrompterDocument(markdown: markdown)
+    for showCues in [true, false] {
+      let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+      let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+      coordinator.textView = view
+      let graphic = try XCTUnwrap(document.spokenTokens.firstIndex { $0.normalised == "graphic" })
+      coordinator.tokenIndex = graphic
+      coordinator.lastConfirmedTokenIndex = graphic
+      coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 1, showCues: showCues)
+      XCTAssertEqual(view.string, "Intro words here.\n\nAfter the graphic we speak.")
+      XCTAssertEqual(coordinator.mappings.count, document.spokenTokens.count)
+      let plain = view.string as NSString
+      for (range, index) in coordinator.mappings {
+        XCTAssertTrue(plain.substring(with: range).hasPrefix(document.spokenTokens[index].text))
+        let colour = view.textStorage?.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
+        XCTAssertEqual(colour?.alphaComponent ?? 0, index <= graphic ? 0.38 : 1, accuracy: 0.02, "\(index)")
+      }
+    }
+  }
+
+  /// Editing a callout moves no reading position, since it has no words to track.
+  func testEditingACalloutKeepsTheAnchor() throws {
+    let markdown = "Opening lines.\n\n> [!info] Graphic\n> old notes\n\nTarget passage words."
+    let record = ScriptRecord(metadata: .init(title: "Callout", fileName: "callout.md", revision: 1,
+      contentFingerprint: "one"), markdown: markdown)
+    let session = SessionStore()
+    session.present(record: record, settings: PrompterSettings())
+    session.seek(to: try XCTUnwrap(session.document.spokenTokens.firstIndex { $0.normalised == "target" }))
+    var next = record
+    next.metadata.revision = 2
+    next.metadata.contentFingerprint = "two"
+    next.markdown = markdown.replacingOccurrences(of: "old notes", with: "rewritten notes with target words")
+    session.applyEditedRecord(next)
+    XCTAssertEqual(session.activeToken?.normalised, "target")
+    XCTAssertEqual(session.document.spokenTokens.map(\.text), ["Opening", "lines", "Target", "passage", "words"])
+    XCTAssertNil(session.anchorNotice)
+  }
+
+  /// Junior's real Short 181 script, copied to a temporary folder: set JP_CALLOUT_FIXTURE to run.
+  func testRealScriptPresentsEverySpokenParagraphAndNoCallout() throws {
+    guard let path = ProcessInfo.processInfo.environment["JP_CALLOUT_FIXTURE"] else {
+      throw XCTSkip("JP_CALLOUT_FIXTURE not set")
+    }
+    let markdown = try String(contentsOfFile: path, encoding: .utf8)
+    let document = PrompterDocument(markdown: markdown)
+    let callouts = document.blocks.filter { $0.kind == .callout }
+    XCTAssertEqual(callouts.count, 8)
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 800, height: 400))
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    coordinator.render(document: document, fontName: "Helvetica", fontSize: 30, textOpacity: 1)
+    XCTAssertFalse(view.string.contains("Graphic"))
+    XCTAssertFalse(view.string.contains("Source:"))
+    let spoken = document.blocks.filter { $0.kind != .callout }.map {
+      $0.rawMarkdown.trimmingCharacters(in: .whitespaces)
+    }
+    var cursor = view.string.startIndex
+    for paragraph in spoken {
+      let range = try XCTUnwrap(view.string.range(of: paragraph, range: cursor..<view.string.endIndex), paragraph)
+      cursor = range.upperBound
+    }
+    XCTAssertEqual(coordinator.mappings.count, document.spokenTokens.count)
+    let editor = FormattedMarkdownEditModel(markdown: markdown).rendered()
+    var titles = 0
+    editor.enumerateAttribute(.paragraphStyle, in: NSRange(location: 0, length: editor.length)) { value, _, _ in
+      if (value as? NSParagraphStyle)?.textBlocks.isEmpty == false { titles += 1 }
+    }
+    XCTAssertGreaterThan(titles, 0)
+    for callout in callouts {
+      let title = try XCTUnwrap(callout.rawMarkdown.components(separatedBy: "\n").first?
+        .replacingOccurrences(of: "> [!info] ", with: ""))
+      let range = (editor.string as NSString).range(of: title)
+      XCTAssertNotEqual(range.location, NSNotFound, title)
+      guard range.location != NSNotFound else { continue }
+      XCTAssertEqual(editor.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor, .systemBlue)
+      XCTAssertFalse((editor.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?
+        .textBlocks.isEmpty ?? true, title)
+    }
+    XCTAssertFalse(editor.string.contains("[!info]"))
+  }
 }

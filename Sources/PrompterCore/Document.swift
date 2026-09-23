@@ -2,6 +2,8 @@ import Foundation
 
 public enum MarkdownBlockKind: String, Codable, Hashable, Sendable {
   case paragraph, heading, listItem, quote, code, thematicBreak
+  /// An Obsidian callout (`> [!info] Title`): production notes, never read aloud.
+  case callout
 }
 public struct DocumentToken: Codable, Hashable, Sendable {
   public var text: String
@@ -29,6 +31,8 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
   private static let inlineCodeRegex = try! NSRegularExpression(pattern: #"`[^`\n]*`"#)
   private static let stageDirectionRegex = try! NSRegularExpression(
     pattern: #"(?<!\\)\[([^\]\n]+)\](?!\s*\()"#)
+  /// The first line of an Obsidian callout: `> [!type]`, optionally folded with `+`/`-`.
+  public static let calloutPattern = #"^[ \t]*>[ \t]*\[!\w+\][+-]?"#
   public var markdown: String
   public var blocks: [MarkdownBlock]
   public var spokenTokens: [DocumentToken] { blocks.flatMap(\.spokenTokens) }
@@ -37,7 +41,10 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
     let drafts = Self.blockDrafts(markdown)
     let ids = Self.reusedIDs(drafts: drafts, previous: previous?.blocks ?? [])
     blocks = zip(drafts, ids).map { draft, id in
-      let excluded = Self.excludedRanges(in: draft.text, base: draft.range.location)
+      // A callout is a note for the edit, not script: no words to track and no cues.
+      let excluded = draft.kind == .callout
+        ? (ranges: [NSRange(location: 0, length: (draft.text as NSString).length)], cues: [])
+        : Self.excludedRanges(in: draft.text, base: draft.range.location)
       return MarkdownBlock(
         id: id, kind: draft.kind, sourceRange: draft.range, rawMarkdown: draft.text,
         spokenTokens: Self.tokens(
@@ -63,6 +70,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
     var start: Int?
     var end = 0
     var inFence = false
+    var inCallout = false
     let lines = markdown.split(separator: "\n", omittingEmptySubsequences: false)
     var cursor = 0
     func append(_ lower: Int, _ upper: Int) {
@@ -77,6 +85,8 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
         kind = .heading
       } else if trimmed.range(of: #"^(?:[-+*]|\d+[.)])\s"#, options: .regularExpression) != nil {
         kind = .listItem
+      } else if trimmed.range(of: calloutPattern, options: .regularExpression) != nil {
+        kind = .callout
       } else if trimmed.hasPrefix(">") {
         kind = .quote
       } else if trimmed.range(of: #"^(?:-{3,}|\*{3,}|_{3,})$"#, options: .regularExpression) != nil {
@@ -95,7 +105,17 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
         if let s = start { append(s, end) }
         start = nil
       } else {
-        if start == nil { start = cursor }
+        // A callout is only its own `>` lines: a callout line starts a block and any other line
+        // ends one, so script text beside a callout is never swallowed into it and silenced.
+        let opensCallout = !inFence && line.range(of: calloutPattern, options: .regularExpression) != nil
+        if let s = start, !inFence, opensCallout || (inCallout && !trimmed.hasPrefix(">")) {
+          append(s, end)
+          start = nil
+        }
+        if start == nil {
+          start = cursor
+          inCallout = opensCallout
+        }
         end = cursor + length
         if fence { inFence.toggle() }
       }
