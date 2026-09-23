@@ -434,6 +434,7 @@ private struct PresenterView: View {
       .help("Drag to move the presenter")
       .allowsHitTesting(!draft.isEditing)
       .accessibilityHidden(draft.isEditing)
+      .scaleEffect(store.uiZoom, anchor: .top)
     }
     .overlay(alignment: .bottom) {
       HStack(spacing: 8) {
@@ -464,6 +465,7 @@ private struct PresenterView: View {
       }
       .buttonStyle(.bordered).padding(8)
       .background(.ultraThinMaterial, in: Capsule()).padding(10)
+      .scaleEffect(store.uiZoom, anchor: .bottom)
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
@@ -495,6 +497,7 @@ private struct PresenterView: View {
       .font(.caption).multilineTextAlignment(.center)
       .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
       .padding(.bottom, 58).frame(maxWidth: 560)
+      .scaleEffect(store.uiZoom, anchor: .bottom)
       }
     }
   }

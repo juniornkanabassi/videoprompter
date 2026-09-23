@@ -54,7 +54,9 @@ struct LibraryView: View {
         }
       }
       .listStyle(.sidebar)
-      .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+      // Zoom widens the ideal and widest column, never the narrowest: doubled minimums asked
+      // more of the smallest window than it had, and AppKit looped on constraints.
+      .navigationSplitViewColumnWidth(min: 200, ideal: 240 * store.uiZoom, max: 320 * store.uiZoom)
       // New lives in the toolbar and File menu; this bar keeps Move to Trash (Command-Delete).
       .safeAreaInset(edge: .bottom) {
         HStack {
@@ -75,18 +77,22 @@ struct LibraryView: View {
       .onChange(of: store.selectedID) { _, id in
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
+      .uiZoom(store.uiZoom)
     } detail: {
-      if let script = store.selected {
-        EditorView(store: store, script: script)
-      } else {
-        ContentUnavailableView("Select a script", systemImage: "doc.text")
-      }
+      Group {
+        if let script = store.selected {
+          EditorView(store: store, script: script)
+        } else {
+          ContentUnavailableView("Select a script", systemImage: "doc.text")
+        }
+      }.uiZoom(store.uiZoom)
     }
     .navigationSplitViewStyle(.balanced)
     .inspector(isPresented: $store.inspector) {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
-      InspectorView(store: store).inspectorColumnWidth(min: 280, ideal: 320, max: 480)
+      InspectorView(store: store).uiZoom(store.uiZoom)
+        .inspectorColumnWidth(min: 280, ideal: 320 * store.uiZoom, max: 480 * store.uiZoom)
     }
     .navigationTitle("JuniorPrompter")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
@@ -186,7 +192,7 @@ struct LibraryView: View {
             importPreview = nil
           }.keyboardShortcut(.defaultAction)
         }
-      }.padding(24)
+      }.padding(24).uiZoom(store.uiZoom)
       }
     }
     .alert("Import failed", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
@@ -306,7 +312,7 @@ private struct EditorView: View {
     }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
-    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script) }
+    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom) }
     .id(script.metadata.id)
   }
 }

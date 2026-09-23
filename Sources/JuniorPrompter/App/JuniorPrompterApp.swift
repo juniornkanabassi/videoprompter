@@ -94,6 +94,11 @@ private enum PresenterSaveError: LocalizedError {
   @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
   @Published var previewFontName = "Lexend Deca" { didSet { persistSettings() } }
   @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
+  /// View > Zoom In, Zoom Out and Actual Size: the whole library window and the presenter's controls.
+  @Published var uiZoom = 1.0 { didSet { persistSettings() } }
+  /// Nothing below 100%: zoomed out, a pane's AppKit views are laid out wider than their column,
+  /// and AppKit then refuses clicks on the part that would overlap the next column.
+  static let uiZoomSteps = [1, 1.1, 1.25, 1.5, 1.75, 2]
   static let presenterFontSizes = 18.0...120.0
   static let editorFontSizes = 12.0...40.0
   @Published var errorMessage: String?
@@ -101,9 +106,14 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
 
-  /// View > Zoom In and Zoom Out: about 10% a step, on the presenter's text when it is the key
-  /// window and on the library editor's otherwise. Both sizes are the saved settings.
-  func zoom(in zoomIn: Bool, presenter: Bool) {
+  func stepUIZoom(in zoomIn: Bool) {
+    let steps = Self.uiZoomSteps
+    uiZoom = zoomIn ? steps.first { $0 > uiZoom + 0.001 } ?? steps.last! : steps.last { $0 < uiZoom - 0.001 } ?? steps.first!
+  }
+
+  /// View > Make Text Bigger and Make Text Smaller: about 10% a step, on the presenter's text when
+  /// it is the key window and on the library editor's otherwise. Both sizes are the saved settings.
+  func zoomText(in zoomIn: Bool, presenter: Bool) {
     func step(_ size: Double, _ sizes: ClosedRange<Double>) -> Double {
       let next = zoomIn ? max(size + 1, (size * 1.1).rounded()) : min(size - 1, (size / 1.1).rounded())
       return min(max(next, sizes.lowerBound), sizes.upperBound)
@@ -111,9 +121,9 @@ private enum PresenterSaveError: LocalizedError {
     if presenter { settings.fontSize = step(settings.fontSize, Self.presenterFontSizes) }
     else { previewFontSize = step(previewFontSize, Self.editorFontSizes) }
   }
-  func zoomFocusedWindow(in zoomIn: Bool) {
+  func zoomFocusedText(in zoomIn: Bool) {
     let panel = PresenterController.shared.panel
-    zoom(in: zoomIn, presenter: panel != nil && NSApp.keyWindow === panel)
+    zoomText(in: zoomIn, presenter: panel != nil && NSApp.keyWindow === panel)
   }
   /// Written when a legacy mode is first seen, because the settings saved right after decoding
   /// overwrite it; a relaunch before dismissal still finds this and shows the notice again.
@@ -180,6 +190,8 @@ private enum PresenterSaveError: LocalizedError {
     let savedPresets: [PrompterSettings]? = stored("presets")
     let savedTypography: EditorTypographyPreferences? = stored("editorTypography")
     let savedSettings: PrompterSettings? = stored("settings")
+    let savedZoom = isolatedDefaults.double(forKey: "uiZoom")
+    if savedZoom > 0 { uiZoom = min(max(savedZoom, Self.uiZoomSteps.first!), Self.uiZoomSteps.last!) }
     if let savedPresets { presets = savedPresets }
     if let savedTypography {
       sourceFontName = savedTypography.sourceFontName
@@ -603,6 +615,7 @@ private enum PresenterSaveError: LocalizedError {
       sourceFontName: sourceFontName, sourceFontSize: sourceFontSize,
       previewFontName: previewFontName, previewFontSize: previewFontSize)
     if let data = try? JSONEncoder().encode(typography) { defaults.set(data, forKey: "editorTypography") }
+    defaults.set(uiZoom, forKey: "uiZoom")
   }
   private static func isMissingFile(_ error: Error) -> Bool {
     let nsError = error as NSError
@@ -689,8 +702,16 @@ private enum PresenterSaveError: LocalizedError {
             .disabled(!store.libraryAvailable)
         }
         CommandGroup(before: .toolbar) {
-          Button("Zoom In") { store.zoomFocusedWindow(in: true) }.keyboardShortcut("+", modifiers: .command)
-          Button("Zoom Out") { store.zoomFocusedWindow(in: false) }.keyboardShortcut("-", modifiers: .command)
+          Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
+            .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
+          Button("Zoom Out") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)
+            .disabled(store.uiZoom <= AppStore.uiZoomSteps.first!)
+          Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
+            .disabled(store.uiZoom == 1)
+          Divider()
+          // Notes' text zoom keys. ">" is what Shift-period types, so AppKit matches it as Command-Shift-period.
+          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(">", modifiers: .command)
+          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut("<", modifiers: .command)
           Divider()
         }
         CommandMenu("Prompter") {
@@ -754,7 +775,7 @@ private struct CameraCommands: Commands {
       guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
         event.charactersIgnoringModifiers == "=", let store = self?.store
       else { return event }
-      store.zoomFocusedWindow(in: true)
+      store.stepUIZoom(in: true)
       return nil
     }
   }
@@ -767,6 +788,29 @@ private struct CameraCommands: Commands {
     }
     return .terminateLater
   }
+}
+
+/// Zoom for a whole pane: lays the content out in 1/scale of the space it is given and draws it
+/// scaled back up, so every label, control and text view grows together. SwiftUI's own scale keeps
+/// clicks on target, AppKit views inside included; an NSHostingView inside a bounds-scaled NSView
+/// draws the same but stops hit-testing its AppKit subviews.
+struct UIZoom: Layout {
+  var scale: Double
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let size = subviews.first?.sizeThatFits(ProposedViewSize(
+      width: proposal.width.map { $0 / scale }, height: proposal.height.map { $0 / scale })) ?? .zero
+    guard scale != 1 else { return size }
+    // Zoomed, a pane takes the space it is offered: passing its content's minimum on, doubled at
+    // 200%, asked the split view for more than the window had and AppKit looped on constraints.
+    return CGSize(width: proposal.width ?? size.width * scale, height: proposal.height ?? size.height * scale)
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    subviews.first?.place(at: bounds.origin, anchor: .topLeading,
+      proposal: ProposedViewSize(width: bounds.width / scale, height: bounds.height / scale))
+  }
+}
+extension View {
+  func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
 }
 
 extension NSScreen {

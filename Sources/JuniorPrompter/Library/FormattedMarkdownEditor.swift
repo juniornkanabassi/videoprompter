@@ -19,6 +19,15 @@ struct EditorTypography {
 private final class FormattingTextView: NSTextView {
   var onFormat: ((EditorFormatAction) -> Void)?
 
+  /// Width autoresizing adds the clip view's change, which drifts once a zoomed pane rescales
+  /// the scroll view: zoomed out, the text wrapped short of the pane and its right strip took
+  /// no clicks. The text is always exactly as wide as what shows it.
+  override func setFrameSize(_ newSize: NSSize) {
+    var size = newSize
+    if !isHorizontallyResizable, let clip = superview as? NSClipView { size.width = clip.bounds.width }
+    super.setFrameSize(size)
+  }
+
   @objc func showFormatMenu(_ sender: NSButton) {
     formatMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
   }
