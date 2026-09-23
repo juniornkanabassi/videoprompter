@@ -434,6 +434,35 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(9, from: "abc def ghi", to: "abc ghi"), 5)
   }
 
+  /// Editing in the presenter keeps the reading's progress in view: what was read is greyed as
+  /// the presenter greys it, and an edit before it moves the grey edge with the text.
+  @MainActor func testTextAlreadyReadStaysGreyedWhileEditing() throws {
+    var value = "First words already read. Then the words still to come."
+    let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),
+      fontName: "Helvetica", fontSize: 24)
+    let coordinator = editor.makeCoordinator()
+    let view = NSTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 400))
+    let white = EditorTypography(textColor: .white.withAlphaComponent(0.9))
+    let readThrough = (value as NSString).range(of: "Then").location
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24, typography: white, readThrough: readThrough)
+    func alpha(_ word: String) -> CGFloat {
+      let at = (view.string as NSString).range(of: word).location
+      return (view.textStorage?.attribute(.foregroundColor, at: at, effectiveRange: nil) as? NSColor)?.alphaComponent ?? -1
+    }
+    XCTAssertEqual(alpha("First"), 0.9 * 0.38, accuracy: 0.01, "read: greyed")
+    XCTAssertEqual(alpha("already"), 0.9 * 0.38, accuracy: 0.01)
+    XCTAssertEqual(alpha("Then"), 0.9, accuracy: 0.01, "not read yet: full")
+    XCTAssertEqual(view.selectedRange().length, 0, "nothing is selected")
+
+    value = "A new opening. " + value
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24, typography: white, readThrough: readThrough)
+    XCTAssertEqual(alpha("First"), 0.9 * 0.38, accuracy: 0.01, "an edit before it moves the edge with the text")
+    XCTAssertEqual(alpha("Then"), 0.9, accuracy: 0.01)
+
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24, typography: white)
+    XCTAssertEqual(alpha("First"), 0.9, accuracy: 0.01, "nothing read, nothing greyed")
+  }
+
   @MainActor func testExternalSourceReplacementClearsEditorUndoHistory() {
     var value = "one"
     let editor = FormattedMarkdownEditor(markdown: Binding(get: { value }, set: { value = $0 }),

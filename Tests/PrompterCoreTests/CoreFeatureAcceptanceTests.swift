@@ -691,6 +691,44 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
 
   // MARK: Manual scroll-back
 
+  /// A trackpad scroll is one continuous gesture (and then momentum). Snapping the nearest word
+  /// onto the guide at every step of it fought the fingers and juddered; a mouse wheel's clicks
+  /// start no live scroll, so only the trackpad showed it. The text stays where the hand puts it
+  /// until the gesture ends, then the word it chose settles on the guide.
+  func testATrackpadScrollFollowsTheHandAndSettlesOnlyWhenItEnds() async throws {
+    let (store, _) = try await presenting(try fixture("173 script.md"))
+    let session = store.session
+    let tokens = session.document.spokenTokens
+    let surface = Surface(store: store)
+    defer { surface.close() }
+    await surface.settle()
+    for paused in [false, true] {
+      session.play(captureAudio: false)
+      let reader = Dictation(session, generation: paused ? 2 : 1)
+      let start = readableIndices(session.document).first { $0 > session.tokenIndex } ?? 0
+      let words = readableIndices(session.document).filter { $0 >= start }.prefix(70).map { tokens[$0].text }
+      for chunk in stride(from: 0, to: words.count, by: 7) {
+        await reader.say(words[chunk..<min(words.count, chunk + 7)].joined(separator: " "))
+      }
+      if paused { session.pause() }
+      await surface.settle(animations: true)
+      let scroll = surface.scroll
+      let before = scroll.contentView.bounds.origin
+      NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: scroll)
+      for step in 1...8 {
+        scroll.contentView.setBoundsOrigin(NSPoint(x: before.x, y: before.y - CGFloat(step) * 13))
+        NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: scroll)
+        await surface.settle()
+        XCTAssertEqual(scroll.contentView.bounds.origin.y, before.y - CGFloat(step) * 13, accuracy: 0.5,
+          "paused \(paused), step \(step): the text stays under the fingers")
+      }
+      NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: scroll)
+      await surface.settle()
+      XCTAssertTrue(surface.activeWordIsOnGuide(session), "paused \(paused): the chosen word settles on the guide")
+      reader.breath()
+    }
+  }
+
   /// Scrolling back by hand re-anchors on the word at the guide; the reader re-reads from
   /// there and tracking carries on, first inside the same dictation range, then after a pause.
   func testManualScrollBackReanchorsAndTrackingContinues() async throws {

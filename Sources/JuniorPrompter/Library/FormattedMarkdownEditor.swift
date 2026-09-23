@@ -76,6 +76,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
   /// The reading view flips the guide for a vertically mirrored presenter; editing in place
   /// must flip it the same way or the anchored passage jumps when the pencil is pressed.
   var verticalMirror = false
+  /// Markdown offset the reader has read up to: the text before it is greyed as the presenter greys
+  /// it, so editing in place still shows where the reading got to.
+  var readThroughSourceOffset: Int? = nil
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -131,7 +134,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       formatButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8)
     ])
     view.textContainerInset = NSSize(width: typography.horizontalInset, height: 8)
-    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography)
+    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography,
+      readThrough: readThroughSourceOffset)
     if focusesOnAppear {
       DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
     }
@@ -151,7 +155,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     else { return }
     context.coordinator.parent = self
     view.textContainerInset.width = typography.horizontalInset
-    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography)
+    context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography,
+      readThrough: readThroughSourceOffset)
   }
 
   @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -167,10 +172,13 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     init(_ parent: FormattedMarkdownEditor) { self.parent = parent }
 
     func configure(_ view: NSTextView, markdown: String, fontName: String, fontSize: Double,
-      typography: EditorTypography = EditorTypography())
+      typography: EditorTypography = EditorTypography(), readThrough: Int? = nil)
     {
       textView = view
-      let changedFont = self.fontName != fontName || self.fontSize != fontSize
+      let changedReading = self.readThrough?.offset != readThrough
+      // Kept with the text it was measured in, so edits before it move the grey edge with them.
+      if changedReading { self.readThrough = readThrough.map { ($0, markdown) } }
+      let changedFont = changedReading || self.fontName != fontName || self.fontSize != fontSize
         || self.typography.textColor != typography.textColor
         || self.typography.lineSpacing != typography.lineSpacing
         || self.typography.paragraphSpacing != typography.paragraphSpacing
@@ -266,7 +274,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       if view.undoManager?.isUndoing == true || view.undoManager?.isRedoing == true { return }
       // This is only a recovery path for an AppKit mutation that did not take the
       // delegate route. Normal undo/redo restores its exact registered source snapshot.
-      let rendered = model.rendered(fontName: fontName, fontSize: fontSize, typography: typography)
+      let rendered = styled()
       if view.string != rendered.string {
         guard let edit = Self.visibleEdit(from: rendered.string,
           to: view.string), let next = model.replacing(edit.range, with: edit.replacement)
@@ -355,9 +363,28 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       parent.markdown = snapshot.markdown
     }
 
+    private var readThrough: (offset: Int, markdown: String)?
+
+    /// The model's rendering, with the text already read greyed as the presenter greys it
+    /// (0.38 of the text's opacity), on every render and after every edit alike.
+    private func styled() -> NSAttributedString {
+      let rendered = model.rendered(fontName: fontName, fontSize: fontSize, typography: typography)
+      guard let readThrough,
+        let end = model.visibleIndex(forSourceOffset: Self.mappedOffset(readThrough.offset, from: readThrough.markdown, to: model.markdown)),
+        end > 0
+      else { return rendered }
+      let greyed = NSMutableAttributedString(attributedString: rendered)
+      let range = NSRange(location: 0, length: min(end, greyed.length))
+      greyed.enumerateAttribute(.foregroundColor, in: range) { value, part, _ in
+        let colour = (value as? NSColor) ?? typography.textColor
+        greyed.addAttribute(.foregroundColor, value: colour.withAlphaComponent(colour.alphaComponent * 0.38), range: part)
+      }
+      return greyed
+    }
+
     private func render(_ view: NSTextView, keeping selection: NSRange) {
       updating = true
-      view.textStorage?.setAttributedString(model.rendered(fontName: fontName, fontSize: fontSize, typography: typography))
+      view.textStorage?.setAttributedString(styled())
       let location = min(selection.location, view.string.utf16.count)
       view.setSelectedRange(NSRange(location: location, length: min(selection.length, view.string.utf16.count - location)))
       updating = false
@@ -391,7 +418,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
     private func reconcileAttributes(in view: NSTextView) {
       guard let storage = view.textStorage, storage.length > 0 else { return }
-      let rendered = model.rendered(fontName: fontName, fontSize: fontSize, typography: typography)
+      let rendered = styled()
       guard storage.string == rendered.string, !storage.isEqual(to: rendered) else { return }
       updating = true
       storage.beginEditing()

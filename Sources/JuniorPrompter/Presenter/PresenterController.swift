@@ -386,7 +386,11 @@ private struct PresenterView: View {
               typography: Self.presenterTypography(store.settings, sideInset: sideInset),
               anchorSourceOffset: session.activeToken?.sourceRange.location,
               guideFraction: store.settings.guideFraction,
-              verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180))
+              verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180),
+              readThroughSourceOffset: session.lastConfirmedTokenIndex.flatMap { index in
+                let tokens = session.document.spokenTokens
+                return tokens.indices.contains(index) ? tokens[index].sourceRange.upperBound : nil
+              })
           } else {
             ScriptTextView(
               document: session.document, tokenIndex: session.tokenIndex,
@@ -438,6 +442,12 @@ private struct PresenterView: View {
     }
     .overlay(alignment: .bottom) {
       HStack(spacing: 8) {
+        if draft.isEditing {
+          Label("Editing", systemImage: "pencil")
+            .font(.callout.weight(.semibold)).foregroundStyle(.orange)
+            .padding(.horizontal, 6)
+            .help("Editing the script in place. Finish with ⌘Return, or cancel.")
+        }
         // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
         Group {
           CapsuleButton("Previous passage", systemImage: "backward.end.fill", action: session.previousPassage)
@@ -751,11 +761,17 @@ struct ScriptTextView: NSViewRepresentable {
           guard let self, let scroll else { return }
           MainActor.assumeIsolated { self.userDidScroll(scroll) }
         },
-        center.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
+        center.addObserver(forName: NSScrollView.didEndLiveScrollNotification, object: scroll, queue: .main) { [weak self, weak scroll] _ in
           MainActor.assumeIsolated {
             guard let self else { return }
             self.isLiveScrolling = false
             if self.isActivelyRunning, self.pendingUserSeeks == 0 { self.isHandScrolled = false }
+            // The hand let go (momentum included): glide the word it chose onto the guide, once.
+            if self.manualPosition == nil, let scroll {
+              self.invalidateAlignment()
+              self.align(scroll: scroll, tokenIndex: self.tokenIndex, guideFraction: self.guideFraction,
+                         eases: !Self.reducesMotion())
+            }
           }
         },
       ]
@@ -1015,13 +1031,17 @@ struct ScriptTextView: NSViewRepresentable {
     func alignToCurrent(in scroll: NSScrollView) {
       if manualPosition != nil { alignManual(in: scroll) } else { align(scroll: scroll, tokenIndex: tokenIndex, guideFraction: guideFraction) }
     }
-    func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double) {
-      guard (lastAligned != tokenIndex || lastGuideFraction != guideFraction),
+    /// Never while a hand is scrolling: a trackpad sends a continuous gesture, and snapping the
+    /// nearest word onto the guide at each step fought the fingers and juddered (a mouse wheel's
+    /// discrete clicks start no live scroll, so it never showed there). The end of the gesture
+    /// settles it once.
+    func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double, eases: Bool? = nil) {
+      guard !isLiveScrolling, (lastAligned != tokenIndex || lastGuideFraction != guideFraction),
         let mapping = mappings.first(where: { $0.1 == tokenIndex }),
         let (manager, container, guideY) = prepareGuide(scroll, fraction: guideFraction)
       else { return }
       let target = scrollY(of: mapping.0, manager: manager, container: container, guideY: guideY)
-      let animate = lastAligned != nil && isActivelyRunning && !snapNextAlignment && !Self.reducesMotion()
+      let animate = eases ?? (lastAligned != nil && isActivelyRunning && !snapNextAlignment && !Self.reducesMotion())
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
