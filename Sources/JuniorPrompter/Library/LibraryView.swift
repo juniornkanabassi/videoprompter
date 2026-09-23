@@ -92,7 +92,8 @@ struct LibraryView: View {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
       InspectorView(store: store).uiZoom(store.uiZoom)
-        .inspectorColumnWidth(min: 280, ideal: 320 * store.uiZoom, max: 480 * store.uiZoom)
+        // The ideal stays put under zoom: the window's minimum is measured from it (see minWidth).
+        .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
     .navigationTitle("JuniorPrompter")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
@@ -203,7 +204,11 @@ struct LibraryView: View {
       Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
-    .frame(minWidth: 760, minHeight: 500)
+    // The narrowest the three columns lay out in: SwiftUI asks twice the inspector's ideal width
+    // (320) on top of the sidebar and editor. A smaller minimum let the window get narrower and
+    // AppKit looped on constraints until it crashed; it holds with the inspector hidden too, so
+    // showing it never needs a wider window. UIZoomTests checks it at every zoom step.
+    .frame(minWidth: 932, minHeight: 500)
   }
 
   private func createFolder() {

@@ -135,22 +135,35 @@ final class UIZoomTests: XCTestCase {
     window.contentView = nil
   }
 
-  /// 200% in a small laptop-sized library window: the panes' own minimums, doubled, once asked the
-  /// split view for more than the window had and AppKit looped on constraints (an exception XCTest
-  /// reports). Zoomed panes take what they are offered, and the editor still fits its pane.
-  /// (At its 760 x 500 minimum the bare library window loops even unzoomed, zoom or not.)
-  func testZoomingASmallLibraryWindowNeverLoopsOnLayout() async throws {
+  /// The library window at its narrowest, sized the way SwiftUI's own window sizes it. The fixed
+  /// 760-point minimum let the window go narrower than the three columns need (SwiftUI asks twice
+  /// the inspector's ideal width on top of the sidebar and editor), and AppKit looped on
+  /// constraints until it crashed; showing the inspector in a narrowed window did the same.
+  /// Zoom must not raise that minimum either, or 200% would outgrow a laptop screen.
+  func testTheNarrowestLibraryWindowLaysOutWithTheInspectorShownOrHiddenAtEveryZoom() async throws {
     let record = try await store.library!.create(title: "Small", markdown: "A short script.")
     await store.reload()
     store.selectedID = record.id
-    let window = hosting(LibraryView(store: store), size: NSSize(width: 1000, height: 620))
+    store.inspector = false
+    let controller = NSHostingController(rootView: LibraryView(store: store))
+    controller.sizingOptions = [.minSize]
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 750), styleMask: [.titled, .resizable],
+                          backing: .buffered, defer: false)
+    window.contentViewController = controller
+    await settle(window)
+    window.setContentSize(window.contentMinSize)   // as far as dragging the corner goes
+    await settle(window)
+    XCTAssertEqual(window.contentMinSize.width, 932, "the minimum does not shrink with the inspector hidden")
+    store.inspector = true
     for scale in AppStore.uiZoomSteps + AppStore.uiZoomSteps.reversed() {
       store.uiZoom = scale
       await settle(window)
+      XCTAssertEqual(controller.view.frame.width, 932, accuracy: 1, "\(scale)")
+      XCTAssertEqual(window.contentMinSize.width, 932, "\(scale): zoom leaves the minimum alone")
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("short") })
       XCTAssertEqual(editor.frame.width, editor.enclosingScrollView?.contentView.bounds.width ?? 0, accuracy: 0.5, "\(scale)")
     }
-    window.contentView = nil
+    window.contentViewController = nil
   }
 
   /// The presenter zooms its controls only: the script's size and the reading guide are the
