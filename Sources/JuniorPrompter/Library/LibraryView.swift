@@ -194,6 +194,9 @@ struct LibraryView: View {
           }.keyboardShortcut(.defaultAction)
         }
       }.padding(24).uiZoom(store.uiZoom)
+        // The zoomed layout takes only what the sheet offers, so the sheet must be asked for the
+        // scaled minimum here or the preview is laid out narrower than its text and clipped.
+        .frame(minWidth: 648 * store.uiZoom, minHeight: 448 * store.uiZoom)
       }
     }
     .alert("Import failed", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
@@ -317,7 +320,7 @@ private struct EditorView: View {
     }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
-    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom) }
+    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom) }
     .id(script.metadata.id)
   }
 }
