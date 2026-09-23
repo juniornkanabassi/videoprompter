@@ -423,6 +423,12 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24)
     XCTAssertEqual(shown("Passage 25 "), before, accuracy: 1, "a deletion before it")
 
+    // Zoom In: the passage at the top of the editor is still at the top at the larger size.
+    scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: lineTop("Passage 25 ")))
+    scroll.reflectScrolledClipView(scroll.contentView)
+    coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 32)
+    XCTAssertEqual(shown("Passage 25 "), 0, accuracy: 1, "a larger text size")
+
     XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(50, from: "abc", to: "abc"), 50)
     XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(9, from: "abc def ghi", to: "abc XY def ghi"), 12)
     XCTAssertEqual(FormattedMarkdownEditor.Coordinator.mappedOffset(9, from: "abc def ghi", to: "abc ghi"), 5)

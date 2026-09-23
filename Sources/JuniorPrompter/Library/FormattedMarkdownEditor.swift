@@ -172,10 +172,10 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       // A binding echo after a native edit has the same source model. Re-rendering it
       // would reset AppKit's selection and undo grouping.
       guard model.markdown != markdown || changedFont else { return }
-      // A different source that did not come from typing here (Obsidian saved the linked file):
-      // what is on screen stays where it is, however much text arrived before it.
+      // A different source that did not come from typing here (Obsidian saved the linked file),
+      // or a new text size (Zoom In): what is on screen stays where it is.
       let old = model
-      let top = old.markdown != markdown ? viewportTop(of: view, in: old) : nil
+      let top = viewportTop(of: view, in: old)
       if old.markdown != markdown {
         editorUndoManager.removeAllActions()
         model = FormattedMarkdownEditModel(markdown: markdown)

@@ -43,7 +43,7 @@ struct InspectorView: View {
         Picker("Font", selection: $store.settings.fontName) {
           ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
         }
-        ValueSlider("Text size", value: $store.settings.fontSize, in: 18...120,
+        ValueSlider("Text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
                     readout: "\(Int(store.settings.fontSize)) pt")
         Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }
         Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text opacity") }

@@ -253,7 +253,7 @@ private struct EditorView: View {
         Picker("Editor font", selection: $store.previewFontName) {
           ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
         }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
-        Stepper(value: $store.previewFontSize, in: 12...40, step: 1) {
+        Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
           Text("\(Int(store.previewFontSize)) pt").monospacedDigit()
         }.accessibilityLabel("Editor font size")
         Spacer()

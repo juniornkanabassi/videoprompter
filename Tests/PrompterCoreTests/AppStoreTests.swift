@@ -760,4 +760,27 @@ final class AppStoreTests: XCTestCase {
     let saved = await store.flushPendingSaves()
     XCTAssertTrue(saved)
   }
+
+  func testZoomStepsTheFocusedWindowsTextWithinItsRange() {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    store.previewFontSize = 18
+    store.settings.fontSize = 44
+    store.zoom(in: true, presenter: false)
+    XCTAssertEqual(store.previewFontSize, 20)
+    XCTAssertEqual(store.settings.fontSize, 44, "the library zoom leaves the presenter alone")
+    store.zoom(in: true, presenter: true)
+    XCTAssertEqual(store.settings.fontSize, 48)
+    store.zoom(in: false, presenter: true)
+    XCTAssertEqual(store.settings.fontSize, 44)
+    store.previewFontSize = 12
+    store.zoom(in: false, presenter: false)
+    XCTAssertEqual(store.previewFontSize, 12, "stops at the smallest size")
+    store.zoom(in: true, presenter: false)
+    XCTAssertEqual(store.previewFontSize, 13, "small sizes still move a whole point")
+    store.settings.fontSize = 118
+    store.zoom(in: true, presenter: true)
+    XCTAssertEqual(store.settings.fontSize, 120, "stops at the largest size")
+  }
 }

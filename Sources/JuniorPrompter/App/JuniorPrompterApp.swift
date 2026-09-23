@@ -94,10 +94,27 @@ private enum PresenterSaveError: LocalizedError {
   @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
   @Published var previewFontName = "Lexend Deca" { didSet { persistSettings() } }
   @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
+  static let presenterFontSizes = 18.0...120.0
+  static let editorFontSizes = 12.0...40.0
   @Published var errorMessage: String?
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
+
+  /// View > Zoom In and Zoom Out: about 10% a step, on the presenter's text when it is the key
+  /// window and on the library editor's otherwise. Both sizes are the saved settings.
+  func zoom(in zoomIn: Bool, presenter: Bool) {
+    func step(_ size: Double, _ sizes: ClosedRange<Double>) -> Double {
+      let next = zoomIn ? max(size + 1, (size * 1.1).rounded()) : min(size - 1, (size / 1.1).rounded())
+      return min(max(next, sizes.lowerBound), sizes.upperBound)
+    }
+    if presenter { settings.fontSize = step(settings.fontSize, Self.presenterFontSizes) }
+    else { previewFontSize = step(previewFontSize, Self.editorFontSizes) }
+  }
+  func zoomFocusedWindow(in zoomIn: Bool) {
+    let panel = PresenterController.shared.panel
+    zoom(in: zoomIn, presenter: panel != nil && NSApp.keyWindow === panel)
+  }
   /// Written when a legacy mode is first seen, because the settings saved right after decoding
   /// overwrite it; a relaunch before dismissal still finds this and shows the notice again.
   private static let modeMigrationPendingKey = "modeMigrationNoticePending"
@@ -671,6 +688,11 @@ private enum PresenterSaveError: LocalizedError {
           Button("Import from Clipboard") { store.importClipboard() }
             .disabled(!store.libraryAvailable)
         }
+        CommandGroup(before: .toolbar) {
+          Button("Zoom In") { store.zoomFocusedWindow(in: true) }.keyboardShortcut("+", modifiers: .command)
+          Button("Zoom Out") { store.zoomFocusedWindow(in: false) }.keyboardShortcut("-", modifiers: .command)
+          Divider()
+        }
         CommandMenu("Prompter") {
           Button("Present Script") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("p", modifiers: [.command, .option])
@@ -726,6 +748,16 @@ private struct CameraCommands: Commands {
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
   weak var store: AppStore?
+  func applicationDidFinishLaunching(_ notification: Notification) {
+    // Zoom In's "+" only matches with Shift held; take the unshifted Command-= too, as Safari does.
+    NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+        event.charactersIgnoringModifiers == "=", let store = self?.store
+      else { return event }
+      store.zoomFocusedWindow(in: true)
+      return nil
+    }
+  }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let store else { return .terminateNow }
     Task {
