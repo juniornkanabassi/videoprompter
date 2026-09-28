@@ -135,7 +135,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var linkStates: [UUID: LinkState] = [:]
 
   private(set) var library: MarkdownLibrary?
-  let session = SessionStore()
+  let session: SessionStore
   private var saveTasks: [UUID: Task<Void, Never>] = [:]
   private var saveTaskTokens: [UUID: UUID] = [:]
   private var presenterSaveIDs = Set<UUID>()
@@ -165,6 +165,7 @@ private enum PresenterSaveError: LocalizedError {
       ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
       : .standard)
     self.defaults = isolatedDefaults
+    self.session = SessionStore(defaults: isolatedDefaults)
     func stored<T: Decodable>(_ key: String) -> T? {
       isolatedDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
     }
@@ -342,6 +343,7 @@ private enum PresenterSaveError: LocalizedError {
           return
         }
         try await library.delete(id)
+        session.forgetPosition(for: id)
         scripts.removeAll { $0.metadata.id == id }
         trash = await library.listTrash()
         if selectedID == id { selectedID = visible.first?.id }
@@ -781,6 +783,7 @@ private struct CameraCommands: Commands {
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let store else { return .terminateNow }
+    store.session.pause()
     Task {
       let saved = await store.flushPendingSaves()
       if !saved && store.errorMessage == nil { store.errorMessage = "A script edit could not be saved. Retry the save before quitting." }

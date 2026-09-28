@@ -64,27 +64,80 @@ final class SessionStore: ObservableObject {
     latestAudioEnd = max(latestAudioEnd, end)
   }
 
-  /// Where each script was left, restored when it is presented again.
-  // ponytail: in memory only; write to defaults for relaunch persistence.
-  private var savedAnchors: [UUID: (anchor: ReadingAnchor?, index: Int)] = [:]
+  private struct SavedPosition: Codable {
+    var anchor: ReadingAnchor?
+    var index: Int
+    var confirmed: Int?
+    var markdown: String
+  }
+  private let defaults: UserDefaults
+  private let positionKey = "readingPositions"
+  private var savedAnchors: [UUID: SavedPosition] = [:]
+  private var lastPositionSave = -Double.infinity
+  private var positionSaveTask: Task<Void, Never>?
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    if let data = defaults.data(forKey: positionKey),
+      let saved = try? JSONDecoder().decode([UUID: SavedPosition].self, from: data)
+    { savedAnchors = saved }
+  }
+
+  private func savePositions(force: Bool = false) {
+    let wait = 1 - (clock() - lastPositionSave)
+    if !force, wait > 0 {
+      guard positionSaveTask == nil else { return }
+      positionSaveTask = Task { [weak self] in
+        try? await Task.sleep(for: .seconds(wait))
+        guard let self, !Task.isCancelled else { return }
+        self.positionSaveTask = nil
+        self.rememberCurrent()
+        self.savePositions(force: true)
+      }
+      return
+    }
+    positionSaveTask?.cancel()
+    positionSaveTask = nil
+    guard let data = try? JSONEncoder().encode(savedAnchors) else { return }
+    defaults.set(data, forKey: positionKey)
+    lastPositionSave = clock()
+  }
+
+  private func rememberCurrent() {
+    guard let record = activeRecord else { return }
+    savedAnchors[record.metadata.id] = SavedPosition(
+      anchor: anchor ?? ReadingAnchorRemapper.makeAnchor(
+        scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
+        globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction),
+      index: tokenIndex, confirmed: lastConfirmedTokenIndex, markdown: record.markdown)
+    savePositions()
+  }
 
   func present(record: ScriptRecord, settings: PrompterSettings) {
     if activeRecord?.metadata.id != record.metadata.id {
       stopTasks()
-      if let old = activeRecord {
-        savedAnchors[old.metadata.id] = (ReadingAnchorRemapper.makeAnchor(
-          scriptID: old.metadata.id, revision: old.metadata.revision, document: document,
-          globalTokenIndex: tokenIndex, guideFraction: self.settings.guideFraction), tokenIndex)
+      if activeRecord != nil {
+        rememberCurrent()
       }
       self.settings = settings
       activeRecord = record
       document = PrompterDocument(markdown: record.markdown)
-      // A fresh parse has new block IDs, so the anchor only resolves after an in-app edit; the
-      // plain index covers an unchanged script.
-      let saved = savedAnchors[record.metadata.id].map {
-        $0.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) } ?? $0.index } ?? 0
-      let start = min(max(0, saved), max(0, document.spokenTokens.count - 1))
-      lastConfirmedTokenIndex = start > 0 ? start - 1 : nil
+      let saved = savedAnchors[record.metadata.id]
+      let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown) }
+      var remapped: Int?
+      if let saved, let oldDocument, let anchor = saved.anchor,
+        anchor.revision != record.metadata.revision
+      {
+        let sourceAnchor = ReadingAnchorRemapper.makeAnchor(
+          scriptID: anchor.scriptID, revision: anchor.revision, document: oldDocument,
+          globalTokenIndex: saved.index, guideFraction: anchor.guideFraction) ?? anchor
+        let result = ReadingAnchorRemapper.remap(sourceAnchor, from: oldDocument, to: document,
+          newRevision: record.metadata.revision)
+        remapped = result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) }
+      }
+      let start = min(max(0, remapped ?? saved?.index ?? 0), max(0, document.spokenTokens.count - 1))
+      lastConfirmedTokenIndex = remapped != nil ? (start > 0 ? start - 1 : nil)
+        : saved?.confirmed.map { min($0, max(-1, start - 1)) } ?? (start > 0 ? start - 1 : nil)
       tokenIndex = start
       rebaseManual(to: Double(start))
       anchor = ReadingAnchorRemapper.makeAnchor(
@@ -97,6 +150,7 @@ final class SessionStore: ObservableObject {
       acceptedWords = 0
       anchorNotice = nil
       state = .paused
+      if saved?.anchor?.revision != record.metadata.revision { rememberCurrent(); savePositions(force: true) }
     } else {
       updateSettings(settings)
     }
@@ -184,13 +238,18 @@ final class SessionStore: ObservableObject {
     freezeManual()
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
+    rememberCurrent()
+    savePositions(force: true)
   }
   func toggle() { isActivelyRunning ? pause() : play() }
   func restart() {
     seek(to: 0)
     pause()
+    if let id = activeRecord?.metadata.id { savedAnchors.removeValue(forKey: id); savePositions(force: true) }
   }
+  func forgetPosition(for id: UUID) { savedAnchors.removeValue(forKey: id); savePositions(force: true) }
   func stop() {
+    if let id = activeRecord?.metadata.id { forgetPosition(for: id) }
     stopTasks()
     activeRecord = nil
     document = PrompterDocument(markdown: "")
@@ -224,6 +283,7 @@ final class SessionStore: ObservableObject {
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
     if !incrementSeekRevision { tracker.seek(to: tokenIndex) }
     anchorNotice = nil
+    rememberCurrent()
   }
   func nextPassage() {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
@@ -465,6 +525,7 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
+      rememberCurrent()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }

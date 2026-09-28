@@ -27,6 +27,51 @@ final class SessionStoreTests: XCTestCase {
       "The loudest buffer since the last publish must survive the throttle.")
   }
 
+  func testReadingPositionsSurviveRelaunchAndRemapEditsPerScript() {
+    let suite = "JuniorPrompterPositionTests.\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    let now = 10.0
+    let first = record()
+    var second = record()
+    second.metadata.id = UUID()
+    second.markdown = "Alpha beta gamma delta"
+    let manual = PrompterSettings()
+    let session = SessionStore(defaults: defaults)
+    session.clock = { now }
+    session.present(record: first, settings: manual)
+    session.seek(to: 1)
+    session.pause()
+    session.present(record: second, settings: manual)
+    session.seek(to: 2)
+    session.pause()
+
+    let relaunched = SessionStore(defaults: defaults)
+    relaunched.present(record: first, settings: manual)
+    XCTAssertEqual(relaunched.tokenIndex, 1)
+    XCTAssertEqual(relaunched.lastConfirmedTokenIndex, 0)
+    relaunched.present(record: second, settings: manual)
+    XCTAssertEqual(relaunched.tokenIndex, 2)
+
+    var edited = first
+    edited.metadata.revision += 1
+    edited.markdown = "New words.\n\nOne two three"
+    let editedSession = SessionStore(defaults: defaults)
+    editedSession.present(record: edited, settings: manual)
+    XCTAssertEqual(editedSession.document.spokenTokens[editedSession.tokenIndex].text, "two")
+
+    editedSession.restart()
+    let afterRestart = SessionStore(defaults: defaults)
+    afterRestart.present(record: edited, settings: manual)
+    XCTAssertEqual(afterRestart.tokenIndex, 0)
+    afterRestart.seek(to: 2)
+    afterRestart.pause()
+    afterRestart.forgetPosition(for: edited.id)
+    let afterDelete = SessionStore(defaults: defaults)
+    afterDelete.present(record: edited, settings: manual)
+    XCTAssertEqual(afterDelete.tokenIndex, 0)
+  }
+
   func testMissingAudioInputPausesAndPreservesAnchor() {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())
