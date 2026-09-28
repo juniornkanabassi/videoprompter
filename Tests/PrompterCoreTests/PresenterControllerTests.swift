@@ -6,6 +6,18 @@ import PrompterCore
 
 @MainActor
 final class PresenterControllerTests: XCTestCase {
+  func testManualScrollMappingIndexMatchesLinearSearchForLargeLists() {
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.mappings = (0..<10_000).map { (NSRange(location: $0, length: 1), $0 * 3) }
+    let positions: [Double] = [-1, 0, 1, 29_997, 29_998, 29_999, 30_000]
+
+    for position in positions {
+      let expected = max(0, (coordinator.mappings.firstIndex { Double($0.1) > position }
+        ?? coordinator.mappings.count) - 1)
+      XCTAssertEqual(coordinator.mappingIndex(at: position), expected, "position \(position)")
+    }
+  }
+
   func testPresenterDraftRefreshesItsSnapshotAfterCancelAndReopen() {
     let first = ScriptRecord(metadata: .init(title: "First", fileName: "first.md", revision: 2,
       contentFingerprint: "first"), markdown: "first text")
