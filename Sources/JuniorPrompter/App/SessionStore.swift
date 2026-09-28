@@ -23,9 +23,6 @@ final class SessionStore: ObservableObject {
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var acceptedWords = 0
   @Published private(set) var anchorNotice: String?
-  /// Not @Published: no view reads it, and it changes at the audio buffer rate (~47 Hz), so
-  /// publishing it invalidated every SwiftUI view observing the session on every buffer.
-  private(set) var audioLevel: Float = 0
   @Published private(set) var audioPeakDBFS: Float = -.infinity
   @Published private(set) var isClipping = false
   @Published private(set) var isTestingMicrophone = false
@@ -364,7 +361,6 @@ final class SessionStore: ObservableObject {
     audioCapture?.stop()
     audioCapture = nil
     isTestingMicrophone = false
-    audioLevel = 0
     pendingPeak = 0
     audioPeakDBFS = -.infinity
     isClipping = false
@@ -508,7 +504,6 @@ final class SessionStore: ObservableObject {
       await previousStop?.value
       await speechProvider.stop()
     }
-    audioLevel = 0
     pendingPeak = 0
     audioPeakDBFS = -.infinity
     isClipping = false
@@ -581,7 +576,7 @@ final class SessionStore: ObservableObject {
         self.analyzerContinuation = pair.continuation
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
-          onBuffer: { [weak self] buffer, _, level, peak, clipping in
+          onBuffer: { [weak self] buffer, _, _, peak, clipping in
             // One main-actor hop per buffer, not two: at ~47 Hz the second hop was pure overhead.
             let start = counter.next(buffer.frameLength)
             pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
@@ -589,7 +584,6 @@ final class SessionStore: ObservableObject {
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
               self.noteSubmittedAudioEnd(through: submittedEnd)
-              self.audioLevel = level
               self.publishMeter(peak: peak, clipping: clipping)
             }
           },
