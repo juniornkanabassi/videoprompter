@@ -1234,13 +1234,13 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertTrue(session.isActivelyRunning)
     XCTAssertEqual(PresenterDraft(record: try XCTUnwrap(session.activeRecord)).recordID, second.id)
 
-    // Back to the first script: its latest text, where it was left (word 3 of 4).
+    // Back to the first script: the remapper follows the saved passage through the edit.
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
     store.selectedID = first.id
     session.present(record: try XCTUnwrap(store.selected), settings: store.settings)
     XCTAssertEqual(session.document.markdown, "Kylian Mbappé deserves nothing.")
-    XCTAssertEqual(session.tokenIndex, 3)
+    XCTAssertEqual(session.tokenIndex, 2)
   }
 
   /// A notice about one script ("the current passage was deleted", "choose an audio input")
