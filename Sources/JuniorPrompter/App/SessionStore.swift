@@ -73,7 +73,6 @@ final class SessionStore: ObservableObject {
   private let defaults: UserDefaults
   private let positionKey = "readingPositions"
   private var savedAnchors: [UUID: SavedPosition] = [:]
-  private var lastPositionSave = -Double.infinity
   private var positionSaveTask: Task<Void, Never>?
 
   init(defaults: UserDefaults = .standard) {
@@ -83,24 +82,22 @@ final class SessionStore: ObservableObject {
     { savedAnchors = saved }
   }
 
-  private func savePositions(force: Bool = false) {
-    let wait = 1 - (clock() - lastPositionSave)
-    if !force, wait > 0 {
-      guard positionSaveTask == nil else { return }
-      positionSaveTask = Task { [weak self] in
-        try? await Task.sleep(for: .seconds(wait))
-        guard let self, !Task.isCancelled else { return }
-        self.positionSaveTask = nil
-        self.rememberCurrent()
-        self.savePositions(force: true)
-      }
-      return
-    }
+  private func savePositions() {
     positionSaveTask?.cancel()
     positionSaveTask = nil
     guard let data = try? JSONEncoder().encode(savedAnchors) else { return }
     defaults.set(data, forKey: positionKey)
-    lastPositionSave = clock()
+  }
+
+  /// While reading: at most once a second, and the anchor is only computed when the timer fires.
+  private func rememberSoon() {
+    guard positionSaveTask == nil else { return }
+    positionSaveTask = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(1))
+      guard let self, !Task.isCancelled else { return }
+      self.positionSaveTask = nil
+      self.rememberCurrent()
+    }
   }
 
   private func rememberCurrent() {
@@ -136,8 +133,8 @@ final class SessionStore: ObservableObject {
         remapped = result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) }
       }
       let start = min(max(0, remapped ?? saved?.index ?? 0), max(0, document.spokenTokens.count - 1))
-      lastConfirmedTokenIndex = remapped != nil ? (start > 0 ? start - 1 : nil)
-        : saved?.confirmed.map { min($0, max(-1, start - 1)) } ?? (start > 0 ? start - 1 : nil)
+      let confirmed = remapped == nil ? saved?.confirmed ?? start - 1 : start - 1
+      lastConfirmedTokenIndex = start > 0 ? min(confirmed, start - 1) : nil
       tokenIndex = start
       rebaseManual(to: Double(start))
       anchor = ReadingAnchorRemapper.makeAnchor(
@@ -150,7 +147,7 @@ final class SessionStore: ObservableObject {
       acceptedWords = 0
       anchorNotice = nil
       state = .paused
-      if saved?.anchor?.revision != record.metadata.revision { rememberCurrent(); savePositions(force: true) }
+      if saved?.anchor?.revision != record.metadata.revision { rememberCurrent() }
     } else {
       updateSettings(settings)
     }
@@ -239,15 +236,14 @@ final class SessionStore: ObservableObject {
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
     rememberCurrent()
-    savePositions(force: true)
   }
   func toggle() { isActivelyRunning ? pause() : play() }
   func restart() {
     seek(to: 0)
     pause()
-    if let id = activeRecord?.metadata.id { savedAnchors.removeValue(forKey: id); savePositions(force: true) }
+    if let id = activeRecord?.metadata.id { savedAnchors.removeValue(forKey: id); savePositions() }
   }
-  func forgetPosition(for id: UUID) { savedAnchors.removeValue(forKey: id); savePositions(force: true) }
+  func forgetPosition(for id: UUID) { savedAnchors.removeValue(forKey: id); savePositions() }
   func stop() {
     if let id = activeRecord?.metadata.id { forgetPosition(for: id) }
     stopTasks()
@@ -283,7 +279,7 @@ final class SessionStore: ObservableObject {
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
     if !incrementSeekRevision { tracker.seek(to: tokenIndex) }
     anchorNotice = nil
-    rememberCurrent()
+    rememberSoon()
   }
   func nextPassage() {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
@@ -525,7 +521,7 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
-      rememberCurrent()
+      rememberSoon()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }
