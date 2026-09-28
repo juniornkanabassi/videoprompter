@@ -627,7 +627,7 @@ final class SessionStore: ObservableObject {
     anchorNotice = message
   }
 
-  func speechLocales() async throws -> [Locale] {
+  private func speechLocales() async throws -> [Locale] {
     if settings.speechLanguage == "Automatic" {
       let language = NLLanguageRecognizer.dominantLanguage(for: document.markdown)
       guard let language else { throw SpeechProvider.Error.unavailable }

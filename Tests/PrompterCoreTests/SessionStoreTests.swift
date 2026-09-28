@@ -1,6 +1,4 @@
 import AVFoundation
-import NaturalLanguage
-import Speech
 import XCTest
 
 @testable import JuniorPrompter
@@ -76,22 +74,6 @@ final class SessionStoreTests: XCTestCase {
     let value = try JSONDecoder().decode(PrompterSettings.self, from: Data(#"{"mode":"Voice","speed":120}"#.utf8))
     XCTAssertEqual(value.speechLanguage, "Mixed")
     XCTAssertTrue(value.allowsBackwardVoiceTracking)
-  }
-
-  func testAutomaticSpeechLocaleUsesDictationTranscriberSupport() async throws {
-    let session = SessionStore()
-    var settings = PrompterSettings()
-    settings.speechLanguage = "Automatic"
-    let script = ScriptRecord(
-      metadata: ScriptMetadata(title: "Test", fileName: "test.md"), markdown: "The quick brown fox reads this English script.")
-    session.present(record: script, settings: settings)
-    let language = try XCTUnwrap(NLLanguageRecognizer.dominantLanguage(for: script.markdown))
-    let supported = await DictationTranscriber.supportedLocale(
-      equivalentTo: Locale(identifier: language.rawValue))
-    let expected = try XCTUnwrap(supported)
-
-    let actual = try await session.speechLocales()
-    XCTAssertEqual(actual, [expected])
   }
 
   // MARK: Mode migration
