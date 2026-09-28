@@ -458,6 +458,22 @@ struct FormattedMarkdownEditModel {
   private let callouts: [(box: NSRange, title: NSRange, colour: NSColor)]
   private let calloutSources: [NSRange]
   private static let linkRegex = try! NSRegularExpression(pattern: #"\[([^\]\n]*)\]\(([^)\n]*)\)"#)
+  private static let calloutFirstPrefixRegex = try! NSRegularExpression(
+    pattern: PrompterDocument.calloutPattern + #"[ \t]*"#)
+  private static let calloutContinuationPrefixRegex = try! NSRegularExpression(pattern: #"^[ \t]*>[ \t]?"#)
+  private static let calloutTypeRegex = try! NSRegularExpression(pattern: #"(?<=\[!)\w+"#)
+  private static let headingMarkerRegex = try! NSRegularExpression(pattern: #"^#{1,6}\s+"#)
+  private static let emptyCalloutLineRegex = try! NSRegularExpression(pattern: #"^[ \t]*>[ \t]*$"#)
+  private static let listMarkerRegex = try! NSRegularExpression(pattern: #"^\s*(?:[-+*]|\d+[.)])\s+"#)
+  private static let orderedListMarkerRegex = try! NSRegularExpression(pattern: #"^\d+[.)]\s"#)
+
+  private static func regexRange(_ regex: NSRegularExpression, in string: String) -> Range<String.Index>? {
+    let range = NSRange(location: 0, length: (string as NSString).length)
+    guard let match = regex.firstMatch(in: string, range: range),
+      let result = Range(match.range, in: string)
+    else { return nil }
+    return result
+  }
 
   /// `omittingCallouts` leaves callouts and the blank lines around them out of the text
   /// entirely, as the presenter shows it; every other character keeps its Markdown offset.
@@ -591,12 +607,12 @@ struct FormattedMarkdownEditModel {
 
   /// Length of a callout line's hidden prefix: `> [!type]+ ` on the first line, `> ` after it.
   private static func calloutPrefix(in line: String, first: Bool) -> Int {
-    let pattern = first ? PrompterDocument.calloutPattern + #"[ \t]*"# : #"^[ \t]*>[ \t]?"#
-    return line.range(of: pattern, options: .regularExpression).map { NSRange($0, in: line).length } ?? 0
+    let regex = first ? calloutFirstPrefixRegex : calloutContinuationPrefixRegex
+    return regexRange(regex, in: line).map { NSRange($0, in: line).length } ?? 0
   }
 
   private static func calloutType(in text: String) -> String {
-    guard let range = text.range(of: #"(?<=\[!)\w+"#, options: .regularExpression) else { return "note" }
+    guard let range = regexRange(calloutTypeRegex, in: text) else { return "note" }
     return String(text[range])
   }
 
@@ -681,7 +697,7 @@ struct FormattedMarkdownEditModel {
     let source = markdown as NSString
     let line = source.lineRange(for: range)
     let raw = source.substring(with: line)
-    if let marker = raw.range(of: #"^#{1,6}\s+"#, options: .regularExpression) {
+    if let marker = Self.regexRange(Self.headingMarkerRegex, in: raw) {
       return replacingSource(NSRange(location: line.location + NSRange(marker, in: raw).location, length: NSRange(marker, in: raw).length), with: "")
     }
     return replacingSource(NSRange(location: line.location, length: 0), with: "# ")
@@ -880,7 +896,7 @@ struct FormattedMarkdownEditModel {
       let lineStart = source.lineRange(for: NSRange(location: offset, length: 0)).location
       let line = NSRange(location: lineStart, length: offset - lineStart)
       guard lineStart > box.location,
-        source.substring(with: line).range(of: #"^[ \t]*>[ \t]*$"#, options: .regularExpression) != nil
+        Self.regexRange(Self.emptyCalloutLineRegex, in: source.substring(with: line)) != nil
       else { continue }
       let next = NSMutableString(string: markdown)
       next.replaceCharacters(in: line, with: "\n")
@@ -909,7 +925,7 @@ struct FormattedMarkdownEditModel {
         let box = callout(containing: end - 1), end - 1 < NSMaxRange(box)
       else { return run }
       let rest = source.substring(from: end)
-      guard let prefix = rest.range(of: #"^[ \t]*>[ \t]?"#, options: .regularExpression) else { return run }
+      guard let prefix = Self.regexRange(Self.calloutContinuationPrefixRegex, in: rest) else { return run }
       return NSRange(location: run.location, length: run.length + NSRange(prefix, in: rest).length)
     })
     // A selection covering a callout's whole visible text takes the whole callout, hidden
@@ -982,7 +998,7 @@ struct FormattedMarkdownEditModel {
   }
 
   private static func listMarker(in line: String) -> (text: String, sourceRange: NSRange)? {
-    guard let range = line.range(of: #"^\s*(?:[-+*]|\d+[.)])\s+"#, options: .regularExpression) else { return nil }
+    guard let range = regexRange(listMarkerRegex, in: line) else { return nil }
     return (String(line[range]), NSRange(range, in: line))
   }
 
@@ -995,7 +1011,7 @@ struct FormattedMarkdownEditModel {
     }
     return escaped.split(separator: "\n", omittingEmptySubsequences: false).map { line in
       guard let first = line.first else { return String(line) }
-      if line.range(of: "^\\d+[.)]\\s", options: .regularExpression) != nil {
+      if regexRange(orderedListMarkerRegex, in: String(line)) != nil {
         var value = String(line)
         if let marker = value.firstIndex(where: { $0 == "." || $0 == ")" }) { value.insert("\\", at: marker) }
         return value
