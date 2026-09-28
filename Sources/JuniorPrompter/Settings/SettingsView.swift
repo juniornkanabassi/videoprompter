@@ -28,13 +28,13 @@ struct InspectorView: View {
       }
       if camera.presentsWithVideo {
         Section("Video") {
-          LabeledContent("Camera") { CameraPicker(model: camera) }
+          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }
           Picker("Rotation", selection: camera.rotationChoice) {
             ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
           }
           Button("Guides") { showsGuideSettings.toggle() }
             .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-              CameraGuideSettings(model: camera).frame(width: 300).padding()
+              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
             }
           Toggle("Mirror camera", isOn: $camera.mirrored)
         }.task { camera.start() }

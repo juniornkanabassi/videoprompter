@@ -15,6 +15,8 @@ extension CameraDevice {
 /// the arrow keys are on, so nobody has to pick blind between several devices.
 struct CameraPicker: View {
   @ObservedObject var model: CameraModel
+  /// The library's UI zoom. A popover is its own hosting view, so the parent's zoom never reaches it.
+  var zoom = 1.0
   @State private var isOpen = false
 
   /// Never blank. A remembered camera that is gone reads as the one `refresh` will fall back to.
@@ -35,7 +37,7 @@ struct CameraPicker: View {
     .accessibilityValue(label)
     .accessibilityHint("Lists the cameras with a live preview of each")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-      CameraPickerList(model: model) { isOpen = false }
+      CameraPickerList(model: model) { isOpen = false }.uiZoom(zoom)
     }
   }
 }
