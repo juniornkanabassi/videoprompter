@@ -2,7 +2,7 @@
 set -euo pipefail
 SOURCE_ROOT="${0:A:h}"
 OUTPUT_ROOT="${JUNIORPROMPTER_OUTPUT_ROOT:-$SOURCE_ROOT/../Outputs}"
-INSTALL_ROOT="${JUNIORPROMPTER_INSTALL_ROOT:-/Applications}"
+INSTALL_ROOT="${JUNIORPROMPTER_INSTALL_ROOT:-/Applications/JuniorOS Apps}"
 DEST="$INSTALL_ROOT/JuniorPrompter.app"
 EXPECTED_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SOURCE_ROOT/Resources/Info.plist")
 EXPECTED_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$SOURCE_ROOT/Resources/Info.plist")
