@@ -997,8 +997,7 @@ struct ScriptTextView: NSViewRepresentable {
         let glyph = manager.glyphRange(forCharacterRange: mappings[index].0, actualCharacterRange: nil)
         return manager.boundingRect(forGlyphRange: glyph, in: container).midY + inset - guideY
       }
-      // ponytail: linear scan per frame; binary-search `mappings` if very long scripts show it in a profile.
-      let current = max(0, (mappings.firstIndex { Double($0.1) > position } ?? mappings.count) - 1)
+      let current = mappingIndex(at: position)
       let here = y(current)
       var first = current
       while first > 0, abs(y(first - 1) - here) < 2 { first -= 1 }
@@ -1008,6 +1007,19 @@ struct ScriptTextView: NSViewRepresentable {
       let from = Double(mappings[first].1), to = Double(mappings[next].1)
       let fraction = min(max((position - from) / (to - from), 0), 1)
       return max(0, here + (y(next) - here) * CGFloat(fraction))
+    }
+    func mappingIndex(at position: Double) -> Int {
+      var low = 0
+      var high = mappings.count
+      while low < high {
+        let middle = low + (high - low) / 2
+        if Double(mappings[middle].1) <= position {
+          low = middle + 1
+        } else {
+          high = middle
+        }
+      }
+      return max(0, low - 1)
     }
     /// Puts the session's Manual position on the guide. Used for every Manual alignment, running or
     /// not, so a pause holds the exact fraction; no easing, so Reduce Motion has nothing to remove.
