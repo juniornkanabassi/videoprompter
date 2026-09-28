@@ -441,41 +441,46 @@ private struct PresenterView: View {
       .scaleEffect(store.uiZoom, anchor: .top)
     }
     .overlay(alignment: .bottom) {
-      HStack(spacing: 8) {
-        if draft.isEditing {
-          Label("Editing", systemImage: "pencil")
-            .font(.callout.weight(.semibold)).foregroundStyle(.orange)
-            .padding(.horizontal, 6)
-            .help("Editing the script in place. Finish with ⌘Return, or cancel.")
+      GeometryReader { geometry in
+        // Laid out at the width the zoom leaves, so a narrow presenter wraps the capsule instead of overrunning it.
+        WrapLayout(spacing: 8) {
+          if draft.isEditing {
+            Label("Editing", systemImage: "pencil")
+              .font(.callout.weight(.semibold)).foregroundStyle(.orange)
+              .padding(.horizontal, 6)
+              .help("Editing the script in place. Finish with ⌘Return, or cancel.")
+          }
+          // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
+          Group {
+            CapsuleButton("Previous passage", systemImage: "backward.end.fill", action: session.previousPassage)
+            CapsuleButton(session.isActivelyRunning ? "Pause" : "Play",
+                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", action: session.toggle)
+              .buttonStyle(.borderedProminent)
+            CapsuleButton("Next passage", systemImage: "forward.end.fill", action: session.nextPassage)
+            CapsuleButton("Back to the start", systemImage: "arrow.counterclockwise", action: session.restart)
+          }.disabled(!showsScript || draft.isEditing)
+          CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
+                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash") {
+            PresenterController.shared.toggleVideo()
+          }
+          CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
+                        systemImage: draft.isEditing ? "checkmark" : "pencil",
+                        shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil) {
+            if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
+          }.disabled(draft.isSaving || !showsScript)
+          if draft.isEditing {
+            CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction) { draft.requestCancel() }
+              .disabled(draft.isSaving)
+          } else {
+            CapsuleButton("Close presenter", systemImage: "xmark") { PresenterController.shared.close() }
+          }
         }
-        // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
-        Group {
-          CapsuleButton("Previous passage", systemImage: "backward.end.fill", action: session.previousPassage)
-          CapsuleButton(session.isActivelyRunning ? "Pause" : "Play",
-                        systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", action: session.toggle)
-            .buttonStyle(.borderedProminent)
-          CapsuleButton("Next passage", systemImage: "forward.end.fill", action: session.nextPassage)
-          CapsuleButton("Back to the start", systemImage: "arrow.counterclockwise", action: session.restart)
-        }.disabled(!showsScript || draft.isEditing)
-        CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
-                      systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash") {
-          PresenterController.shared.toggleVideo()
-        }
-        CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
-                      systemImage: draft.isEditing ? "checkmark" : "pencil",
-                      shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil) {
-          if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
-        }.disabled(draft.isSaving || !showsScript)
-        if draft.isEditing {
-          CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction) { draft.requestCancel() }
-            .disabled(draft.isSaving)
-        } else {
-          CapsuleButton("Close presenter", systemImage: "xmark") { PresenterController.shared.close() }
-        }
+        .buttonStyle(.bordered).padding(8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22)).padding(10)
+        .frame(maxWidth: geometry.size.width / store.uiZoom)
+        .scaleEffect(store.uiZoom, anchor: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
       }
-      .buttonStyle(.bordered).padding(8)
-      .background(.ultraThinMaterial, in: Capsule()).padding(10)
-      .scaleEffect(store.uiZoom, anchor: .bottom)
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
@@ -490,24 +495,27 @@ private struct PresenterView: View {
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
     .overlay(alignment: .bottom) {
       if hasBottomNotice {
-      VStack(spacing: 6) {
-        if draft.isEditing, draft.hasExternalChange(in: store) {
-          Text("This script changed outside JuniorPrompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
-            .foregroundStyle(.orange)
+        GeometryReader { geometry in
+          VStack(spacing: 6) {
+            if draft.isEditing, draft.hasExternalChange(in: store) {
+              Text("This script changed outside JuniorPrompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
+                .foregroundStyle(.orange)
+            }
+            if let error = draft.errorMessage {
+              Text(error).foregroundStyle(.red)
+              Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
+                .disabled(draft.isSaving)
+            }
+            if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage {
+              Text(notice)
+            }
+          }
+          .font(.caption).multilineTextAlignment(.center)
+          .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+          .padding(.bottom, 58).frame(maxWidth: min(560, geometry.size.width / store.uiZoom))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          .scaleEffect(store.uiZoom, anchor: .bottom)
         }
-        if let error = draft.errorMessage {
-          Text(error).foregroundStyle(.red)
-          Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
-            .disabled(draft.isSaving)
-        }
-        if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage {
-          Text(notice)
-        }
-      }
-      .font(.caption).multilineTextAlignment(.center)
-      .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-      .padding(.bottom, 58).frame(maxWidth: 560)
-      .scaleEffect(store.uiZoom, anchor: .bottom)
       }
     }
   }
@@ -1164,4 +1172,41 @@ extension NSColor {
 extension NSTextAlignment {
   /// The settings' "Left", "Center" or "Right".
   init(setting: String) { self = setting == "Right" ? .right : setting == "Center" ? .center : .left }
+}
+
+/// An HStack that wraps onto further centred rows when its content is wider than it is offered.
+struct WrapLayout: Layout {
+  var spacing: CGFloat = 8
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let rows = rows(for: proposal.width ?? .infinity, subviews: subviews)
+    let width = rows.map(\.width).max() ?? 0
+    let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+    return CGSize(width: width, height: height)
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    var y = bounds.minY
+    for row in rows(for: bounds.width, subviews: subviews) {
+      var x = bounds.midX - row.width / 2
+      for index in row.indices {
+        let size = subviews[index].sizeThatFits(.unspecified)
+        subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
+        x += size.width + spacing
+      }
+      y += row.height + spacing
+    }
+  }
+  private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+  private func rows(for maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+    var rows: [Row] = [Row()]
+    for (index, subview) in subviews.enumerated() {
+      let size = subview.sizeThatFits(.unspecified)
+      let extra = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
+      if rows[rows.count - 1].width + extra > maxWidth, !rows[rows.count - 1].indices.isEmpty { rows.append(Row()) }
+      let extraNow = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
+      rows[rows.count - 1].indices.append(index)
+      rows[rows.count - 1].width += extraNow
+      rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
+    }
+    return rows
+  }
 }

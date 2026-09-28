@@ -204,6 +204,45 @@ final class UIZoomTests: XCTestCase {
     XCTAssertEqual(zoomed.font, actual.font, "the script's text size is unchanged")
   }
 
+  /// A narrow presenter keeps the capsule's controls inside the window at every zoom step.
+  func testANarrowPresenterKeepsEveryCapsuleControlInsideTheWindowAtEveryZoom() async throws {
+    try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
+    OffscreenPanels.install()
+    defer { OffscreenPanels.uninstall() }
+    let record = try await store.library!.create(title: "Read", markdown: "Opening words to read.")
+    await store.reload()
+    store.selectedID = record.id
+    let controller = PresenterController()
+    controller.present(store: store)
+    let panel = try XCTUnwrap(controller.panel)
+    defer { controller.close() }
+    panel.setContentSize(NSSize(width: 500, height: 600))
+    for scale in AppStore.uiZoomSteps {
+      store.uiZoom = scale
+      await settle(panel)
+      let content = try XCTUnwrap(panel.contentView)
+      let strip = content.convert(
+        NSRect(x: 0, y: 0, width: content.bounds.width, height: min(350, content.bounds.height)), to: nil)
+      var hitFrames: [NSRect] = []
+      for row in 0..<10 {
+        for column in 0..<10 {
+          let point = NSPoint(x: strip.minX + strip.width * (CGFloat(column) + 0.5) / 10,
+                              y: strip.minY + strip.height * (CGFloat(row) + 0.5) / 10)
+          if let hit = panel.contentView?.superview?.hitTest(point) {
+            hitFrames.append(hit.convert(hit.visibleRect, to: content))
+          }
+        }
+      }
+      XCTAssertGreaterThan(hitFrames.count, 0, "\(scale): the capsule strip receives hits")
+      for frame in hitFrames {
+        XCTAssertGreaterThanOrEqual(frame.minX, content.bounds.minX - 1, "\(scale): hit target spills left")
+        XCTAssertLessThanOrEqual(frame.maxX, content.bounds.maxX + 1, "\(scale): hit target spills right")
+        XCTAssertGreaterThanOrEqual(frame.minY, content.bounds.minY - 1, "\(scale): hit target spills below")
+        XCTAssertLessThanOrEqual(frame.maxY, content.bounds.maxY + 1, "\(scale): hit target spills above")
+      }
+    }
+  }
+
   // MARK: Helpers
 
   private final class Plain: NSView {}
