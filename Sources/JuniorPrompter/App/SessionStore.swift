@@ -400,6 +400,7 @@ final class SessionStore: ObservableObject {
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
     else { return }
+    let tokens = document.spokenTokens
     if speechGeneration != candidate.generation {
       speechGeneration = candidate.generation
       tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex)
@@ -420,7 +421,7 @@ final class SessionStore: ObservableObject {
       let current = tracker
       tracker = pending.tracker
       pendingSpeechCandidate = nil
-      let update = tracker.consumeCandidates([pending.event, event], script: document.spokenTokens)
+      let update = tracker.consumeCandidates([pending.event, event], script: tokens)
       // The first final was already accepted. Its sibling may improve that result, but a held or
       // weaker replay must not replace the accepted tracker or turn the session uncertain.
       guard update.status == .advanced, update.tokenIndex >= old else {
@@ -432,7 +433,7 @@ final class SessionStore: ObservableObject {
     }
     let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
     let trackerBeforeMatch = tracker
-    let update = tracker.consume(event, script: document.spokenTokens)
+    let update = tracker.consume(event, script: tokens)
     pendingSpeechCandidate = candidate.isFinal ? (event, trackerBeforeMatch) : nil
     applySpeechUpdate(update, old: old, trackerBeforeMatch: trackerBeforeMatch)
   }
@@ -515,21 +516,23 @@ final class SessionStore: ObservableObject {
     audioDeviceObserver = nil
   }
   private func passageBoundary(after index: Int) -> Int? {
-    guard document.spokenTokens.indices.contains(index) else { return nil }
-    let block = document.spokenTokens[index].blockID
-    return document.spokenTokens.indices.first {
-      $0 > index && document.spokenTokens[$0].blockID != block
+    let tokens = document.spokenTokens
+    guard tokens.indices.contains(index) else { return nil }
+    let block = tokens[index].blockID
+    return tokens.indices.first {
+      $0 > index && tokens[$0].blockID != block
     }
   }
   private func passageBoundary(before index: Int) -> Int? {
-    guard document.spokenTokens.indices.contains(index) else { return nil }
-    let block = document.spokenTokens[index].blockID
-    guard let last = document.spokenTokens.indices.last(where: {
-      $0 < index && document.spokenTokens[$0].blockID != block
+    let tokens = document.spokenTokens
+    guard tokens.indices.contains(index) else { return nil }
+    let block = tokens[index].blockID
+    guard let last = tokens.indices.last(where: {
+      $0 < index && tokens[$0].blockID != block
     }) else { return nil }
-    let target = document.spokenTokens[last].blockID
-    return document.spokenTokens.indices.first {
-      $0 <= last && document.spokenTokens[$0].blockID == target
+    let target = tokens[last].blockID
+    return tokens.indices.first {
+      $0 <= last && tokens[$0].blockID == target
     }
   }
   var isActivelyRunning: Bool {
@@ -624,11 +627,11 @@ final class SessionStore: ObservableObject {
     anchorNotice = message
   }
 
-  private func speechLocales() async throws -> [Locale] {
+  func speechLocales() async throws -> [Locale] {
     if settings.speechLanguage == "Automatic" {
       let language = NLLanguageRecognizer.dominantLanguage(for: document.markdown)
       guard let language else { throw SpeechProvider.Error.unavailable }
-      guard let supported = await SpeechTranscriber.supportedLocale(
+      guard let supported = await DictationTranscriber.supportedLocale(
         equivalentTo: Locale(identifier: language.rawValue))
       else { throw SpeechProvider.Error.unavailable }
       return [supported]
