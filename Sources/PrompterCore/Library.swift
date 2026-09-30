@@ -195,6 +195,13 @@ public actor MarkdownLibrary {
   ) throws -> ScriptRecord {
     try createScript(title: title, markdown: markdown, folderID: folderID, tags: tags, link: nil)
   }
+  public func createLinked(title: String, markdown: String, folderID: UUID? = nil, to url: URL) throws -> ScriptRecord {
+    _ = try checkedRelinkText(url)
+    guard let bookmark = (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
+    else { throw PrompterCoreError.unsafePath(url.path) }
+    return try createScript(title: title, markdown: markdown, folderID: folderID,
+      tags: [], link: (url.standardizedFileURL.path, bookmark))
+  }
   private func createScript(
     title: String, markdown: String, folderID: UUID?, tags: [String], link: (path: String, bookmark: Data)?
   ) throws -> ScriptRecord {

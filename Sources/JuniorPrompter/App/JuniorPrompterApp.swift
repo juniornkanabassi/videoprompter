@@ -286,6 +286,7 @@ private enum PresenterSaveError: LocalizedError {
       selectedID = loaded.first?.metadata.id
     }
   }
+  func waitForInitialLoad() async { await initialLoad?.value }
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
     guard let library else { return }
@@ -324,10 +325,11 @@ private enum PresenterSaveError: LocalizedError {
     withLibrary { [self] _ in _ = try await createScript(title: title, markdown: markdown, linkTo: linkTo) }
   }
   @discardableResult func createScript(title: String, markdown: String, linkTo: URL? = nil) async throws -> ScriptRecord {
+    await waitForInitialLoad()
     guard let library else { throw CocoaError(.fileNoSuchFile) }
-    if let linkTo, await library.relinkTargetFingerprint(linkTo) == nil { throw CocoaError(.fileReadNoPermission) }
-    var item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
-    if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
+    let item: ScriptRecord
+    if let linkTo { item = try await library.createLinked(title: title, markdown: markdown, folderID: selectedFolderID, to: linkTo) }
+    else { item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID) }
     scripts.insert(item, at: 0)
     selectedID = item.id
     await refreshLinkStates()
