@@ -800,6 +800,7 @@ private struct CameraCommands: Commands {
     guard let store else { return .terminateNow }
     store.session.pause()
     Task {
+      await CameraRecorder.shared.stop()
       let saved = await store.flushPendingSaves()
       if !saved && store.errorMessage == nil { store.errorMessage = "A script edit could not be saved. Retry the save before quitting." }
       sender.reply(toApplicationShouldTerminate: saved)

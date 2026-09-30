@@ -154,6 +154,7 @@ struct CameraPreview: NSViewRepresentable {
 struct CameraView: View {
   @ObservedObject private var model = CameraModel.shared
   @State private var showsGuideSettings = false
+  @ObservedObject private var recorder = CameraRecorder.shared
   var body: some View {
     Group {
       switch model.authorization {
@@ -174,9 +175,14 @@ struct CameraView: View {
     }
     .frame(minWidth: 320, minHeight: 200)
     .task { model.start() }
+    .onDisappear { Task { await recorder.stop() } }
+    .onChange(of: model.selectedUID) { _, _ in Task { await recorder.stop() } }
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
-      CameraChoiceItems(model: model, rotation: model.rotationChoice)
+      CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
+      if Bundle.main.bundleIdentifier?.hasSuffix(".alpha") == true {
+        ToolbarItem { RecordingControls(recorder: recorder, camera: model) }
+      }
       ToolbarItem {
         Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
           .help("Mirror camera")
@@ -200,9 +206,10 @@ struct CameraView: View {
 struct CameraChoiceItems: ToolbarContent {
   @ObservedObject var model: CameraModel
   @Binding var rotation: CameraRotation?
+  var recording = false
   var body: some ToolbarContent {
     // The picker previews each camera on hover, so choosing one is never blind.
-    ToolbarItem { CameraPicker(model: model) }
+    ToolbarItem { CameraPicker(model: model).disabled(recording) }
     ToolbarItem {
       ToolbarPopUp(title: "Rotation", options: CameraModel.rotationOptions, selection: $rotation)
     }
@@ -312,5 +319,45 @@ private struct CameraWindowLevel: NSViewRepresentable {
   func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
   func updateNSView(_ view: NSView, context: Context) {
     view.window?.level = alwaysOnTop ? .floating : .normal
+  }
+}
+
+struct RecordingControls: View {
+  @ObservedObject var recorder: CameraRecorder
+  @ObservedObject var camera: CameraModel
+  @State private var settings = false
+  var body: some View {
+    HStack {
+      Button {
+        Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera) } }
+      } label: {
+        Label(recorder.isRecording ? "Stop" : "Record", systemImage: recorder.isRecording ? "stop.circle.fill" : "record.circle")
+          .foregroundStyle(.red)
+      }.disabled(recorder.isBusy)
+      if let started = recorder.startedAt {
+        TimelineView(.periodic(from: started, by: 1)) { context in
+          let seconds = max(0, Int(context.date.timeIntervalSince(started)))
+          Text(String(format: "%02d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
+        }
+      }
+      Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }
+        .popover(isPresented: $settings) {
+          Form {
+            Picker("Quality", selection: $recorder.preset) {
+              ForEach(RecordingPreset.allCases, id: \.self) { Text($0.label).tag($0) }
+            }.disabled(recorder.isRecording || recorder.isBusy)
+            Picker("Microphone", selection: Binding(get: { recorder.microphoneUID ?? "" }, set: { recorder.microphoneUID = $0.isEmpty ? nil : $0 })) {
+              Text("System default input").tag("")
+              ForEach(CameraRecorder.microphones(), id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
+              if let uid = recorder.microphoneUID, !CameraRecorder.microphones().contains(where: { $0.uniqueID == uid }) { Text("Selected microphone unavailable").tag(uid) }
+            }.disabled(recorder.isRecording || recorder.isBusy)
+            Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy)
+            if let file = recorder.lastFile { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
+            if let error = recorder.errorMessage { Text(error).foregroundStyle(.red) }
+          }.padding().frame(width: 380)
+        }
+    }.alert("Recording", isPresented: Binding(get: { recorder.errorMessage != nil && !settings }, set: { if !$0 { recorder.errorMessage = nil } })) {
+      Button("OK") { recorder.errorMessage = nil }
+    } message: { Text(recorder.errorMessage ?? "") }
   }
 }
