@@ -34,6 +34,11 @@ final class ControlServer: @unchecked Sendable {
       }
       try FileManager.default.createDirectory(at: socketURL.deletingLastPathComponent(), withIntermediateDirectories: true)
       guard chmod(parent, 0o700) == 0 else { throw failure("Cannot protect control directory") }
+      let lockPath = socketURL.deletingLastPathComponent().appendingPathComponent("control.lock").path
+      let lockFD = open(lockPath, O_CREAT | O_RDWR, 0o600)
+      guard lockFD >= 0 else { throw failure("Cannot open control socket lock") }
+      guard flock(lockFD, LOCK_EX) == 0 else { Darwin.close(lockFD); throw failure("Cannot lock control socket") }
+      defer { flock(lockFD, LOCK_UN); Darwin.close(lockFD) }
       var address = sockaddr_un(); address.sun_family = sa_family_t(AF_UNIX)
       withUnsafeMutableBytes(of: &address.sun_path) { target in target.copyBytes(from: Array(path.utf8) + [0]) }
       func connectTo(_ fd: Int32) -> Int32 {
