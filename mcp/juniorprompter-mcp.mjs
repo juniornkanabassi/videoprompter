@@ -20,7 +20,7 @@ const send = value => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...v
 async function handle(line) {
   let request;
   try { request = JSON.parse(line); } catch { send({ id: null, error: { code: -32700, message: 'Parse error' } }); return; }
-  if (!request || request.jsonrpc !== '2.0' || typeof request.method !== 'string') { send({ id: request?.id ?? null, error: { code: -32600, message: 'Invalid request' } }); return; }
+  if (!request || request.jsonrpc !== '2.0' || typeof request.method !== 'string' || (Object.hasOwn(request, 'id') && !['string', 'number'].includes(typeof request.id))) { send({ id: null, error: { code: -32600, message: 'Invalid request' } }); return; }
   if (!Object.hasOwn(request, 'id')) return;
   const id = request.id;
   const result = value => send({ id, result: value });
