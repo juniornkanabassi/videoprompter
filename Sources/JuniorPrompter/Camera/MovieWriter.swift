@@ -39,18 +39,23 @@ final class MovieWriter: @unchecked Sendable {
       guard writer.canAdd(input) else { throw CocoaError(.featureUnsupported) }; writer.add(input); self.audio = input
     } else { self.audio = nil }
   }
-  func append(video buffer: CMSampleBuffer) {
+  func append(video buffer: CMSampleBuffer) throws {
     if !started {
-      guard writer.startWriting() else { return }
+      guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
       firstTime = CMSampleBufferGetPresentationTimeStamp(buffer)
       writer.startSession(atSourceTime: firstTime); started = true
     }
-    if video.isReadyForMoreMediaData { if !video.append(buffer) { droppedFrames += 1 } }
-    else { droppedFrames += 1 }
+    guard writer.status == .writing else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    if video.isReadyForMoreMediaData {
+      if !video.append(buffer) {
+        guard writer.status != .failed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+        droppedFrames += 1
+      }
+    } else { droppedFrames += 1 }
   }
-  func append(audio buffer: CMSampleBuffer) {
+  func append(audio buffer: CMSampleBuffer) throws {
     guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime, let audio, audio.isReadyForMoreMediaData else { return }
-    _ = audio.append(buffer)
+    if !audio.append(buffer), writer.status == .failed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
   }
   func finish() async throws -> URL {
     guard started, writer.status == .writing else {

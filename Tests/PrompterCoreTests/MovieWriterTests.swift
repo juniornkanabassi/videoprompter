@@ -42,8 +42,8 @@ final class MovieWriterTests: XCTestCase {
       let hasAudio = preset != .high
       let writer = try MovieWriter(url: url, width: 320, height: 240, transform: .identity, preset: preset, audio: hasAudio ? AudioSpec(sampleRate: 48000, channels: 2) : nil, floatAudio: preset == .edit)
       for i in 0..<30 {
-        writer.append(video: try video(i))
-        if hasAudio { writer.append(audio: try audio(i)) }
+        try writer.append(video: video(i))
+        if hasAudio { try writer.append(audio: audio(i)) }
         try await Task.sleep(for: .milliseconds(35))
       }
       _ = try await writer.finish()

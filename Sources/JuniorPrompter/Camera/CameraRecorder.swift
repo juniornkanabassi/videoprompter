@@ -61,14 +61,21 @@ import PrompterCore
       let input = try AVCaptureDeviceInput(device: microphone)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let spec = AudioSpec(sampleRate: format?.mSampleRate ?? 48000, channels: Int(format?.mChannelsPerFrame ?? 2))
-      let sink = RecordingSink(url: Self.fileURL(in: folder), preset: preset, rotation: camera.guides.rotation, audio: spec, floatAudio: floatAudio, microphone: input)
+      let sink = RecordingSink(url: Self.fileURL(in: folder), preset: preset, rotation: camera.guides.rotation, audio: spec, floatAudio: floatAudio, microphone: input) { [weak self] error in
+        Task { @MainActor [weak self] in
+          guard let self, self.isRecording else { return }
+          self.errorMessage = "Recording stopped after a writer failure: \(error.localizedDescription)"
+          await self.stop()
+        }
+      }
       let shared = SharedCameraSession.shared
       shared.retain()
       let attached = await withCheckedContinuation { continuation in
         shared.reconfigure { session in
           session.beginConfiguration()
           var success = false
-          if session.canAddInput(input) {
+          let cameraAttached = session.inputs.contains { ($0 as? AVCaptureDeviceInput)?.device.uniqueID == uid }
+          if cameraAttached, session.canAddInput(input) {
             session.addInput(input)
             if session.canAddOutput(sink.video), session.canAddOutput(sink.audio) {
               session.addOutput(sink.video); session.addOutput(sink.audio); success = true
@@ -135,10 +142,11 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
   private let rotation: CameraRotation
   private let spec: AudioSpec
   private let floatAudio: Bool
+  private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput) {
-    self.url = url; self.preset = preset; self.rotation = rotation; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.url = url; self.preset = preset; self.rotation = rotation; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
@@ -154,9 +162,9 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
           let dimensions = CMVideoFormatDescriptionGetDimensions(format)
           writer = try MovieWriter(url: url, width: Int(dimensions.width), height: Int(dimensions.height), transform: CGAffineTransform(rotationAngle: rotation.radians), preset: preset, audio: spec, floatAudio: floatAudio)
         }
-        writer?.append(video: sampleBuffer)
-      } else { writer?.append(audio: sampleBuffer) }
-    } catch { failure = error }
+        try writer?.append(video: sampleBuffer)
+      } else { try writer?.append(audio: sampleBuffer) }
+    } catch { failure = error; onFailure(error) }
   }
   func finish() async throws -> URL {
     let value: MovieWriter = try await withCheckedThrowingContinuation { continuation in
