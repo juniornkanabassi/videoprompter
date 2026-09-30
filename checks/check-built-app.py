@@ -36,6 +36,8 @@ def raw(payload):
             line += part
         return json.loads(line) if line else None
 try:
+    help_result = subprocess.run([str(cli), '--help'], capture_output=True, text=True, timeout=10)
+    assert help_result.returncode == 0 and 'mcp-manifest' in help_result.stdout and 'back-to-start' in help_result.stdout
     before = gui(1)['frontmostPID']
     assert command(['status'])['running'] is False
     data.mkdir()
