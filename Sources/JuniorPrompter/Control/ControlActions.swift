@@ -17,6 +17,7 @@ import PrompterCore
     return (matches.first, matches.isEmpty ? .error("script_not_found", "Script not found. Use juniorprompter script list.") : nil)
   }
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
+    await store.waitForInitialLoad()
     guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use juniorprompter --help for supported actions.") }
     guard params.keys.allSatisfy({ key in command.params.contains { $0.name == key } }),
       command.params.allSatisfy({ p in

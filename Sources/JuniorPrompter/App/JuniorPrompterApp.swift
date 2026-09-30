@@ -152,6 +152,7 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
+  private var initialLoad: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
   nonisolated(unsafe) private var activationObserver: NSObjectProtocol?
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
@@ -211,7 +212,7 @@ private enum PresenterSaveError: LocalizedError {
       library = try MarkdownLibrary(rootURL: root)
       libraryAvailable = true
     } catch { errorMessage = "The script library could not be opened safely. \(error)" }
-    Task { await reload() }
+    initialLoad = Task { await reload() }
     externalWatcher = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
