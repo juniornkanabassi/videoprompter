@@ -17,6 +17,11 @@ func walk(_ element: AXUIElement, depth: Int = 0) -> [[String: String]] {
   for name in ["AXRole", "AXTitle", "AXDescription", "AXValue", "AXSelected"] {
     if let value = attribute(element, name) { row[name] = String(describing: value) }
   }
+  if let raw = attribute(element, "AXSize"), CFGetTypeID(raw as CFTypeRef) == AXValueGetTypeID() {
+    let value = raw as! AXValue
+    var size = CGSize.zero
+    if AXValueGetValue(value, .cgSize, &size) { row["width"] = String(Double(size.width)); row["height"] = String(Double(size.height)) }
+  }
   let children = attribute(element, "AXChildren") as? [AXUIElement] ?? []
   return [row] + children.flatMap { walk($0, depth: depth + 1) }
 }

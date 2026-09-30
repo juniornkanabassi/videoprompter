@@ -59,6 +59,11 @@ try:
     command(['script', 'open', imported['title']])
     assert command(['script', 'open', 'missing'], 1)['code'] == 'script_not_found'
     command(['set-mode', 'manual'])
+    time.sleep(0.5)
+    normal_gui = gui(pid)
+    normal_rows = [row for row in normal_gui['windows'] if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
+    assert normal_rows, 'Selected script row missing before zoom'
+    normal_height = float(normal_rows[0]['height'])
     command(['set-zoom', '150'])
     assert command(['set-zoom', '130'], 2)['code'] == 'usage'
     command(['present', imported['id']])
@@ -101,6 +106,8 @@ try:
     assert any("Simple" in row.values() for row in rows) == alpha, rendered
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
+    zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
+    assert zoomed_rows and abs(float(zoomed_rows[0]['height']) / normal_height - 1.5) < 0.05, (normal_rows, zoomed_rows)
     assert visible['frontmostPID'] == before, (before, visible['frontmostPID'])
     # A symlink on PATH must retain the containing bundle's channel and version.
     link = root / 'juniorprompter'; link.symlink_to(cli)

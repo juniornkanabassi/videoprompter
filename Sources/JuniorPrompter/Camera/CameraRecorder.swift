@@ -44,6 +44,8 @@ import PrompterCore
     defer { isBusy = false }
     do {
       guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.") }
+      if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .audio) }
+      guard !cancelStart else { return }
       guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw recordingError("Allow microphone access in System Settings > Privacy & Security > Microphone before recording.") }
       let devices = Self.microphones()
       let microphone = microphoneUID.flatMap { id in devices.first { $0.uniqueID == id } } ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
@@ -89,13 +91,21 @@ import PrompterCore
   }
   func stop() async {
     if let stopTask { await stopTask.value; return }
-    guard let sink else { if isBusy { cancelStart = true }; return }
+    guard let sink else {
+      if isBusy {
+        cancelStart = true
+        while isBusy { try? await Task.sleep(for: .milliseconds(20)) }
+      }
+      return
+    }
     isBusy = true; isRecording = false
     let task = Task { @MainActor [self] in
       for observer in observers { NotificationCenter.default.removeObserver(observer) }; observers.removeAll()
       let shared = SharedCameraSession.shared
       await withCheckedContinuation { continuation in
         shared.reconfigure { session in
+          sink.video.setSampleBufferDelegate(nil, queue: nil)
+          sink.audio.setSampleBufferDelegate(nil, queue: nil)
           session.beginConfiguration()
           if session.outputs.contains(sink.video) { session.removeOutput(sink.video) }
           if session.outputs.contains(sink.audio) { session.removeOutput(sink.audio) }
