@@ -159,13 +159,15 @@ private enum PresenterSaveError: LocalizedError {
   private var lastExternalRefresh = Date.distantPast
   private let defaults: UserDefaults
 
+  static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
+    guard let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count else { return .standard }
+    let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
+    return UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
+  }
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
     _ = AvailableFonts.presenter
-    let testDirectory = arguments.firstIndex(of: "--data-directory").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
-    let isolatedDefaults = defaults ?? (testDirectory != nil
-      ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
-      : .standard)
+    let isolatedDefaults = defaults ?? Self.preferences(arguments: arguments)
     self.defaults = isolatedDefaults
     self.session = SessionStore(defaults: isolatedDefaults)
     func stored<T: Decodable>(_ key: String) -> T? {

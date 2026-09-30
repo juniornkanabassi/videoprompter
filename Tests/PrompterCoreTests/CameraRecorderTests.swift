@@ -18,6 +18,13 @@ import XCTest
     XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "preserve")
     let suite = "RecorderTests.\(UUID())"; let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
+    let isolated = AppStore.preferences(arguments: ["app", "--data-directory", root.path])
+
+    let camera = CameraModel(defaults: isolated)
+    camera.mirrored = true
+    XCTAssertTrue(CameraModel(defaults: AppStore.preferences(arguments: ["app", "--data-directory", root.path])).mirrored)
+    let other = root.appendingPathComponent("other")
+    XCTAssertFalse(CameraModel(defaults: AppStore.preferences(arguments: ["app", "--data-directory", other.path])).mirrored)
     let recorder = CameraRecorder(defaults: defaults)
     recorder.preset = .edit; recorder.floatAudio = true; recorder.microphoneUID = "specific-device"
     let reopened = CameraRecorder(defaults: defaults)

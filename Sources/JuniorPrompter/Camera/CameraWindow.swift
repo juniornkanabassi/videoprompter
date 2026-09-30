@@ -26,7 +26,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
 @MainActor final class CameraModel: ObservableObject {
   /// One model for the Camera window, the Camera menu and the presenter's video background:
   /// they show the same camera with the same rotation and the same guides.
-  static let shared = CameraModel()
+  static let shared = CameraModel(defaults: AppStore.preferences())
   @Published private(set) var devices: [CameraDevice] = []
   @Published var selectedUID: String? {
     didSet {

@@ -3,12 +3,7 @@ import Combine
 import PrompterCore
 
 @MainActor final class CameraRecorder: ObservableObject {
-  static let shared: CameraRecorder = {
-    let args = CommandLine.arguments
-    let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: args)
-    let defaults = args.contains("--data-directory") ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")! : .standard
-    return CameraRecorder(defaults: defaults)
-  }()
+  static let shared = CameraRecorder(defaults: AppStore.preferences())
   @Published private(set) var isRecording = false
   @Published private(set) var isBusy = false
   @Published private(set) var startedAt: Date?
