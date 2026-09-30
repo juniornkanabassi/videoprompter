@@ -8,7 +8,14 @@ import PrompterCore
   init(store: AppStore, presenter: PresenterController = .shared) { self.store = store; self.presenter = presenter }
   private func identity(_ script: ScriptRecord) -> [String: String] { ["id": script.id.uuidString, "title": script.metadata.title] }
   private var position: [String: Int] { ["word": store.session.document.spokenTokens.isEmpty ? 0 : store.session.tokenIndex + 1, "words": store.session.document.spokenTokens.count] }
-  private var state: String { String(describing: store.session.state).lowercased() }
+  private var state: String {
+    switch store.session.state {
+    case .stopped: "stopped"
+    case .paused: "paused"
+    case .running: "running"
+    case .uncertain: "uncertain"
+    }
+  }
   private func select(_ record: ScriptRecord) { store.search = ""; store.selectedFolderID = nil; store.selectedID = record.id }
   private func lookup(_ name: String) -> (ScriptRecord?, ControlResult?) {
     if let id = UUID(uuidString: name), let script = store.scripts.first(where: { $0.id == id }) { return (script, nil) }
@@ -33,7 +40,8 @@ import PrompterCore
         "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev", "library": store.libraryAvailable, "scripts": store.scripts.count,
         "selected": store.selected.map(identity) as Any? ?? NSNull(), "presenter": presenter.isEditing ? "editing" : presenter.panel?.isVisible == true ? "visible" : "hidden",
         "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "state": state, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
-      if let notice = store.session.anchorNotice { result["notice"] = notice }
+      if case .uncertain(let notice) = store.session.state { result["notice"] = notice }
+      else if let notice = store.session.anchorNotice { result["notice"] = notice }
       return .ok(result)
     case "script_list":
       guard store.libraryAvailable else { return .error("library_unavailable", "The script library is unavailable.") }
