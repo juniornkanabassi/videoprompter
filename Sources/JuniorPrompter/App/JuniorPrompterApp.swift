@@ -157,10 +157,7 @@ private enum PresenterSaveError: LocalizedError {
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
     _ = AvailableFonts.presenter
     let testDirectory = arguments.firstIndex(of: "--data-directory").flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
-    let root = testDirectory.map { URL(fileURLWithPath: $0) }
-      ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        .appendingPathComponent(Bundle.main.bundleIdentifier?.hasSuffix(".alpha") == true
-          ? "JuniorPrompter Alpha" : "JuniorPrompter", isDirectory: true)
+    let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
     let isolatedDefaults = defaults ?? (testDirectory != nil
       ? UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
       : .standard)
@@ -314,13 +311,20 @@ private enum PresenterSaveError: LocalizedError {
   }
 
   func create(title: String = "Untitled Script", markdown: String = "", linkTo: URL? = nil) {
-    withLibrary { [self] library in
-      var item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
-      if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
-      scripts.insert(item, at: 0)
-      selectedID = item.metadata.id
-      await refreshLinkStates()
-    }
+    withLibrary { [self] _ in _ = try await createScript(title: title, markdown: markdown, linkTo: linkTo) }
+  }
+  @discardableResult func createScript(title: String, markdown: String, linkTo: URL? = nil) async throws -> ScriptRecord {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    var item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
+    if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
+    scripts.insert(item, at: 0)
+    selectedID = item.id
+    await refreshLinkStates()
+    return item
+  }
+  static func importTarget(for preview: ImportPreview) -> (title: String, linkTo: URL?) {
+    (preview.sourceURL.deletingPathExtension().lastPathComponent,
+     ["md", "markdown"].contains(preview.sourceURL.pathExtension.lowercased()) ? preview.sourceURL : nil)
   }
   /// File > Import from Clipboard and the toolbar's copy of it.
   func importClipboard() {
@@ -770,7 +774,18 @@ private struct CameraCommands: Commands {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
-  weak var store: AppStore?
+  private var controlServer: ControlServer?
+  weak var store: AppStore? {
+    didSet {
+      guard controlServer == nil, let store else { return }
+      let actions = ControlActions(store: store)
+      let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: CommandLine.arguments)
+      let server = ControlServer(socketURL: ControlProtocol.socketURL(dataRoot: root)) { action, params in await actions.handle(action, params) }
+      controlServer = server
+      do { try server.start() } catch { NSLog("Control server unavailable: %@", error.localizedDescription) }
+    }
+  }
+  func applicationWillTerminate(_ notification: Notification) { controlServer?.stop() }
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Zoom In's "+" only matches with Shift held; take the unshifted Command-= too, as Safari does.
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in

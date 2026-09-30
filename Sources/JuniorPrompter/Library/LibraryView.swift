@@ -186,10 +186,8 @@ struct LibraryView: View {
           Button("Import") {
             // A Markdown original stays linked, so edits made in MarkEdit or Obsidian
             // reach the script. Converted formats (PDF, DOCX, RTF) have no such original.
-            let markdownSource = ["md", "markdown"].contains(value.sourceURL.pathExtension.lowercased())
-            store.create(
-              title: value.sourceURL.deletingPathExtension().lastPathComponent,
-              markdown: value.markdown, linkTo: markdownSource ? value.sourceURL : nil)
+            let target = AppStore.importTarget(for: value)
+            store.create(title: target.title, markdown: value.markdown, linkTo: target.linkTo)
             importPreview = nil
           }.keyboardShortcut(.defaultAction)
         }

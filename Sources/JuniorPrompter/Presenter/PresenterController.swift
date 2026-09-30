@@ -74,10 +74,11 @@ import SwiftUI
     activeSession?.pause()
     return true
   }
-  func present(store: AppStore, on screen: NSScreen? = nil) {
+  var isEditing: Bool { draft?.isEditing == true }
+  func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
-      panel?.makeKeyAndOrderFront(nil)
+      if activate { panel?.makeKeyAndOrderFront(nil) } else { panel?.orderFrontRegardless() }
       return
     }
     guard let script = store.selected else { return }
@@ -95,7 +96,7 @@ import SwiftUI
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
-      panel.makeKey()
+      if activate { panel.makeKey() }
       return
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
@@ -106,7 +107,9 @@ import SwiftUI
       panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
     }
     recoverVisibleFrame(panel)
-    if screen != nil || CommandLine.arguments.contains("--agent-screen") {
+    if !activate {
+      panel.orderFrontRegardless()
+    } else if screen != nil || CommandLine.arguments.contains("--agent-screen") {
       panel.orderFrontRegardless()
       panel.makeKey()
     } else {
