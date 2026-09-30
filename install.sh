@@ -51,11 +51,18 @@ mkdir -p "$BIN_DIR"
 ln -sfn "$DEST/Contents/Helpers/juniorprompter" "$CLI_LINK"
 NODE_PATH=$(command -v node || true)
 [[ -n "$NODE_PATH" ]] || NODE_PATH="node"
-print "claude mcp add juniorprompter -- \"$NODE_PATH\" \"$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs\""
-# JSON strings are also valid TOML basic strings, including paths with quotes.
-python3 - "$NODE_PATH" "$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs" <<'PYCONFIG'
-import json, sys
-print("# ~/.codex/config.toml\n[mcp_servers.juniorprompter]")
-print("command = " + json.dumps(sys.argv[1]))
-print("args = [" + json.dumps(sys.argv[2]) + "]")
-PYCONFIG
+SHIM_PATH="$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs"
+print -r -- "claude mcp add juniorprompter -- ${(q)NODE_PATH} ${(q)SHIM_PATH}"
+toml_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  print -r -- "\"$value\""
+}
+print '# ~/.codex/config.toml'
+print '[mcp_servers.juniorprompter]'
+print -r -- "command = $(toml_string "$NODE_PATH")"
+print -r -- "args = [$(toml_string "$SHIM_PATH")]"

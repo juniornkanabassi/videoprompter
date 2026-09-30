@@ -21,5 +21,5 @@ func walk(_ element: AXUIElement, depth: Int = 0) -> [[String: String]] {
   return [row] + children.flatMap { walk($0, depth: depth + 1) }
 }
 let windows = attribute(app, "AXWindows") as? [AXUIElement] ?? []
-let result: [String: Any] = ["pid": pid, "trusted": AXIsProcessTrusted(), "windows": windows.flatMap { walk($0) }]
+let result: [String: Any] = ["pid": pid, "trusted": AXIsProcessTrusted(), "frontmostPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, "windows": windows.flatMap { walk($0) }]
 print(String(data: try! JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!)
