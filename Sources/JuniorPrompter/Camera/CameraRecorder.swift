@@ -44,6 +44,9 @@ import PrompterCore
     defer { isBusy = false }
     do {
       guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.") }
+      if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .video) }
+      guard !cancelStart else { return }
+      guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { throw recordingError("Allow camera access in System Settings > Privacy & Security > Camera before recording.") }
       if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .audio) }
       guard !cancelStart else { return }
       guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw recordingError("Allow microphone access in System Settings > Privacy & Security > Microphone before recording.") }
