@@ -38,7 +38,7 @@ async function handle(line) {
       const argv = [...options, ...tool.command];
       for (const [key, value] of Object.entries(args)) {
         if (typeof value === 'boolean') { if (value) argv.push(`--${key}`); }
-        else argv.push(`--${key}`, String(value));
+        else argv.push(`--${key}=${String(value)}`);
       }
       const reply = await run([...argv, '--json']);
       result({ content: [{ type: 'text', text: reply.stdout.trim() || reply.stderr.trim() || reply.error?.message || '' }], isError: Boolean(reply.error) });
