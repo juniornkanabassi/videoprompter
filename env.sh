@@ -20,6 +20,8 @@ XCTEST="$XCODE_DEVELOPER_DIR/usr/bin/xctest"
 # then rejects the test bundle with "resource fork, Finder information, or
 # similar detritus not allowed".
 JUNIORPROMPTER_TEST_SCRATCH="${JUNIORPROMPTER_TEST_SCRATCH:-/private/tmp/JuniorPrompter-test-cache}"
+mkdir -p "$JUNIORPROMPTER_TEST_SCRATCH"
+[[ ! -L "$JUNIORPROMPTER_TEST_SCRATCH" && -O "$JUNIORPROMPTER_TEST_SCRATCH" ]] || { print -u2 "Unsafe test cache $JUNIORPROMPTER_TEST_SCRATCH"; return 1; }
 
 # A stable local identity keeps the Camera and Microphone grants across rebuilds; ad hoc ("-")
 # ties them to one build's cdhash, so every new build silently loses them (black camera, silent mic).

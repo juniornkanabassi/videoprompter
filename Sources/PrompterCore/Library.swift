@@ -65,6 +65,9 @@ public actor MarkdownLibrary {
   private var index: Index
   private var linkConflicts: [String] = []
   /// Last seen modification date of each linked file, so an untouched file is not re-read.
+  // Test seam for an external save arriving immediately after the content/date snapshot.
+  private var linkedReadHook: (@Sendable () -> Void)?
+  func setLinkedReadHook(_ hook: (@Sendable () -> Void)?) { linkedReadHook = hook }
   private var lastLinkSync: [UUID: Date] = [:]
   /// Modification date of each library file the last time the poll read it, and of the Scripts
   /// folder the last time it was scanned. The two-second poll used to coordinate-read and
@@ -359,6 +362,7 @@ public actor MarkdownLibrary {
 
   /// Mirror this script to an external Markdown file, so edits on either side reach the other.
   public func link(_ id: UUID, to url: URL) throws -> ScriptMetadata {
+    _ = try checkedRelinkText(url)
     let position = try position(of: id)
     let old = index
     index.scripts[position].linkedPath = url.standardizedFileURL.path
@@ -376,11 +380,11 @@ public actor MarkdownLibrary {
   /// Link state of every linked script, for the UI to show without touching the file system.
   public func linkStates() -> [UUID: LinkState] {
     index.scripts.reduce(into: [:]) { states, item in
-      if item.linkedPath != nil { states[item.id] = Self.linkState(item) }
+      if item.linkedPath != nil { states[item.id] = linkState(item) }
     }
   }
   public func linkState(for id: UUID) throws -> LinkState {
-    Self.linkState(index.scripts[try position(of: id)])
+    linkState(index.scripts[try position(of: id)])
   }
   /// The content fingerprint of a file that is safe to relink to, or `nil` when it is not
   /// (not a regular Markdown file, a symlink, too large, unreadable, or inside the library).
@@ -445,7 +449,7 @@ public actor MarkdownLibrary {
       } catch { index = old; throw error }
     }
   }
-  private func checkedRelinkText(_ url: URL) throws -> String {
+  private func validateLinkTarget(_ url: URL) throws {
     let url = url.standardizedFileURL
     let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
     guard ["md", "markdown"].contains(url.pathExtension.lowercased()),
@@ -453,7 +457,26 @@ public actor MarkdownLibrary {
       ((attributes[.size] as? NSNumber)?.intValue ?? .max) <= Self.maxLinkedBytes,
       !url.resolvingSymlinksInPath().path.hasPrefix(rootURL.resolvingSymlinksInPath().path + "/")
     else { throw PrompterCoreError.unsafePath(url.path) }
-    return try Self.withLinkAccess(url, readText)
+  }
+  private func checkedRelinkText(_ url: URL) throws -> String {
+    try Self.withLinkAccess(url) { target in
+      try validateLinkTarget(target)
+      return try readText(target)
+    }
+  }
+  /// Read, compare and write under one external-file access reservation.
+  private func withLinkedWrite<T>(_ url: URL, _ body: (URL) throws -> T) throws -> T {
+    try Self.withLinkAccess(url) { scoped in
+      func checked(_ target: URL) throws -> T { try validateLinkTarget(target); return try body(target) }
+      guard coordinatesExternalChanges else { return try checked(scoped) }
+      var result: Result<T, Error>!
+      var coordinationError: NSError?
+      NSFileCoordinator().coordinate(writingItemAt: scoped, options: .forMerging, error: &coordinationError) {
+        target in result = Result { try checked(target) }
+      }
+      if let coordinationError { throw coordinationError }
+      return try result.get()
+    }
   }
   private static let maxLinkedBytes = 20 * 1024 * 1024
 
@@ -478,76 +501,81 @@ public actor MarkdownLibrary {
   private func syncLinkedFile(_ id: UUID) throws {
     guard let position = index.scripts.firstIndex(where: { $0.id == id }),
       index.scripts[position].linkedPath != nil,
-      let link = Self.resolveLink(index.scripts[position])
+      let link = resolveLink(index.scripts[position])
     else { return }
     // Two coordinated reads per linked script every two seconds is most of the poll's cost,
     // and an untouched file cannot have changed either side.
     let modified = Self.modificationDate(of: link)
     guard lastLinkSync[id] != modified || modified == nil else { return }
-    defer { lastLinkSync[id] = Self.modificationDate(of: link) }
     let metadata = index.scripts[position]
     let libraryURL = try validatedURL(metadata.fileName, in: scriptsURL)
-    // A missing or unreadable file leaves the library copy exactly as it is; the
-    // indicator reads `linkedPath` and shows the link as broken.
-    guard let disk = try? Self.withLinkAccess(link, readText) else { return }
-    let local = try readText(libraryURL)
-    let diskPrint = Self.fingerprint(disk)
-    let localPrint = Self.fingerprint(local)
-    if diskPrint == localPrint {
-      guard metadata.linkedFingerprint != diskPrint else { return }
-      index.scripts[position].linkedFingerprint = diskPrint
-      try persistIndex()
-      return
+    // Invalid or unavailable targets leave the managed copy untouched.
+    guard (try? Self.withLinkAccess(link, { try validateLinkTarget($0) })) != nil else { return }
+    try withLinkedWrite(link) { target in
+      let disk = try String(contentsOf: target, encoding: .utf8)
+      var seenDate = Self.modificationDate(of: target)
+      linkedReadHook?()
+      let local = try readText(libraryURL)
+      let diskPrint = Self.fingerprint(disk)
+      let localPrint = Self.fingerprint(local)
+      if diskPrint == localPrint {
+        if metadata.linkedFingerprint != diskPrint {
+          index.scripts[position].linkedFingerprint = diskPrint
+          try persistIndex()
+        }
+      } else if diskPrint == metadata.linkedFingerprint {
+        // ponytail: external originals are written in place to preserve bookmark identity;
+        // crash recovery retains the good managed copy in Conflicts on the next sync.
+        try Data(local.utf8).write(to: target)
+        seenDate = Self.modificationDate(of: target)
+        index.scripts[position].linkedFingerprint = localPrint
+        try persistIndex()
+      } else {
+        if localPrint != metadata.linkedFingerprint { linkConflicts.append(try writeConflict(local, for: metadata)) }
+        try writeText(disk, to: libraryURL)
+        index.scripts[position].linkedFingerprint = diskPrint
+        try persistIndex()
+      }
+      lastLinkSync[id] = seenDate
     }
-    if diskPrint == metadata.linkedFingerprint {
-      try Self.withLinkAccess(link) { try writeText(local, to: $0) }
-      index.scripts[position].linkedFingerprint = localPrint
-      try persistIndex()
-      return
-    }
-    if localPrint != metadata.linkedFingerprint {
-      linkConflicts.append(try writeConflict(local, for: metadata))
-    }
-    try writeText(disk, to: libraryURL)
-    index.scripts[position].linkedFingerprint = diskPrint
-    try persistIndex()
   }
-  /// An in-app edit reaches the linked file too, unless the file has moved on ahead of
-  /// us: that is a genuine conflict and `syncLinkedFile` resolves it on the next pass.
+  /// Preserve a newer external edit; the next sync retains both versions.
   private func pushToLinkedFile(_ position: Int, markdown: String) {
     let metadata = index.scripts[position]
-    guard metadata.linkedPath != nil, let link = Self.resolveLink(metadata),
-      let disk = try? Self.withLinkAccess(link, readText), Self.fingerprint(disk) == metadata.linkedFingerprint
-    else { return }
+    guard metadata.linkedPath != nil, let link = resolveLink(metadata) else { return }
     do {
-      try Self.withLinkAccess(link) { try writeText(markdown, to: $0) }
-      index.scripts[position].linkedFingerprint = Self.fingerprint(markdown)
-      try persistIndex()
-    } catch {
-      // Let the next poll retry rather than skip the file on an unchanged date.
-      lastLinkSync[metadata.id] = nil
-    }
+      try withLinkedWrite(link) { target in
+        let disk = try String(contentsOf: target, encoding: .utf8)
+        guard Self.fingerprint(disk) == metadata.linkedFingerprint else { lastLinkSync[metadata.id] = nil; return }
+        try Data(markdown.utf8).write(to: target)
+        let seenDate = Self.modificationDate(of: target)
+        index.scripts[position].linkedFingerprint = Self.fingerprint(markdown)
+        try persistIndex()
+        lastLinkSync[metadata.id] = seenDate
+      }
+    } catch { lastLinkSync[metadata.id] = nil }
   }
-  private static func resolveLink(_ metadata: ScriptMetadata) -> URL? {
+  private func resolveLink(_ metadata: ScriptMetadata) -> URL? {
     switch linkState(metadata) {
     case .unlinked: return nil
     case .resolved(let url), .staleBookmark(let url): return url
     case .missing(let path): return URL(fileURLWithPath: path)
     }
   }
-  private static func linkState(_ metadata: ScriptMetadata) -> LinkState {
+  private func linkState(_ metadata: ScriptMetadata) -> LinkState {
     guard let path = metadata.linkedPath else { return .unlinked }
     var stale = false
     if let data = metadata.linkedBookmark {
       for options: URL.BookmarkResolutionOptions in [.withSecurityScope, []] {
         if let url = try? URL(resolvingBookmarkData: data, options: options, relativeTo: nil, bookmarkDataIsStale: &stale) {
-          guard FileManager.default.fileExists(atPath: url.path) else { return .missing(path: url.path) }
+          guard (try? Self.withLinkAccess(url, { try validateLinkTarget($0) })) != nil else { return .missing(path: url.path) }
           // ponytail: a stale bookmark is reported but not rewritten; relink to refresh it.
           return stale ? .staleBookmark(url) : .resolved(url)
         }
       }
     }
-    return FileManager.default.fileExists(atPath: path) ? .resolved(URL(fileURLWithPath: path)) : .missing(path: path)
+    let url = URL(fileURLWithPath: path)
+    return (try? Self.withLinkAccess(url, { try validateLinkTarget($0) })) != nil ? .resolved(url) : .missing(path: path)
   }
   private static func modificationDate(of url: URL) -> Date? {
     try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
@@ -574,7 +602,7 @@ public actor MarkdownLibrary {
     try Self.coordinatedRead(url, coordinated: coordinatesExternalChanges)
   }
   private func writeText(_ text: String, to url: URL) throws {
-    try Self.coordinatedWrite(Data(text.utf8), to: url, coordinated: coordinatesExternalChanges)
+    try Self.coordinatedWrite(Data(text.utf8), to: url, coordinated: coordinatesExternalChanges, atomic: url.standardizedFileURL.path.hasPrefix(rootURL.standardizedFileURL.path + "/"))
   }
   /// Keeps the in-app version beside the library as `<name>-local-<uuid>.md`; returns the file name.
   private func writeConflict(_ markdown: String, for metadata: ScriptMetadata, label: String = "local") throws -> String {
@@ -653,15 +681,13 @@ public actor MarkdownLibrary {
   private static func writeAtomic<T: Encodable>(_ value: T, to url: URL, coordinated: Bool) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-    try coordinatedWrite(encoder.encode(value), to: url, coordinated: coordinated)
+    try coordinatedWrite(encoder.encode(value), to: url, coordinated: coordinated, atomic: true)
   }
   private static func writeAtomic(_ value: String, to url: URL, coordinated: Bool) throws {
-    try coordinatedWrite(Data(value.utf8), to: url, coordinated: coordinated)
+    try coordinatedWrite(Data(value.utf8), to: url, coordinated: coordinated, atomic: true)
   }
-  /// Writes in place under the coordinator. It deliberately does not stage a sibling and
-  /// `replaceItemAt` it: the sibling landed in the user's own vault folder, and replacing the
-  /// item gave the file a new identity, which breaks bookmarks and other apps' open handles.
-  private static func coordinatedWrite(_ data: Data, to url: URL, coordinated: Bool) throws {
+  /// Managed files are atomic; external relink writes preserve bookmark identity.
+  private static func coordinatedWrite(_ data: Data, to url: URL, coordinated: Bool, atomic: Bool) throws {
     guard coordinated else {
       try data.write(to: url, options: .atomic)
       return
@@ -669,11 +695,8 @@ public actor MarkdownLibrary {
     var result: Result<Void, Error>!
     var coordinationError: NSError?
     NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) {
-      // ponytail: written in place, not atomically. An atomic write is a rename over the
-      // original, which makes the file a new one and leaves bookmarks stale (proved by
-      // `testCoordinatedWriteBackKeepsTheFileItself`). The coordinator keeps other apps out
-      // for the duration; a crash mid-write is the residual risk.
-      coordinated in result = Result { try data.write(to: coordinated) }
+      // ponytail: external writes retain identity; managed files always use atomic replacement.
+      coordinated in result = Result { try data.write(to: coordinated, options: atomic ? .atomic : []) }
     }
     if let coordinationError { throw coordinationError }
     try result.get()

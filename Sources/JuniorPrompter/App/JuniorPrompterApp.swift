@@ -322,6 +322,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   @discardableResult func createScript(title: String, markdown: String, linkTo: URL? = nil) async throws -> ScriptRecord {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
+    if let linkTo, await library.relinkTargetFingerprint(linkTo) == nil { throw CocoaError(.fileReadNoPermission) }
     var item = try await library.create(title: title, markdown: markdown, folderID: selectedFolderID)
     if let linkTo { item.metadata = try await library.link(item.id, to: linkTo) }
     scripts.insert(item, at: 0)
