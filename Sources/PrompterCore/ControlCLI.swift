@@ -22,12 +22,18 @@ public enum ControlCLI {
       case "--help", "-h": return Invocation(action: "help", params: [:], json: json, alpha: alpha, dataDirectory: directory)
       default:
         if word.hasPrefix("--") {
-          guard i < argv.count, !argv[i].hasPrefix("--") else { throw UsageError(description: "Missing value for \(word)") }
-          let value = argv[i]; i += 1
-          if word == "--data-directory" { directory = value }
+          let parts = word.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
+          let flag = String(parts[0])
+          let value: String
+          if parts.count == 2 { value = String(parts[1]) }
           else {
-            let name = word == "--request-id" ? "requestId" : String(word.dropFirst(2))
-            guard flags[name] == nil else { throw UsageError(description: "Repeated flag \(word)") }
+            guard i < argv.count, !argv[i].hasPrefix("--") else { throw UsageError(description: "Missing value for \(word)") }
+            value = argv[i]; i += 1
+          }
+          if flag == "--data-directory" { directory = value }
+          else {
+            let name = flag == "--request-id" ? "requestId" : String(flag.dropFirst(2))
+            guard flags[name] == nil else { throw UsageError(description: "Repeated flag \(flag)") }
             flags[name] = value
           }
         } else { words.append(word) }

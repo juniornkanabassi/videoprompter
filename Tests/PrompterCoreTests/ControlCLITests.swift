@@ -14,6 +14,7 @@ final class ControlCLITests: XCTestCase {
       XCTAssertEqual(try ControlCLI.parse(command.words + flags).action, command.action)
     }
     for flag in ["--request-id", "--requestId"] { XCTAssertEqual(try ControlCLI.parse(["script", "import", "a.md", flag, "same"]).params["requestId"], "same") }
+    XCTAssertEqual(try ControlCLI.parse(["script", "open", "--script=--Football"]).params["script"], "--Football")
     XCTAssertEqual(try ControlCLI.parse(["--show", "present"]).params["show"], "true")
     for args in [["script", "import"], ["unknown"], ["set-mode", "timed"], ["set-zoom", "130"], ["status", "--show"], ["present", "--unknown", "x"], ["script", "import", "a", "--path", "b"]] { XCTAssertThrowsError(try ControlCLI.parse(args)) }
     XCTAssertEqual(try ControlCLI.parse(["script", "import", "--help"]).action, "help")
