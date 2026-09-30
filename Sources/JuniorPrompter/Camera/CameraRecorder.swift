@@ -102,7 +102,9 @@ import PrompterCore
       await withCheckedContinuation { continuation in
         shared.reconfigure { session in
           session.beginConfiguration()
-          session.removeOutput(sink.video); session.removeOutput(sink.audio); session.removeInput(sink.microphone)
+          if session.outputs.contains(sink.video) { session.removeOutput(sink.video) }
+          if session.outputs.contains(sink.audio) { session.removeOutput(sink.audio) }
+          if session.inputs.contains(sink.microphone) { session.removeInput(sink.microphone) }
           session.commitConfiguration(); continuation.resume()
         }
       }

@@ -49,6 +49,7 @@ import XCTest
       XCTAssertEqual(store.session.activeScriptID?.uuidString, id)
       XCTAssertEqual(OffscreenPanels.activations, 0)
       _ = await actions.handle("present", ["script": id, "show": "true"])
+      XCTAssertGreaterThan(OffscreenPanels.activations, 0)
     }
     let status = (await actions.handle("status", [:])).body["result"] as? [String: Any]
     for key in ["running", "app", "version", "library", "scripts", "selected", "presenter", "script", "state", "mode", "position", "zoom", "textSize"] { XCTAssertNotNil(status?[key]) }

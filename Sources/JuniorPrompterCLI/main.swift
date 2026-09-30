@@ -5,7 +5,22 @@ import PrompterCore
 func emit(_ value: [String: Any], json: Bool) {
   if json { print(String(data: try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]), encoding: .utf8)!) }
   else if let error = value["error"] as? [String: Any] { fputs("\(error["message"] ?? "Action failed")\n", stderr) }
-  else if let result = value["result"] { print(String(data: try! JSONSerialization.data(withJSONObject: result, options: [.sortedKeys, .fragmentsAllowed]), encoding: .utf8)!) }
+  else if let result = value["result"] as? [String: Any] {
+    if let scripts = result["scripts"] as? [[String: Any]] {
+      if scripts.isEmpty { print("No scripts.") }
+      for script in scripts { print("\(script["id"] ?? "")  \(script["title"] ?? "")") }
+    } else if let running = result["running"] as? Bool {
+      if !running { print("JuniorPrompter is not running.") }
+      else {
+        let selected = result["selected"] as? [String: Any]
+        print("JuniorPrompter \(result["version"] ?? "") — \(result["state"] ?? "stopped"), \(result["mode"] ?? "voice"), zoom \(result["zoom"] ?? 100)%; selected: \(selected?["title"] ?? "none")")
+      }
+    } else if let title = result["title"] {
+      print("\(title) (\(result["id"] ?? ""))\(result["linked"] as? Bool == true ? ", linked" : "")\(result["repeated"] as? Bool == true ? ", repeated" : "")")
+    } else {
+      print(result.keys.sorted().map { "\($0): \(result[$0]!)" }.joined(separator: ", "))
+    }
+  }
 }
 func failure(_ message: String, code: String = "connection", json: Bool, exitCode: Int32 = 1) -> Never {
   emit(["ok": false, "error": ["code": code, "message": message]], json: json); exit(exitCode)
@@ -29,7 +44,11 @@ let argv = Array(CommandLine.arguments.dropFirst())
 var invocation: ControlCLI.Invocation
  do { invocation = try ControlCLI.parse(argv) }
  catch { failure(String(describing: error), code: "usage", json: argv.contains("--json"), exitCode: 2) }
-let executable = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
+var executablePathSize: UInt32 = 0
+_ = _NSGetExecutablePath(nil, &executablePathSize)
+var executablePath = [CChar](repeating: 0, count: Int(executablePathSize))
+_ = _NSGetExecutablePath(&executablePath, &executablePathSize)
+let executable = URL(fileURLWithPath: String(cString: executablePath)).resolvingSymlinksInPath()
 let contents = executable.deletingLastPathComponent().deletingLastPathComponent()
 let ownApp: URL? = contents.lastPathComponent == "Contents" && executable.deletingLastPathComponent().lastPathComponent == "Helpers" ? contents.deletingLastPathComponent() : nil
 let info = ownApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
