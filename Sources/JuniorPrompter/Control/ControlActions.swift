@@ -82,6 +82,7 @@ import PrompterCore
       if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("JuniorPrompter") }?.makeKeyAndOrderFront(nil) }
       return .ok(identity(record))
     case "pause", "resume", "back_to_start":
+      if presenter.isEditing { return .error("presenter_editing", "Finish or cancel the presenter edit first.") }
       guard store.session.activeRecord != nil else { return .error("no_active_script", "Present a script first: juniorprompter present <id|title>") }
       if action == "pause" { store.session.pause() }
       else if action == "resume" { store.session.play() }
