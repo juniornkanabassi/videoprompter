@@ -19,6 +19,12 @@ struct InspectorView: View {
   init(store: AppStore) { self.store = store; self.session = store.session }
   var body: some View {
     Form {
+      if store.isAlphaChannel {
+        Section {
+          Toggle("Simple", isOn: $store.simpleInterface)
+          Text("Hides advanced settings. Nothing is lost.").font(.caption).foregroundStyle(.secondary)
+        }
+      }
       Section("Mode") {
         // Segmented while the three labels fit, a menu when the pane is narrower.
         ViewThatFits(in: .horizontal) {
@@ -53,6 +59,7 @@ struct InspectorView: View {
         }.help("Kept separately for Prompter only and Prompter + video")
         Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Guide position") }
         Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Guide opacity") }
+        if !store.showsSimpleInterface {
         DisclosureGroup("Advanced appearance") {
           Picker("Weight", selection: $store.settings.fontWeight) {
             Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
@@ -74,6 +81,7 @@ struct InspectorView: View {
           ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false)
           ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
         }
+      }
       }
       Section("Motion") {
         Picker("Tracking", selection: $store.settings.mode) {
@@ -167,6 +175,7 @@ struct InspectorView: View {
             .foregroundStyle(.secondary)
         }
       }
+      if !store.showsSimpleInterface {
       Section("Presets") {
         HStack {
           TextField("Preset name", text: $presetName)
@@ -188,6 +197,7 @@ struct InspectorView: View {
             Button("Delete", role: .destructive) { store.deletePreset(preset.id) }
           }
         }
+      }
       }
     }.formStyle(.grouped).task {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
