@@ -19,7 +19,8 @@ mkdir -p "$INSTALL_ROOT"
 WORK=$(mktemp -d "$INSTALL_ROOT/.juniorprompter-install.XXXXXX")
 STAGE="$WORK/JuniorPrompter.app"
 BACKUP="$INSTALL_ROOT/.JuniorPrompter.app.previous.$$"
-cleanup() { rm -rf "$WORK"; }
+CLI_STAGE="$BIN_DIR/.juniorprompter.$$"
+cleanup() { rm -rf "$WORK"; rm -f "$CLI_STAGE"; }
 trap cleanup EXIT
 /usr/bin/ditto -x -k --sequesterRsrc "$ARCHIVE" "$WORK"
 [[ ! -L "$STAGE" && -d "$STAGE" ]] || { print -u2 'Archive does not contain a real JuniorPrompter.app bundle at its root.'; exit 1; }
@@ -31,6 +32,9 @@ ACTUAL_EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$STAG
 [[ -n "$ACTUAL_EXECUTABLE" && -f "$STAGE/Contents/MacOS/$ACTUAL_EXECUTABLE" && ! -L "$STAGE/Contents/MacOS/$ACTUAL_EXECUTABLE" ]] || { print -u2 'Archive bundle executable is missing or is a symlink.'; exit 1; }
 /usr/bin/codesign --verify --strict "$STAGE"
 if pgrep -x JuniorPrompter >/dev/null 2>&1; then print -u2 'JuniorPrompter started during verification. Install aborted; this installer will not kill it.'; exit 1; fi
+mkdir -p "$BIN_DIR"
+[[ ! -e "$CLI_LINK" || -L "$CLI_LINK" ]] || { print -u2 "Refusing to replace real file $CLI_LINK"; exit 1; }
+ln -s "$DEST/Contents/Helpers/juniorprompter" "$CLI_STAGE"
 if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
 if ! /bin/mv "$STAGE" "$DEST"; then
   [[ ! -e "$BACKUP" ]] || /bin/mv "$BACKUP" "$DEST"
@@ -43,12 +47,14 @@ if ! /usr/bin/codesign --verify --strict "$DEST"; then
   print -u2 'Installed signature verification failed; the previous app was restored.'
   exit 1
 fi
+if ! /bin/mv -f "$CLI_STAGE" "$CLI_LINK"; then
+  /bin/rm -rf "$DEST"
+  [[ ! -e "$BACKUP" ]] || /bin/mv "$BACKUP" "$DEST"
+  print -u2 'CLI setup failed; the previous app was restored.'
+  exit 1
+fi
 [[ ! -e "$BACKUP" ]] || /bin/rm -rf "$BACKUP"
 print "Installed JuniorPrompter $ACTUAL_VERSION at $DEST"
-
-mkdir -p "$BIN_DIR"
-[[ ! -e "$CLI_LINK" || -L "$CLI_LINK" ]] || { print -u2 "Refusing to replace real file $CLI_LINK"; exit 1; }
-ln -sfn "$DEST/Contents/Helpers/juniorprompter" "$CLI_LINK"
 NODE_PATH=$(command -v node || true)
 [[ -n "$NODE_PATH" ]] || NODE_PATH="node"
 SHIM_PATH="$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs"
