@@ -4,6 +4,9 @@ SOURCE_ROOT="${0:A:h}"
 OUTPUT_ROOT="${JUNIORPROMPTER_OUTPUT_ROOT:-$SOURCE_ROOT/../Outputs}"
 INSTALL_ROOT="${JUNIORPROMPTER_INSTALL_ROOT:-/Applications/JuniorOS Apps}"
 DEST="$INSTALL_ROOT/JuniorPrompter.app"
+BIN_DIR="${JUNIORPROMPTER_BIN_DIR:-$HOME/.local/bin}"
+CLI_LINK="$BIN_DIR/juniorprompter"
+[[ ! -e "$CLI_LINK" || -L "$CLI_LINK" ]] || { print -u2 "Refusing to replace real file $CLI_LINK"; exit 1; }
 EXPECTED_VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$SOURCE_ROOT/Resources/Info.plist")
 EXPECTED_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$SOURCE_ROOT/Resources/Info.plist")
 ARCHIVE="${1:-$OUTPUT_ROOT/JuniorPrompter $EXPECTED_VERSION.zip}"
@@ -42,3 +45,17 @@ if ! /usr/bin/codesign --verify --strict "$DEST"; then
 fi
 [[ ! -e "$BACKUP" ]] || /bin/rm -rf "$BACKUP"
 print "Installed JuniorPrompter $ACTUAL_VERSION at $DEST"
+
+mkdir -p "$BIN_DIR"
+[[ ! -e "$CLI_LINK" || -L "$CLI_LINK" ]] || { print -u2 "Refusing to replace real file $CLI_LINK"; exit 1; }
+ln -sfn "$DEST/Contents/Helpers/juniorprompter" "$CLI_LINK"
+NODE_PATH=$(command -v node || true)
+[[ -n "$NODE_PATH" ]] || NODE_PATH="node"
+print "claude mcp add juniorprompter -- \"$NODE_PATH\" \"$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs\""
+# JSON strings are also valid TOML basic strings, including paths with quotes.
+python3 - "$NODE_PATH" "$DEST/Contents/Resources/mcp/juniorprompter-mcp.mjs" <<'PYCONFIG'
+import json, sys
+print("# ~/.codex/config.toml\n[mcp_servers.juniorprompter]")
+print("command = " + json.dumps(sys.argv[1]))
+print("args = [" + json.dumps(sys.argv[2]) + "]")
+PYCONFIG
