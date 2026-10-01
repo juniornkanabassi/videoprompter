@@ -271,14 +271,6 @@ public final class AudioCapture: @unchecked Sendable {
   deinit { stop() }
 }
 
-extension NSLock {
-  fileprivate func withLock<T>(_ body: () throws -> T) rethrows -> T {
-    lock()
-    defer { unlock() }
-    return try body()
-  }
-}
-
 private final class InputSupply: @unchecked Sendable { var supplied = false }
 
 public final class AudioInputDeviceObserver: @unchecked Sendable {
