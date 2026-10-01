@@ -181,7 +181,7 @@ struct CameraView: View {
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
-      ToolbarItem { RecordingControls(recorder: recorder, camera: model) }
+      ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model) }
       ToolbarItem {
         Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
           .help("Flip the camera picture left to right")
@@ -327,7 +327,7 @@ struct RecordingControls: View {
   @ObservedObject var camera: CameraModel
   @State private var settings = false
   var body: some View {
-    HStack {
+    Group {
       Button {
         Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera) } }
       } label: {
