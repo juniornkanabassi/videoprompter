@@ -3,6 +3,16 @@ import XCTest
 @testable import JuniorPrompter
 
 final class MovieWriterTests: XCTestCase {
+  func testUnsupportedAudioThrowsBeforeCreatingWriter() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("writer-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for (spec, floatAudio) in [(AudioSpec(sampleRate: 96000, channels: 16), false), (AudioSpec(sampleRate: 48000, channels: 16), true), (AudioSpec(sampleRate: 96000, channels: 2), false)] {
+      XCTAssertThrowsError(try MovieWriter(url: folder.appendingPathComponent("invalid.mov"), width: 320, height: 240, transform: .identity, preset: .standard, audio: spec, floatAudio: floatAudio)) { error in
+        XCTAssertTrue(error.localizedDescription.contains("2 channels"))
+      }
+    }
+  }
   private func video(_ frame: Int) throws -> CMSampleBuffer {
     var pixel: CVPixelBuffer?
     XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 240, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixel), kCVReturnSuccess)

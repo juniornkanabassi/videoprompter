@@ -53,14 +53,14 @@ import PrompterCore
       let devices = Self.microphones()
       let microphone = microphoneUID.flatMap { id in devices.first { $0.uniqueID == id } } ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
       guard let microphone else { throw recordingError("The selected microphone is unavailable. Choose another explicitly.") }
-      microphoneUID = microphone.uniqueID
+      if microphoneUID != nil { microphoneUID = microphone.uniqueID }
       let folder = Self.recordingsFolder()
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       let free = try folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
       guard Self.hasRecordingSpace(free) else { throw recordingError("Recording needs at least 2 GB of free space.") }
       let input = try AVCaptureDeviceInput(device: microphone)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
-      let spec = AudioSpec(sampleRate: format?.mSampleRate ?? 48000, channels: Int(format?.mChannelsPerFrame ?? 2))
+      let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
       let sink = RecordingSink(url: Self.fileURL(in: folder), preset: preset, rotation: camera.guides.rotation, audio: spec, floatAudio: floatAudio, microphone: input) { [weak self] error in
         Task { @MainActor [weak self] in
           guard let self, self.isRecording else { return }

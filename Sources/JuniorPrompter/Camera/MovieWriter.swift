@@ -23,6 +23,9 @@ final class MovieWriter: @unchecked Sendable {
       (try FileManager.default.attributesOfItem(atPath: url.deletingLastPathComponent().path)[.type] as? FileAttributeType) == .typeDirectory,
       width > 0, height > 0, audio.map({ $0.sampleRate > 0 && $0.channels > 0 }) ?? true
     else { throw CocoaError(.fileWriteInvalidFileName) }
+    if let audio, audio.channels > 2 || !audio.sampleRate.isFinite || (!floatAudio && audio.sampleRate > 48_000) {
+      throw NSError(domain: "MovieWriter", code: 1, userInfo: [NSLocalizedDescriptionKey: "Recording audio supports at most 2 channels and AAC sample rates up to 48 kHz."])
+    }
     writer = try AVAssetWriter(outputURL: url, fileType: .mov)
     writer.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
     video = AVAssetWriterInput(mediaType: .video, outputSettings: [AVVideoCodecKey: preset.codec, AVVideoWidthKey: width, AVVideoHeightKey: height])
