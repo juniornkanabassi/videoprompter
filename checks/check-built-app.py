@@ -42,9 +42,12 @@ try:
     assert command(['status'])['running'] is False
     data.mkdir()
     stale = socket.socket(socket.AF_UNIX); stale.bind(str(data / 'control.sock')); stale.close()
+    # Ignore shared macOS scene restoration for this disposable instance.
+    subprocess.run(['open', '-g', '-n', '-a', str(app), '--args', '--data-directory', str(data), '-ApplePersistenceIgnoreState', 'YES', '-NSQuitAlwaysKeepsWindows', 'NO', '--agent-screen'], check=True, timeout=10)
+    time.sleep(3)
     started = time.monotonic()
     imported = command(['script', 'import', str(input_file), '--request-id', 'once'])
-    assert time.monotonic() - started < 10, 'Background launch exceeded 10 seconds'
+    assert time.monotonic() - started < 10, 'Background import exceeded 10 seconds'
     time.sleep(1)
     # Identify only the executable and unique --data-directory owned by this check.
     processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
@@ -122,7 +125,7 @@ try:
     linked = subprocess.run(['juniorprompter', '--data-directory', str(data), 'status', '--json'], env=env, capture_output=True, text=True, timeout=10)
     assert linked.returncode == 0 and json.loads(linked.stdout)['result']['app'] == status['app']
     for number in range(200):
-        extra = root / f'Large library {number} '+('x' * 200)+'.md'
+        extra = root / (f'Large library {number} '+('x' * 200)+'.md')
         extra.write_text(f'# Large library {number} '+('x' * 700)+'\n\nDisposable script.\n')
         command(['script', 'import', str(extra)])
     assert len(command(['script', 'list'])['scripts']) == 201
