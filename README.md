@@ -1,6 +1,6 @@
 # VidPrompt source
 
-Native Swift macOS 26 app, version **1.1.0**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Camera recording and a Simple inspector toggle are available. Source has no external package dependencies.
+Native Swift macOS 26 app, version **1.2.0**, build **35**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Camera recording and advanced script settings are available. Source has no external package dependencies.
 
 ## Build and test
 
@@ -15,7 +15,7 @@ zsh mcp/check-mcp.sh
 zsh build.sh
 ```
 
-The build produces `../Outputs/VidPrompt 1.1.0.zip`. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+The build produces `../Outputs/VidPrompt 1.2.0.zip`. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
 Optional overrides: `VIDPROMPT_BUILD_ROOT`, `VIDPROMPT_TEST_SCRATCH` and `VIDPROMPT_OUTPUT_ROOT` select disposable cache/output paths. Use a short, owned path outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
@@ -23,7 +23,7 @@ Optional overrides: `VIDPROMPT_BUILD_ROOT`, `VIDPROMPT_TEST_SCRATCH` and `VIDPRO
 
 Install with `zsh install.sh`. The guarded installer refuses a running app, verifies the archive and preserves the previous installation on failure. It also links `~/.local/bin/vidprompt`. Keep the previous archive for rollback.
 
-Open VidPrompt, import a Markdown script and press Present. Choose Voice for on-device speech tracking or Manual for timed scrolling. Allow camera/microphone permissions when using those features. Recording is in the Camera toolbar and uses the pinned preview format, at most 1920×1080; live hardware acceptance remains pending.
+Open VidPrompt, import a script or choose New Script, choose Voice or Manual in Script settings, then press Present. Voice follows your spoken words on device; Manual scrolls at the speed you choose. Press Start in the presenter, Pause to stop following, or Back to start to return to the first word. New libraries start with simple controls; Show advanced settings reveals detailed appearance, voice and saved settings without changing saved choices. Allow camera/microphone permissions when using those features. Recording is in the Camera toolbar and uses the pinned preview format, at most 1920×1080; live hardware acceptance remains pending.
 
 ## Relationship to JuniorPrompter 0.17.0
 
@@ -33,7 +33,7 @@ VidPrompt is the renamed app; it uses bundle id `com.juniornkanabassi.VidPrompt`
 
 ```sh
 work=$(mktemp -d /private/tmp/vp-check.XXXXXX)
-ditto -x -k '../Outputs/VidPrompt 1.1.0.zip' "$work"
+ditto -x -k '../Outputs/VidPrompt 1.2.0.zip' "$work"
 source env.sh
 python3 checks/check-built-app.py "$work/VidPrompt.app"
 ```
@@ -44,7 +44,7 @@ For manual isolated use, launch the app executable with `--data-directory /priva
 
 ## AI control
 
-VidPrompt 1.1.0 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/vidprompt` after a verified install.
+VidPrompt 1.2.0 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/vidprompt` after a verified install.
 
 | Command | Example |
 |---|---|

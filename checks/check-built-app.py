@@ -45,6 +45,17 @@ try:
     # Ignore shared macOS scene restoration for this disposable instance.
     subprocess.run(['open', '-g', '-n', '-a', str(app), '--env', 'CFFIXED_USER_HOME='+str(root / 'home'), '--args', '--data-directory', str(data), '-ApplePersistenceIgnoreState', 'YES', '-NSQuitAlwaysKeepsWindows', 'NO', '--agent-screen'], check=True, timeout=10)
     time.sleep(3)
+    processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
+    matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VidPrompt') in line and str(data) in line]
+    assert len(matches) == 1, matches
+    pid = matches[0]
+    empty_gui = gui(pid)
+    (root / 'empty-gui.json').write_text(json.dumps(empty_gui, indent=2))
+    empty_text = json.dumps(empty_gui['windows'])
+    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual', 'Press Present', 'Import Script', 'New Script', 'Show advanced settings']:
+        assert label in empty_text, (label, empty_text)
+    advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch'] and 'Show advanced settings' in str(row)]
+    assert advanced_switches and all(row.get('AXValue') == '0' for row in advanced_switches), advanced_switches
     started = time.monotonic()
     imported = command(['script', 'import', str(input_file), '--request-id', 'once'])
     assert time.monotonic() - started < 10, 'Background import exceeded 10 seconds'
@@ -77,7 +88,12 @@ try:
     command(['set-zoom', '150'])
     assert command(['set-zoom', '130'], 2)['code'] == 'usage'
     command(['present', imported['id']])
-    command(['resume']); command(['pause']); command(['back-to-start'])
+    command(['resume'])
+    running_gui = gui(pid)
+    (root / 'scrolling-gui.json').write_text(json.dumps(running_gui, indent=2))
+    for label in ['Scrolling', 'Pause']:
+        assert any(label in row.values() for row in running_gui['windows']), (label, running_gui)
+    command(['pause']); command(['back-to-start'])
     status = command(['status'])
     assert status['running'] and status['selected']['id'] == imported['id']
     assert status['script']['id'] == imported['id'] and status['presenter'] == 'visible'
@@ -111,8 +127,10 @@ try:
     assert visible['trusted'] and visible['windows'], visible
     rows = visible['windows']
     rendered = json.dumps(rows)
-    assert imported['title'] in rendered and 'Manual' in rendered and 'Tracking' in rendered, rendered
-    assert any("Simple" in row.values() for row in rows), rendered
+    assert imported['title'] in rendered and 'Manual' in rendered and 'How it follows you' in rendered, rendered
+    assert any("Show advanced settings" in row.values() for row in rows), rendered
+    for label in ['Start', 'Back to start', 'Paused']:
+        assert any(label in row.values() for row in rows), (label, rendered)
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
     zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
