@@ -19,10 +19,20 @@ struct LibraryView: View {
           // Folder and Recently Deleted rows are never the list selection: SwiftUI tags every
           // `ForEach` row, and a folder or trashed script taken as the "selected script" left
           // Present with nothing to show.
-          Button { store.selectFolder(nil) } label: { Label { Text("All Scripts").lineLimit(nil).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "tray.full") } }
+          Button { store.selectFolder(nil) } label: {
+            ViewThatFits(in: .horizontal) {
+              Label("All Scripts", systemImage: "tray.full").fixedSize()
+              Text("All Scripts").lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+            }
+          }
             .help("Choose which scripts to show").selectionDisabled()
           ForEach(store.folders) { folder in
-            Button { store.selectFolder(folder.id) } label: { Label { Text(folder.name).lineLimit(nil).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "folder") } }
+            Button { store.selectFolder(folder.id) } label: {
+              ViewThatFits(in: .horizontal) {
+                Label(folder.name, systemImage: "folder").fixedSize()
+                Text(folder.name).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+              }
+            }
               .contextMenu {
                 Button("Rename Folder") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
                 Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }.help("Remove the folder; its scripts return to All Scripts")
@@ -30,10 +40,11 @@ struct LibraryView: View {
               .help("Choose which scripts to show").selectionDisabled()
           }
           VStack(alignment: .leading, spacing: 4) {
-            Text("New folder").fixedSize(horizontal: false, vertical: true)
+            Text("New folder").lineLimit(nil).fixedSize(horizontal: false, vertical: true)
             HStack {
               TextField("", text: $newFolderName)
                 .accessibilityLabel("New folder")
+                .textFieldStyle(.roundedBorder)
                 .help("Name a folder, then press Return to create it")
                 .onSubmit(createFolder)
               Button("Create Folder", systemImage: "plus", action: createFolder)
