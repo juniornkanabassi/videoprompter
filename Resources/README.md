@@ -1,1 +1,1 @@
-Packaging metadata, original app artwork and the OBS renderer belong here once implemented.
+Packaging metadata and original app artwork live here. The OBS renderer is deferred.
