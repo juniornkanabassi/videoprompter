@@ -13,11 +13,11 @@
 *.aac
 *.aiff
 *.mp3
-Library/
-Libraries/
-Scripts/
-Recordings/
-LibraryIndex.json
+/Library/
+/Libraries/
+/Scripts/
+/Recordings/
+/LibraryIndex.json
 .env
 .env.*
 credentials.json
