@@ -40,7 +40,7 @@ fi
 
 Keep the previous archive for rollback and back up the closed app bundle before replacing it. For stable, `zsh install.sh '../Outputs/JuniorPrompter 1.0.0.zip'` is the separate guarded installer; it refuses a running app, verifies the archive and preserves the previous installation on failure. It also links `~/.local/bin/juniorprompter`. Do not use that installer to install Alpha.
 
-Open the installed channel, import a Markdown script and press Present. Choose Voice for on-device speech tracking or Manual for timed scrolling. Allow camera/microphone permissions when using those features. Alpha recording is in the Camera toolbar; live hardware acceptance remains pending. User instructions are in `../Outputs/Getting started.md`.
+Open the installed channel, import a Markdown script and press Present. Choose Voice for on-device speech tracking or Manual for timed scrolling. Allow camera/microphone permissions when using those features. Alpha recording is in the Camera toolbar and uses the pinned preview format, at most 1920×1080; live hardware acceptance remains pending.
 
 ## Disposable built-app verification
 
@@ -96,4 +96,4 @@ args = ["/Applications/JuniorOS Apps/JuniorPrompter Alpha.app/Contents/Resources
 
 For stable MCP, use `JuniorPrompter.app` in place of `JuniorPrompter Alpha.app` and a separate host server name. A generic stdio MCP host needs command `node` and the matching bundled shim path as its argument; add `--data-directory /private/tmp/jpc-test` to isolate a test connection. The shim locates its own channel's bundled helper. Host configuration is manual; no setup command is run by the app.
 
-The socket is `control.sock` in the app's data directory: folder 0700, socket 0600, same-user peers only. Stable, Alpha and disposable data roots remain separate. Creation request IDs are idempotent within one app session. There are no delete, edit or recording actions. Markdown imports link the original both ways, as in the GUI; converted formats stay unlinked. Resuming Voice requires microphone access already granted in the app. Token savings have not been measured and are not claimed.
+The socket is `control.sock` in the app's data directory: folder 0700, socket 0600, same-user peers only. Stable, Alpha and disposable data roots remain separate. Creation request IDs are idempotent within one app session. There are no delete, edit or recording actions. Markdown imports link the original both ways, as in the GUI; converted formats stay unlinked. Resuming Voice may request microphone permission if access has not been decided. Token savings have not been measured and are not claimed.
