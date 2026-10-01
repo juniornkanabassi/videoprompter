@@ -122,7 +122,7 @@ final class CameraTests: XCTestCase {
     var shown = popUps()
     // The camera is chosen with `CameraPicker` (its label is covered in CameraPickerTests);
     // the rotation pop-up is the toolbar's one AppKit pop-up.
-    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Rotation"])
+    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Camera rotation"])
     XCTAssertEqual(shown.last?.titleOfSelectedItem, "90°")
 
     feed.devices = cameras
@@ -130,7 +130,7 @@ final class CameraTests: XCTestCase {
     model.rotationChoice.wrappedValue = nil
     settle()
     shown = popUps()
-    XCTAssertEqual(shown.last?.titleOfSelectedItem, "Auto")
+    XCTAssertEqual(shown.last?.titleOfSelectedItem, "Automatic")
   }
 
   /// Two windows can show the camera at once. One of them being covered used to detach the

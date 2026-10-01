@@ -16,9 +16,9 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   var id: String { rawValue }
   var label: String {
     switch self {
-    case .prompterOnly: "Prompter only"
-    case .prompterWithVideo: "Prompter + video"
-    case .videoOnly: "Video only"
+    case .prompterOnly: "Script only"
+    case .prompterWithVideo: "Script + camera"
+    case .videoOnly: "Camera only"
     }
   }
 }
@@ -123,7 +123,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
 
   /// The rotation control's choices, in the Camera window's toolbar and the inspector alike.
   static let rotationOptions: [(String, CameraRotation?)] =
-    [("Auto", nil)] + CameraRotation.allCases.map { ($0.label, Optional($0)) }
+    [("Automatic", nil)] + CameraRotation.allCases.map { ($0.label, Optional($0)) }
 
   /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
   /// On the model, because the Camera window's toolbar and the inspector both show it.
@@ -167,7 +167,8 @@ struct CameraView: View {
         }.padding()
       default:
         if model.devices.isEmpty {
-          Text("No camera found.").foregroundStyle(.secondary)
+          ContentUnavailableView("Connect a camera", systemImage: "video",
+            description: Text("Connect a USB camera or enable iPhone Continuity Camera, then choose it above. Check camera access in System Settings → Privacy & Security → Camera."))
         } else {
           CameraPreview(model: model).background(.black)
         }
@@ -183,11 +184,11 @@ struct CameraView: View {
       ToolbarItem { RecordingControls(recorder: recorder, camera: model) }
       ToolbarItem {
         Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
-          .help("Mirror camera")
+          .help("Flip the camera picture left to right")
       }
       ToolbarItem {
-        Button("Guides", systemImage: "grid") { showsGuideSettings.toggle() }
-          .help("Guides and frame marker")
+        Button("Framing guides", systemImage: "grid") { showsGuideSettings.toggle() }
+          .help("Choose composition lines and an output frame marker")
           .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
             CameraGuideSettings(model: model).frame(width: 300).padding()
           }
@@ -209,7 +210,7 @@ struct CameraChoiceItems: ToolbarContent {
     // The picker previews each camera on hover, so choosing one is never blind.
     ToolbarItem { CameraPicker(model: model).disabled(recording) }
     ToolbarItem {
-      ToolbarPopUp(title: "Rotation", options: CameraModel.rotationOptions, selection: $rotation)
+      ToolbarPopUp(title: "Camera rotation", help: "Rotate the camera picture, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation)
     }
   }
 }
@@ -219,6 +220,7 @@ struct CameraChoiceItems: ToolbarContent {
 /// window opens still shows the chosen name.
 struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
   let title: String
+  var help: String? = nil
   let options: [(String, Value)]
   @Binding var selection: Value
 
@@ -226,7 +228,7 @@ struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
   func makeNSView(context: Context) -> NSPopUpButton {
     let popup = NSPopUpButton(frame: .zero, pullsDown: false)
     popup.setAccessibilityLabel(title)
-    popup.toolTip = title
+    popup.toolTip = help ?? title
     return popup
   }
   func updateNSView(_ popup: NSPopUpButton, context: Context) {
@@ -268,30 +270,30 @@ struct CameraGuideSettings: View {
   @State private var customHeight = 1.0
   var body: some View {
     Form {
-      Section("Guides") {
-        Toggle("Rule of thirds", isOn: $model.guides.thirds)
-        Toggle("Centre axes", isOn: $model.guides.axes)
-        Toggle("Centre bullseye", isOn: $model.guides.bullseye)
-        ColorPicker("Colour", selection: guideColor, supportsOpacity: false)
-        LabeledContent("Opacity") { Slider(value: $model.guides.opacity, in: 0...1) }
+      Section("Framing guides") {
+        Toggle("Rule of thirds", isOn: $model.guides.thirds).help("Divide the picture into thirds to help compose your shot")
+        Toggle("Centre cross", isOn: $model.guides.axes).help("Mark the horizontal and vertical centre of the picture")
+        Toggle("Centre target", isOn: $model.guides.bullseye).help("Mark the centre with a target")
+        ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")
+        LabeledContent("Guide visibility") { Slider(value: $model.guides.opacity, in: 0...1).accessibilityLabel("Guide visibility") }.help("Fade the guides; zero hides them")
       }
       Section("Frame marker") {
-        Picker("Aspect ratio", selection: $model.guides.marker) {
+        Picker("Frame shape", selection: $model.guides.marker) {
           Text("Off").tag(nil as CameraAspect?)
           ForEach(CameraAspect.presets) { Text($0.label).tag(Optional($0)) }
           Text("Custom").tag(Optional(custom))
-        }
+        }.help("Mark the shape of your intended output without cropping the recording")
         if let value = model.guides.marker, !CameraAspect.presets.contains(value) {
           HStack {
-            TextField("Width", value: $customWidth, format: .number).frame(width: 64)
+            TextField("Width", value: $customWidth, format: .number).help("Set the width part of the custom frame ratio").frame(width: 64)
             Text(":")
-            TextField("Height", value: $customHeight, format: .number).frame(width: 64)
+            TextField("Height", value: $customHeight, format: .number).help("Set the height part of the custom frame ratio").frame(width: 64)
           }
           .onChange(of: customWidth) { model.guides.marker = custom }
           .onChange(of: customHeight) { model.guides.marker = custom }
         }
         if model.guides.marker != nil {
-          LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1) }
+          LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1).accessibilityLabel("Shade outside") }.help("Darken the area outside the frame marker")
         }
       }
     }.formStyle(.grouped)
@@ -331,26 +333,26 @@ struct RecordingControls: View {
       } label: {
         Label(recorder.isRecording ? "Stop" : "Record", systemImage: recorder.isRecording ? "stop.circle.fill" : "record.circle")
           .foregroundStyle(.red)
-      }.disabled(recorder.isBusy)
+      }.disabled(recorder.isBusy).help(recorder.isRecording ? "Finish and save this camera recording" : "Record the selected camera and microphone")
       if let started = recorder.startedAt {
         TimelineView(.periodic(from: started, by: 1)) { context in
           let seconds = max(0, Int(context.date.timeIntervalSince(started)))
           Text(String(format: "%02d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
         }
       }
-      Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }
+      Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }.help("Choose recording quality, microphone and audio format")
         .popover(isPresented: $settings) {
           Form {
-            Picker("Quality", selection: $recorder.preset) {
+            Picker("Recording quality", selection: $recorder.preset) {
               ForEach(RecordingPreset.allCases, id: \.self) { Text($0.label).tag($0) }
-            }.disabled(recorder.isRecording || recorder.isBusy)
+            }.disabled(recorder.isRecording || recorder.isBusy).help("Choose the video format before recording")
             Picker("Microphone", selection: Binding(get: { recorder.microphoneUID ?? "" }, set: { recorder.microphoneUID = $0.isEmpty ? nil : $0 })) {
-              Text("System default input").tag("")
+              Text("Default microphone").tag("")
               ForEach(CameraRecorder.microphones(), id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
               if let uid = recorder.microphoneUID, !CameraRecorder.microphones().contains(where: { $0.uniqueID == uid }) { Text("Selected microphone unavailable").tag(uid) }
-            }.disabled(recorder.isRecording || recorder.isBusy)
-            Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy)
-            if let file = recorder.lastFile { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
+            }.disabled(recorder.isRecording || recorder.isBusy).help("Choose the microphone recorded with the camera")
+            Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy).help("Save audio as 32-bit floating point where the recording format supports it")
+            if let file = recorder.lastFile { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.help("Find your latest saved recording") }
             if let error = recorder.errorMessage { Text(error).foregroundStyle(.red) }
           }.padding().frame(width: 380)
         }

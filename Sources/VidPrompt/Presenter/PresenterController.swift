@@ -446,6 +446,13 @@ private struct PresenterView: View {
       GeometryReader { geometry in
         // Laid out at the width the zoom leaves, so a narrow presenter wraps the capsule instead of overrunning it.
         WrapLayout(spacing: 8) {
+          Label(session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
+                systemImage: session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(session.isActivelyRunning ? Color.accentColor : Color.primary)
+            .padding(.horizontal, 8).padding(.vertical, 5)
+            .background((session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
+            .help(session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
           if draft.isEditing {
             Label("Editing", systemImage: "pencil")
               .font(.callout.weight(.semibold)).foregroundStyle(.orange)
@@ -454,27 +461,27 @@ private struct PresenterView: View {
           }
           // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
           Group {
-            CapsuleButton("Previous passage", systemImage: "backward.end.fill", action: session.previousPassage)
-            CapsuleButton(session.isActivelyRunning ? "Pause" : "Play",
-                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", action: session.toggle)
+            CapsuleButton("Previous passage", systemImage: "backward.end.fill", help: "Move to the previous passage", action: session.previousPassage)
+            CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
+                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, help: "Start or pause following at the current position", action: session.toggle)
               .buttonStyle(.borderedProminent)
-            CapsuleButton("Next passage", systemImage: "forward.end.fill", action: session.nextPassage)
-            CapsuleButton("Back to the start", systemImage: "arrow.counterclockwise", action: session.restart)
+            CapsuleButton("Next passage", systemImage: "forward.end.fill", help: "Move to the next passage", action: session.nextPassage)
+            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", showsTitle: true, help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
           CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
-                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash") {
+                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
             PresenterController.shared.toggleVideo()
           }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
-                        shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil) {
+                        shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
             if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
           }.disabled(draft.isSaving || !showsScript)
           if draft.isEditing {
-            CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction) { draft.requestCancel() }
+            CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction, help: "Leave editing; confirm before discarding an unsaved draft") { draft.requestCancel() }
               .disabled(draft.isSaving)
           } else {
-            CapsuleButton("Close presenter", systemImage: "xmark") { PresenterController.shared.close() }
+            CapsuleButton("Close presenter", systemImage: "xmark", help: "Close the presenter and pause following") { PresenterController.shared.close() }
           }
         }
         .buttonStyle(.bordered).padding(8)
@@ -536,20 +543,24 @@ private struct PresenterView: View {
   }
 }
 
-/// An icon-only capsule button: the title is its tooltip and its VoiceOver label.
+/// Core actions show their titles; secondary actions keep their tooltips and VoiceOver labels.
 private struct CapsuleButton: View {
   let title: String
   let systemImage: String
   var shortcut: KeyboardShortcut?
+  var showsTitle = false
+  var help: String?
   let action: () -> Void
-  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, action: @escaping () -> Void) {
-    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.action = action
+  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = false, help: String? = nil, action: @escaping () -> Void) {
+    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.showsTitle = showsTitle; self.help = help; self.action = action
   }
   var body: some View {
-    Button(action: action) { Label(title, systemImage: systemImage) }
-      .labelStyle(.iconOnly)
+    Button(action: action) {
+      if showsTitle { Label(title, systemImage: systemImage).labelStyle(.titleAndIcon) }
+      else { Label(title, systemImage: systemImage).labelStyle(.iconOnly) }
+    }
       .keyboardShortcut(shortcut)
-      .help(title)
+      .help(help ?? title)
   }
 }
 
