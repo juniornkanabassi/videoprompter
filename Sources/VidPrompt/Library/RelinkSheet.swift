@@ -35,7 +35,7 @@ struct RelinkSheet: View {
       if let problem { Text(problem).font(.callout).foregroundStyle(.orange) }
       HStack {
         Spacer()
-        Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
+        Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).help("Close without linking a file")
       }
     }.padding(24).frame(minWidth: 520)
   }
@@ -43,8 +43,8 @@ struct RelinkSheet: View {
   private var picker: some View {
     VStack(alignment: .leading, spacing: 10) {
       HStack {
-        if !isNewLink { Button("Search for It") { Task { await search() } }.disabled(searching) }
-        Button("Choose File…") { chooseFile() }
+        if !isNewLink { Button("Search for It") { Task { await search() } }.disabled(searching).help("Search indexed files for a matching name or text") }
+        Button("Choose File…") { chooseFile() }.help("Select the Markdown file to link")
         if searching { ProgressView().controlSize(.small) }
       }
       if let candidates {
@@ -61,7 +61,7 @@ struct RelinkSheet: View {
                   .compactMap { $0 }.joined(separator: " · "))
                   .font(.caption).foregroundStyle(.secondary)
               }.frame(maxWidth: .infinity, alignment: .leading)
-            }.buttonStyle(.bordered)
+            }.buttonStyle(.bordered).help("Review this matching file before linking it")
           }
         }
       }
@@ -80,7 +80,7 @@ struct RelinkSheet: View {
       }
       Text("Keep Both leaves this script as it is, unlinked, and imports the file as a new linked script.")
         .font(.caption).foregroundStyle(.secondary)
-      Button("Choose a Different File") { chosen = nil; problem = nil }.buttonStyle(.link)
+      Button("Choose a Different File") { chosen = nil; problem = nil }.buttonStyle(.link).help("Return to the file choices")
     }
   }
   private func choice(_ title: String, _ resolution: RelinkResolution, _ url: URL) -> some View {
@@ -88,7 +88,7 @@ struct RelinkSheet: View {
       Task {
         if await store.relink(script.metadata.id, to: url, resolution: resolution) { dismiss() }
       }
-    }
+    }.help("Resolve the differing text; the other version is copied before any replacement")
   }
 
   private func chooseFile() {

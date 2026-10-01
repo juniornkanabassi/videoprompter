@@ -90,7 +90,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published var selectedID: UUID?
   @Published var search = ""
   @Published var inspector = true
-  @Published var simpleInterface = false { didSet { persistSettings() } }
+  @Published var simpleInterface = true { didSet { persistSettings() } }
   var showsSimpleInterface: Bool { simpleInterface }
   @Published var settings = PrompterSettings() { didSet { persistSettings() } }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
@@ -186,7 +186,7 @@ private enum PresenterSaveError: LocalizedError {
         || saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") })
       {
         isolatedDefaults.set(true, forKey: Self.modeMigrationPendingKey)
-        modeMigrationNotice = "Tracking now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Play to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
+        modeMigrationNotice = "Following now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Start to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
       } else {
         isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
       }
@@ -195,7 +195,7 @@ private enum PresenterSaveError: LocalizedError {
     let savedPresets: [PrompterSettings]? = stored("presets")
     let savedTypography: EditorTypographyPreferences? = stored("editorTypography")
     let savedSettings: PrompterSettings? = stored("settings")
-    let savedSimple = isolatedDefaults.bool(forKey: "simpleInterface")
+    let savedSimple = isolatedDefaults.object(forKey: "simpleInterface") == nil || isolatedDefaults.bool(forKey: "simpleInterface")
     let savedZoom = isolatedDefaults.double(forKey: "uiZoom")
     if savedZoom > 0 { uiZoom = min(max(savedZoom, Self.uiZoomSteps.first!), Self.uiZoomSteps.last!) }
     if let savedPresets { presets = savedPresets }
@@ -740,7 +740,7 @@ private enum PresenterSaveError: LocalizedError {
             .disabled(store.selected == nil)
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
-          Button("Play or Pause") { store.session.toggle() }
+          Button("Start or Pause") { store.session.toggle() }
             .keyboardShortcut("s", modifiers: [.command, .option])
           Divider()
           PresenterVideoItems()
@@ -767,10 +767,10 @@ struct PresenterVideoItems: View {
       set: { camera.displayMode = $0 ? mode : .prompterOnly })
   }
   var body: some View {
-    Toggle("Prompter Only", isOn: choice(.prompterOnly))
-    Toggle("Present with Video", isOn: choice(.prompterWithVideo))
+    Toggle("Script Only", isOn: choice(.prompterOnly))
+    Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
-    Toggle("Video Only", isOn: choice(.videoOnly))
+    Toggle("Camera Only", isOn: choice(.videoOnly))
     Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
       .disabled(!camera.presentsWithVideo)
   }

@@ -504,7 +504,7 @@ final class SessionStore: ObservableObject {
     case .advanced:
       guard settings.allowsBackwardVoiceTracking || update.tokenIndex >= old else {
         if let trackerBeforeMatch { tracker = trackerBeforeMatch }
-        state = .uncertain("Backward voice tracking is off")
+        state = .uncertain("Following repeated earlier words is off")
         return
       }
       state = .running
@@ -604,7 +604,7 @@ final class SessionStore: ObservableObject {
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
-      failAudio("Choose an audio input in the inspector")
+      failAudio("Choose a microphone in Script settings")
       return
     }
     let generation = lifecycleGeneration
@@ -653,7 +653,7 @@ final class SessionStore: ObservableObject {
               if let error {
                 let message = error == .deviceLost
                   ? "The selected microphone was disconnected. Tracking paused."
-                  : "Audio tracking stopped: \(error)"
+                  : "Voice following stopped: \(error)"
                 self.failAudio(message)
               }
             }
@@ -668,7 +668,7 @@ final class SessionStore: ObservableObject {
         }
       } catch is CancellationError {} catch {
         guard self.lifecycleGeneration == generation else { return }
-        self.failAudio("Audio tracking stopped: \(error)")
+        self.failAudio("Voice following stopped: \(error)")
       }
     }
   }

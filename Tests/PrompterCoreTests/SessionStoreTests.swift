@@ -78,7 +78,7 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.anchor, anchor)
-    XCTAssertEqual(session.anchorNotice, "Choose an audio input in the inspector")
+    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Script settings")
     session.play(captureAudio: false)
     XCTAssertEqual(session.state, .running)
     XCTAssertNil(session.anchorNotice)

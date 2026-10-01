@@ -20,17 +20,18 @@ struct LibraryView: View {
           // `ForEach` row, and a folder or trashed script taken as the "selected script" left
           // Present with nothing to show.
           Button { store.selectFolder(nil) } label: { Label("All Scripts", systemImage: "tray.full") }
-            .selectionDisabled()
+            .help("Choose which scripts to show").selectionDisabled()
           ForEach(store.folders) { folder in
             Button { store.selectFolder(folder.id) } label: { Label(folder.name, systemImage: "folder") }
               .contextMenu {
-                Button("Rename Folder") { renamingFolder = folder; renamedFolderName = folder.name }
-                Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }
+                Button("Rename Folder") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
+                Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }.help("Remove the folder; its scripts return to All Scripts")
               }
-              .selectionDisabled()
+              .help("Choose which scripts to show").selectionDisabled()
           }
           HStack {
             TextField("New folder", text: $newFolderName)
+              .help("Name a folder, then press Return to create it")
               .onSubmit(createFolder)
             Button("Create Folder", systemImage: "plus", action: createFolder)
               .labelStyle(.iconOnly)
@@ -39,7 +40,8 @@ struct LibraryView: View {
           }
         }
         Section("Scripts") {
-          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id]) }
+          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id])
+            .listRowBackground(store.selectedID == script.id ? Color.accentColor.opacity(0.12) : Color.clear) }
         }
         if !store.trash.isEmpty {
           Section("Recently Deleted") {
@@ -47,7 +49,7 @@ struct LibraryView: View {
               HStack {
                 Label(entry.metadata.title, systemImage: "trash")
                 Spacer()
-                Button("Restore") { store.restore(entry.id) }.buttonStyle(.link)
+                Button("Restore") { store.restore(entry.id) }.buttonStyle(.link).help("Return this script to the library")
               }.selectionDisabled()
             }
           }
@@ -83,7 +85,24 @@ struct LibraryView: View {
         if let script = store.selected {
           EditorView(store: store, script: script)
         } else {
-          ContentUnavailableView("Select a script", systemImage: "doc.text")
+          if !store.libraryAvailable {
+            ContentUnavailableView("Library unavailable", systemImage: "exclamationmark.triangle",
+              description: Text("The library could not be opened. See the error message for recovery steps."))
+          } else if store.scripts.isEmpty {
+            ContentUnavailableView {
+              Label("Your script, ready to read", systemImage: "doc.text")
+            } description: {
+              Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Script settings.\n3. Press Present.")
+            } actions: {
+              Button("Import Script…", systemImage: "square.and.arrow.down") { importing = true }
+                .buttonStyle(.borderedProminent).help("Add a Markdown, text, Word, PDF or RTF file")
+              Button("New Script", systemImage: "square.and.pencil") { store.create() }
+                .help("Start with a blank script and type or paste your words")
+            }
+          } else {
+            ContentUnavailableView(store.visible.isEmpty ? "No matching scripts" : "Select a script", systemImage: "doc.text",
+              description: Text(store.visible.isEmpty ? "Try another search or choose All Scripts." : "Choose a script on the left, then press Present."))
+          }
         }
       }.uiZoom(store.uiZoom)
     }
@@ -100,13 +119,13 @@ struct LibraryView: View {
     .toolbar {
       ToolbarItemGroup {
         Button("New Script", systemImage: "square.and.pencil") { store.create() }
-          .help("New script")
+          .help("Start with a blank script (⇧⌘N)")
           .disabled(!store.libraryAvailable)
-        Button("Import…", systemImage: "square.and.arrow.down") { importing = true }
-          .help("Import a script")
+        Button("Import Script…", systemImage: "square.and.arrow.down") { importing = true }
+          .help("Add a Markdown, text, Word, PDF or RTF script (⌘I)")
           .disabled(!store.libraryAvailable)
         Menu {
-          Button("Import from Clipboard") { store.importClipboard() }
+          Button("Import from Clipboard") { store.importClipboard() }.help("Create a script from copied text")
           Button("Export Markdown…") {
             guard let script = store.selected else { return }
             let panel = NSSavePanel()
@@ -115,7 +134,7 @@ struct LibraryView: View {
             guard panel.runModal() == .OK, let url = panel.url else { return }
             do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
             catch { importError = "Could not export the script. \(error.localizedDescription)" }
-          }.disabled(store.selected == nil)
+          }.help("Save a Markdown copy of the selected script").disabled(store.selected == nil)
           Button("Reveal in Finder") {
             guard let id = store.selectedID else { return }
             Task {
@@ -124,7 +143,7 @@ struct LibraryView: View {
                 NSWorkspace.shared.activateFileViewerSelecting([url])
               } catch { importError = "Could not reveal the script. \(error.localizedDescription)" }
             }
-          }.disabled(store.selected == nil)
+          }.help("Show the selected script’s Markdown file in Finder").disabled(store.selected == nil)
         } label: { Label("More Actions", systemImage: "ellipsis.circle") }
           .help("More script actions")
           .disabled(!store.libraryAvailable)
@@ -132,18 +151,21 @@ struct LibraryView: View {
           .help("Duplicate script")
           .disabled(store.selected == nil)
         Menu {
-          Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }
+          Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }.help("Remove the selected scripts from their folders")
           ForEach(store.folders) { folder in
-            Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }
+            Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }.help("Move the selected scripts to this folder")
           }
-        } label: { Label("Move to", systemImage: "folder") }
+        } label: { Label("Move to folder", systemImage: "folder") }
           .help("Move to folder")
           .disabled(selection.isEmpty)
         Button("Present", systemImage: "play.rectangle") { PresenterController.shared.present(store: store) }
-          .help(store.selected == nil ? "Select a script to present" : "Present script")
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.borderedProminent)
+          .tint(.accentColor)
+          .help(store.selected == nil ? "Select a script to present" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(store.selected == nil)
-        Button("Inspector", systemImage: "sidebar.right") { store.inspector.toggle() }
-          .help(store.inspector ? "Hide inspector" : "Show inspector")
+        Button("Script settings", systemImage: "sidebar.right") { store.inspector.toggle() }
+          .help(store.inspector ? "Hide script settings" : "Choose how the script follows you and how it looks")
       }
     }
     .alert(
@@ -152,8 +174,8 @@ struct LibraryView: View {
         get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })
     ) {
       if store.hasFailedSaves {
-        Button("Retry Save") { Task { await store.retryFailedSaves() } }
-        Button("Keep Both") { Task { await store.keepBothFailedSaves() } }
+        Button("Retry Save") { Task { await store.retryFailedSaves() } }.help("Try saving the pending edits again")
+        Button("Keep Both") { Task { await store.keepBothFailedSaves() } }.help("Save both versions so neither edit is lost")
       }
       Button("OK") { store.errorMessage = nil }
     } message: {
@@ -182,14 +204,14 @@ struct LibraryView: View {
         HStack {
           Spacer()
           Button("Cancel", role: .cancel) { importPreview = nil }
-            .keyboardShortcut(.cancelAction)
+            .keyboardShortcut(.cancelAction).help("Close this preview without importing")
           Button("Import") {
             // A Markdown original stays linked, so edits made in MarkEdit or Obsidian
             // reach the script. Converted formats (PDF, DOCX, RTF) have no such original.
             let target = AppStore.importTarget(for: value)
             store.create(title: target.title, markdown: value.markdown, linkTo: target.linkTo)
             importPreview = nil
-          }.keyboardShortcut(.defaultAction)
+          }.keyboardShortcut(.defaultAction).help("Add this script; Markdown originals stay linked for editing")
         }
       }.padding(24).uiZoom(store.uiZoom)
         // The zoomed layout takes only what the sheet offers, so the sheet must be asked for the
@@ -201,8 +223,8 @@ struct LibraryView: View {
       Button("OK") { importError = nil }
     } message: { Text(importError ?? "The document could not be imported.") }
     .alert("Rename Folder", isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
-      TextField("Folder name", text: $renamedFolderName)
-      Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }
+      TextField("Folder name", text: $renamedFolderName).help("Enter a new name for this folder")
+      Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
     // The narrowest the three columns lay out in: SwiftUI asks twice the inspector's ideal width
@@ -254,20 +276,21 @@ private struct EditorView: View {
     VStack(spacing: 0) {
       HStack {
         TextField("Title", text: $title).textFieldStyle(.plain).font(.title2.weight(.semibold))
+          .help("Name this script; press Return to save the title")
           .onSubmit { store.rename(title, for: script.metadata.id) }
         Spacer()
-        TextField("Tags", text: $tags).textFieldStyle(.roundedBorder).frame(minWidth: 80, maxWidth: 190).onSubmit
+        TextField("Tags", text: $tags).help("Separate tags with commas; press Return to save them").textFieldStyle(.roundedBorder).frame(minWidth: 80, maxWidth: 190).onSubmit
         { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
       }.padding(24)
       Divider()
       HStack(spacing: 10) {
-        Text("Font").font(.caption).foregroundStyle(.secondary)
+        Text("Editor text").font(.caption).foregroundStyle(.secondary)
         Picker("Editor font", selection: $store.previewFontName) {
           ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
-        }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
+        }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font").help("Change the editor font; presenter text has its own settings")
         Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
           Text("\(Int(store.previewFontSize)) pt").monospacedDigit()
-        }.accessibilityLabel("Editor font size")
+        }.accessibilityLabel("Editor text size").help("Change text size while editing; presenter text has its own settings")
         Spacer()
       }.padding(.horizontal, 24).padding(.vertical, 8)
       if let editNotice {
@@ -284,20 +307,20 @@ private struct EditorView: View {
             .font(.caption)
             .foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
             .lineLimit(1)
-            .truncationMode(.middle).help(path)
+            .truncationMode(.middle).help("Edits stay in sync with this Markdown file: " + path)
           Spacer()
-          if !present { Button("Relink…") { relinking = true }.buttonStyle(.link) }
+          if !present { Button("Find linked file…") { relinking = true }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
           Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([state?.url ?? URL(fileURLWithPath: path)])
-          }.buttonStyle(.link).disabled(!present)
-          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link)
+          }.buttonStyle(.link).disabled(!present).help("Show the linked Markdown file in Finder")
+          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link).help("Keep this script in VidPrompt and stop updating the original file")
         }.padding(.horizontal, 24).padding(.vertical, 6)
       } else {
         HStack {
           Label("Stored in VidPrompt", systemImage: "doc.text")
             .font(.caption).foregroundStyle(.secondary)
           Spacer()
-          Button("Link File…") { relinking = true }.buttonStyle(.link)
+          Button("Link File…") { relinking = true }.buttonStyle(.link).help("Link a Markdown file so edits stay in sync both ways")
         }.padding(.horizontal, 24).padding(.vertical, 6)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
@@ -308,7 +331,7 @@ private struct EditorView: View {
       FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
         fontSize: store.previewFontSize, onUnsupportedEdit: {
           editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-        }).padding(24)
+        }).help("Type or paste your script; changes save automatically").padding(24)
     }
     .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id) }
     .onAppear {

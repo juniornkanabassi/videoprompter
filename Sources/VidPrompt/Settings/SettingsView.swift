@@ -20,78 +20,24 @@ struct InspectorView: View {
   var body: some View {
     Form {
       Section {
-        Toggle("Simple", isOn: $store.simpleInterface)
-        Text("Hides advanced settings. Nothing is lost.").font(.caption).foregroundStyle(.secondary)
+        Toggle("Show advanced settings", isOn: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 }))
+          .accessibilityLabel("Show advanced settings")
+          .help("Show extra appearance, voice and saved settings without changing your choices")
+        Text("Extra appearance, voice and saved settings. Your choices are kept.").font(.caption).foregroundStyle(.secondary)
       }
-      Section("Mode") {
-        // Segmented while the three labels fit, a menu when the pane is narrower.
-        ViewThatFits(in: .horizontal) {
-          modePicker.pickerStyle(.segmented)
-          modePicker.pickerStyle(.menu)
-        }
-      }
-      if camera.presentsWithVideo {
-        Section("Video") {
-          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }
-          Picker("Rotation", selection: camera.rotationChoice) {
-            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-          }
-          Button("Guides") { showsGuideSettings.toggle() }
-            .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
-            }
-          Toggle("Mirror camera", isOn: $camera.mirrored)
-        }.task { camera.start() }
-      }
-      Section("Text") {
-        Picker("Font", selection: $store.settings.fontName) {
-          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
-        }
-        ValueSlider("Text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
-                    readout: "\(Int(store.settings.fontSize)) pt")
-        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }
-        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text opacity") }
-        // One control, not a Prompter-only slider that did nothing over video beside a Video one.
-        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
-          Text("Background opacity")
-        }.help("Kept separately for Prompter only and Prompter + video")
-        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Guide position") }
-        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Guide opacity") }
-        if !store.showsSimpleInterface {
-        DisclosureGroup("Advanced appearance") {
-          Picker("Weight", selection: $store.settings.fontWeight) {
-            Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
-          }
-          Picker("Alignment", selection: $store.settings.alignment) {
-            Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
-          }
-          Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }
-          Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }
-          Toggle("Mirror text horizontally", isOn: $store.settings.horizontalMirror)
-          Toggle("Mirror text vertically", isOn: $store.settings.verticalMirror)
-          Picker("Text rotation", selection: $store.settings.rotation) {
-            Text("0°").tag(0)
-            Text("180°").tag(180)
-          }
-          Toggle("Show stage directions", isOn: $store.settings.showCues)
-          Toggle("Snap presenter window", isOn: $store.settings.presenterSnappingEnabled)
-          Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
-          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false)
-          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
-        }
-      }
-      }
-      Section("Motion") {
-        Picker("Tracking", selection: $store.settings.mode) {
+      Section {
+        Picker("How it follows you", selection: $store.settings.mode) {
           ForEach(["Voice", "Manual"], id: \.self, content: Text.init)
-        }
+        }.pickerStyle(.segmented).help("Voice follows your spoken words; Manual scrolls at a steady speed")
+        Text(store.settings.mode == "Voice" ? "Choose a microphone, then press Start in the presenter. The text follows your spoken words." : "Set a scroll speed, then press Start in the presenter. Pause whenever you need.")
+          .font(.caption).foregroundStyle(.secondary)
         if store.settings.mode == "Manual" {
-          ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
-                      readout: "\(Int(store.settings.speed)) wpm")
+          ValueSlider("Scroll speed", value: $store.settings.speed, in: 20...300,
+                      readout: "\(Int(store.settings.speed)) words per minute").help("Set how fast Manual moves through your script")
         }
-        if store.settings.mode == "Voice" {
-          Toggle("Allow backward voice tracking", isOn: $store.settings.allowsBackwardVoiceTracking)
-          Picker("Speech languages", selection: $store.settings.speechLanguage) {
+        if store.settings.mode == "Voice", !store.showsSimpleInterface {
+          Toggle("Follow me when I repeat earlier words", isOn: $store.settings.allowsBackwardVoiceTracking).help("Allow the reading position to move back when you repeat a passage")
+          Picker("Spoken language", selection: $store.settings.speechLanguage) {
             Text("Mixed English & French").tag("Mixed")
             Text("Automatic (script language)").tag("Automatic")
             Text("English").tag("English")
@@ -99,13 +45,78 @@ struct InspectorView: View {
             ForEach(supportedSpeechLocales.filter { !["en-GB", "fr-FR"].contains($0.identifier) }, id: \.identifier) { locale in
               Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
             }
-          }
+          }.help("Choose the language you will speak; Automatic uses the script language")
         }
+      } header: {
+        Label { Text("Following") } icon: { Image(systemName: "waveform").foregroundStyle(Color.accentColor) }
       }
-      Section("Microphone") {
+      Section {
+        // Segmented while the three labels fit, a menu when the pane is narrower.
+        ViewThatFits(in: .horizontal) {
+          modePicker.pickerStyle(.segmented)
+          modePicker.pickerStyle(.menu)
+        }
+      } header: {
+        Label { Text("What to show") } icon: { Image(systemName: "rectangle.on.rectangle").foregroundStyle(.blue) }
+      }
+      if camera.presentsWithVideo {
+        Section("Camera") {
+          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }.help("Choose the camera shown behind your script")
+          Picker("Camera rotation", selection: camera.rotationChoice) {
+            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
+          }.help("Rotate the camera picture, or choose Automatic")
+          Button("Framing guides") { showsGuideSettings.toggle() }.help("Show composition lines and an output frame marker")
+            .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
+              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
+            }
+          Toggle("Mirror camera", isOn: $camera.mirrored).help("Flip the camera picture left to right")
+        }.task { camera.start() }
+      }
+      Section {
+        Picker("Text font", selection: $store.settings.fontName) {
+          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
+        }.help("Choose the font used in the presenter")
+        ValueSlider("Text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
+                    readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
+        Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+          .help("Flip text left to right so it reads correctly in reflected glass")
+        if !store.showsSimpleInterface {
+        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }.help("Narrow or widen the centred script column")
+        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text visibility") }.help("Make the script text more or less transparent")
+        // One control, not a Prompter-only slider that did nothing over video beside a Video one.
+        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
+          Text("Background darkness")
+        }.help("Make the backdrop darker; script-only and camera views keep separate values")
+        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Reading line position") }.help("Move the line where your current words appear")
+        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Reading line visibility") }.help("Fade the reading line; zero hides it")
+        Text("Advanced appearance").font(.headline)
+          Picker("Text weight", selection: $store.settings.fontWeight) {
+            Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
+          }.help("Choose regular or bold presenter text")
+          Picker("Alignment", selection: $store.settings.alignment) {
+            Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
+          }.help("Align the text within the script column")
+          Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
+          Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
+          Toggle("Flip text upside down", isOn: $store.settings.verticalMirror).help("Flip text top to bottom for your teleprompter setup")
+          Picker("Text rotation", selection: $store.settings.rotation) {
+            Text("0°").tag(0)
+            Text("180°").tag(180)
+          }.help("Rotate the script by half a turn")
+          Toggle("Show stage directions", isOn: $store.settings.showCues).help("Show bracketed stage directions alongside spoken text")
+          Toggle("Align window to screen edges", isOn: $store.settings.presenterSnappingEnabled).help("Snap the presenter to screen edges or centre after dragging")
+          Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord).help("Mark the current word as the script follows you")
+          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the presenter colour")
+          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the presenter colour")
+        }
+      } header: {
+        Label { Text("Text") } icon: { Image(systemName: "textformat.size").foregroundStyle(.purple) }
+      }
+      if store.settings.mode == "Voice" {
+      Section {
         HStack {
           // The menu sizes to its longest name; let it give way and show the choice as a tooltip.
-          Picker("Input device", selection: Binding(
+          Picker("Microphone", selection: Binding(
             get: { store.settings.audioDeviceUID ?? "" },
             set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
           ) {
@@ -116,27 +127,31 @@ struct InspectorView: View {
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
           .frame(maxWidth: .infinity)
-          .help(store.settings.audioDeviceUID.map { uid in
+          .help("Choose the microphone that Voice should listen to. " + (store.settings.audioDeviceUID.map { uid in
             devices.first { $0.uid == uid }?.name ?? "Selected microphone unavailable"
-          } ?? "Choose a microphone")
+          } ?? "Choose a microphone"))
           Button("Refresh microphones", systemImage: "arrow.clockwise") { devices = AudioCapture.inputDevices() }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
-            .help("Refresh microphones")
+            .help("Look again for connected microphones")
         }
+        if !store.showsSimpleInterface {
         // The capture hears each tick at once; the settings, and with them the whole inspector, the
         // presenter and the saved copy, only follow once the drag pauses. A fixed-size slider with
         // no readout, so nothing here changes the layout while it moves.
-        LabeledContent("Input gain") {
+        LabeledContent("Microphone volume") {
           Slider(value: Binding(
             get: { gainDraft ?? store.settings.inputGain },
             set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
           ) { editing in if !editing { commitGain() } }
+            .accessibilityLabel("Microphone volume")
             .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
         }
+        .help("Adjust microphone volume; reduce it if the sound distorts")
         .task(id: gainDraft) {
           guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
           commitGain()
+        }
         }
         HStack {
           Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
@@ -146,20 +161,22 @@ struct InspectorView: View {
               session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
             }
           }
+          .help("Check your microphone before presenting; speak normally during the test")
           .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
           if session.isTestingMicrophone {
             Label("Testing. Speak normally.", systemImage: "mic.fill")
               .foregroundStyle(.secondary)
           }
         }
+        if !store.showsSimpleInterface {
         InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping)
         // The clipping warning shares this row: a row of its own came and went with the signal and
         // shook everything below it during a test.
-        LabeledContent("Peak level") {
+        LabeledContent("Loudest sound") {
           HStack {
             if session.isClipping {
-              Label("Clipping", systemImage: "exclamationmark.triangle.fill")
-                .labelStyle(.iconOnly).foregroundStyle(.red).help("Clipping")
+              Label("Sound distortion", systemImage: "exclamationmark.triangle.fill")
+                .labelStyle(.iconOnly).foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
             }
             Text(session.audioPeakDBFS.isFinite ? String(format: "%.1f dBFS", session.audioPeakDBFS) : "−∞ dBFS")
               .monospacedDigit().lineLimit(1).fixedSize()
@@ -168,16 +185,22 @@ struct InspectorView: View {
         Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
           .font(.caption)
           .foregroundStyle(.secondary)
+        } else if session.isClipping {
+          Label("Microphone too loud. Lower Microphone volume in advanced settings.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+        }
         if let notice = session.microphoneTestNotice {
           Label(notice, systemImage: "exclamationmark.triangle.fill")
             .foregroundStyle(.secondary)
         }
+      } header: {
+        Label { Text("Microphone") } icon: { Image(systemName: "mic.fill").foregroundStyle(.green) }
+      }
       }
       if !store.showsSimpleInterface {
-      Section("Presets") {
+      Section("Saved settings") {
         HStack {
-          TextField("Preset name", text: $presetName)
-          Button("Save") { store.savePreset(named: presetName); presetName = "" }
+          TextField("Name these settings", text: $presetName).help("Give the current presenter settings a name")
+          Button("Save") { store.savePreset(named: presetName); presetName = "" }.help("Save the current presenter settings for reuse")
         }
         ForEach(store.presets) { preset in
           HStack {
@@ -187,17 +210,17 @@ struct InspectorView: View {
             Spacer()
             Button("Delete \(preset.name)", systemImage: "trash") { store.deletePreset(preset.id) }
               .labelStyle(.iconOnly).buttonStyle(.plain)
-              .help("Delete preset")
+              .help("Remove these saved settings; your script stays in the library")
           }.contextMenu {
-            Button("Rename") { renamePreset = preset; renameValue = preset.name }
-            Button("Duplicate") { store.duplicatePreset(preset.id) }
-            Button("Update from Current Settings") { store.updatePreset(preset.id) }
-            Button("Delete", role: .destructive) { store.deletePreset(preset.id) }
+            Button("Rename") { renamePreset = preset; renameValue = preset.name }.help("Change the name of these saved settings")
+            Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of these saved settings")
+            Button("Replace with current settings") { store.updatePreset(preset.id) }.help("Overwrite this saved set with the settings in use")
+            Button("Delete", role: .destructive) { store.deletePreset(preset.id) }.help("Remove these saved settings")
           }
         }
       }
       }
-    }.formStyle(.grouped).task {
+    }.formStyle(.grouped).onChange(of: store.simpleInterface) { _, _ in commitGain() }.task {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
     }.onAppear {
       devices = AudioCapture.inputDevices()
@@ -210,23 +233,23 @@ struct InspectorView: View {
       commitGain()
       deviceObserver = nil
       session.stopMicrophoneTest()
-    }.alert("Tracking modes changed", isPresented: Binding(
+    }.alert("Following options changed", isPresented: Binding(
       get: { store.modeMigrationNotice != nil }, set: { if !$0 { store.dismissModeMigrationNotice() } })
     ) {
       Button("OK") {}
     } message: {
       Text(store.modeMigrationNotice ?? "")
-    }.alert("Rename Preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
-      TextField("Preset name", text: $renameValue)
-      Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
+    }.alert("Rename saved settings", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
+      TextField("Name these settings", text: $renameValue).help("Enter a new name for these saved settings")
+      Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }.help("Save the new name")
       Button("Cancel", role: .cancel) { renamePreset = nil }
     }
   }
 
   private var modePicker: some View {
-    Picker("Mode", selection: $camera.displayMode) {
+    Picker("What to show", selection: $camera.displayMode) {
       ForEach(PresenterDisplayMode.allCases) { Text($0.label).tag($0) }
-    }.labelsHidden()
+    }.labelsHidden().help("Show the script, the camera picture, or both in the presenter")
   }
 
   private func commitGain() {
@@ -252,11 +275,14 @@ private struct ValueSlider: View {
     self.title = title; _value = value; self.range = range; self.readout = readout
   }
   var body: some View {
-    LabeledContent(title) {
-      HStack {
-        Slider(value: $value, in: range) { Text(title) }.labelsHidden()
-        Text(readout).monospacedDigit().foregroundStyle(.secondary)
+    VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .firstTextBaseline) {
+        Text(title)
+        Spacer()
+        Text(readout).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+          .multilineTextAlignment(.trailing)
       }
+      Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title)
     }
   }
 }
