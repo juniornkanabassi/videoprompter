@@ -519,9 +519,8 @@ public actor MarkdownLibrary {
     // Invalid or unavailable targets leave the managed copy untouched.
     guard (try? Self.withLinkAccess(link, { try validateLinkTarget($0) })) != nil else { return }
     try withLinkedWrite(link) { target in
-      let disk = try String(contentsOf: target, encoding: .utf8)
       var seenDate = Self.modificationDate(of: target)
-      linkedReadHook?()
+      let disk = try { let text = try String(contentsOf: target, encoding: .utf8); linkedReadHook?(); return text }()
       let local = try readText(libraryURL)
       let diskPrint = Self.fingerprint(disk)
       let localPrint = Self.fingerprint(local)
@@ -534,7 +533,7 @@ public actor MarkdownLibrary {
         // ponytail: external originals are written in place to preserve bookmark identity;
         // crash recovery retains the good managed copy in Conflicts on the next sync.
         try Data(local.utf8).write(to: target)
-        seenDate = Self.modificationDate(of: target)
+        seenDate = nil
         index.scripts[position].linkedFingerprint = localPrint
         try persistIndex()
       } else {
@@ -555,7 +554,7 @@ public actor MarkdownLibrary {
         let disk = try String(contentsOf: target, encoding: .utf8)
         guard Self.fingerprint(disk) == metadata.linkedFingerprint else { lastLinkSync[metadata.id] = nil; return }
         try Data(markdown.utf8).write(to: target)
-        let seenDate = Self.modificationDate(of: target)
+        let seenDate: Date? = nil
         index.scripts[position].linkedFingerprint = Self.fingerprint(markdown)
         try persistIndex()
         lastLinkSync[metadata.id] = seenDate
@@ -585,7 +584,7 @@ public actor MarkdownLibrary {
     return (try? Self.withLinkAccess(url, { try validateLinkTarget($0) })) != nil ? .resolved(url) : .missing(path: path)
   }
   private static func modificationDate(of url: URL) -> Date? {
-    try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+    (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
   }
   private static func withLinkAccess<T>(_ url: URL, _ body: (URL) throws -> T) rethrows -> T {
     let scoped = url.startAccessingSecurityScopedResource()

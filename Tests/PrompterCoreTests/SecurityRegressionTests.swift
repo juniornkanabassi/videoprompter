@@ -23,7 +23,7 @@ final class LinkedSecurityTests: XCTestCase {
     XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: external.path)[.systemFileNumber] as? NSNumber, fileInode)
     XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), "local")
   }
-  func testSaveAfterReadSnapshotIsNotMarkedAsSeen() async throws {
+  func testSaveBetweenReadAndDateSamplingIsNotMarkedAsSeen() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")
     let external = root.deletingLastPathComponent().appendingPathComponent("external-\(UUID()).md")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: external) }
@@ -34,6 +34,7 @@ final class LinkedSecurityTests: XCTestCase {
     try "first save".write(to: external, atomically: true, encoding: .utf8)
     let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
     try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: external.path)
+    // Save immediately after the read, before the old implementation sampled its date.
     await library.setLinkedReadHook {
       try! "later save".write(to: external, atomically: false, encoding: .utf8)
       try! FileManager.default.setAttributes([.modificationDate: oldDate.addingTimeInterval(1)], ofItemAtPath: external.path)
