@@ -36,7 +36,7 @@ private func labels(_ element: Any) -> [String] {
     defer { window.orderOut(nil); window.contentView = nil }
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual", "Press Present", "Import Script", "New Script"] {
+    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual in Script settings", "After adding a script, press Present", "Import Script", "New Script"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     store.create()
