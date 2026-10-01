@@ -6,6 +6,41 @@ import XCTest
 @testable import PrompterCore
 
 final class LinkedSecurityTests: XCTestCase {
+  func testRelinkBacksUpLatestCoordinatedSaveAndRollsBackThatVersion() async throws {
+    for failIndex in [false, true] {
+      let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")
+      let external = root.deletingLastPathComponent().appendingPathComponent("external-\(UUID()).md")
+      defer { for url in [root, external] { try? FileManager.default.removeItem(at: url) } }
+      let library = try MarkdownLibrary(rootURL: root)
+      let record = try await library.create(title: "Relink", markdown: "library text")
+      try "preview text".write(to: external, atomically: true, encoding: .utf8)
+      // A cooperating editor saves after VidPrompt's preview read, before it obtains
+      // the writing reservation. The backup and any rollback must use this newer text.
+      await library.setLinkedReadHook {
+        var coordinationError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: external, options: [], error: &coordinationError) { target in
+          try! "newer external text".write(to: target, atomically: false, encoding: .utf8)
+        }
+        XCTAssertNil(coordinationError)
+        if failIndex {
+          let index = root.appendingPathComponent("LibraryIndex.json")
+          try! FileManager.default.removeItem(at: index)
+          try! FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+        }
+      }
+      do {
+        _ = try await library.relink(id: record.id, to: external, resolution: .keepLibrary)
+        XCTAssertFalse(failIndex, "Expected failed index persistence")
+      } catch { XCTAssertTrue(failIndex, "Unexpected relink failure: \(error)") }
+      XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), failIndex ? "newer external text" : "library text")
+      let conflicts = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("Conflicts"), includingPropertiesForKeys: nil)
+      XCTAssertEqual(try conflicts.map { try String(contentsOf: $0, encoding: .utf8) }, ["newer external text"])
+      let current = try await library.read(record.id)
+      XCTAssertEqual(current.markdown, "library text")
+      XCTAssertEqual(current.metadata.linkedPath, failIndex ? nil : external.standardizedFileURL.path)
+    }
+  }
+
   func testManagedWritesReplaceAtomicallyAndExternalWritesKeepIdentity() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")
     let external = root.deletingLastPathComponent().appendingPathComponent("external-\(UUID()).md")

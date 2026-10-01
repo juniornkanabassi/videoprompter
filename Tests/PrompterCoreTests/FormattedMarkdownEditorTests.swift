@@ -5,6 +5,43 @@ import XCTest
 import PrompterCore
 
 final class FormattedMarkdownEditorTests: XCTestCase {
+  @MainActor func testRevisitedContentKeepsTypographyAndUndoIsolated() throws {
+    let source = "# Heading\n\n**bold** and *italic* français"
+    let firstModel = FormattedMarkdownEditModel.cached(markdown: source)
+    let secondModel = FormattedMarkdownEditModel.cached(markdown: source)
+    XCTAssertEqual(firstModel.rendered().string, secondModel.rendered().string)
+    let changed = try XCTUnwrap(firstModel.replacing(NSRange(location: 0, length: 7), with: "Title"))
+    XCTAssertNotEqual(changed.markdown, source)
+    XCTAssertEqual(FormattedMarkdownEditModel.cached(markdown: source).markdown, source)
+    XCTAssertEqual(FormattedMarkdownEditModel.cached(markdown: changed.markdown).markdown, changed.markdown)
+
+    var first = source
+    var second = source
+    let one = FormattedMarkdownEditor.Coordinator(FormattedMarkdownEditor(
+      markdown: Binding(get: { first }, set: { first = $0 }), fontName: "System Serif", fontSize: 17))
+    let two = FormattedMarkdownEditor.Coordinator(FormattedMarkdownEditor(
+      markdown: Binding(get: { second }, set: { second = $0 }), fontName: "System Serif", fontSize: 29))
+    let viewOne = NSTextView(frame: .zero)
+    let viewTwo = NSTextView(frame: .zero)
+    let windowOne = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [], backing: .buffered, defer: true)
+    let windowTwo = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 200), styleMask: [], backing: .buffered, defer: true)
+    windowOne.contentView = viewOne
+    windowTwo.contentView = viewTwo
+    viewOne.allowsUndo = true
+    viewTwo.allowsUndo = true
+    viewOne.delegate = one
+    viewTwo.delegate = two
+    one.configure(viewOne, markdown: source, fontName: "System Serif", fontSize: 17)
+    two.configure(viewTwo, markdown: source, fontName: "System Serif", fontSize: 29)
+    XCTAssertEqual((viewOne.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? 0, 17 * 1.35, accuracy: 0.1)
+    XCTAssertEqual((viewTwo.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)?.pointSize ?? 0, 29 * 1.35, accuracy: 0.1)
+    viewOne.setSelectedRange(NSRange(viewOne.string.range(of: "bold")!, in: viewOne.string))
+    one.apply(.bold, in: viewOne)
+    XCTAssertTrue(one.undoManager(for: viewOne)?.canUndo ?? false)
+    XCTAssertFalse(two.undoManager(for: viewTwo)?.canUndo ?? true)
+    XCTAssertEqual(second, source)
+  }
+
   func testRenderKeepsFormattingAndExactBlankLines() {
     let model = FormattedMarkdownEditModel(markdown: "\n# Heading\n\n\n**bold** and *italic*\n")
     XCTAssertEqual(model.rendered().string, "\nHeading\n\n\nbold and italic\n")

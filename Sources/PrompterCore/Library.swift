@@ -143,13 +143,13 @@ public actor MarkdownLibrary {
     // means there is nothing new to enumerate.
     let scanned = Self.modificationDate(of: scriptsURL)
     if let scanned, lastScriptsScan == scanned { return [] }
-    lastScriptsScan = scanned
     var known = Set(index.scripts.map(\.fileName) + index.trash.map(\.metadata.fileName))
     let discovered = try Self.discoverScripts(in: scriptsURL, known: &known)
-    guard !discovered.isEmpty else { return [] }
+    guard !discovered.isEmpty else { lastScriptsScan = scanned; return [] }
     let old = index
     index.scripts.append(contentsOf: discovered)
     try persist(restoring: old)
+    lastScriptsScan = scanned
     return discovered
   }
   public func listFolders() -> [ScriptFolder] { index.folders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
@@ -263,16 +263,12 @@ public actor MarkdownLibrary {
     try syncLinkedFile(id)
     // Nothing can have changed in a file whose modification date has not moved, so the poll does
     // not read or hash it. `syncLinkedFile` may have just rewritten it, which moves the date.
-    if let metadata = index.scripts.first(where: { $0.id == id }),
-      let url = try? validatedURL(metadata.fileName, in: scriptsURL),
-      let modified = Self.modificationDate(of: url)
-    {
-      if lastExternalRead[id] == modified { return nil }
-      lastExternalRead[id] = modified
-    }
+    let url = try scriptURL(for: id)
+    let modified = Self.modificationDate(of: url)
+    if let modified, lastExternalRead[id] == modified { return nil }
     let record = try read(id)
     let actual = Self.fingerprint(record.markdown)
-    guard actual != record.metadata.contentFingerprint else { return nil }
+    guard actual != record.metadata.contentFingerprint else { lastExternalRead[id] = modified; return nil }
     var updated = record.metadata
     updated.contentFingerprint = actual
     updated.revision &+= 1
@@ -282,6 +278,7 @@ public actor MarkdownLibrary {
       index.scripts[i] = updated
       try persist(restoring: old)
     }
+    lastExternalRead[id] = modified
     return ScriptRecord(metadata: updated, markdown: record.markdown)
   }
   public func updateMetadata(
@@ -388,6 +385,7 @@ public actor MarkdownLibrary {
     let position = try position(of: id)
     let url = url.standardizedFileURL
     let external = try checkedRelinkText(url)
+    linkedReadHook?()
     guard !index.scripts.contains(where: { $0.id != id && $0.linkedPath == url.path }) else {
       throw PrompterCoreError.destinationExists
     }
@@ -401,17 +399,20 @@ public actor MarkdownLibrary {
     lastExternalRead[id] = nil
     switch resolution {
     case .keepLibrary:
-      _ = try writeConflict(external, for: metadata, label: "file")
-      try Self.withLinkAccess(url) { try writeText(local, to: $0) }
-      index.scripts[position].linkedPath = url.path
-      index.scripts[position].linkedBookmark = bookmark
-      index.scripts[position].linkedFingerprint = Self.fingerprint(local)
-      do { try persistIndex() } catch {
-        index = old
-        try? Self.withLinkAccess(url) { try writeText(external, to: $0) }
-        throw error
+      return try withLinkedWrite(url) { target in
+        let external = try String(contentsOf: target, encoding: .utf8)
+        _ = try writeConflict(external, for: metadata, label: "file")
+        try Data(local.utf8).write(to: target)
+        index.scripts[position].linkedPath = url.path
+        index.scripts[position].linkedBookmark = bookmark
+        index.scripts[position].linkedFingerprint = Self.fingerprint(local)
+        do { try persistIndex() } catch {
+          index = old
+          try? Data(external.utf8).write(to: target)
+          throw error
+        }
+        return RelinkOutcome(current: ScriptRecord(metadata: index.scripts[position], markdown: local))
       }
-      return RelinkOutcome(current: ScriptRecord(metadata: index.scripts[position], markdown: local))
     case .useFile:
       _ = try writeConflict(local, for: metadata, label: "library")
       try writeText(external, to: libraryURL)

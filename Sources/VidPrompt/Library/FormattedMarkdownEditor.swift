@@ -196,7 +196,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       let top = viewportTop(of: view, in: old)
       if old.markdown != markdown {
         editorUndoManager.removeAllActions()
-        model = FormattedMarkdownEditModel(markdown: markdown)
+        model = FormattedMarkdownEditModel.cached(markdown: markdown)
       }
       render(view, keeping: view.selectedRange())
       applyEmptyTypingAttributes(to: view)
@@ -275,7 +275,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       if view.undoManager?.isUndoing == true || view.undoManager?.isRedoing == true { return }
       // This is only a recovery path for an AppKit mutation that did not take the
       // delegate route. Normal undo/redo restores its exact registered source snapshot.
-      let rendered = styled()
+      var rendered = styled()
       if view.string != rendered.string {
         guard let edit = Self.visibleEdit(from: rendered.string,
           to: view.string), let next = model.replacing(edit.range, with: edit.replacement)
@@ -285,8 +285,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
           return
         }
         model = next
+        rendered = styled()
       }
-      reconcileAttributes(in: view)
+      reconcileAttributes(in: view, rendered: rendered)
       parent.markdown = model.markdown
     }
 
@@ -417,9 +418,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       view.typingAttributes = [.font: FormattedMarkdownEditModel.font(name: fontName, size: fontSize), .foregroundColor: typography.textColor]
     }
 
-    private func reconcileAttributes(in view: NSTextView) {
+    private func reconcileAttributes(in view: NSTextView, rendered: NSAttributedString) {
       guard let storage = view.textStorage, storage.length > 0 else { return }
-      let rendered = styled()
       guard storage.string == rendered.string, !storage.isEqual(to: rendered) else { return }
       updating = true
       storage.beginEditing()
@@ -451,6 +451,30 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
 /// Kept internal-but-testable: rendering and source patching have no SwiftUI dependency.
 struct FormattedMarkdownEditModel {
+  private final class CachedModel: NSObject {
+    let model: FormattedMarkdownEditModel
+    init(_ model: FormattedMarkdownEditModel) { self.model = model }
+  }
+  @MainActor private static let recentModels: NSCache<NSString, CachedModel> = {
+    let cache = NSCache<NSString, CachedModel>()
+    cache.countLimit = 4
+    cache.totalCostLimit = 16 * 1024 * 1024
+    return cache
+  }()
+
+  /// Revisited content shares immutable parsing only; typography and undo remain per editor.
+  @MainActor static func cached(markdown: String) -> FormattedMarkdownEditModel {
+    let key = markdown as NSString
+    if let cached = recentModels.object(forKey: key) { return cached.model }
+    let model = FormattedMarkdownEditModel(markdown: markdown)
+    // ponytail: target four ordinary scripts and bypass larger documents;
+    // NSCache evicts estimated source/mapping cost and responds to memory pressure.
+    if key.length <= 100_000 {
+      recentModels.setObject(CachedModel(model), forKey: key, cost: key.length * 32)
+    }
+    return model
+  }
+
   let markdown: String
   private let renderedSource: NSAttributedString
   private let sourceOffsets: [Int?]

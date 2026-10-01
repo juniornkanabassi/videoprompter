@@ -3,6 +3,30 @@ import XCTest
 @testable import PrompterCore
 
 final class CoordinatedLibraryTests: XCTestCase {
+  func testExternalRefreshRetriesAfterIndexPersistenceFailureWithoutTouchingScript() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    let record = try await library.create(title: "Retry", markdown: "original")
+    let script = try await library.scriptURL(for: record.id)
+    try "external".write(to: script, atomically: true, encoding: .utf8)
+    let date = try FileManager.default.attributesOfItem(atPath: script.path)[.modificationDate] as? Date
+    let index = root.appendingPathComponent("LibraryIndex.json")
+    try FileManager.default.removeItem(at: index)
+    try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+    do {
+      _ = try await library.externalChange(for: record.id)
+      XCTFail("Expected index write failure")
+    } catch {}
+    try FileManager.default.removeItem(at: index)
+    let retry = try await library.externalChange(for: record.id)
+    XCTAssertEqual(retry?.markdown, "external")
+    XCTAssertEqual(retry?.metadata.revision, record.metadata.revision + 1)
+    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: script.path)[.modificationDate] as? Date, date)
+    let repeated = try await library.externalChange(for: record.id)
+    XCTAssertNil(repeated)
+  }
+
   func testCoordinatedSaveCreatesConflictForExternalEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
@@ -89,12 +113,12 @@ final class CoordinatedLibraryTests: XCTestCase {
     let index = root.appendingPathComponent("LibraryIndex.json")
     try Data("outside".utf8).write(to: outside)
     try FileManager.default.removeItem(at: index)
-    try FileManager.default.createSymbolicLink(at: index, withDestinationURL: outside)
+    try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
 
     do {
       _ = try await library.discoverExternalScripts()
-      XCTFail("Expected index safety failure")
-    } catch PrompterCoreError.unsafePath {}
+      XCTFail("Expected index persistence failure")
+    } catch {}
     try FileManager.default.removeItem(at: index)
     let discovered = try await library.discoverExternalScripts()
     XCTAssertEqual(discovered.map(\.fileName), ["retry.md"])

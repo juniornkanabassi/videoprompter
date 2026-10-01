@@ -186,6 +186,11 @@ final class SessionStore: ObservableObject {
 
   func applyEditedRecord(_ record: ScriptRecord) {
     guard record.metadata.id == activeRecord?.metadata.id else { return }
+    if record.markdown == activeRecord?.markdown {
+      activeRecord = record
+      anchor?.revision = record.metadata.revision
+      return
+    }
     let wasRunning = state == .running
     pause()
     let old = document

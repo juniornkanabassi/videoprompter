@@ -96,7 +96,7 @@ struct LibraryView: View {
     } detail: {
       Group {
         if let script = store.selected {
-          EditorView(store: store, script: script)
+          EditorView(store: store, script: script).id(script.metadata.id)
         } else {
           if !store.libraryAvailable {
             ContentUnavailableView("Library unavailable", systemImage: "exclamationmark.triangle",
@@ -293,6 +293,14 @@ private struct EditorView: View {
   @State private var editNotice: String?
   @State private var relinking = false
 
+  init(store: AppStore, script: ScriptRecord) {
+    self.store = store
+    self.script = script
+    _text = State(initialValue: script.markdown)
+    _title = State(initialValue: script.metadata.title)
+    _tags = State(initialValue: script.metadata.tags.joined(separator: ", "))
+  }
+
   var body: some View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 8) {
@@ -357,15 +365,9 @@ private struct EditorView: View {
         }).help("Type or paste your script; changes save automatically").padding(24)
     }
     .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id) }
-    .onAppear {
-      text = script.markdown
-      title = script.metadata.title
-      tags = script.metadata.tags.joined(separator: ", ")
-    }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
     .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom) }
-    .id(script.metadata.id)
   }
 
   private var editorFontPicker: some View {

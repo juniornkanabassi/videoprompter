@@ -30,6 +30,69 @@ private actor PresenterSaveGate {
 
 @MainActor
 final class AppStoreTests: XCTestCase {
+  func testDuplicateFlushesDraftAndKeepsTheInvokedScriptWhenSelectionChanges() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let first = try await store.library!.create(title: "First", markdown: "old")
+    let second = try await store.library!.create(title: "Second", markdown: "other")
+    await store.reload()
+    store.selectedID = first.id
+    store.updateMarkdown("new draft", for: first.id)
+    store.duplicate()
+    store.selectedID = second.id
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    for _ in 0..<100 where store.scripts.count < 3 { try await Task.sleep(for: .milliseconds(10)) }
+    let copy = try XCTUnwrap(store.scripts.first { $0.metadata.title == "First copy" })
+    XCTAssertEqual(copy.markdown, "new draft")
+  }
+
+  func testDuplicateAbortsWhenPendingDraftCannotSave() async throws {
+    let (store, root, outside) = makeStore()
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let first = try await store.library!.create(title: "First", markdown: "old")
+    await store.reload()
+    store.selectedID = first.id
+    let script = try await store.library!.scriptURL(for: first.id)
+    try "external conflict".write(to: script, atomically: true, encoding: .utf8)
+    store.updateMarkdown("new draft", for: first.id)
+    store.duplicate()
+    let flushed = await store.flushPendingSaves()
+    XCTAssertFalse(flushed)
+    for _ in 0..<100 where store.errorMessage != "Save the pending edits before duplicating scripts." { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(store.errorMessage, "Save the pending edits before duplicating scripts.")
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertEqual(store.selectedID, first.id)
+    XCTAssertEqual(store.selected?.markdown, "new draft")
+  }
+
+  func testAutosaveAcknowledgementDoesNotPauseResumedPresenter() async throws {
+    for mode in ["Manual", "Voice"] {
+      let (store, root, outside) = makeStore()
+      defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+      let record = try await store.library!.create(title: "Read", markdown: "one two three four five six")
+      await store.reload()
+      var settings = PrompterSettings()
+      settings.mode = mode
+      store.session.present(record: record, settings: settings)
+      store.session.seek(to: 2)
+      store.updateMarkdown("one two three four five six seven", for: record.id)
+      store.session.play(captureAudio: false)
+      let anchor = store.session.anchor
+      let blocks = store.session.document.blocks.map(\.id)
+      let frontier = store.session.lastConfirmedTokenIndex
+      let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+      XCTAssertEqual(store.session.state, .running, mode)
+      XCTAssertEqual(store.session.anchor?.blockID, anchor?.blockID)
+      XCTAssertEqual(store.session.anchor?.tokenOffset, anchor?.tokenOffset)
+      XCTAssertEqual(store.session.document.blocks.map(\.id), blocks)
+      XCTAssertEqual(store.session.lastConfirmedTokenIndex, frontier)
+      XCTAssertEqual(store.session.anchor?.revision, store.selected?.metadata.revision)
+      store.session.pause()
+    }
+  }
+
   /// The whole point of linking: the file changes in MarkEdit or Obsidian, the script
   /// follows it live, and the reader stays on the passage they were reading.
   func testLinkedFileChangeUpdatesTheScriptAndKeepsTheAnchor() async throws {

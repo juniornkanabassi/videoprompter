@@ -29,6 +29,49 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
 }
 
 @MainActor final class SimpleInterfaceTests: XCTestCase {
+  func testScriptSwitchingInitialisesMountedEditorStateAndKeepsEditsIsolated() async throws {
+    _ = NSApplication.shared
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("switch-ui-\(UUID())")
+    let suite = "VidPrompt.Switch.\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let alpha = try await store.library!.create(title: "Alpha title", markdown: "**Alpha** body", tags: ["alpha-tag"])
+    let beta = try await store.library!.create(title: "Beta title", markdown: "**Beta** body", tags: ["beta-tag"])
+    await store.reload()
+    store.selectedID = alpha.id
+    let host = NSHostingView(rootView: LibraryView(store: store))
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1132, height: 750), styleMask: [.titled], backing: .buffered, defer: true)
+    window.contentView = host
+    defer { window.orderOut(nil); window.contentView = nil }
+    func settle() async {
+      for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
+    }
+    func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+    for record in [alpha, beta, alpha] {
+      store.selectedID = record.id
+      await settle()
+      let editor = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
+      XCTAssertEqual(editor.string, record.id == alpha.id ? "Alpha body" : "Beta body")
+      let fields = views(host).compactMap { $0 as? NSTextField }.filter(\.isEditable)
+      XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.title }, "selected title")
+      XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.tags.joined(separator: ", ") }, "selected tags")
+      XCTAssertFalse(editor.undoManager?.canUndo ?? false, "switching resets native undo")
+      if record.id == beta.id {
+        window.makeFirstResponder(editor)
+        editor.setSelectedRange(NSRange(location: editor.string.utf16.count, length: 0))
+        editor.insertText("!", replacementRange: editor.selectedRange())
+        await settle()
+        let flushed = await store.flushPendingSaves()
+        XCTAssertTrue(flushed)
+      }
+    }
+    let savedAlpha = try await store.library!.read(alpha.id)
+    let savedBeta = try await store.library!.read(beta.id)
+    XCTAssertEqual(savedAlpha.markdown, alpha.markdown)
+    XCTAssertEqual(savedBeta.markdown, "**Beta** body!")
+  }
+
   func testEmptyLibraryExplainsTheStepsAndOffersBothCreationActions() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))

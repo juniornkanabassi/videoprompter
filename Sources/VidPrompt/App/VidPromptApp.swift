@@ -346,6 +346,10 @@ private enum PresenterSaveError: LocalizedError {
   func duplicate() {
     guard let selected else { return }
     withLibrary { [self] library in
+      guard await flushPendingSaves() else {
+        errorMessage = "Save the pending edits before duplicating scripts."
+        return
+      }
       let item = try await library.duplicate(selected.metadata.id)
       scripts.insert(item, at: 0)
       selectedID = item.metadata.id
