@@ -110,6 +110,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     storage.addLayoutManager(layout)
     layout.addTextContainer(container)
     let view = FormattingTextView(frame: NSRect.zero, textContainer: container)
+    view.setAccessibilityLabel("Script editor")
     view.minSize = NSSize.zero
     view.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
     view.isVerticallyResizable = true

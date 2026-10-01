@@ -10,6 +10,7 @@ shim = app / 'Contents/Resources/mcp/vidprompt-mcp.mjs'
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
 root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
+(root / 'home').mkdir()
 data = root / 'data'
 input_file = root / 'CLI Evidence.md'
 input_file.write_text('# CLI Evidence\n\nOne two three four five six seven eight nine ten.\n')
@@ -18,7 +19,18 @@ replies = []
 def gui(target):
     result = subprocess.run([swift, str(script_dir / 'gui-state.swift'), str(target)], capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stderr
-    return json.loads(result.stdout)
+    state = json.loads(result.stdout)
+    interactive = {'AXButton', 'AXCheckBox', 'AXSwitch', 'AXSlider', 'AXPopUpButton',
+                   'AXTextField', 'AXTextArea', 'AXComboBox', 'AXRadioButton',
+                   'AXIncrementor', 'AXColorWell', 'AXMenuButton', 'AXLink'}
+    native_parts = {'AXCloseButton', 'AXMinimizeButton', 'AXFullScreenButton', 'AXZoomButton',
+                    'AXIncrementArrow', 'AXDecrementArrow', 'AXIncrementPage', 'AXDecrementPage'}
+    unnamed = [row for row in state['windows'] if row.get('AXRole') in interactive
+               and not any(row.get(key, '').strip() for key in
+                           ['AXTitle', 'AXDescription', 'labelledBy', 'AXPlaceholderValue'])
+               and not (row.get('AXSubrole') in native_parts and row.get('AXRoleDescription'))]
+    assert not unnamed, ('Interactive controls need accessible names', unnamed)
+    return state
 def command(words, expected=0):
     result = subprocess.run([str(cli), '--data-directory', str(data), *words, '--json'], capture_output=True, text=True, timeout=45)
     assert result.returncode == expected, (words, result.returncode, result.stdout, result.stderr)
@@ -54,6 +66,9 @@ try:
     empty_text = json.dumps(empty_gui['windows'])
     for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual', 'Press Present', 'Import Script', 'New Script', 'Show advanced settings']:
         assert label in empty_text, (label, empty_text)
+    mirror_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch']
+                       and row.get('AXDescription') == 'Mirror for teleprompter glass']
+    assert mirror_switches, 'Glass mirroring needs a direct accessible label'
     advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch'] and 'Show advanced settings' in str(row)]
     assert advanced_switches and all(row.get('AXValue') == '0' for row in advanced_switches), advanced_switches
     started = time.monotonic()

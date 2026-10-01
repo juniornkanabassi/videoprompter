@@ -14,8 +14,15 @@ func attribute(_ element: AXUIElement, _ name: String) -> Any? {
 func walk(_ element: AXUIElement, depth: Int = 0) -> [[String: String]] {
   guard depth < 30, seen.count < 5000, seen.insert(CFHash(element)).inserted else { return [] }
   var row: [String: String] = [:]
-  for name in ["AXRole", "AXTitle", "AXDescription", "AXValue", "AXSelected"] {
+  for name in ["AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXSelected", "AXPlaceholderValue", "AXHelp"] {
     if let value = attribute(element, name) { row[name] = String(describing: value) }
+  }
+  // SwiftUI Forms often name controls through a separate native title element.
+  if let raw = attribute(element, "AXTitleUIElement"), CFGetTypeID(raw as CFTypeRef) == AXUIElementGetTypeID() {
+    let title = raw as! AXUIElement
+    row["labelledBy"] = ["AXTitle", "AXDescription", "AXValue"].compactMap {
+      attribute(title, $0) as? String
+    }.first { !$0.isEmpty }
   }
   if let raw = attribute(element, "AXSize"), CFGetTypeID(raw as CFTypeRef) == AXValueGetTypeID() {
     let value = raw as! AXValue

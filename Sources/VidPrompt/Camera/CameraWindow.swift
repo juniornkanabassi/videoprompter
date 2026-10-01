@@ -340,7 +340,7 @@ struct RecordingControls: View {
           Text(String(format: "%02d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
         }
       }
-      Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }.help("Choose recording quality, microphone and audio format")
+      Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }.accessibilityLabel("Recording settings").help("Choose recording quality, microphone and audio format")
         .popover(isPresented: $settings) {
           Form {
             Picker("Recording quality", selection: $recorder.preset) {

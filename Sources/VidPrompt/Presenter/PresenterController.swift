@@ -635,6 +635,7 @@ struct ScriptTextView: NSViewRepresentable {
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     let text = TrackingTextView()
+    text.setAccessibilityLabel("Presenter script")
     text.isEditable = false
     text.isSelectable = true
     text.drawsBackground = false

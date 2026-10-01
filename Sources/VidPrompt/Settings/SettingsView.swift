@@ -57,7 +57,7 @@ struct InspectorView: View {
           modePicker.pickerStyle(.menu)
         }
       } header: {
-        Label { Text("What to show") } icon: { Image(systemName: "rectangle.on.rectangle").foregroundStyle(.blue) }
+        Label { Text("What to show") } icon: { Image(systemName: "rectangle.on.rectangle").foregroundStyle(Color.accentColor) }
       }
       if camera.presentsWithVideo {
         Section("Camera") {
@@ -79,6 +79,7 @@ struct InspectorView: View {
         ValueSlider("Text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
                     readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+          .accessibilityLabel("Mirror for teleprompter glass")
           .help("Flip text left to right so it reads correctly in reflected glass")
         if !store.showsSimpleInterface {
         Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }.help("Narrow or widen the centred script column")
@@ -110,7 +111,7 @@ struct InspectorView: View {
           ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the presenter colour")
         }
       } header: {
-        Label { Text("Text") } icon: { Image(systemName: "textformat.size").foregroundStyle(.purple) }
+        Label { Text("Text") } icon: { Image(systemName: "textformat.size").foregroundStyle(Color.accentColor) }
       }
       if store.settings.mode == "Voice" {
       Section {
@@ -182,7 +183,7 @@ struct InspectorView: View {
               .monospacedDigit().lineLimit(1).fixedSize()
           }
         }
-        Text("Green below −20 dBFS. Yellow from −20 to −9 dBFS. Red above −9 dBFS.")
+        Text("dBFS measures sound against the microphone’s maximum level: 0 is the limit. Green below −20; yellow from −20 to −9; red above −9. Lower Microphone volume if the sound distorts.")
           .font(.caption)
           .foregroundStyle(.secondary)
         } else if session.isClipping {
@@ -193,7 +194,7 @@ struct InspectorView: View {
             .foregroundStyle(.secondary)
         }
       } header: {
-        Label { Text("Microphone") } icon: { Image(systemName: "mic.fill").foregroundStyle(.green) }
+        Label { Text("Microphone") } icon: { Image(systemName: "mic.fill").foregroundStyle(Color.accentColor) }
       }
       }
       if !store.showsSimpleInterface {
