@@ -1,6 +1,6 @@
 # JuniorPrompter source
 
-Native Swift macOS 26 app, version **1.0.0**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Alpha also has camera recording and a Simple inspector toggle. Source has no external package dependencies.
+Native Swift macOS 26 app, version **1.0.1**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Alpha also has camera recording and a Simple inspector toggle. Source has no external package dependencies.
 
 ## Build and test
 
@@ -17,7 +17,7 @@ zsh build-alpha.sh
 zsh build.sh
 ```
 
-Archives go to `../Outputs/JuniorPrompter Alpha 1.0.0.zip` or `../Outputs/JuniorPrompter 1.0.0.zip`. The Alpha builder refuses to overwrite an existing archive; move it aside before rebuilding. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+Archives go to `../Outputs/JuniorPrompter Alpha 1.0.1.zip` or `../Outputs/JuniorPrompter 1.0.1.zip`. The Alpha builder refuses to overwrite an existing archive; move it aside before rebuilding. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
 Optional overrides: `JUNIORPROMPTER_BUILD_ROOT`, `JUNIORPROMPTER_TEST_SCRATCH` and `JUNIORPROMPTER_OUTPUT_ROOT` select disposable cache/output paths. Use a short, owned path outside Documents, such as `/private/tmp/jp-build`. Never test against a personal library.
 
@@ -27,7 +27,7 @@ Keep the stable and Alpha channels separate. Install only after the matching app
 
 ```sh
 work=$(mktemp -d /private/tmp/jp-install.XXXXXX)
-ditto -x -k "../Outputs/JuniorPrompter Alpha 1.0.0.zip" "$work"
+ditto -x -k "../Outputs/JuniorPrompter Alpha 1.0.1.zip" "$work"
 codesign --verify --deep --strict "$work/JuniorPrompter Alpha.app"
 # Check the Alpha bundle id without activating or quitting any app.
 source env.sh
@@ -38,7 +38,7 @@ else
 fi
 ```
 
-Keep the previous archive for rollback and back up the closed app bundle before replacing it. For stable, `zsh install.sh '../Outputs/JuniorPrompter 1.0.0.zip'` is the separate guarded installer; it refuses a running app, verifies the archive and preserves the previous installation on failure. It also links `~/.local/bin/juniorprompter`. Do not use that installer to install Alpha.
+Keep the previous archive for rollback and back up the closed app bundle before replacing it. For stable, `zsh install.sh '../Outputs/JuniorPrompter 1.0.1.zip'` is the separate guarded installer; it refuses a running app, verifies the archive and preserves the previous installation on failure. It also links `~/.local/bin/juniorprompter`. Do not use that installer to install Alpha.
 
 Open the installed channel, import a Markdown script and press Present. Choose Voice for on-device speech tracking or Manual for timed scrolling. Allow camera/microphone permissions when using those features. Alpha recording is in the Camera toolbar and uses the pinned preview format, at most 1920×1080; live hardware acceptance remains pending.
 
@@ -46,7 +46,7 @@ Open the installed channel, import a Markdown script and press Present. Choose V
 
 ```sh
 work=$(mktemp -d /private/tmp/jp-check.XXXXXX)
-ditto -x -k '../Outputs/JuniorPrompter Alpha 1.0.0.zip' "$work"
+ditto -x -k '../Outputs/JuniorPrompter Alpha 1.0.1.zip' "$work"
 source env.sh
 python3 checks/check-built-app.py "$work/JuniorPrompter Alpha.app"
 ```
@@ -57,7 +57,7 @@ For manual isolated use, launch the app executable with `--data-directory /priva
 
 ## AI control
 
-JuniorPrompter 1.0.0 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/juniorprompter` after a verified install.
+JuniorPrompter 1.0.1 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/juniorprompter` after a verified install.
 
 | Command | Example |
 |---|---|
