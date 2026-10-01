@@ -749,7 +749,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         CameraCommands()
       }
-    Window("Camera", id: "camera") { CameraView() }
+    Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
   }
 }
@@ -853,6 +853,7 @@ extension NSScreen {
 }
 
 private struct MainWindowConfigurator: NSViewRepresentable {
+  var size = NSSize(width: 1100, height: 750)
   final class Coordinator {
     var placed = false
   }
@@ -864,7 +865,7 @@ private struct MainWindowConfigurator: NSViewRepresentable {
       guard let window = view.window else { return }
       context.coordinator.placed = true
       guard let area = NSScreen.agentScreen?.visibleFrame else { window.orderOut(nil); return }
-      window.setFrame(area.centred(NSSize(width: 1100, height: 750)).intersection(area), display: true)
+      window.setFrame(area.centred(size).intersection(area), display: true)
       window.orderFrontRegardless()
     }
   }
