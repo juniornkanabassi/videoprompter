@@ -87,6 +87,7 @@ final class ControlServer: @unchecked Sendable {
       guard clients.count < 8, getpeereid(peer, &uid, &gid) == 0, uid == getuid(),
         setsockopt(peer, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size)) == 0
       else { Darwin.close(peer); continue }
+      guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) & ~O_NONBLOCK) == 0 else { Darwin.close(peer); continue }
       var timeout = timeval(tv_sec: 1, tv_usec: 0)
       setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
       let client = Connection(peer)

@@ -96,7 +96,7 @@ var response = Data(); var buffer = [UInt8](repeating: 0, count: 8192)
 while !response.contains(10) {
   let count = recv(fd, &buffer, buffer.count, 0)
   if count < 0 && errno == EINTR { continue }
-  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("No valid response from JuniorPrompter within 30 seconds.", json: invocation.json) }
+  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("JuniorPrompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
   response.append(contentsOf: buffer.prefix(count))
 }
 guard let end = response.firstIndex(of: 10), var value = try? JSONSerialization.jsonObject(with: response.prefix(upTo: end)) as? [String: Any] else { failure("Invalid app response.", json: invocation.json) }

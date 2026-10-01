@@ -63,6 +63,31 @@ import XCTest
       XCTAssertNotEqual((reply7.body["error"] as? [String: Any])?["code"] as? String, "unknown_action")
     }
   }
+  func testReplyOver64KBIsComplete() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/jpc-\(UUID().uuidString.prefix(8))")
+    let path = root.appendingPathComponent("control.sock")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let server = ControlServer(socketURL: path) { action, _ in .ok(["payload": String(repeating: "x", count: 100_000)]) }
+    try server.start(); defer { server.stop() }
+    let responses = try await Task.detached {
+      let fd = socket(AF_UNIX, SOCK_STREAM, 0); defer { Darwin.close(fd) }
+      var addr = sockaddr_un(); addr.sun_family = sa_family_t(AF_UNIX)
+      withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: Array(path.path.utf8) + [0]) }
+      let connected = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+      guard connected == 0 else { throw CocoaError(.fileReadUnknown) }
+      let bytes = Data("{\"id\":\"2\",\"action\":\"status\"}\n".utf8)
+      _ = bytes.withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) }
+      var result = Data(); var buffer = [UInt8](repeating: 0, count: 4096)
+      while result.filter({ $0 == 10 }).count < 1 {
+        let n = recv(fd, &buffer, buffer.count, 0)
+        guard n > 0 else { throw CocoaError(.fileReadUnknown) }; result.append(contentsOf: buffer.prefix(n))
+      }
+      return result
+    }.value
+    let lines = try responses.split(separator: 10).map { try JSONSerialization.jsonObject(with: Data($0)) as! [String: Any] }
+    XCTAssertGreaterThan(responses.count, 65_536)
+    XCTAssertEqual((lines[0]["result"] as? [String: String])?["payload"], String(repeating: "x", count: 100_000))
+  }
   func testSocketPrivacyFramingAndOwnership() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/jpc-\(UUID().uuidString.prefix(8))")
     let path = root.appendingPathComponent("control.sock")
