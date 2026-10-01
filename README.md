@@ -16,9 +16,11 @@ The [illustrated first use guide](https://juniornkanabassi.com/apps/vidprompt/#w
 
 ## Download
 
-**There is no public download yet.** No release has been published on GitHub so far. When one is, it will appear on the [VidPrompt Releases page](https://github.com/juniornkanabassi/vidprompt/releases).
+[Download VidPrompt 1.2.2 preview](https://github.com/juniornkanabassi/vidprompt-releases/releases/latest/download/VidPrompt.dmg).
 
-Each release will provide the app as a disk image named `VidPrompt.dmg`. The name will stay the same for every release, so the newest version can always be found from the Releases page.
+The public [Releases page](https://github.com/juniornkanabassi/vidprompt-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VidPrompt.dmg`, so the download link above always points to the latest published version.
+
+This is a self-signed preview, not an Apple notarised release. Read the requirements and first-launch guidance below before installing.
 
 VidPrompt does not update itself. To get a newer version, download the latest disk image again by hand and replace the app.
 
