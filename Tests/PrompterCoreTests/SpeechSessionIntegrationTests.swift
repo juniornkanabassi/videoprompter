@@ -5,7 +5,7 @@ import Foundation
 import Speech
 import XCTest
 
-@testable import JuniorPrompter
+@testable import VidPrompt
 import PrompterCore
 
 @MainActor
@@ -83,8 +83,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   }
 
   func testBilingualFixtureThroughProductionProviderAndSession() async throws {
-    try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_SPEECH_INTEGRATION"] == "1")
-    let root = URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/speech-fixtures")
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VIDPROMPT_RUN_SPEECH_INTEGRATION"] == "1")
+    let root = URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/VidPrompt-research-20260905/speech-fixtures")
     let expected = try String(contentsOf: root.appendingPathComponent("expected.txt"), encoding: .utf8)
     let session = SessionStore()
     let record = ScriptRecord(metadata: .init(title: "Fixture", fileName: "fixture.md"), markdown: expected)
@@ -95,7 +95,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let provider = SpeechProvider()
     let audio = try AVAudioFile(forReading: root.appendingPathComponent("bilingual.wav"))
     let engine: SpeechProvider.Engine = ProcessInfo.processInfo.environment[
-      "JUNIORPROMPTER_SPEECH_REPLAY_ENGINE"
+      "VIDPROMPT_SPEECH_REPLAY_ENGINE"
     ] == "dictation" ? .dictation : .transcription
     let format = try await provider.prepare(
       naturalFormat: audio.processingFormat,
@@ -133,21 +133,21 @@ final class SpeechSessionIntegrationTests: XCTestCase {
 
   func testActualWAVThroughProductionProviderAndSession() async throws {
     let environment = ProcessInfo.processInfo.environment
-    try XCTSkipUnless(environment["JUNIORPROMPTER_RUN_ACTUAL_SPEECH_REPLAY"] == "1")
+    try XCTSkipUnless(environment["VIDPROMPT_RUN_ACTUAL_SPEECH_REPLAY"] == "1")
     try await replayRecording(
-      environment["JUNIORPROMPTER_SPEECH_REPLAY_WAV"].map { URL(fileURLWithPath: $0) }
-        ?? acceptanceInputs.appendingPathComponent("JuniorPrompter v0.3.0 (9) Test Script Reading.wav"),
-      script: URL(fileURLWithPath: environment["JUNIORPROMPTER_SPEECH_REPLAY_SCRIPT"]
-        ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/demo-test-script-exact.md"))
+      environment["VIDPROMPT_SPEECH_REPLAY_WAV"].map { URL(fileURLWithPath: $0) }
+        ?? acceptanceInputs.appendingPathComponent("VidPrompt v0.3.0 (9) Test Script Reading.wav"),
+      script: URL(fileURLWithPath: environment["VIDPROMPT_SPEECH_REPLAY_SCRIPT"]
+        ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/VidPrompt-research-20260905/demo-test-script-exact.md"))
   }
 
   private let acceptanceInputs = URL(fileURLWithPath:
-    "/Users/junior.nkanabassi/Documents/JuniorOS/02 Projects/Development/JuniorPrompter/00 Project State/Acceptance inputs")
+    "/Users/junior.nkanabassi/Documents/JuniorOS/02 Projects/Development/VidPrompt/00 Project State/Acceptance inputs")
 
   /// Short 173: six minutes of natural reading with mistakes, false starts, going back to re-read,
   /// hard names and numbers. Same production path and the same environment as the replay above.
   func testShort173ReadingThroughProductionProviderAndSession() async throws {
-    try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_173_REPLAY"] == "1")
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VIDPROMPT_RUN_173_REPLAY"] == "1")
     // The spaces after both dashes in the file name are non-breaking, so find it rather than spell it.
     let wav = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: acceptanceInputs, includingPropertiesForKeys: nil)
       .first { $0.lastPathComponent.hasPrefix("173") && $0.pathExtension == "wav" })
@@ -157,31 +157,31 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   /// Short 172: an edited rough cut with the pauses removed, so the precision case: names, accents,
   /// curly apostrophes, a Markdown title line and a numbered list.
   func testShort172ReadingThroughProductionProviderAndSession() async throws {
-    try XCTSkipUnless(ProcessInfo.processInfo.environment["JUNIORPROMPTER_RUN_172_REPLAY"] == "1")
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VIDPROMPT_RUN_172_REPLAY"] == "1")
     try await replayRecording(
-      URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/172-rough-cut-reading.wav"),
+      URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/VidPrompt-research-20260905/172-rough-cut-reading.wav"),
       script: acceptanceInputs.appendingPathComponent("172 script.md"))
   }
 
   private func replayRecording(_ wavURL: URL, script scriptURL: URL) async throws {
     let environment = ProcessInfo.processInfo.environment
-    guard let logPath = environment["JUNIORPROMPTER_SPEECH_REPLAY_LOG_PATH"] else {
-      throw XCTSkip("Set JUNIORPROMPTER_SPEECH_REPLAY_LOG_PATH to keep recognition logs outside the repository.")
+    guard let logPath = environment["VIDPROMPT_SPEECH_REPLAY_LOG_PATH"] else {
+      throw XCTSkip("Set VIDPROMPT_SPEECH_REPLAY_LOG_PATH to keep recognition logs outside the repository.")
     }
-    let startOffset = max(0, Double(environment["JUNIORPROMPTER_SPEECH_REPLAY_START_OFFSET"] ?? "0") ?? 0)
+    let startOffset = max(0, Double(environment["VIDPROMPT_SPEECH_REPLAY_START_OFFSET"] ?? "0") ?? 0)
     let logURL = URL(fileURLWithPath: logPath)
     guard !FileManager.default.fileExists(atPath: logURL.path) else {
       XCTFail("Refusing to overwrite replay log at \(logURL.path). Choose a new path.")
       return
     }
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
-    let engine: SpeechProvider.Engine = environment["JUNIORPROMPTER_SPEECH_REPLAY_ENGINE"] == "dictation"
+    let engine: SpeechProvider.Engine = environment["VIDPROMPT_SPEECH_REPLAY_ENGINE"] == "dictation"
       ? .dictation : .transcription
-    let rendersPresenter = environment["JUNIORPROMPTER_RENDERED_REPLAY"] == "1"
-    let replayScrollBack = environment["JUNIORPROMPTER_REPLAY_SCROLL_BACK"] == "1"
-    let replayReread = environment["JUNIORPROMPTER_REPLAY_REREAD"] == "1"
+    let rendersPresenter = environment["VIDPROMPT_RENDERED_REPLAY"] == "1"
+    let replayScrollBack = environment["VIDPROMPT_REPLAY_SCROLL_BACK"] == "1"
+    let replayReread = environment["VIDPROMPT_REPLAY_REREAD"] == "1"
     try XCTSkipUnless(!replayScrollBack || rendersPresenter,
-      "Scroll-back replay requires JUNIORPROMPTER_RENDERED_REPLAY=1.")
+      "Scroll-back replay requires VIDPROMPT_RENDERED_REPLAY=1.")
     try XCTSkipUnless(!replayReread || (replayScrollBack && rendersPresenter && startOffset == 0),
       "Re-read replay requires rendered scroll-back from the full recording.")
     XCTAssertFalse(replayScrollBack && startOffset != 0,
@@ -215,8 +215,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         throw XCTSkip("Rendered replay requires the Prompter XL display.")
       }
       let directory = URL(fileURLWithPath: NSTemporaryDirectory())
-        .appendingPathComponent("juniorprompter-rendered-replay-\(UUID().uuidString)", isDirectory: true)
-      let suiteName = "JuniorPrompter.rendered-replay.\(UUID().uuidString)"
+        .appendingPathComponent("vidprompt-rendered-replay-\(UUID().uuidString)", isDirectory: true)
+      let suiteName = "VidPrompt.rendered-replay.\(UUID().uuidString)"
       let defaults = UserDefaults(suiteName: suiteName)!
       defaults.removePersistentDomain(forName: suiteName)
       let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
@@ -228,7 +228,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       store.selectedID = record.id
       store.settings.mode = "Voice"
       PresenterController.shared.present(store: store, on: screen)
-      guard let panel = NSApp.windows.first(where: { $0.title == "JuniorPrompter · Rendered replay" }) as? NSPanel else {
+      guard let panel = NSApp.windows.first(where: { $0.title == "VidPrompt · Rendered replay" }) as? NSPanel else {
         return XCTFail("Rendered replay presenter panel was not created.")
       }
       panel.sharingType = .readOnly
@@ -408,7 +408,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     defer { monitor.cancel() }
     // 1600 frames (33 ms at 48 kHz) by default. The live input tap cannot deliver less than 100 ms
     // (AVAudioNode.installTap), so 4800 here reproduces what the microphone path feeds the recogniser.
-    let chunk = AVAudioFrameCount(environment["JUNIORPROMPTER_REPLAY_CHUNK_FRAMES"] ?? "") ?? 1_600
+    let chunk = AVAudioFrameCount(environment["VIDPROMPT_REPLAY_CHUNK_FRAMES"] ?? "") ?? 1_600
     let producer = Task { @MainActor in
       defer { stream.continuation.finish() }
       let converter = try XCTUnwrap(AVAudioConverter(from: audio.processingFormat, to: format))
@@ -560,7 +560,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       let median = latencies[latencies.count / 2]
       let p90 = latencies[min(latencies.count - 1, Int(Double(latencies.count) * 0.9))]
       print("Acceptance latency (dim instant minus recognised audio end): n=\(latencies.count) median=\(median)s p90=\(p90)s max=\(latencies.last!)s")
-      if let bound = Double(environment["JUNIORPROMPTER_MAX_ACCEPTANCE_LATENCY_P90"] ?? "") {
+      if let bound = Double(environment["VIDPROMPT_MAX_ACCEPTANCE_LATENCY_P90"] ?? "") {
         XCTAssertLessThanOrEqual(p90, bound,
           "Spoken-word-to-dim latency regressed: p90 \(p90)s over \(bound)s. See \(logURL.path).")
       }
@@ -601,7 +601,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       }
       let early = WordLatency.early(display: shown, alignment: alignment, script: tokens)
       XCTAssertTrue(early.isEmpty, "Dimmed \(early.count) words before they were said, first \(early.first?.token ?? -1). See \(logURL.path).")
-      if let bound = Double(environment["JUNIORPROMPTER_MAX_WORD_LATENCY_P90"] ?? "") {
+      if let bound = Double(environment["VIDPROMPT_MAX_WORD_LATENCY_P90"] ?? "") {
         XCTAssertLessThanOrEqual(WordLatency.percentiles(WordLatency.latencies(display: shown, spoken: spoken)).p90, bound,
           "Per-word dim latency regressed over \(bound)s. See \(logURL.path).")
       }

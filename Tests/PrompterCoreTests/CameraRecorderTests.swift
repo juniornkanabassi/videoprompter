@@ -1,11 +1,11 @@
 import Foundation
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 @MainActor final class CameraRecorderTests: XCTestCase {
   func testPathsSpaceAndPreferencesWithoutOpeningDevices() throws {
     XCTAssertEqual(CameraRecorder.recordingsFolder(arguments: ["app", "--data-directory", "/tmp/disposable"]).path, "/tmp/disposable/Recordings")
-    XCTAssertTrue(CameraRecorder.recordingsFolder(arguments: ["app"]).path.hasSuffix("/Movies/JuniorPrompter"))
+    XCTAssertTrue(CameraRecorder.recordingsFolder(arguments: ["app"]).path.hasSuffix("/Movies/VidPrompt"))
     XCTAssertFalse(CameraRecorder.hasRecordingSpace(1_999_999_999)); XCTAssertTrue(CameraRecorder.hasRecordingSpace(2_000_000_000))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("recorder-\(UUID())")
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -14,6 +14,7 @@ import XCTest
     let first = CameraRecorder.fileURL(in: root, date: date)
     try Data("preserve".utf8).write(to: first)
     let second = CameraRecorder.fileURL(in: root, date: date)
+    XCTAssertTrue(first.lastPathComponent.hasPrefix("VidPrompt "))
     XCTAssertNotEqual(first, second); XCTAssertTrue(second.lastPathComponent.hasSuffix(" 2.mov"))
     XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "preserve")
     let suite = "RecorderTests.\(UUID())"; let defaults = UserDefaults(suiteName: suite)!

@@ -10,10 +10,10 @@ func emit(_ value: [String: Any], json: Bool) {
       if scripts.isEmpty { print("No scripts.") }
       for script in scripts { print("\(script["id"] ?? "")  \(script["title"] ?? "")") }
     } else if let running = result["running"] as? Bool {
-      if !running { print("JuniorPrompter is not running.") }
+      if !running { print("VidPrompt is not running.") }
       else {
         let selected = result["selected"] as? [String: Any]
-        print("JuniorPrompter \(result["version"] ?? "") — \(result["state"] ?? "stopped"), \(result["mode"] ?? "voice"), zoom \(result["zoom"] ?? 100)%; selected: \(selected?["title"] ?? "none")")
+        print("VidPrompt \(result["version"] ?? "") — \(result["state"] ?? "stopped"), \(result["mode"] ?? "voice"), zoom \(result["zoom"] ?? 100)%; selected: \(selected?["title"] ?? "none")")
       }
     } else if let title = result["title"] {
       print("\(title) (\(result["id"] ?? ""))\(result["linked"] as? Bool == true ? ", linked" : "")\(result["repeated"] as? Bool == true ? ", repeated" : "")")
@@ -52,11 +52,11 @@ let executable = URL(fileURLWithPath: String(cString: executablePath)).resolving
 let contents = executable.deletingLastPathComponent().deletingLastPathComponent()
 let ownApp: URL? = contents.lastPathComponent == "Contents" && executable.deletingLastPathComponent().lastPathComponent == "Helpers" ? contents.deletingLastPathComponent() : nil
 let info = ownApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
-let bundleID = info?["CFBundleIdentifier"] as? String ?? (invocation.alpha ? ControlProtocol.alphaBundleID : ControlProtocol.stableBundleID)
+let bundleID = info?["CFBundleIdentifier"] as? String ?? ControlProtocol.bundleID
 let version = info?["CFBundleShortVersionString"] as? String ?? "dev"
 if invocation.action == "help" { print(ControlCLI.help()); exit(0) }
 if invocation.action == "mcp-manifest" { print(String(data: try! JSONSerialization.data(withJSONObject: ControlCLI.manifest(version: version), options: [.sortedKeys]), encoding: .utf8)!); exit(0) }
-var arguments = ["juniorprompter"]
+var arguments = ["vidprompt"]
 if let dir = invocation.dataDirectory { arguments += ["--data-directory", URL(fileURLWithPath: dir).path] }
 let root = ControlProtocol.dataRoot(bundleIdentifier: bundleID, arguments: arguments)
 let path = ControlProtocol.socketURL(dataRoot: root).path
@@ -67,17 +67,17 @@ if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["ru
 if fd == nil {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   var launch = ["-g"]
-  if let custom = ProcessInfo.processInfo.environment["JUNIORPROMPTER_APP"] { launch += ["-a", custom] }
+  if let custom = ProcessInfo.processInfo.environment["VIDPROMPT_APP"] { launch += ["-a", custom] }
   else if let ownApp { launch += ["-a", ownApp.path] }
   else { launch += ["-b", bundleID] }
   if invocation.dataDirectory != nil { launch += ["-n", "--args", "--data-directory", root.path] }
   process.arguments = launch
   process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
-  do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch JuniorPrompter in the background.", json: invocation.json) }
+  do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch VidPrompt in the background.", json: invocation.json) }
   let deadline = Date().addingTimeInterval(10)
   while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.1); fd = connectSocket(path) }
 }
-guard let fd else { failure("JuniorPrompter is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
+guard let fd else { failure("VidPrompt is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
 defer { Darwin.close(fd) }
 let request: [String: Any] = ["id": UUID().uuidString, "action": invocation.action, "params": invocation.params]
 let data = try JSONSerialization.data(withJSONObject: request) + Data([10])
@@ -96,7 +96,7 @@ var response = Data(); var buffer = [UInt8](repeating: 0, count: 8192)
 while !response.contains(10) {
   let count = recv(fd, &buffer, buffer.count, 0)
   if count < 0 && errno == EINTR { continue }
-  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("JuniorPrompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
+  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("VidPrompt closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
   response.append(contentsOf: buffer.prefix(count))
 }
 guard let end = response.firstIndex(of: 10), var value = try? JSONSerialization.jsonObject(with: response.prefix(upTo: end)) as? [String: Any] else { failure("Invalid app response.", json: invocation.json) }

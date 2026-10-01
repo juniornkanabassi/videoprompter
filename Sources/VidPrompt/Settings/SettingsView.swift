@@ -19,11 +19,9 @@ struct InspectorView: View {
   init(store: AppStore) { self.store = store; self.session = store.session }
   var body: some View {
     Form {
-      if store.isAlphaChannel {
-        Section {
-          Toggle("Simple", isOn: $store.simpleInterface)
-          Text("Hides advanced settings. Nothing is lost.").font(.caption).foregroundStyle(.secondary)
-        }
+      Section {
+        Toggle("Simple", isOn: $store.simpleInterface)
+        Text("Hides advanced settings. Nothing is lost.").font(.caption).foregroundStyle(.secondary)
       }
       Section("Mode") {
         // Segmented while the three labels fit, a menu when the pane is narrower.

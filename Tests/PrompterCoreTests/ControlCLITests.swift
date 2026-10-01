@@ -6,8 +6,8 @@ final class ControlCLITests: XCTestCase {
   func testCommandParsingHelpAndManifestShareTheTable() throws {
     for command in ControlProtocol.commands {
       let values = command.params.filter(\.required).map { $0.choices.first ?? "example" }
-      let invocation = try ControlCLI.parse(["--json"] + command.words + values + ["--alpha", "--data-directory", "/tmp/check"])
-      XCTAssertEqual(invocation.action, command.action); XCTAssertTrue(invocation.json); XCTAssertTrue(invocation.alpha)
+      let invocation = try ControlCLI.parse(["--json"] + command.words + values + ["--data-directory", "/tmp/check"])
+      XCTAssertEqual(invocation.action, command.action); XCTAssertTrue(invocation.json)
       XCTAssertEqual(invocation.dataDirectory, "/tmp/check")
       XCTAssertTrue(ControlCLI.help().contains(command.example))
       let flags = command.params.filter(\.required).flatMap { ["--" + $0.name, $0.choices.first ?? "example"] }
@@ -18,6 +18,9 @@ final class ControlCLITests: XCTestCase {
     XCTAssertEqual(try ControlCLI.parse(["--show", "present"]).params["show"], "true")
     for args in [["script", "import"], ["unknown"], ["set-mode", "timed"], ["set-zoom", "130"], ["status", "--show"], ["present", "--unknown", "x"], ["script", "import", "a", "--path", "b"]] { XCTAssertThrowsError(try ControlCLI.parse(args)) }
     XCTAssertEqual(try ControlCLI.parse(["script", "import", "--help"]).action, "help")
+    XCTAssertEqual(ControlProtocol.bundleID, "com.juniornkanabassi.VidPrompt")
+    XCTAssertTrue(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["vidprompt"]).path.hasSuffix("/Library/Application Support/VidPrompt"))
+    XCTAssertEqual(ControlCLI.manifest()["serverInfo"] as? [String: String], ["name": "vidprompt", "version": "dev"])
     let tools = try XCTUnwrap(ControlCLI.manifest()["tools"] as? [[String: Any]])
     XCTAssertEqual(tools.count, ControlProtocol.commands.count)
     for (tool, command) in zip(tools, ControlProtocol.commands) {

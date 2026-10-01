@@ -23,7 +23,7 @@ public final class AudioCapture: @unchecked Sendable {
   public let outputFormat: AVAudioFormat
   private let engine = AVAudioEngine()
   private let processingQueue = DispatchQueue(
-    label: "JuniorPrompter.audio.processing", qos: .userInitiated)
+    label: "VidPrompt.audio.processing", qos: .userInitiated)
   private let stateLock = NSLock()
   private var running = false
   private var pendingBuffers = 0

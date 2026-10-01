@@ -1,7 +1,7 @@
 import CoreMedia
 import CoreVideo
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 /// The camera's format, frame-rate and fallback decisions, over a DeckLink-like table: every size
 /// in 10-bit `v210` and 8-bit `2vuy`, each listing the same single rates.

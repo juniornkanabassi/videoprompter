@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "${0:A:h}/.."
 source env.sh
-if git check-ignore --no-index Sources/JuniorPrompter/Library/NewFile.swift Tests/PrompterCoreTests/Fixtures/Scripts/example.md; then
+if git check-ignore --no-index Sources/VidPrompt/Library/NewFile.swift Tests/PrompterCoreTests/Fixtures/Scripts/example.md; then
   print -u2 'Source or fixture is ignored'; exit 1
 else
   [[ $? == 1 ]] || exit 1

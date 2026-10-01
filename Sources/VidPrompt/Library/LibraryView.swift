@@ -95,7 +95,7 @@ struct LibraryView: View {
         // The ideal stays put under zoom: the window's minimum is measured from it (see minWidth).
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
-    .navigationTitle("JuniorPrompter")
+    .navigationTitle("VidPrompt")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup {
@@ -147,7 +147,7 @@ struct LibraryView: View {
       }
     }
     .alert(
-      "JuniorPrompter",
+      "VidPrompt",
       isPresented: Binding(
         get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })
     ) {
@@ -159,7 +159,7 @@ struct LibraryView: View {
     } message: {
       Text(store.errorMessage ?? "Unknown error")
     }
-    .onReceive(NotificationCenter.default.publisher(for: .juniorPrompterImport)) { _ in importing = true }
+    .onReceive(NotificationCenter.default.publisher(for: .vidPromptImport)) { _ in importing = true }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md")!, .rtf, .pdf, UTType(filenameExtension: "docx")!]) { result in
       guard case .success(let url) = result else {
         if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled { importError = error.localizedDescription }
@@ -294,7 +294,7 @@ private struct EditorView: View {
         }.padding(.horizontal, 24).padding(.vertical, 6)
       } else {
         HStack {
-          Label("Stored in JuniorPrompter", systemImage: "doc.text")
+          Label("Stored in VidPrompt", systemImage: "doc.text")
             .font(.caption).foregroundStyle(.secondary)
           Spacer()
           Button("Link File…") { relinking = true }.buttonStyle(.link)

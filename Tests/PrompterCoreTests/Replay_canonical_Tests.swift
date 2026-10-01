@@ -3,7 +3,7 @@ import XCTest
 
 @testable import PrompterCore
 
-/// The canonical reading ("JuniorPrompter v0.3.0 test reading.wav" against "Demo script.txt"):
+/// The canonical reading ("VidPrompt v0.3.0 test reading.wav" against "Demo script.txt"):
 /// windows cut from traces-20260916/canonical.jsonl, each replayed through a fresh tracker from
 /// the word the live session had reached.
 final class Replay_canonical_Tests: XCTestCase {

@@ -3,15 +3,10 @@ import AppKit
 import SwiftUI
 import XCTest
 
-@testable import JuniorPrompter
+@testable import VidPrompt
 import PrompterCore
 
 // MARK: - Harness
-
-private let acceptanceInputs = URL(
-  fileURLWithPath:
-    "/Users/junior.nkanabassi/Documents/JuniorOS/02 Projects/Development/JuniorPrompter/00 Project State/Acceptance inputs",
-  isDirectory: true)
 
 /// The reading half of the file-private `PresenterView`: the same `ScriptTextView`, fed from the
 /// same session and settings with the same derivations (column inset, mirror XOR 180°), hosted
@@ -274,13 +269,14 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   }
 
   private func fixture(_ name: String) throws -> String {
-    try String(contentsOf: acceptanceInputs.appendingPathComponent(name), encoding: .utf8)
+    let url = try XCTUnwrap(Bundle.module.url(forResource: "short-" + name.components(separatedBy: " ")[0] + "-script", withExtension: "md", subdirectory: "Fixtures"))
+    return try String(contentsOf: url, encoding: .utf8)
   }
 
   private func makeStore() -> AppStore {
     let root = FileManager.default.temporaryDirectory
-      .appendingPathComponent("jp-core-qa-\(UUID().uuidString)", isDirectory: true)
-    let suite = "JuniorPrompterCoreQA.\(UUID().uuidString)"
+      .appendingPathComponent("vp-core-qa-\(UUID().uuidString)", isDirectory: true)
+    let suite = "VidPromptCoreQA.\(UUID().uuidString)"
     addTeardownBlock {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -1065,7 +1061,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   func testTheVideoToggleDuringASessionKeepsTheAnchorAndTheSession() async throws {
     let (store, _) = try await presenting(try fixture("173 script.md"))
     let session = store.session
-    let suite = "JuniorPrompterCoreQA.camera.\(UUID().uuidString)"
+    let suite = "VidPromptCoreQA.camera.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let camera = CameraModel(defaults: UserDefaults(suiteName: suite)!)
     let controller = PresenterController()
@@ -1132,7 +1128,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   func testLinkedMarkdownEditedOnDiskUpdatesThePresentingScriptBothWays() async throws {
     let store = makeStore()
     let outside = FileManager.default.temporaryDirectory
-      .appendingPathComponent("jp-core-qa-notes-\(UUID().uuidString)", isDirectory: true)
+      .appendingPathComponent("vp-core-qa-notes-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     addTeardownBlock { try? FileManager.default.removeItem(at: outside) }
     let markdown = try fixture("173 script.md")

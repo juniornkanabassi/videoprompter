@@ -2,7 +2,7 @@ import AVFoundation
 import AppKit
 import XCTest
 
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 /// The stage view's life in a window, driven the way the presenter and the Camera window drive
 /// it, and its geometry through a resize. Nothing here opens a camera or puts a window on screen.

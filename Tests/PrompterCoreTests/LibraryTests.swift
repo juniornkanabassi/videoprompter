@@ -5,7 +5,7 @@ import XCTest
 final class CoordinatedLibraryTests: XCTestCase {
   func testCoordinatedSaveCreatesConflictForExternalEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let library = try MarkdownLibrary(rootURL: root)
     let record = try await library.create(title: "Draft", markdown: "original")
@@ -25,7 +25,7 @@ final class CoordinatedLibraryTests: XCTestCase {
 
   func testDiscoversNewMarkdownAfterInitialisationWithoutDuplicatingIt() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
     let url = root.appendingPathComponent("Scripts", isDirectory: true)
@@ -45,9 +45,9 @@ final class CoordinatedLibraryTests: XCTestCase {
 
   func testDiscoverySkipsSymlinksAndMalformedFiles() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-outside-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-library-outside-\(UUID().uuidString)", isDirectory: true)
     defer {
       try? FileManager.default.removeItem(at: root)
       try? FileManager.default.removeItem(at: outside)
@@ -76,9 +76,9 @@ final class CoordinatedLibraryTests: XCTestCase {
 
   func testDiscoveryRetriesAfterIndexPersistenceFailure() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-library-index-\(UUID().uuidString).json")
+      "VidPrompt-library-index-\(UUID().uuidString).json")
     defer {
       try? FileManager.default.removeItem(at: root)
       try? FileManager.default.removeItem(at: outside)
@@ -107,9 +107,9 @@ final class CoordinatedLibraryTests: XCTestCase {
 final class LinkedFileTests: XCTestCase {
   private func makeLibrary() throws -> (MarkdownLibrary, URL, URL) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-linked-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-linked-\(UUID().uuidString)", isDirectory: true)
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-notes-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     return (try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false), root, outside)
   }
@@ -250,9 +250,9 @@ final class LinkedFileTests: XCTestCase {
   /// file's identity, which breaks bookmarks and other apps' open handles.
   func testCoordinatedWriteBackKeepsTheFileItself() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-linked-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-linked-\(UUID().uuidString)", isDirectory: true)
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-notes-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-notes-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
     let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: true)
@@ -304,7 +304,7 @@ final class LinkedFileTests: XCTestCase {
 
   func testThePollDoesNotRereadAFileWhoseModificationDateHasNotMoved() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "JuniorPrompter-poll-\(UUID().uuidString)", isDirectory: true)
+      "VidPrompt-poll-\(UUID().uuidString)", isDirectory: true)
     defer { try? FileManager.default.removeItem(at: root) }
     let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
     let record = try await library.create(title: "Poll", markdown: "original")

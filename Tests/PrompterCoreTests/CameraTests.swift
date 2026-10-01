@@ -2,12 +2,12 @@ import AppKit
 import CoreVideo
 import SwiftUI
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 @MainActor
 final class CameraTests: XCTestCase {
   private func defaults() -> UserDefaults {
-    let suite = "JuniorPrompter.camera.\(UUID().uuidString)"
+    let suite = "VidPrompt.camera.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     return UserDefaults(suiteName: suite)!
   }
@@ -215,7 +215,7 @@ final class CameraTests: XCTestCase {
     let active = fmt(3840, 2160, kCVPixelFormatType_422YpCbCr10)
     let chosen = expectation(description: "the cheaper coding is chosen off the main actor")
     nonisolated(unsafe) var picked: Int?
-    DispatchQueue(label: "JuniorPrompter.test.camera.session").async {
+    DispatchQueue(label: "VidPrompt.test.camera.session").async {
       dispatchPrecondition(condition: .notOnQueue(.main))
       picked = SharedCameraSession.preferredFormat(in: formats, active: active)
       chosen.fulfill()

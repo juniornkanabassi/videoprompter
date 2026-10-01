@@ -160,7 +160,7 @@ struct CameraView: View {
       switch model.authorization {
       case .denied, .restricted:
         VStack(spacing: 12) {
-          Text("JuniorPrompter does not have permission to use the camera.")
+          Text("VidPrompt does not have permission to use the camera.")
           Button("Open System Settings") {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
           }
@@ -180,9 +180,7 @@ struct CameraView: View {
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
-      if Bundle.main.bundleIdentifier?.hasSuffix(".alpha") == true {
-        ToolbarItem { RecordingControls(recorder: recorder, camera: model) }
-      }
+      ToolbarItem { RecordingControls(recorder: recorder, camera: model) }
       ToolbarItem {
         Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
           .help("Mirror camera")

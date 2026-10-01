@@ -3,7 +3,7 @@ import PrompterCore
 import SwiftUI
 import XCTest
 
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 /// View > Zoom In, Zoom Out and Actual Size. Nothing here shows a window or takes focus: the
 /// windows are never ordered in, and "a click lands" is AppKit's own hit test, which is what a
@@ -18,7 +18,7 @@ final class UIZoomTests: XCTestCase {
     try await super.setUp()
     _ = NSApplication.shared
     root = FileManager.default.temporaryDirectory.appendingPathComponent("zoom-\(UUID().uuidString)")
-    defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
   }
 

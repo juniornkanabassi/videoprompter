@@ -3,7 +3,7 @@ import PrompterCore
 import SwiftUI
 
 extension Notification.Name {
-  static let juniorPrompterImport = Notification.Name("JuniorPrompter.import")
+  static let vidPromptImport = Notification.Name("VidPrompt.import")
 }
 
 struct PrompterSettings: Codable, Equatable, Identifiable {
@@ -91,8 +91,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published var search = ""
   @Published var inspector = true
   @Published var simpleInterface = false { didSet { persistSettings() } }
-  var isAlphaChannel = Bundle.main.bundleIdentifier?.hasSuffix(".alpha") == true
-  var showsSimpleInterface: Bool { isAlphaChannel && simpleInterface }
+  var showsSimpleInterface: Bool { simpleInterface }
   @Published var settings = PrompterSettings() { didSet { persistSettings() } }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
@@ -163,7 +162,7 @@ private enum PresenterSaveError: LocalizedError {
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
     guard let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count else { return .standard }
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
-    return UserDefaults(suiteName: "JuniorPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
+    return UserDefaults(suiteName: "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
   }
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
     _ = AvailableFonts.presenter
@@ -684,11 +683,11 @@ private enum PresenterSaveError: LocalizedError {
   }
 }
 
-@main struct JuniorPrompterApp: App {
+@main struct VidPromptApp: App {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   var body: some Scene {
-    WindowGroup("JuniorPrompter") {
+    WindowGroup("VidPrompt") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
         .onAppear { appDelegate.store = store }
@@ -715,7 +714,7 @@ private enum PresenterSaveError: LocalizedError {
             .keyboardShortcut("d", modifiers: .command)
             .disabled(store.selected == nil)
           Divider()
-          Button("Import Script…") { NotificationCenter.default.post(name: .juniorPrompterImport, object: nil) }
+          Button("Import Script…") { NotificationCenter.default.post(name: .vidPromptImport, object: nil) }
             .keyboardShortcut("i", modifiers: .command)
             .disabled(!store.libraryAvailable)
           Button("Import from Clipboard") { store.importClipboard() }

@@ -1,7 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
 ROOT="${0:A:h}"
-WORK=$(mktemp -d /private/tmp/jpmcp.XXXXXX)
+WORK=$(mktemp -d /private/tmp/vpmcp.XXXXXX)
 trap 'rm -rf "$WORK"' EXIT
 cat > "$WORK/cli" <<'JS'
 #!/usr/bin/env node
@@ -19,7 +19,7 @@ cat > "$WORK/input" <<'JSON'
 {"jsonrpc":"2.0","id":5,"method":"ping"}
 {"jsonrpc":"2.0","id":{},"method":"ping"}
 JSON
-JUNIORPROMPTER_CLI="$WORK/cli" node "$ROOT/juniorprompter-mcp.mjs" --data-directory /tmp/isolated < "$WORK/input" > "$WORK/output"
+VIDPROMPT_CLI="$WORK/cli" node "$ROOT/vidprompt-mcp.mjs" --data-directory /tmp/isolated < "$WORK/input" > "$WORK/output"
 node --input-type=module - "$WORK/output" <<'JS'
 import assert from 'node:assert/strict'; import fs from 'node:fs';
 const r=fs.readFileSync(process.argv[2],'utf8').trim().split('\n').map(JSON.parse);

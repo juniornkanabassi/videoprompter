@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import PrompterCore
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 @testable import PrompterCore
 
 final class LinkedSecurityTests: XCTestCase {

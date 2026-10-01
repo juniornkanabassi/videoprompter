@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 import PrompterCore
 
 @MainActor
@@ -204,7 +204,7 @@ final class PresenterControllerTests: XCTestCase {
 
   func testPresenterEditCommitPersistsMarkdownAndKeepsTheAnchor() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     let record = try await store.library!.create(
       title: "Presented", markdown: "Opening words here.\n\nSecond passage with the target word.")
@@ -921,7 +921,7 @@ final class PresenterControllerTests: XCTestCase {
   /// relaunch, and the old key still says whether video is on for an older build.
   func testDisplayModeMigratesTheStoredBoolAndKeepsItWritten() {
     for (legacy, expected) in [(false, PresenterDisplayMode.prompterOnly), (true, .prompterWithVideo)] {
-      let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+      let suite = "VidPrompt.presenter.\(UUID().uuidString)"
       addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
       let store = UserDefaults(suiteName: suite)!
       store.set(legacy, forKey: "presenterWithVideo")
@@ -950,7 +950,7 @@ final class PresenterControllerTests: XCTestCase {
     let target = try! XCTUnwrap(session.document.spokenTokens.firstIndex { $0.normalised == "12" })
     session.seek(to: target)
     let running = session.isActivelyRunning
-    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    let suite = "VidPrompt.presenter.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let model = CameraModel(defaults: UserDefaults(suiteName: suite)!)
     model.presentsWithVideo = true
@@ -993,7 +993,7 @@ final class PresenterControllerTests: XCTestCase {
   }
 
   private func videoModel() -> (CameraModel, UserDefaults) {
-    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
+    let suite = "VidPrompt.presenter.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let defaults = UserDefaults(suiteName: suite)!
     return (CameraModel(defaults: defaults), defaults)
@@ -1186,7 +1186,7 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(try decoder.decode(PrompterSettings.self, from: Data(#"{"horizontalMargin":80}"#.utf8)).textWidth, 1)
 
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.textWidth, 1)
     let markdown = (1...20).map { "Passage \($0) with useful words for a wide column." }.joined(separator: "\n\n")
@@ -1278,7 +1278,7 @@ final class PresenterControllerTests: XCTestCase {
   /// picture out; Prompter only keeps its background opacity.
   func testBackdropOpacityFollowsTheModeAndVideoDimmingPersists() {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: false), 0.82)
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.25)
@@ -1310,7 +1310,7 @@ final class PresenterControllerTests: XCTestCase {
   /// The reading line's opacity persists and is what the line is drawn with.
   func testGuideOpacityPersistsAndReachesTheLine() throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!
+    let defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.guideOpacity, 0.82, "the default keeps the current look")
     store.settings.guideOpacity = 0.25

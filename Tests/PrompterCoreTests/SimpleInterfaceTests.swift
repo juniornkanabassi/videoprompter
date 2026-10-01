@@ -2,25 +2,32 @@ import AppKit
 import SwiftUI
 import PrompterCore
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 @MainActor final class SimpleInterfaceTests: XCTestCase {
-  func testAlphaPreferencePersistsAndInspectorHidesOnlyAdvancedSections() async throws {
+  func testPreferencePersistsPerDataDirectoryAndInspectorHidesOnlyAdvancedSections() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("simple-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
-    let suite = "SimpleTests.\(UUID())"; let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
-    store.isAlphaChannel = true; store.simpleInterface = true
-    let before = store.settings
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
-    XCTAssertTrue(reopened.simpleInterface)
-    reopened.isAlphaChannel = false; XCTAssertFalse(reopened.showsSimpleInterface)
+    let arguments = ["test", "--data-directory", root.path]
     let otherRoot = root.appendingPathComponent("another")
-    let other = AppStore(arguments: ["test", "--data-directory", otherRoot.path], defaults: UserDefaults(suiteName: "SimpleOther.\(UUID())")!)
+    let otherArguments = ["test", "--data-directory", otherRoot.path]
+    defer {
+      for directory in [root, otherRoot] {
+        let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(directory.standardizedFileURL.path))"
+        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      }
+    }
+    let store = AppStore(arguments: arguments)
+    store.simpleInterface = true
+    let before = store.settings
+    let reopened = AppStore(arguments: arguments)
+    XCTAssertTrue(reopened.simpleInterface)
+    XCTAssertTrue(reopened.showsSimpleInterface)
+    let other = AppStore(arguments: otherArguments)
     XCTAssertFalse(other.simpleInterface)
+    XCTAssertFalse(other.showsSimpleInterface)
     let host = NSHostingView(rootView: InspectorView(store: store))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 360, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host

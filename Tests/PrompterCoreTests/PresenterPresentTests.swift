@@ -4,7 +4,7 @@ import PrompterCore
 import SwiftUI
 import XCTest
 
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 /// Present, driven the way the toolbar, Cmd-Option-P and the menu drive it, with every presenter
 /// panel kept off the screen: ordering an `NSPanel` only flips a flag that `isVisible` reports
@@ -24,7 +24,7 @@ final class PresenterPresentTests: XCTestCase {
     root = FileManager.default.temporaryDirectory.appendingPathComponent("present-\(UUID().uuidString)")
     store = AppStore(
       arguments: ["test", "--data-directory", root.path],
-      defaults: UserDefaults(suiteName: "JuniorPrompterTests.\(UUID().uuidString)")!)
+      defaults: UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!)
     controller = PresenterController()
   }
 
@@ -196,7 +196,7 @@ final class PresenterPresentTests: XCTestCase {
     XCTAssertTrue(showsPresenter)
     XCTAssertEqual(store.session.activeScriptID, second.id)
     XCTAssertEqual(draft?.recordID, second.id, "the presenter still edits the first script")
-    XCTAssertEqual(panel?.title, "JuniorPrompter · Second")
+    XCTAssertEqual(panel?.title, "VidPrompt · Second")
   }
 }
 

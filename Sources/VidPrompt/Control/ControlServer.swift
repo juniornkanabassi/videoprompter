@@ -7,7 +7,7 @@ final class ControlServer: @unchecked Sendable {
   typealias Handler = @MainActor @Sendable (String, [String: String]) async -> ControlResult
   private let socketURL: URL
   private let handler: Handler
-  private let queue = DispatchQueue(label: "JuniorPrompter.control")
+  private let queue = DispatchQueue(label: "VidPrompt.control")
   private var listener: DispatchSourceRead?
   private var inode: ino_t?
   // Mutable state is accessed exclusively on the server queue.

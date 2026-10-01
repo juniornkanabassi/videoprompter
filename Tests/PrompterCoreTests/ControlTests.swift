@@ -2,13 +2,13 @@ import AppKit
 import Darwin
 import PrompterCore
 import XCTest
-@testable import JuniorPrompter
+@testable import VidPrompt
 
 @MainActor final class ControlTests: XCTestCase {
   func testActionsUseGUIStoreAndImportIsIdempotent() async throws {
     _ = NSApplication.shared
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
-    let root = URL(fileURLWithPath: "/private/tmp/jpc-\(UUID().uuidString.prefix(8))")
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
     let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
@@ -75,7 +75,7 @@ import XCTest
     }
   }
   func testReplyOver64KBIsComplete() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp/jpc-\(UUID().uuidString.prefix(8))")
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     let path = root.appendingPathComponent("control.sock")
     defer { try? FileManager.default.removeItem(at: root) }
     let server = ControlServer(socketURL: path) { action, _ in .ok(["payload": String(repeating: "x", count: 100_000)]) }
@@ -100,7 +100,7 @@ import XCTest
     XCTAssertEqual((lines[0]["result"] as? [String: String])?["payload"], String(repeating: "x", count: 100_000))
   }
   func testSocketPrivacyFramingAndOwnership() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp/jpc-\(UUID().uuidString.prefix(8))")
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     let path = root.appendingPathComponent("control.sock")
     defer { try? FileManager.default.removeItem(at: root) }
     let server = ControlServer(socketURL: path) { action, _ in .ok(["action": action]) }

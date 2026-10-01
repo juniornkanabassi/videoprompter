@@ -25,11 +25,11 @@ import PrompterCore
   }
   static func recordingsFolder(arguments: [String] = CommandLine.arguments) -> URL {
     if let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count { return URL(fileURLWithPath: arguments[i + 1]).appendingPathComponent("Recordings") }
-    return FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("JuniorPrompter")
+    return FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0].appendingPathComponent("VidPrompt")
   }
   static func fileURL(in folder: URL, date: Date = Date()) -> URL {
     let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-    let stem = "JuniorPrompter \(formatter.string(from: date))"
+    let stem = "VidPrompt \(formatter.string(from: date))"
     var url = folder.appendingPathComponent(stem + ".mov"); var number = 2
     while FileManager.default.fileExists(atPath: url.path) { url = folder.appendingPathComponent("\(stem) \(number).mov"); number += 1 }
     return url
@@ -136,7 +136,7 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
   let video = AVCaptureVideoDataOutput()
   let audio = AVCaptureAudioDataOutput()
   let microphone: AVCaptureDeviceInput
-  private let queue = DispatchQueue(label: "JuniorPrompter.recording")
+  private let queue = DispatchQueue(label: "VidPrompt.recording")
   private let url: URL
   private let preset: RecordingPreset
   private let rotation: CameraRotation
