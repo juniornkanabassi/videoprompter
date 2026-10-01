@@ -7,7 +7,7 @@ import AppKit
 ///
 /// Three layers, all of them `CAShapeLayer` or `AVCaptureVideoPreviewLayer`: rotation is a layer
 /// transform or a connection angle, guides and the frame marker are stroked paths, and the
-/// shading outside the marker is one even-odd fill. Nothing here runs per frame.
+/// shading outside the marker is one even-odd fill. Only opt-in latency logging runs per frame.
 final class CameraStageView: NSView {
   private let preview = AVCaptureVideoPreviewLayer()
   private let shade = CAShapeLayer()
