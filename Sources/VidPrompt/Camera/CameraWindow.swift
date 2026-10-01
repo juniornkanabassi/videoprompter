@@ -345,13 +345,17 @@ struct RecordingControls: View {
           Form {
             Picker("Recording quality", selection: $recorder.preset) {
               ForEach(RecordingPreset.allCases, id: \.self) { Text($0.label).tag($0) }
-            }.disabled(recorder.isRecording || recorder.isBusy).help("Choose the video format before recording")
+            }.disabled(recorder.isRecording || recorder.isBusy).help("Standard is widely compatible; High compresses more efficiently; Edit makes larger files for video editing")
+            Text("Standard (H.264) works with most players and editors. High (HEVC) compresses video more efficiently but needs compatible software. Edit (ProRes 422) makes larger files designed for video editing.")
+              .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Picker("Microphone", selection: Binding(get: { recorder.microphoneUID ?? "" }, set: { recorder.microphoneUID = $0.isEmpty ? nil : $0 })) {
               Text("Default microphone").tag("")
               ForEach(CameraRecorder.microphones(), id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
               if let uid = recorder.microphoneUID, !CameraRecorder.microphones().contains(where: { $0.uniqueID == uid }) { Text("Selected microphone unavailable").tag(uid) }
             }.disabled(recorder.isRecording || recorder.isBusy).help("Choose the microphone recorded with the camera")
-            Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy).help("Save audio as 32-bit floating point where the recording format supports it")
+            Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy).help("Save uncompressed sound for adjusting volume in an editor; audio takes more space")
+            Text("Saves uncompressed sound for adjusting volume in an editor. Audio takes more space. Leave off for smaller files. This cannot repair sound distorted by the microphone.")
+              .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let file = recorder.lastFile { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.help("Find your latest saved recording") }
             if let error = recorder.errorMessage { Text(error).foregroundStyle(.red) }
           }.padding().frame(width: 380)
