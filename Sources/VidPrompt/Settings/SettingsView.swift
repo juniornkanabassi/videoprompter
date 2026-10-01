@@ -99,7 +99,7 @@ struct InspectorView: View {
           }.help("Align the text within the script column")
           Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
           Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
-          Toggle("Flip text upside down", isOn: $store.settings.verticalMirror).help("Flip text top to bottom for your teleprompter setup")
+          Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror).help("Flip text top to bottom for your teleprompter setup")
           Picker("Text rotation", selection: $store.settings.rotation) {
             Text("0°").tag(0)
             Text("180°").tag(180)
@@ -107,8 +107,8 @@ struct InspectorView: View {
           Toggle("Show stage directions", isOn: $store.settings.showCues).help("Show bracketed stage directions alongside spoken text")
           Toggle("Align window to screen edges", isOn: $store.settings.presenterSnappingEnabled).help("Snap the presenter to screen edges or centre after dragging")
           Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord).help("Mark the current word as the script follows you")
-          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the presenter colour")
-          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the presenter colour")
+          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the script text colour")
+          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the background colour")
         }
       } header: {
         Label { Text("Text") } icon: { Image(systemName: "textformat.size").foregroundStyle(Color.accentColor) }
@@ -169,8 +169,8 @@ struct InspectorView: View {
               .foregroundStyle(.secondary)
           }
         }
+        InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping, showsScale: !store.showsSimpleInterface)
         if !store.showsSimpleInterface {
-        InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping)
         // The clipping warning shares this row: a row of its own came and went with the signal and
         // shook everything below it during a test.
         LabeledContent("Loudest sound") {
@@ -321,6 +321,7 @@ enum AvailableFonts {
 struct InputLevelMeter: View {
   let peakDBFS: Float
   let isClipping: Bool
+  var showsScale = true
   @State private var peakHold = PeakHold()
   static let ticks: [(Float, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-20, "−20"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
   private static let labelFont = NSFont.monospacedDigitSystemFont(
@@ -382,6 +383,7 @@ struct InputLevelMeter: View {
           }
         }
         .frame(height: 12)
+        if showsScale {
         ForEach(Self.visibleLabels(positions: positions, widths: Self.labelWidths, availableWidth: geometry.size.width), id: \.self) { index in
           let span = Self.labelSpan(position: positions[index], width: Self.labelWidths[index], availableWidth: geometry.size.width)
           Text(Self.ticks[index].1)
@@ -390,9 +392,10 @@ struct InputLevelMeter: View {
             .fixedSize()
             .position(x: (span.lowerBound + span.upperBound) / 2, y: 22)
         }
+        }
       }
     }
-    .frame(height: 30)
+    .frame(height: showsScale ? 30 : 12)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("Microphone peak level")
     .accessibilityValue(peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")

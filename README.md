@@ -17,6 +17,8 @@ zsh build.sh
 
 The build produces `../Outputs/VidPrompt 1.2.0.zip`. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
+To prepare a simple download disk image from an already verified app bundle, run `checks/package-dmg.sh /path/to/VidPrompt.app /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and reports the bundle's macOS minimum and executable architectures. It refuses to replace an existing DMG. This does not sign or notarise the app.
+
 Optional overrides: `VIDPROMPT_BUILD_ROOT`, `VIDPROMPT_TEST_SCRATCH` and `VIDPROMPT_OUTPUT_ROOT` select disposable cache/output paths. Use a short, owned path outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
 ## Install and first use

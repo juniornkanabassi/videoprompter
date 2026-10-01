@@ -687,7 +687,7 @@ private enum PresenterSaveError: LocalizedError {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   var body: some Scene {
-    WindowGroup("VidPrompt") {
+    WindowGroup("VidPrompt", id: "library") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
         .onAppear { appDelegate.store = store }
@@ -768,7 +768,7 @@ struct PresenterVideoItems: View {
   }
   var body: some View {
     Toggle("Script Only", isOn: choice(.prompterOnly))
-    Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
+    Toggle("Script and camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
     Toggle("Camera Only", isOn: choice(.videoOnly))
     Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
@@ -852,7 +852,7 @@ extension NSScreen {
   }
 }
 
-private struct MainWindowConfigurator: NSViewRepresentable {
+struct MainWindowConfigurator: NSViewRepresentable {
   var size = NSSize(width: 1100, height: 750)
   final class Coordinator {
     var placed = false

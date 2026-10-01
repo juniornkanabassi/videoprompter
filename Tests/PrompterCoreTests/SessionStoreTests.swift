@@ -78,11 +78,55 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.anchor, anchor)
-    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Script settings")
+    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Presenter settings")
     session.play(captureAudio: false)
     XCTAssertEqual(session.state, .running)
     XCTAssertNil(session.anchorNotice)
     session.pause()
+  }
+
+  func testRelevantSettingsClearMissingMicrophoneNoticeWithoutMovingAnchor() {
+    for change in ["mode", "microphone", "language"] {
+      let session = SessionStore()
+      var settings = PrompterSettings()
+      session.present(record: record(), settings: settings)
+      session.seek(to: 1)
+      session.play()
+      let anchor = session.anchor
+      XCTAssertNotNil(session.anchorNotice)
+      settings.fontSize += 1
+      session.updateSettings(settings)
+      XCTAssertNotNil(session.anchorNotice, "appearance changes keep useful guidance")
+      if change == "mode" { settings.mode = "Manual" }
+      if change == "microphone" { settings.audioDeviceUID = "disposable-not-opened" }
+      if change == "language" { settings.speechLanguage = "French" }
+      session.updateSettings(settings)
+      XCTAssertNil(session.anchorNotice, change)
+      XCTAssertEqual(session.anchor, anchor)
+      XCTAssertEqual(session.state, .paused)
+    }
+  }
+
+  func testLeavingVoiceOrChangingDeviceCancelsPendingMicrophoneTest() throws {
+    let devices = AudioCapture.inputDevices()
+    try XCTSkipIf(devices.isEmpty, "a connected device is required to exercise the pending test")
+    let device = try XCTUnwrap(devices.first)
+    for change in ["mode", "microphone"] {
+      let session = SessionStore()
+      var settings = PrompterSettings()
+      settings.audioDeviceUID = device.uid
+      session.present(record: record(), settings: settings)
+      let anchor = session.anchor
+      // No suspension: the permission/capture task cannot run before updateSettings cancels it.
+      session.startMicrophoneTest(deviceUID: device.uid, gain: 1)
+      XCTAssertTrue(session.isTestingMicrophone)
+      if change == "mode" { settings.mode = "Manual" }
+      else { settings.audioDeviceUID = nil }
+      session.updateSettings(settings)
+      XCTAssertFalse(session.isTestingMicrophone, change)
+      XCTAssertEqual(session.anchor, anchor)
+      XCTAssertEqual(session.state, .paused)
+    }
   }
 
   func testTogglePausesAndResumesManualSession() {

@@ -18,6 +18,16 @@ private func labels(_ element: Any) -> [String] {
   return [own] + (children.isEmpty ? viewChildren.flatMap(labels) : children.flatMap(labels))
 }
 
+@MainActor
+private func accessibilityObjects(_ element: Any) -> [NSObject] {
+  guard let object = element as? NSObject else { return [] }
+  let selector = NSSelectorFromString("accessibilityChildren")
+  let children = object.responds(to: selector)
+    ? object.perform(selector)?.takeUnretainedValue() as? [Any] ?? [] : []
+  let fallback = object.accessibilityAttributeValue(.children) as? [Any] ?? (object as? NSView)?.subviews ?? []
+  return [object] + (children.isEmpty ? fallback : children).flatMap(accessibilityObjects)
+}
+
 @MainActor final class SimpleInterfaceTests: XCTestCase {
   func testEmptyLibraryExplainsTheStepsAndOffersBothCreationActions() async throws {
     _ = NSApplication.shared
@@ -30,15 +40,29 @@ private func labels(_ element: Any) -> [String] {
     }
     let store = AppStore(arguments: ["test", "--data-directory", root.path])
     let host = NSHostingView(rootView: LibraryView(store: store))
-    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1100, height: 750), styleMask: [.titled], backing: .buffered, defer: true)
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1132, height: 750), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
     window.orderFrontRegardless()
     defer { window.orderOut(nil); window.contentView = nil }
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
+    for zoom in [1.0, 1.5, 2.0] {
+    store.uiZoom = zoom
+    for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual in Script settings", "After adding a script, press Present", "Import Script", "New Script"] {
+    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual in Presenter settings", "After adding a script, press Present", "Import Script", "New Script"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
+    }
+    // Geometry, not just AX presence: the whole guide stays inside the 200% detail column.
+    let guidance = try XCTUnwrap(accessibilityObjects(host).first {
+      labels($0).first?.contains("VidPrompt keeps your script") == true
+    })
+    XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
+    let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+    let guideFrame = window.convertFromScreen(frame)
+    XCTAssertGreaterThanOrEqual(guideFrame.minX, 400, "guide stays to the right of the zoomed sidebar")
+    XCTAssertLessThanOrEqual(guideFrame.maxX, 813, "guide stays to the left of the inspector")
+    XCTAssertGreaterThan(frame.height, 200, "all steps wrap into a readable column")
     store.create()
     for _ in 0..<20 where store.selected == nil { try? await Task.sleep(for: .milliseconds(30)) }
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")
@@ -81,8 +105,10 @@ private func labels(_ element: Any) -> [String] {
     XCTAssertFalse(simple.contains("Loudest sound"))
     XCTAssertFalse(simple.contains("Spoken language"))
     XCTAssertTrue(simple.contains("Test microphone"))
+    XCTAssertTrue(simple.contains("Microphone peak level"))
     XCTAssertTrue(simple.contains("Mirror for teleprompter glass"))
     store.simpleInterface = false
+    XCTAssertTrue(AppStore(arguments: otherArguments).simpleInterface, "the other data directory keeps its own preference")
     XCTAssertFalse(AppStore(arguments: arguments).simpleInterface, "an explicit advanced preference survives reopening")
     await settle()
     let full = labels(host).joined(separator: "|")

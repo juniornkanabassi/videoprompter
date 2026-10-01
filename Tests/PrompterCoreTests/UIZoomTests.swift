@@ -5,6 +5,11 @@ import XCTest
 
 @testable import VidPrompt
 
+@MainActor private protocol OffscreenHostingSizing { func holdWindowSize() }
+extension NSHostingView: OffscreenHostingSizing {
+  fileprivate func holdWindowSize() { sizingOptions = [] }
+}
+
 /// View > Zoom In, Zoom Out and Actual Size. Nothing here shows a window or takes focus: the
 /// windows are never ordered in, and "a click lands" is AppKit's own hit test, which is what a
 /// real click asks before anything reaches a view.
@@ -13,17 +18,20 @@ final class UIZoomTests: XCTestCase {
   private var store: AppStore!
   private var root: URL!
   private var defaults: UserDefaults!
+  private var suite: String!
 
   override func setUp() async throws {
     try await super.setUp()
     _ = NSApplication.shared
     root = FileManager.default.temporaryDirectory.appendingPathComponent("zoom-\(UUID().uuidString)")
-    defaults = UserDefaults(suiteName: "VidPromptTests.\(UUID().uuidString)")!
+    suite = "VidPromptTests.\(UUID().uuidString)"
+    defaults = UserDefaults(suiteName: suite)!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
   }
 
   override func tearDown() async throws {
     store = nil
+    defaults.removePersistentDomain(forName: suite)
     try? FileManager.default.removeItem(at: root)
     try await super.tearDown()
   }
@@ -115,6 +123,7 @@ final class UIZoomTests: XCTestCase {
       XCTAssertEqual(font.pointSize, 18, accuracy: 0.5, "\(scale): the editor's text size is its own setting")
 
       let outline = try XCTUnwrap(views(of: NSOutlineView.self, in: window).first, "\(scale): no sidebar")
+      XCTAssertGreaterThanOrEqual(outline.convert(outline.visibleRect, to: nil).width, 200 * scale - 1, "\(scale): sidebar minimum is enforced")
       let row = outline.convert(outline.rect(ofRow: 0), to: nil).height
       if scale == 1 { rowHeightAtActualSize = row }
       XCTAssertEqual(row / rowHeightAtActualSize, scale, accuracy: 0.05, "\(scale): the sidebar is zoomed")
@@ -165,13 +174,15 @@ final class UIZoomTests: XCTestCase {
     await settle(window)
     window.setContentSize(window.contentMinSize)   // as far as dragging the corner goes
     await settle(window)
-    XCTAssertEqual(window.contentMinSize.width, 932, "the minimum does not shrink with the inspector hidden")
+    XCTAssertEqual(window.contentMinSize.width, 1132, "the minimum does not shrink with the inspector hidden")
     store.inspector = true
     for scale in AppStore.uiZoomSteps + AppStore.uiZoomSteps.reversed() {
       store.uiZoom = scale
       await settle(window)
-      XCTAssertEqual(controller.view.frame.width, 932, accuracy: 1, "\(scale)")
-      XCTAssertEqual(window.contentMinSize.width, 932, "\(scale): zoom leaves the minimum alone")
+      window.setContentSize(window.contentMinSize)
+      await settle(window)
+      XCTAssertEqual(controller.view.frame.width, 1132, accuracy: 1, "\(scale)")
+      XCTAssertEqual(window.contentMinSize.width, 1132, "\(scale): enough space for readable sidebar titles")
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("short") })
       XCTAssertEqual(editor.frame.width, editor.enclosingScrollView?.contentView.bounds.width ?? 0, accuracy: 0.5, "\(scale)")
     }
@@ -191,6 +202,10 @@ final class UIZoomTests: XCTestCase {
     controller.present(store: store)
     let panel = try XCTUnwrap(controller.panel)
     defer { controller.close() }
+    // Offscreen NSHostingView otherwise grows the panel to a computed intrinsic minimum
+    // unlike the packaged on-screen frame. Force the actual accepted frame for layout checks.
+    (panel.contentView as? OffscreenHostingSizing)?.holdWindowSize()
+    panel.contentMinSize = NSSize(width: 360, height: 220)
     store.session.seek(to: 48)
     let anchor = store.session.anchor
     let token = store.session.activeToken!
@@ -201,14 +216,21 @@ final class UIZoomTests: XCTestCase {
         store.settings.verticalMirror = mirrored
         store.settings.rotation = rotation
         store.settings.horizontalMirror = mirrored
-        for (width, zoom) in [(760.0, 1.0), (760, 1.5), (500, 2), (760, 1)] {
-          panel.setContentSize(NSSize(width: width, height: 600))
+        for (width, zoom, height) in [(760.0, 1.0, 520.0), (760, 1.5, 520), (760, 2, 520), (500, 2, 600), (760, 1, 520)] {
+          panel.setFrame(NSRect(origin: panel.frame.origin, size: NSSize(width: width, height: height)), display: true)
           store.uiZoom = zoom
           await settle(panel)
+          if !manual {
+            store.session.play()
+            XCTAssertNotNil(store.session.anchorNotice)
+            await settle(panel)
+          }
           let text = try XCTUnwrap(views(of: NSTextView.self, in: panel).first { $0.string.contains("Passage1 ") })
           let scroll = try XCTUnwrap(text.enclosingScrollView)
           let viewport = scroll.convert(scroll.bounds, to: nil)
           let content = try XCTUnwrap(panel.contentView)
+          XCTAssertEqual(content.bounds.height, height, accuracy: 1, "exercise the actual default presenter height")
+          XCTAssertGreaterThan(viewport.height, 120, "the default presenter retains a usable script viewport at \(zoom)")
           XCTAssertLessThan(viewport.height, content.bounds.height - 40, "capsule has layout space at \(zoom)")
           if zoom == 1 { actualHeight = viewport.height }
           else { XCTAssertLessThan(viewport.height, actualHeight, "zoom/wrapping reserves more height") }
@@ -227,8 +249,8 @@ final class UIZoomTests: XCTestCase {
             fraction: store.settings.guideFraction)
           XCTAssertEqual(y, mirrored != (rotation == 180) ? scroll.contentView.bounds.height - guide : guide,
             accuracy: 2, "anchor realigns after resize")
-          // Sample the bottom viewport rows, clear of the intentional top drag handle.
-          for row in 0..<3 { for column in 0..<10 {
+          // Both edges of the viewport must remain clear of controls and the drag handle.
+          for row in 0..<10 { for column in 0..<10 {
             let point = NSPoint(x: viewport.minX + viewport.width * (Double(column) + 0.5) / 10,
               y: viewport.minY + viewport.height * (Double(row) + 0.5) / 10)
             let hit = panel.contentView?.superview?.hitTest(point)
@@ -252,7 +274,9 @@ final class UIZoomTests: XCTestCase {
     controller.present(store: store)
     let panel = try XCTUnwrap(controller.panel)
     defer { controller.close() }
-    panel.setContentSize(NSSize(width: 500, height: 600))
+    panel.setContentSize(NSSize(width: 500, height: 520))
+    store.session.play()
+    XCTAssertNotNil(store.session.anchorNotice, "the missing-microphone notice exercises stacking")
     for scale in AppStore.uiZoomSteps {
       store.uiZoom = scale
       await settle(panel)

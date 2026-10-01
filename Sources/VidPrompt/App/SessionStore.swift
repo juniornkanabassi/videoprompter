@@ -151,7 +151,11 @@ final class SessionStore: ObservableObject {
   }
 
   func updateSettings(_ value: PrompterSettings) {
+    if value.mode != "Voice" || settings.audioDeviceUID != value.audioDeviceUID {
+      stopMicrophoneTest()
+    }
     let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
+    if modeChanged { anchorNotice = nil }
     let speedChanged = settings.speed != value.speed
     // Manual first catches up to now at the old speed, so a new speed continues from here.
     let now = clock()
@@ -604,7 +608,7 @@ final class SessionStore: ObservableObject {
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
-      failAudio("Choose a microphone in Script settings")
+      failAudio("Choose a microphone in Presenter settings")
       return
     }
     let generation = lifecycleGeneration

@@ -17,7 +17,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   var label: String {
     switch self {
     case .prompterOnly: "Script only"
-    case .prompterWithVideo: "Script + camera"
+    case .prompterWithVideo: "Script and camera"
     case .videoOnly: "Camera only"
     }
   }

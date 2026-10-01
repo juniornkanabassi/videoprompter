@@ -423,10 +423,9 @@ private struct PresenterView: View {
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
-    .overlay(alignment: .top) {
+    .safeAreaInset(edge: .top, spacing: 0) {
       ZStack {
-        Image(systemName: "line.3.horizontal")
-          .font(.caption.weight(.semibold))
+        RoundedRectangle(cornerRadius: 2).frame(width: 24, height: 4)
           .foregroundStyle(.primary)
         WindowDragHandle { window in
           guard store.settings.presenterSnappingEnabled else { return }
@@ -441,15 +440,22 @@ private struct PresenterView: View {
       .help("Drag to move the presenter")
       .allowsHitTesting(!draft.isEditing)
       .accessibilityHidden(draft.isEditing)
-      .scaleEffect(store.uiZoom, anchor: .top)
+      .uiZoom(store.uiZoom)
+      .fixedSize()
+      .frame(maxWidth: .infinity)
     }
-    // Reserve the capsule's actual wrapped, zoomed height for both reading and editing.
+    // Both notices and controls reserve their actual wrapped height for reading and editing.
     .safeAreaInset(edge: .bottom, spacing: 0) {
+      VStack(spacing: 0) {
+        if hasBottomNotice {
+          bottomNotice.padding(.horizontal, 10).padding(.top, 6)
+        }
         WrapLayout(spacing: 8) {
           Label(session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
                 systemImage: session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
             .font(.caption.weight(.semibold))
-            .foregroundStyle(session.isActivelyRunning ? Color.accentColor : Color.primary)
+            .frame(width: 88)
+            .foregroundStyle(Color.primary)
             .padding(.horizontal, 8).padding(.vertical, 5)
             .background((session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
             .help(session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
@@ -463,12 +469,12 @@ private struct PresenterView: View {
           Group {
             CapsuleButton("Previous passage", systemImage: "backward.end.fill", help: "Move to the previous passage", action: session.previousPassage)
             CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
-                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, help: "Start or pause following at the current position", action: session.toggle)
+                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position", action: session.toggle)
               .buttonStyle(.borderedProminent)
             CapsuleButton("Next passage", systemImage: "forward.end.fill", help: "Move to the next passage", action: session.nextPassage)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", showsTitle: true, help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          CapsuleButton(camera.presentsWithVideo ? "Present without video" : "Present with video",
+          CapsuleButton(camera.presentsWithVideo ? "Hide camera" : "Show camera",
                         systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
             PresenterController.shared.toggleVideo()
           }
@@ -486,8 +492,9 @@ private struct PresenterView: View {
         }
         .buttonStyle(.bordered).padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22)).padding(10)
-        .uiZoom(store.uiZoom)
+      }.uiZoom(store.uiZoom)
         .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity)
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
@@ -500,31 +507,25 @@ private struct PresenterView: View {
     }
     .onChange(of: draft.markdown) { editorNotice = nil }
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
-    .overlay(alignment: .bottom) {
-      if hasBottomNotice {
-        GeometryReader { geometry in
-          VStack(spacing: 6) {
-            if draft.isEditing, draft.hasExternalChange(in: store) {
-              Text("This script changed outside VidPrompt. Finishing will keep this draft and show a conflict instead of overwriting it.")
-                .foregroundStyle(.orange)
-            }
-            if let error = draft.errorMessage {
-              Text(error).foregroundStyle(.red)
-              Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
-                .disabled(draft.isSaving)
-            }
-            if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage {
-              Text(notice)
-            }
-          }
-          .font(.caption).multilineTextAlignment(.center)
-          .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-          .padding(.bottom, 58).frame(maxWidth: min(560, geometry.size.width / store.uiZoom))
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-          .scaleEffect(store.uiZoom, anchor: .bottom)
-        }
+  }
+
+  private var bottomNotice: some View {
+    VStack(spacing: 6) {
+      if draft.isEditing, draft.hasExternalChange(in: store) {
+        Text("This script changed outside VidPrompt. Finishing will keep this draft and show a conflict instead of overwriting it.")
+          .foregroundStyle(.orange)
       }
+      if let error = draft.errorMessage {
+        Text(error).foregroundStyle(.red)
+        Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
+          .disabled(draft.isSaving)
+      }
+      if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage { Text(notice) }
     }
+    .font(.caption).multilineTextAlignment(.center)
+    .fixedSize(horizontal: false, vertical: true)
+    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+    .frame(maxWidth: 560)
   }
   private var hasBottomNotice: Bool {
     editorNotice != nil || session.anchorNotice != nil || draft.noticeMessage != nil
@@ -547,14 +548,15 @@ private struct CapsuleButton: View {
   let systemImage: String
   var shortcut: KeyboardShortcut?
   var showsTitle = false
+  var width: CGFloat?
   var help: String?
   let action: () -> Void
-  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = false, help: String? = nil, action: @escaping () -> Void) {
-    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.showsTitle = showsTitle; self.help = help; self.action = action
+  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = false, width: CGFloat? = nil, help: String? = nil, action: @escaping () -> Void) {
+    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.showsTitle = showsTitle; self.width = width; self.help = help; self.action = action
   }
   var body: some View {
     Button(action: action) {
-      if showsTitle { Label(title, systemImage: systemImage).labelStyle(.titleAndIcon) }
+      if showsTitle { Label(title, systemImage: systemImage).labelStyle(.titleAndIcon).frame(width: width) }
       else { Label(title, systemImage: systemImage).labelStyle(.iconOnly) }
     }
       .keyboardShortcut(shortcut)

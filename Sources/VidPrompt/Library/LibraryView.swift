@@ -55,8 +55,7 @@ struct LibraryView: View {
           }
         }
         Section("Scripts") {
-          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id])
-            .listRowBackground(store.selectedID == script.id ? Color.accentColor.opacity(0.12) : Color.clear) }
+          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id]) }
         }
         if !store.trash.isEmpty {
           Section("Recently Deleted") {
@@ -71,9 +70,6 @@ struct LibraryView: View {
         }
       }
       .listStyle(.sidebar)
-      // Zoom widens the ideal and widest column, never the narrowest: doubled minimums asked
-      // more of the smallest window than it had, and AppKit looped on constraints.
-      .navigationSplitViewColumnWidth(min: 200, ideal: 240 * store.uiZoom, max: 320 * store.uiZoom)
       // New lives in the toolbar and File menu; this bar keeps Move to Trash (Command-Delete).
       .safeAreaInset(edge: .bottom) {
         HStack {
@@ -95,6 +91,8 @@ struct LibraryView: View {
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
       .uiZoom(store.uiZoom)
+      .frame(minWidth: 200 * store.uiZoom)
+      .navigationSplitViewColumnWidth(min: 200 * store.uiZoom, ideal: 240 * store.uiZoom, max: 320 * store.uiZoom)
     } detail: {
       Group {
         if let script = store.selected {
@@ -104,15 +102,22 @@ struct LibraryView: View {
             ContentUnavailableView("Library unavailable", systemImage: "exclamationmark.triangle",
               description: Text("The library could not be opened. See the error message for recovery steps."))
           } else if store.scripts.isEmpty {
-            ContentUnavailableView {
-              Label("Your script, ready to read", systemImage: "doc.text")
-            } description: {
-              Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Script settings.\n3. After adding a script, press Present.")
-            } actions: {
-              Button("Import Script…", systemImage: "square.and.arrow.down") { importing = true }
-                .buttonStyle(.borderedProminent).help("Add a Markdown, text, Word, PDF or RTF file")
-              Button("New Script", systemImage: "square.and.pencil") { store.create() }
-                .help("Start with a blank script and type or paste your words")
+            ScrollView {
+              VStack(spacing: 16) {
+                Image(systemName: "doc.text").font(.largeTitle).foregroundStyle(.secondary)
+                Text("Your script, ready to read").font(.title2.bold())
+                  .fixedSize(horizontal: false, vertical: true)
+                Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Presenter settings.\n3. After adding a script, press Present.")
+                  .fixedSize(horizontal: false, vertical: true)
+                Button { importing = true } label: {
+                  Label { Text("Import Script…").fixedSize(horizontal: false, vertical: true) }
+                    icon: { Image(systemName: "square.and.arrow.down") }
+                }.buttonStyle(.borderedProminent).help("Add a Markdown, text, Word, PDF or RTF file")
+                Button { store.create() } label: {
+                  Label { Text("New Script").fixedSize(horizontal: false, vertical: true) }
+                    icon: { Image(systemName: "square.and.pencil") }
+                }.help("Start with a blank script and type or paste your words")
+              }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(20)
             }
           } else {
             ContentUnavailableView(store.visible.isEmpty ? "No matching scripts" : "Select a script", systemImage: "doc.text",
@@ -126,7 +131,7 @@ struct LibraryView: View {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
       InspectorView(store: store).uiZoom(store.uiZoom)
-        // The ideal stays put under zoom: the window's minimum is measured from it (see minWidth).
+        // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
     .navigationTitle("VidPrompt")
@@ -140,6 +145,18 @@ struct LibraryView: View {
           .help("Add a Markdown, text, Word, PDF or RTF script (⌘I)")
           .disabled(!store.libraryAvailable)
         Menu {
+          Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicate() }
+            .help("Duplicate script")
+            .disabled(store.selected == nil)
+          Menu {
+            Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }.help("Remove the selected scripts from their folders")
+            ForEach(store.folders) { folder in
+              Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }.help("Move the selected scripts to this folder")
+            }
+          } label: { Label("Move to folder", systemImage: "folder") }
+            .accessibilityLabel("Move to folder")
+            .help("Move to folder")
+            .disabled(selection.isEmpty)
           Button("Import from Clipboard") { store.importClipboard() }.help("Create a script from copied text")
           Button("Export Markdown…") {
             guard let script = store.selected else { return }
@@ -163,27 +180,15 @@ struct LibraryView: View {
           .accessibilityLabel("More Actions")
           .help("More script actions")
           .disabled(!store.libraryAvailable)
-        Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicate() }
-          .help("Duplicate script")
-          .disabled(store.selected == nil)
-        Menu {
-          Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }.help("Remove the selected scripts from their folders")
-          ForEach(store.folders) { folder in
-            Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }.help("Move the selected scripts to this folder")
-          }
-        } label: { Label("Move to folder", systemImage: "folder") }
-          .accessibilityLabel("Move to folder")
-          .help("Move to folder")
-          .disabled(selection.isEmpty)
         Button("Present", systemImage: "play.rectangle") { PresenterController.shared.present(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
           .tint(.accentColor)
           .help(store.selected == nil ? "Select a script to present" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(store.selected == nil)
-        Button("Script settings", systemImage: "sidebar.right") { store.inspector.toggle() }
+        Button("Presenter settings", systemImage: "sidebar.right") { store.inspector.toggle() }
           .labelStyle(.titleAndIcon)
-          .help(store.inspector ? "Hide script settings" : "Choose how the script follows you and how it looks")
+          .help(store.inspector ? "Hide presenter settings" : "Choose how the script follows you and how it looks")
       }
     }
     .alert(
@@ -245,11 +250,8 @@ struct LibraryView: View {
       Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
-    // The narrowest the three columns lay out in: SwiftUI asks twice the inspector's ideal width
-    // (320) on top of the sidebar and editor. A smaller minimum let the window get narrower and
-    // AppKit looped on constraints until it crashed; it holds with the inspector hidden too, so
-    // showing it never needs a wider window. UIZoomTests checks it at every zoom step.
-    .frame(minWidth: 932, minHeight: 500)
+    // Allow the 200% sidebar plus the inspector and editor without changing window constraints mid-zoom.
+    .frame(minWidth: 1132, minHeight: 500)
   }
 
   private func createFolder() {
@@ -266,6 +268,7 @@ private struct ScriptRow: View {
     VStack(alignment: .leading, spacing: 3) {
       HStack(spacing: 4) {
         Label(script.metadata.title, systemImage: "doc.text")
+          .lineLimit(nil).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
@@ -292,24 +295,26 @@ private struct EditorView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
+      VStack(alignment: .leading, spacing: 8) {
         TextField("Title", text: $title).textFieldStyle(.plain).font(.title2.weight(.semibold))
           .help("Name this script; press Return to save the title")
           .onSubmit { store.rename(title, for: script.metadata.id) }
-        Spacer()
         TextField("Tags", text: $tags).help("Separate tags with commas; press Return to save them").textFieldStyle(.roundedBorder).frame(minWidth: 80, maxWidth: 190).onSubmit
         { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
       }.padding(24)
       Divider()
-      HStack(spacing: 10) {
-        Text("Editor text").font(.caption).foregroundStyle(.secondary)
-        Picker("Editor font", selection: $store.previewFontName) {
-          ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
-        }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font").help("Change the editor font; presenter text has its own settings")
-        Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
-          Text("\(Int(store.previewFontSize)) pt").monospacedDigit()
-        }.accessibilityLabel("Editor text size").help("Change text size while editing; presenter text has its own settings")
-        Spacer()
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: 10) {
+          Text("Editor text").font(.caption).foregroundStyle(.secondary)
+          editorFontPicker
+          editorSizeStepper
+          Spacer()
+        }.fixedSize(horizontal: true, vertical: false)
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Editor text").font(.caption).foregroundStyle(.secondary)
+          editorFontPicker.frame(maxWidth: .infinity)
+          editorSizeStepper
+        }
       }.padding(.horizontal, 24).padding(.vertical, 8)
       if let editNotice {
         Text(editNotice).font(.callout).foregroundStyle(.secondary)
@@ -362,4 +367,19 @@ private struct EditorView: View {
     .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom) }
     .id(script.metadata.id)
   }
+
+  private var editorFontPicker: some View {
+    Picker("Editor font", selection: $store.previewFontName) {
+      ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
+    }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
+      .help("Change the editor font; presenter text has its own settings")
+  }
+
+  private var editorSizeStepper: some View {
+    Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
+      Text("\(Int(store.previewFontSize)) pt").monospacedDigit().fixedSize()
+    }.fixedSize().accessibilityLabel("Editor text size")
+      .help("Change text size while editing; presenter text has its own settings")
+  }
+
 }
