@@ -64,7 +64,7 @@ try:
     empty_gui = gui(pid)
     (root / 'empty-gui.json').write_text(json.dumps(empty_gui, indent=2))
     empty_text = json.dumps(empty_gui['windows'])
-    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual', 'Press Present', 'Import Script', 'New Script', 'Show advanced settings']:
+    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Script settings', 'After adding a script, press Present', 'Import Script', 'New Script', 'Show advanced settings']:
         assert label in empty_text, (label, empty_text)
     mirror_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch']
                        and row.get('AXDescription') == 'Mirror for teleprompter glass']

@@ -107,7 +107,7 @@ struct LibraryView: View {
             ContentUnavailableView {
               Label("Your script, ready to read", systemImage: "doc.text")
             } description: {
-              Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Script settings.\n3. Press Present.")
+              Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Script settings.\n3. After adding a script, press Present.")
             } actions: {
               Button("Import Script…", systemImage: "square.and.arrow.down") { importing = true }
                 .buttonStyle(.borderedProminent).help("Add a Markdown, text, Word, PDF or RTF file")
@@ -182,6 +182,7 @@ struct LibraryView: View {
           .help(store.selected == nil ? "Select a script to present" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(store.selected == nil)
         Button("Script settings", systemImage: "sidebar.right") { store.inspector.toggle() }
+          .labelStyle(.titleAndIcon)
           .help(store.inspector ? "Hide script settings" : "Choose how the script follows you and how it looks")
       }
     }
