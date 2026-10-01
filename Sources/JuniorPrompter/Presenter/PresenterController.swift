@@ -422,7 +422,6 @@ private struct PresenterView: View {
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
-    .onChange(of: camera.presentsWithVideo) { _, on in PresenterController.shared.videoDidChange(on) }
     .overlay(alignment: .top) {
       ZStack {
         Image(systemName: "line.3.horizontal")
