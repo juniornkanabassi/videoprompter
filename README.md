@@ -1,6 +1,6 @@
 # VidPrompt source
 
-Native Swift macOS 26 app, version **1.2.0**, build **35**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Camera recording and advanced script settings are available. Source has no external package dependencies.
+Native Swift macOS 26 app, version **1.2.1**, build **35**. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. Camera recording and advanced script settings are available. Source has no external package dependencies.
 
 ## Build and test
 
@@ -15,7 +15,7 @@ zsh mcp/check-mcp.sh
 zsh build.sh
 ```
 
-The build produces `../Outputs/VidPrompt 1.2.0.zip`. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+The build produces `../Outputs/VidPrompt 1.2.1.zip`. Builds stage outside file-provider folders, sign with hardened runtime and verify both app and helper. The existing local ReadAlong Dev identity is used if available, otherwise ad hoc signing. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
 To prepare a simple download disk image from an already verified app bundle, run `checks/package-dmg.sh /path/to/VidPrompt.app /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and reports the bundle's macOS minimum and executable architectures. It refuses to replace an existing DMG. This does not sign or notarise the app.
 
@@ -35,7 +35,7 @@ VidPrompt is the renamed app; it uses bundle id `com.juniornkanabassi.VidPrompt`
 
 ```sh
 work=$(mktemp -d /private/tmp/vp-check.XXXXXX)
-ditto -x -k '../Outputs/VidPrompt 1.2.0.zip' "$work"
+ditto -x -k '../Outputs/VidPrompt 1.2.1.zip' "$work"
 source env.sh
 python3 checks/check-built-app.py "$work/VidPrompt.app"
 ```
@@ -46,7 +46,7 @@ For manual isolated use, launch the app executable with `--data-directory /priva
 
 ## AI control
 
-VidPrompt 1.2.0 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/vidprompt` after a verified install.
+VidPrompt 1.2.1 exposes its existing GUI actions through a private Unix socket, a bundled CLI and an MCP shim. Requires macOS 26; MCP requires Node 18+ and uses protocol 2025-06-18. `install.sh` links `~/.local/bin/vidprompt` after a verified install.
 
 | Command | Example |
 |---|---|

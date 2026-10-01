@@ -273,7 +273,7 @@ private struct ScriptRow: View {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
             .font(.caption).foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
-            .accessibilityLabel(present ? "Linked file" : "Linked file missing")
+            .accessibilityLabel(present ? "Linked file" : "Linked file unavailable")
             .help(path)
         }
       }
@@ -325,7 +325,7 @@ private struct EditorView: View {
         let present = !(state?.isBroken ?? false)
         HStack(spacing: 8) {
           Label(
-            present ? "Linked to \(path)" : "Linked file missing: \(path)",
+            present ? "Linked to \(path)" : "Linked file unavailable: \(path)",
             systemImage: present ? "link" : "exclamationmark.triangle")
             .font(.caption)
             .foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))

@@ -150,6 +150,68 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.linkStates[linked.id]?.isBroken, true)
   }
 
+  func testUnavailableLinkedOriginalKeepsManagedScriptUsableWithoutRepeatedAlerts() async throws {
+    for obstruction in ["permission", "trash"] {
+      let root = URL(fileURLWithPath: "/private/tmp/link-unavailable-\(UUID())")
+      let outside = URL(fileURLWithPath: "/private/tmp/link-original-\(UUID())")
+      let suite = "VidPromptTests.link-unavailable.\(UUID())"
+      let defaults = UserDefaults(suiteName: suite)!
+      defer {
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: outside)
+        defaults.removePersistentDomain(forName: suite)
+      }
+      try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+      let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+      let library = try XCTUnwrap(store.library)
+      let original = outside.appendingPathComponent("script.md")
+      try "One two three".write(to: original, atomically: true, encoding: .utf8)
+      let record = try await library.create(title: "Cached", markdown: "One two three")
+      let linked = try await library.link(record.id, to: original)
+      await store.reload()
+      await store.refreshExternalChanges() // Warm the link-sync date before access is lost.
+      store.selectedID = record.id
+      var settings = PrompterSettings(); settings.mode = "Manual"
+      store.session.present(record: try await library.read(record.id), settings: settings)
+      store.session.seek(to: 1)
+      let anchor = store.session.anchor
+      var obstructed = original
+      if obstruction == "permission" {
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: original.path)
+      } else {
+        let trash = outside.appendingPathComponent(".Trash")
+        try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+        obstructed = trash.appendingPathComponent("script.md")
+        try FileManager.default.moveItem(at: original, to: obstructed)
+      }
+      defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: obstructed.path) }
+      for _ in 0..<3 {
+        store.errorMessage = nil
+        await store.refreshExternalChanges()
+        XCTAssertNil(store.errorMessage, obstruction)
+        XCTAssertEqual(store.linkStates[record.id]?.isBroken, true, obstruction)
+        XCTAssertFalse(store.unavailableScriptIDs.contains(record.id), "the managed script remains available")
+        XCTAssertEqual(store.selected?.markdown, "One two three")
+        XCTAssertEqual(store.session.anchor, anchor)
+      }
+      store.updateMarkdown("One two three, edited locally", for: record.id)
+      let flushed = await store.flushPendingSaves()
+      XCTAssertTrue(flushed)
+      XCTAssertNil(store.errorMessage)
+      let saved = try await library.read(record.id)
+      XCTAssertEqual(saved.markdown, "One two three, edited locally")
+      XCTAssertEqual(saved.metadata.linkedPath, linked.linkedPath)
+      XCTAssertEqual(saved.metadata.linkedBookmark, linked.linkedBookmark)
+      try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: obstructed.path)
+      XCTAssertEqual(try String(contentsOf: obstructed, encoding: .utf8), "One two three", "the inaccessible/trashed original is untouched")
+      if obstruction == "trash" { try FileManager.default.moveItem(at: obstructed, to: original) }
+      await store.refreshExternalChanges()
+      XCTAssertNil(store.errorMessage)
+      XCTAssertEqual(store.linkStates[record.id]?.isBroken, false, "restoring access/location resumes the preserved link")
+      XCTAssertEqual(try String(contentsOf: original, encoding: .utf8), "One two three, edited locally")
+    }
+  }
+
   func testRelinkKeepLibraryOverwritesTheFileAfterCopyingIt() async throws {
     let (store, root, outside) = makeStore()
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }

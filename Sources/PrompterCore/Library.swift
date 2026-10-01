@@ -13,7 +13,7 @@ public enum LinkState: Equatable, Sendable {
   case resolved(URL)
   /// The bookmark resolved, but it is out of date; the file is still there.
   case staleBookmark(URL)
-  /// Neither the bookmark nor the saved path leads to a file any more.
+  /// The linked file is missing, inaccessible, unsafe or in Trash.
   case missing(path: String)
   public var isBroken: Bool { if case .missing = self { return true } else { return false } }
   /// The file the link leads to, when there is one.
@@ -368,7 +368,7 @@ public actor MarkdownLibrary {
     try persist(restoring: old)
     return index.scripts[position]
   }
-  /// Link state of every linked script, for the UI to show without touching the file system.
+  /// Link state of every linked script, including whether the external target is accessible.
   public func linkStates() -> [UUID: LinkState] {
     index.scripts.reduce(into: [:]) { states, item in
       if item.linkedPath != nil { states[item.id] = linkState(item) }
@@ -446,8 +446,13 @@ public actor MarkdownLibrary {
     guard ["md", "markdown"].contains(url.pathExtension.lowercased()),
       attributes[.type] as? FileAttributeType == .typeRegular,
       ((attributes[.size] as? NSNumber)?.intValue ?? .max) <= Self.maxLinkedBytes,
+      !url.resolvingSymlinksInPath().pathComponents.contains(where: { $0 == ".Trash" || $0 == ".Trashes" }),
       !url.resolvingSymlinksInPath().path.hasPrefix(rootURL.resolvingSymlinksInPath().path + "/")
     else { throw PrompterCoreError.unsafePath(url.path) }
+    // Attributes can succeed while TCC or file permissions deny opening the original.
+    // Opening for update checks both directions without changing any bytes.
+    let handle = try FileHandle(forUpdating: url)
+    try handle.close()
   }
   private func checkedRelinkText(_ url: URL) throws -> String {
     try Self.withLinkAccess(url) { target in
@@ -532,7 +537,11 @@ public actor MarkdownLibrary {
   /// Preserve a newer external edit; the next sync retains both versions.
   private func pushToLinkedFile(_ position: Int, markdown: String) {
     let metadata = index.scripts[position]
-    guard metadata.linkedPath != nil, let link = resolveLink(metadata) else { return }
+    guard metadata.linkedPath != nil else { return }
+    guard let link = resolveLink(metadata) else {
+      lastLinkSync[metadata.id] = nil
+      return
+    }
     do {
       try withLinkedWrite(link) { target in
         let disk = try String(contentsOf: target, encoding: .utf8)
@@ -549,7 +558,7 @@ public actor MarkdownLibrary {
     switch linkState(metadata) {
     case .unlinked: return nil
     case .resolved(let url), .staleBookmark(let url): return url
-    case .missing(let path): return URL(fileURLWithPath: path)
+    case .missing: return nil
     }
   }
   private func linkState(_ metadata: ScriptMetadata) -> LinkState {
