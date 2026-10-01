@@ -662,7 +662,7 @@ struct ScriptTextView: NSViewRepresentable {
       coordinator.render(
         document: document, fontName: fontName, fontSize: fontSize, textOpacity: textOpacity,
         fontWeight: fontWeight, textColorHex: textColorHex, lineSpacing: lineSpacing,
-        paragraphSpacing: paragraphSpacing, horizontalMargin: horizontalMargin,
+        paragraphSpacing: paragraphSpacing,
         alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord)
     }
     coordinator.updateGeneration &+= 1
@@ -809,7 +809,7 @@ struct ScriptTextView: NSViewRepresentable {
     }
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
-      paragraphSpacing: Double = 0.34, horizontalMargin: Double = 42, alignment: String = "Left",
+      paragraphSpacing: Double = 0.34, alignment: String = "Left",
       showCues: Bool = true, highlightActiveWord: Bool = false)
     {
       guard let textView else { return }

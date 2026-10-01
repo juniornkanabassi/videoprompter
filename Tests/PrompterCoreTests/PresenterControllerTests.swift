@@ -391,7 +391,7 @@ final class PresenterControllerTests: XCTestCase {
     let document = PrompterDocument(markdown: "# Heading\n\nHello [pause] world")
     coordinator.render(document: document, fontName: "Helvetica", fontSize: 24, textOpacity: 0.8,
       fontWeight: "Regular", textColorHex: "#00FF00", lineSpacing: 0.5, paragraphSpacing: 0.8,
-      horizontalMargin: 64, alignment: "Right", showCues: false, highlightActiveWord: false)
+      alignment: "Right", showCues: false, highlightActiveWord: false)
     XCTAssertEqual(coordinator.mappings.count, 3)
     let cue = (view.string as NSString).range(of: "[pause]")
     XCTAssertNotEqual(cue.location, NSNotFound)
