@@ -63,6 +63,11 @@ try:
     command(['set-mode', 'manual'])
     time.sleep(0.5)
     normal_gui = gui(pid)
+    for _ in range(5):
+        if normal_gui['windows']: break
+        time.sleep(1)
+        normal_gui = gui(pid)
+    (root / 'normal-gui.json').write_text(json.dumps(normal_gui, indent=2))
     normal_rows = [row for row in normal_gui['windows'] if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
     assert normal_rows, 'Selected script row missing before zoom'
     normal_height = float(normal_rows[0]['height'])
@@ -116,6 +121,17 @@ try:
     env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'])
     linked = subprocess.run(['juniorprompter', '--data-directory', str(data), 'status', '--json'], env=env, capture_output=True, text=True, timeout=10)
     assert linked.returncode == 0 and json.loads(linked.stdout)['result']['app'] == status['app']
+    for number in range(200):
+        extra = root / f'Large library {number} '+('x' * 200)+'.md'
+        extra.write_text(f'# Large library {number} '+('x' * 700)+'\n\nDisposable script.\n')
+        command(['script', 'import', str(extra)])
+    assert len(command(['script', 'list'])['scripts']) == 201
+    large_request = {'jsonrpc': '2.0', 'id': 100, 'method': 'tools/call', 'params': {'name': 'script_list'}}
+    large_mcp = subprocess.run(['node', str(shim), '--data-directory', str(data)], input=json.dumps(large_request)+'\n', capture_output=True, text=True, timeout=45)
+    assert len(large_mcp.stdout.encode()) > 65_536
+    large_reply = json.loads(large_mcp.stdout)
+    assert large_mcp.returncode == 0 and large_reply['result']['isError'] is False, large_reply
+    assert len(json.loads(large_reply['result']['content'][0]['text'])['result']['scripts']) == 201
     report = {'ok': True, 'bundle': str(app), 'data': str(data), 'pid': pid, 'commands': replies, 'mcp': messages, 'gui': visible, 'frontmostUnchanged': True}
     (root / 'evidence.json').write_text(json.dumps(report, indent=2))
     print(json.dumps({'ok': True, 'commands': len(replies), 'tools': 10, 'guiRows': len(rows), 'evidence': str(root / 'evidence.json')}))

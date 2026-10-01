@@ -96,7 +96,7 @@ import SwiftUI
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
-      if activate { panel.makeKey(); NSApp.activate(ignoringOtherApps: true) }
+      if activate && !CommandLine.arguments.contains("--agent-screen") { panel.makeKey(); NSApp.activate(ignoringOtherApps: true) }
       return
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)

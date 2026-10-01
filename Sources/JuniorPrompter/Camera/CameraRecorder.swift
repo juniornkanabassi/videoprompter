@@ -91,7 +91,7 @@ import PrompterCore
         observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
           let lostUID = (notification.object as? AVCaptureDevice)?.uniqueID
           Task { @MainActor [weak self] in
-            guard let self, self.isRecording, lostUID == nil || lostUID == uid || lostUID == self.microphoneUID else { return }
+            guard let self, self.isRecording, lostUID == nil || lostUID == uid || lostUID == microphone.uniqueID else { return }
             self.errorMessage = "A recording device disconnected or capture was interrupted. Recording was stopped."
             await self.stop()
           }

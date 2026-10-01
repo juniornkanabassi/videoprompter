@@ -133,8 +133,10 @@ final class ControlServer: @unchecked Sendable {
       queue.async { [self] in
         guard clients[client.fd] === client else { return }
         let sent = reply.withUnsafeBytes { raw -> Bool in
+          let deadline = ContinuousClock.now + .seconds(5)
           var offset = 0
           while offset < raw.count {
+            guard ContinuousClock.now < deadline else { return false }
             let n = send(client.fd, raw.baseAddress!.advanced(by: offset), raw.count - offset, 0)
             if n < 0 && errno == EINTR { continue }
             guard n > 0 else { return false }; offset += n

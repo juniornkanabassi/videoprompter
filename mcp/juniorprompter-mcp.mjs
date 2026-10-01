@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 const bundled = resolve(dirname(fileURLToPath(import.meta.url)), '../../Helpers/juniorprompter');
 const cli = process.env.JUNIORPROMPTER_CLI || (existsSync(bundled) ? bundled : 'juniorprompter');
 const options = process.argv.slice(2);
-const run = args => new Promise(resolve => execFile(cli, args, { timeout: 30000, maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ error, stdout, stderr })));
+const run = args => new Promise(resolve => execFile(cli, args, { timeout: 45000, maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ error, stdout, stderr })));
 const start = await run(['mcp-manifest']);
 let manifest;
 try {

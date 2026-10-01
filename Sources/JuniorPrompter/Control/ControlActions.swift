@@ -67,7 +67,7 @@ import PrompterCore
         } catch { return .error("import_failed", "The file could not be imported. Check its format, size and access permissions.") }
       }
       if let requestID = params["requestId"] { imports[requestID] = task }
-      return await task.value
+      let result = await task.value; if result.body["ok"] as? Bool != true, let id = params["requestId"] { imports[id] = nil }; return result
     case "script_open", "present":
       guard store.libraryAvailable else { return .error("library_unavailable", "The script library is unavailable.") }
       if action == "present", presenter.isEditing { return .error("presenter_editing", "Finish or cancel the presenter edit first.") }

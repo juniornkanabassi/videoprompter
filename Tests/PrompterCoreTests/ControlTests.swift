@@ -22,6 +22,8 @@ import XCTest
     }
     let file = root.deletingLastPathComponent().appendingPathComponent("import-\(UUID()).md")
     defer { try? FileManager.default.removeItem(at: file) }
+    let failedImport = await actions.handle("script_import", ["path": file.path, "requestId": "one"])
+    XCTAssertEqual(failedImport.body["ok"] as? Bool, false)
     try "# Hello\n\nOne two three.".write(to: file, atomically: true, encoding: .utf8)
     async let first = actions.handle("script_import", ["path": file.path, "requestId": "one"])
     async let second = actions.handle("script_import", ["path": file.path, "requestId": "one"])
@@ -51,6 +53,8 @@ import XCTest
       _ = await actions.handle("present", ["script": id, "show": "true"])
       XCTAssertGreaterThan(OffscreenPanels.activations, 0)
     }
+    store.session.present(record: store.scripts[0], settings: store.settings)
+    store.session.seek(to: 2)
     presenter.closeNow()
     let savedPosition = store.session.tokenIndex
     for action in ["pause", "resume", "back_to_start"] {
