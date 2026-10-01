@@ -917,16 +917,6 @@ final class PresenterControllerTests: XCTestCase {
 
   // MARK: Present with video
 
-  func testThePresentWithVideoChoiceSurvivesAReopenedModel() {
-    let suite = "JuniorPrompter.presenter.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let store = UserDefaults(suiteName: suite)!
-    let model = CameraModel(defaults: store)
-    XCTAssertFalse(model.presentsWithVideo, "present without video is the existing behaviour")
-    model.presentsWithVideo = true
-    XCTAssertTrue(CameraModel(defaults: store).presentsWithVideo)
-  }
-
   /// The stored Bool of 0.10 and earlier becomes a display mode without loss, Video only survives a
   /// relaunch, and the old key still says whether video is on for an older build.
   func testDisplayModeMigratesTheStoredBoolAndKeepsItWritten() {
