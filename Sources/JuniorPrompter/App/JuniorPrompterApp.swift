@@ -240,7 +240,7 @@ private enum PresenterSaveError: LocalizedError {
   var visible: [ScriptRecord] {
     let scoped = selectedFolderID.map { id in scripts.filter { $0.metadata.folderID == id } } ?? scripts
     guard !search.isEmpty else { return scoped }
-    // Case and accents both fold, as in the library's own search: "Barca" finds "Barça".
+    // Case and accents both fold: "Barca" finds "Barça".
     func matches(_ text: String) -> Bool {
       text.range(of: search, options: [.caseInsensitive, .diacriticInsensitive], locale: .current) != nil
     }

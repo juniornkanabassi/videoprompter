@@ -310,22 +310,6 @@ public actor MarkdownLibrary {
       title: title ?? "\(source.metadata.title) copy", markdown: source.markdown,
       folderID: source.metadata.folderID, tags: source.metadata.tags)
   }
-  public func search(_ query: String) throws -> [ScriptMetadata] {
-    let needle = PrompterDocument.normalise(query)
-    if needle.isEmpty { return listScripts() }
-    var matches: [ScriptMetadata] = []
-    for item in index.scripts {
-      if PrompterDocument.normalise(item.title).contains(needle)
-        || item.tags.contains(where: { PrompterDocument.normalise($0).contains(needle) })
-      {
-        matches.append(item)
-        continue
-      }
-      let content = try readText(validatedURL(item.fileName, in: scriptsURL))
-      if PrompterDocument.normalise(content).contains(needle) { matches.append(item) }
-    }
-    return matches
-  }
   public func delete(_ id: UUID) throws {
     let position = try position(of: id)
     let metadata = index.scripts[position]

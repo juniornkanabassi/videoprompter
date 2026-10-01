@@ -698,16 +698,14 @@ final class MarkdownLibraryTests: XCTestCase {
     } catch PrompterCoreError.unsafePath {}
     XCTAssertEqual(try String(contentsOf: target, encoding: .utf8), "outside")
   }
-  func testMetadataDuplicateAndSearchAPI() async throws {
+  func testMetadataAndDuplicateAPI() async throws {
     let root = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: root) }
     let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
     let original = try await library.create(title: "Draft", markdown: "Ligue 1 analysis")
     let changed = try await library.updateMetadata(
       original.metadata.id, title: "PSG Draft", tags: ["football", " football "])
-    let results = try await library.search("ligue")
     XCTAssertEqual(changed.tags, ["football"])
-    XCTAssertEqual(results.map(\.id), [original.metadata.id])
     let copy = try await library.duplicate(original.metadata.id)
     XCTAssertEqual(copy.markdown, "Ligue 1 analysis")
     XCTAssertNotEqual(copy.metadata.id, original.metadata.id)

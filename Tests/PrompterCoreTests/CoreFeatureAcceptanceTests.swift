@@ -1434,15 +1434,12 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(PrompterDocument.normalise("De\u{301}sire\u{301}"), PrompterDocument.normalise("Désiré"))
   }
 
-  /// The library search box is where a script is found before it is presented. Both it and the
-  /// library's own search fold accents.
+  /// The library search box finds a script before it is presented and folds accents.
   func testFindingAScriptIgnoresAccents() async throws {
     let store = makeStore()
     let library = try XCTUnwrap(store.library)
     let script = try await library.create(title: "Barça offside trap", markdown: "Flick keeps the line high.")
     await store.reload()
-    let found = try await library.search("barca").map(\.id)
-    XCTAssertEqual(found, [script.id], "the library's search folds accents")
     store.search = "Barca"
     XCTAssertEqual(store.visible.map(\.id), [script.id])
     store.search = "barça"
