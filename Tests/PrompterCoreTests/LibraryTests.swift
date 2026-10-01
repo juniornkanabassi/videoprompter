@@ -98,6 +98,32 @@ final class CoordinatedLibraryTests: XCTestCase {
     } catch PrompterCoreError.unsafePath {}
   }
 
+  func testDiscoveryRejectsSymlinkIndexWithoutChangingItsTarget() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("VidPrompt-library-\(UUID())")
+    let outside = FileManager.default.temporaryDirectory.appendingPathComponent("VidPrompt-index-target-\(UUID()).json")
+    defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
+    let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
+    try "external draft".write(to: root.appendingPathComponent("Scripts/external.md"), atomically: true, encoding: .utf8)
+    let original = Data("untouched outside file".utf8)
+    try original.write(to: outside)
+    let index = root.appendingPathComponent("LibraryIndex.json")
+    try FileManager.default.removeItem(at: index)
+    try FileManager.default.createSymbolicLink(at: index, withDestinationURL: outside)
+    do {
+      _ = try await library.discoverExternalScripts()
+      XCTFail("Expected unsafe index rejection")
+    } catch PrompterCoreError.unsafePath(let path) {
+      XCTAssertEqual(path, index.path)
+    }
+    XCTAssertEqual(try Data(contentsOf: outside), original)
+    let scriptsBeforeRepair = await library.listScripts()
+    XCTAssertTrue(scriptsBeforeRepair.isEmpty)
+    try FileManager.default.removeItem(at: index)
+    let discovered = try await library.discoverExternalScripts()
+    XCTAssertEqual(discovered.map(\.fileName), ["external.md"])
+    XCTAssertEqual(try Data(contentsOf: outside), original)
+  }
+
   func testDiscoveryRetriesAfterIndexPersistenceFailure() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "VidPrompt-library-\(UUID().uuidString)", isDirectory: true)
