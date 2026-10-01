@@ -178,30 +178,66 @@ final class UIZoomTests: XCTestCase {
     window.contentViewController = nil
   }
 
-  /// The presenter zooms its controls only: the script's size and the reading guide are the
-  /// presenter's own text settings, sized for the prompter glass.
+  /// The zoomed capsule reserves its wrapped height; resizing keeps the logical word on the guide.
   func testThePresenterZoomsItsControlsAndLeavesTheScriptAlone() async throws {
     try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
     OffscreenPanels.install()
     defer { OffscreenPanels.uninstall() }
-    let record = try await store.library!.create(title: "Read", markdown: "Opening words to read.\n\nA second passage.")
+    let record = try await store.library!.create(title: "Read", markdown:
+      (1...30).map { "Passage\($0) opening\($0) words\($0) read\($0) second\($0) sentence\($0)." }.joined(separator: "\n\n"))
     await store.reload()
     store.selectedID = record.id
     let controller = PresenterController()
     controller.present(store: store)
     let panel = try XCTUnwrap(controller.panel)
     defer { controller.close() }
-    func measure() async throws -> (text: NSRect, font: CGFloat) {
-      await settle(panel)
-      let text = try XCTUnwrap(views(of: NSTextView.self, in: panel).first { $0.string.contains("Opening") })
-      let font = try XCTUnwrap(text.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
-      return (text.enclosingScrollView.map { $0.convert($0.bounds, to: nil) } ?? .zero, font.pointSize)
+    store.session.seek(to: 48)
+    let anchor = store.session.anchor
+    let token = store.session.activeToken!
+    var actualHeight: CGFloat = 0
+    for manual in [false, true] {
+      store.settings.mode = manual ? "Manual" : "Voice"
+      for (mirrored, rotation) in [(false, 0), (true, 0), (false, 180), (true, 180)] {
+        store.settings.verticalMirror = mirrored
+        store.settings.rotation = rotation
+        store.settings.horizontalMirror = mirrored
+        for (width, zoom) in [(760.0, 1.0), (760, 1.5), (500, 2), (760, 1)] {
+          panel.setContentSize(NSSize(width: width, height: 600))
+          store.uiZoom = zoom
+          await settle(panel)
+          let text = try XCTUnwrap(views(of: NSTextView.self, in: panel).first { $0.string.contains("Passage1 ") })
+          let scroll = try XCTUnwrap(text.enclosingScrollView)
+          let viewport = scroll.convert(scroll.bounds, to: nil)
+          let content = try XCTUnwrap(panel.contentView)
+          XCTAssertLessThan(viewport.height, content.bounds.height - 40, "capsule has layout space at \(zoom)")
+          if zoom == 1 { actualHeight = viewport.height }
+          else { XCTAssertLessThan(viewport.height, actualHeight, "zoom/wrapping reserves more height") }
+          let font = try XCTUnwrap(text.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
+          XCTAssertEqual(font.pointSize, store.settings.fontSize, accuracy: 0.5)
+          XCTAssertEqual(store.session.tokenIndex, 48)
+          XCTAssertEqual(store.session.anchor?.tokenOffset, anchor?.tokenOffset)
+          let plain = text.string as NSString
+          let range = plain.range(of: token.text)
+          let manager = try XCTUnwrap(text.layoutManager)
+          let container = try XCTUnwrap(text.textContainer)
+          let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+          let y = manager.boundingRect(forGlyphRange: glyph, in: container).midY
+            + text.textContainerInset.height - scroll.contentView.bounds.minY
+          let guide = ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height,
+            fraction: store.settings.guideFraction)
+          XCTAssertEqual(y, mirrored != (rotation == 180) ? scroll.contentView.bounds.height - guide : guide,
+            accuracy: 2, "anchor realigns after resize")
+          // Sample the bottom viewport rows, clear of the intentional top drag handle.
+          for row in 0..<3 { for column in 0..<10 {
+            let point = NSPoint(x: viewport.minX + viewport.width * (Double(column) + 0.5) / 10,
+              y: viewport.minY + viewport.height * (Double(row) + 0.5) / 10)
+            let hit = panel.contentView?.superview?.hitTest(point)
+            XCTAssertTrue(hit === scroll || hit?.isDescendant(of: scroll) == true,
+              "capsule must not obscure the bottom script rows at \(zoom)")
+          } }
+        }
+      }
     }
-    let actual = try await measure()
-    store.uiZoom = 1.5
-    let zoomed = try await measure()
-    XCTAssertEqual(zoomed.text, actual.text, "the script fills the same space")
-    XCTAssertEqual(zoomed.font, actual.font, "the script's text size is unchanged")
   }
 
   /// A narrow presenter keeps the capsule's controls inside the window at every zoom step.

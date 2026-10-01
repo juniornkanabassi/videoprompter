@@ -415,6 +415,7 @@ private struct PresenterView: View {
         .scaleEffect(
           x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
         ).rotationEffect(.degrees(Double(store.settings.rotation)))
+        .clipped()
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
         }
@@ -442,9 +443,8 @@ private struct PresenterView: View {
       .accessibilityHidden(draft.isEditing)
       .scaleEffect(store.uiZoom, anchor: .top)
     }
-    .overlay(alignment: .bottom) {
-      GeometryReader { geometry in
-        // Laid out at the width the zoom leaves, so a narrow presenter wraps the capsule instead of overrunning it.
+    // Reserve the capsule's actual wrapped, zoomed height for both reading and editing.
+    .safeAreaInset(edge: .bottom, spacing: 0) {
         WrapLayout(spacing: 8) {
           Label(session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
                 systemImage: session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
@@ -486,10 +486,8 @@ private struct PresenterView: View {
         }
         .buttonStyle(.bordered).padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22)).padding(10)
-        .frame(maxWidth: geometry.size.width / store.uiZoom)
-        .scaleEffect(store.uiZoom, anchor: .bottom)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-      }
+        .uiZoom(store.uiZoom)
+        .fixedSize(horizontal: false, vertical: true)
     }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
@@ -772,7 +770,15 @@ struct ScriptTextView: NSViewRepresentable {
     func observeUserScrolls(in scroll: NSScrollView) {
       stopObservingUserScrolls()
       let center = NotificationCenter.default
+      scroll.contentView.postsFrameChangedNotifications = true
       scrollObservers = [
+        center.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self, weak scroll] _ in
+          MainActor.assumeIsolated {
+            guard let self, let scroll else { return }
+            self.snapToGuide()
+            self.alignToCurrent(in: scroll)
+          }
+        },
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
             self?.isLiveScrolling = true
