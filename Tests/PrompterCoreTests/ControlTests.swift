@@ -51,6 +51,13 @@ import XCTest
       _ = await actions.handle("present", ["script": id, "show": "true"])
       XCTAssertGreaterThan(OffscreenPanels.activations, 0)
     }
+    presenter.closeNow()
+    let savedPosition = store.session.tokenIndex
+    for action in ["pause", "resume", "back_to_start"] {
+      let reply = await actions.handle(action, [:])
+      XCTAssertEqual((reply.body["error"] as? [String: String])?["code"], "no_active_script")
+      XCTAssertEqual(store.session.tokenIndex, savedPosition)
+    }
     let status = (await actions.handle("status", [:])).body["result"] as? [String: Any]
     for key in ["running", "app", "version", "library", "scripts", "selected", "presenter", "script", "state", "mode", "position", "zoom", "textSize"] { XCTAssertNotNil(status?[key]) }
     _ = try await store.createScript(title: title.uppercased(), markdown: "duplicate")

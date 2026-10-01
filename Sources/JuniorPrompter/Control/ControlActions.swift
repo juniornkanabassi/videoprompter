@@ -83,7 +83,7 @@ import PrompterCore
       return .ok(identity(record))
     case "pause", "resume", "back_to_start":
       if presenter.isEditing { return .error("presenter_editing", "Finish or cancel the presenter edit first.") }
-      guard store.session.activeRecord != nil else { return .error("no_active_script", "Present a script first: juniorprompter present <id|title>") }
+      guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return .error("no_active_script", "Present a script first: juniorprompter present <id|title>") }
       if action == "pause" { store.session.pause() }
       else if action == "resume" { store.session.play() }
       else { store.session.restart() }
