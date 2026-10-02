@@ -7,6 +7,8 @@ final class ControlServer: @unchecked Sendable {
   typealias Handler = @MainActor @Sendable (String, [String: String]) async -> ControlResult
   private let socketURL: URL
   private let handler: Handler
+  /// Connections that make no read progress for this long are dropped, so idle peers cannot hold all eight slots.
+  private let idleTimeout: DispatchTimeInterval
   private let queue = DispatchQueue(label: "VidPrompt.control")
   private var listener: DispatchSourceRead?
   private var inode: ino_t?
@@ -14,13 +16,16 @@ final class ControlServer: @unchecked Sendable {
   private final class Connection: @unchecked Sendable {
     let fd: Int32
     var source: DispatchSourceRead?
+    var timer: DispatchSourceTimer?
     var buffer = Data()
     var lines: [Data] = []
     var busy = false
     init(_ fd: Int32) { self.fd = fd }
   }
   private var clients: [Int32: Connection] = [:]
-  init(socketURL: URL, handler: @escaping Handler) { self.socketURL = socketURL; self.handler = handler }
+  init(socketURL: URL, idleTimeout: DispatchTimeInterval = .seconds(30), handler: @escaping Handler) {
+    self.socketURL = socketURL; self.idleTimeout = idleTimeout; self.handler = handler
+  }
   private func failure(_ message: String) -> NSError { NSError(domain: "ControlServer", code: Int(errno), userInfo: [NSLocalizedDescriptionKey: message]) }
   func start() throws {
     try queue.sync {
@@ -92,17 +97,27 @@ final class ControlServer: @unchecked Sendable {
       setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
       let client = Connection(peer)
       let source = DispatchSource.makeReadSource(fileDescriptor: peer, queue: queue)
-      client.source = source; clients[peer] = client
+      let timer = DispatchSource.makeTimerSource(queue: queue)
+      client.source = source; client.timer = timer; clients[peer] = client
       source.setEventHandler { [weak self] in self?.read(client) }
       source.setCancelHandler { Darwin.close(peer) }
-      source.resume()
+      // An in-flight handler is not idleness; its reply re-arms the deadline.
+      timer.setEventHandler { [weak self, weak client] in
+        guard let self, let client, self.clients[client.fd] === client, !client.busy else { return }
+        self.close(client)
+      }
+      arm(client); timer.resume(); source.resume()
     }
   }
-  private func close(_ client: Connection) { clients.removeValue(forKey: client.fd); client.source?.cancel(); client.source = nil }
+  private func arm(_ client: Connection) { client.timer?.schedule(deadline: .now() + idleTimeout) }
+  private func close(_ client: Connection) {
+    clients.removeValue(forKey: client.fd); client.timer?.cancel(); client.timer = nil; client.source?.cancel(); client.source = nil
+  }
   private func read(_ client: Connection) {
     var bytes = [UInt8](repeating: 0, count: 8192)
     let count = recv(client.fd, &bytes, bytes.count, 0)
     guard count > 0 else { close(client); return }
+    arm(client)
     client.buffer.append(contentsOf: bytes.prefix(count))
     while let end = client.buffer.firstIndex(of: 10) {
       let line = client.buffer.prefix(upTo: end)
@@ -144,7 +159,7 @@ final class ControlServer: @unchecked Sendable {
           return true
         }
         guard sent else { close(client); return }
-        client.busy = false; process(client)
+        client.busy = false; arm(client); process(client)
       }
     }
   }

@@ -141,4 +141,66 @@ import XCTest
     XCTAssertThrowsError(try server.start())
     XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), "leave me")
   }
+  func testIdleClientsExpireWithoutDroppingSlowWork() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    let path = root.appendingPathComponent("control.sock").path
+    defer { try? FileManager.default.removeItem(at: root) }
+    let server = ControlServer(socketURL: URL(fileURLWithPath: path), idleTimeout: .milliseconds(800)) { action, _ in
+      if action == "slow" { try? await Task.sleep(for: .milliseconds(2000)) }
+      return .ok(["action": action])
+    }
+    try server.start(); defer { server.stop() }
+    @Sendable func client() throws -> Int32 {
+      let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+      var yes: Int32 = 1; var timeout = timeval(tv_sec: 6, tv_usec: 0)
+      setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size))
+      setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+      var addr = sockaddr_un(); addr.sun_family = sa_family_t(AF_UNIX)
+      withUnsafeMutableBytes(of: &addr.sun_path) { $0.copyBytes(from: Array(path.utf8) + [0]) }
+      let connected = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
+      guard connected == 0 else { Darwin.close(fd); throw CocoaError(.fileReadUnknown) }
+      return fd
+    }
+    @Sendable func write(_ fd: Int32, _ text: String) { _ = Data(text.utf8).withUnsafeBytes { send(fd, $0.baseAddress, $0.count, 0) } }
+    // One reply line; empty on server EOF, nil on error or receive timeout.
+    @Sendable func reply(_ fd: Int32) -> Data? {
+      var result = Data(); var buffer = [UInt8](repeating: 0, count: 4096)
+      while !result.contains(10) {
+        let n = recv(fd, &buffer, buffer.count, 0)
+        if n == 0 { return result }
+        guard n > 0 else { return nil }; result.append(contentsOf: buffer.prefix(n))
+      }
+      return result
+    }
+    let outcome = try await Task.detached { () throws -> [String] in
+      var log: [String] = []
+      let idle = try (0..<8).map { _ in try client() }
+      defer { idle.forEach { Darwin.close($0) } }
+      usleep(200_000)
+      let ninth = try client(); defer { Darwin.close(ninth) }
+      write(ninth, "{\"id\":\"9\",\"action\":\"status\"}\n")
+      log.append("full:\(!(reply(ninth)?.contains(10) ?? false))")
+      log.append("expired:\(idle.allSatisfy { reply($0)?.isEmpty == true })")
+      let fresh = try client(); defer { Darwin.close(fresh) }
+      write(fresh, "{\"id\":\"1\",\"action\":\"status\"}\n")
+      log.append(String(decoding: reply(fresh) ?? Data(), as: UTF8.self))
+      let trickle = try client(); defer { Darwin.close(trickle) }
+      for part in ["{\"id\":\"2\",", "\"action\":", "\"status\"", "}"] { write(trickle, part); usleep(500_000) }
+      write(trickle, "\n")
+      log.append(String(decoding: reply(trickle) ?? Data(), as: UTF8.self))
+      let slow = try client(); defer { Darwin.close(slow) }
+      write(slow, "{\"id\":\"3\",\"action\":\"slow\"}\n")
+      log.append(String(decoding: reply(slow) ?? Data(), as: UTF8.self))
+      let start = ContinuousClock.now
+      log.append("closedAfterReply:\(reply(slow)?.isEmpty == true && ContinuousClock.now - start < .seconds(3))")
+      return log
+    }.value
+    XCTAssertEqual(outcome[0], "full:true")
+    XCTAssertEqual(outcome[1], "expired:true")
+    for (line, id) in zip(outcome[2...4], ["1", "2", "3"]) {
+      let json = try JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any]
+      XCTAssertEqual(json?["id"] as? String, id); XCTAssertEqual(json?["ok"] as? Bool, true)
+    }
+    XCTAssertEqual(outcome[5], "closedAfterReply:true")
+  }
 }
