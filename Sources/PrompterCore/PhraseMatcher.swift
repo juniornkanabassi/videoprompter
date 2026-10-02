@@ -2,7 +2,7 @@ import Foundation
 
 private let commonWords: Set<String> = [
   "the", "and", "that", "this", "with", "from", "have", "your", "you", "for", "are", "was",
-  "but", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
+  "but", "because", "not", "une", "les", "des", "dans", "pour", "est", "que", "qui",
 ]
 
 /// Numbers as dictation may write them where a script has digits, or the reverse: every single-word
