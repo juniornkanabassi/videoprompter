@@ -559,6 +559,35 @@ extension RecognitionTests {
     XCTAssertEqual(matcher.forwardExtension(words: ["then", "i'm", "sorry"], script: expanded, currentIndex: 0)?.tokenIndex, 3)
   }
 
+  /// A garbled second-locale tail must not move the frontier into a repeated later clause.
+  func testCompetingLocaleCommonTailCannotCreditLaterRepeatedClause() {
+    let script = PrompterDocument(markdown:
+      "Arbor weren't knocked out because they wasted chances. They were knocked out because the chances they gave away were so good.").spokenTokens
+    XCTAssertEqual(script[4].normalised, "because")
+    XCTAssertEqual(script[13].normalised, "the")
+    var tracker = RecognitionTracker(generation: 1, tokenIndex: 4)
+    func event(_ locale: String, _ text: String, at time: Double) -> RecognitionEvent {
+      .init(replacementID: locale == "fr_FR" ? "fr-range" : "en-range", generation: 1,
+        text: text, isFinal: false, timestamp: time, localeIdentifier: locale,
+        audioStart: locale == "fr_FR" ? 2.04 : 0, audioEnd: time)
+    }
+    let held = tracker.consume(event("fr_FR", "Who work knock out because the", at: 4.75), script: script)
+    XCTAssertEqual(held.status, .held, "A garbled common tail must not select the repeated later clause")
+    XCTAssertEqual(held.tokenIndex, 4)
+    let first = tracker.consume(event("en_GB", "Birch weren't knocked out because they wasted chances", at: 4.77), script: script)
+    XCTAssertEqual(first.tokenIndex, 7, "The first spoken chances must remain in the first clause")
+    let next = tracker.consume(event("fr_FR", "Who work knock out because the waste the chances They", at: 5.75), script: script)
+    XCTAssertEqual(next.tokenIndex, 8, "The next They belongs to the start of the second clause")
+    let recovered = tracker.consume(event("en_GB", "They were knocked out because the chances they gave away", at: 8.63), script: script)
+    XCTAssertEqual(recovered.tokenIndex, 17)
+    XCTAssertEqual(PhraseMatcher().forwardExtension(words: ["knocked", "out", "because", "they"],
+      script: script, currentIndex: 3)?.tokenIndex, 5, "A local conjunction still continues known speech")
+    let skipped = PrompterDocument(markdown:
+      "anchor filler filler filler filler filler filler filler filler radiant amber lanterns shine").spokenTokens
+    XCTAssertEqual(PhraseMatcher().match(recognised: ["radiant", "amber", "lanterns", "shine"],
+      script: skipped, currentIndex: 0)?.tokenIndex, skipped.count - 1, "Distinct informative skip evidence remains valid")
+  }
+
   /// Short 173 at 166.9 s: re-reading "one could argue that Barcelona's" jumped sixty words to the
   /// later "I would argue that Barcelona".
   func testWeakPhraseCannotJumpAParagraphAhead() {
