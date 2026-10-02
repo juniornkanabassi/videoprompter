@@ -2,7 +2,9 @@
 
 VidPrompt is a teleprompter for the Mac. You write or import a script, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. VidPrompt can also record from your camera.
 
-Current version: **1.2.2** (build **37**), a preview.
+Published preview: **1.2.2** (build **37**).
+
+This checkout is the unshipped local **1.2.3** candidate (build **38**), awaiting final validation and packaging. The public download below still provides 1.2.2.
 
 ## Watch the first use guide
 
@@ -122,7 +124,7 @@ zsh mcp/check-mcp.sh
 zsh build.sh
 ```
 
-The build produces `../Outputs/VidPrompt 1.2.2.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. The local ReadAlong Dev signing identity is used if available; otherwise the build is signed ad hoc. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+The build produces `../Outputs/VidPrompt 1.2.3.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. The local ReadAlong Dev signing identity is used if available; otherwise the build is signed ad hoc. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
 To make a download disk image from an app bundle that has already been verified, run `checks/package-dmg.sh /path/to/VidPrompt.app /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and the install note, and reports the bundle's minimum macOS version and executable architectures. It requires arm64 in both the app and the CLI helper. It writes `VidPrompt <version>.dmg` and refuses to replace an existing DMG; a release upload must be named `VidPrompt.dmg`. It does not sign or notarise the app.
 
@@ -140,7 +142,7 @@ App details: bundle ID `com.juniornkanabassi.VidPrompt`, data folder `~/Library/
 
 ```sh
 work=$(mktemp -d /private/tmp/vp-check.XXXXXX)
-ditto -x -k '../Outputs/VidPrompt 1.2.2.zip' "$work"
+ditto -x -k '../Outputs/VidPrompt 1.2.3.zip' "$work"
 source env.sh
 python3 checks/check-built-app.py "$work/VidPrompt.app"
 ```
