@@ -103,8 +103,7 @@ final class UIZoomTests: XCTestCase {
     let window = hosting(LibraryView(store: store), size: NSSize(width: 1400, height: 900))
     var rowHeightAtActualSize: CGFloat = 0
     // What a click on each control and across the editor reaches at actual size, which every
-    // zoom must keep. (Off screen, SwiftUI sends a click on the editor's header fields to the
-    // editor itself even unzoomed, so the unzoomed answer is the reference, not an ideal.)
+    // zoom must keep. SwiftUI may use an enclosing container as a native hit target.
     var reachedAtActualSize: [ObjectIdentifier: String] = [:]
     var editorAtActualSize = 0.0
     for scale in AppStore.uiZoomSteps {
@@ -136,8 +135,9 @@ final class UIZoomTests: XCTestCase {
         let rect = control.convert(control.bounds, to: nil)
         XCTAssertGreaterThanOrEqual(rect.minX, content.minX - 1, "\(scale): \(type(of: control)) spills left")
         XCTAssertLessThanOrEqual(rect.maxX, content.maxX + 1, "\(scale): \(type(of: control)) spills right")
-        // Only the part a scroll view shows can be clicked at all.
-        let shown = control.convert(control.visibleRect, to: nil)
+        // Only the visible part inside the control's own bounds can be clicked. Some
+        // SwiftUI-backed controls report the hosting view's whole rect as visibleRect.
+        let shown = rect.intersection(control.convert(control.visibleRect, to: nil))
         guard shown.width > 4, shown.height > 4 else { continue }
         let hit = window.contentView?.superview?.hitTest(NSPoint(x: shown.midX, y: shown.midY))
         let reached = hit.map { hit -> String in
