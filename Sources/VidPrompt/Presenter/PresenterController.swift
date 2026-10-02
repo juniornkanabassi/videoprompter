@@ -924,14 +924,21 @@ struct ScriptTextView: NSViewRepresentable {
       guard let textView else { return }
       let values = [lastReadTokenIndex, tokenIndex, lastReadConfirmedTokenIndex, lastConfirmedTokenIndex]
         .compactMap { $0 }
-      guard let first = values.min(), let last = values.max(),
+      guard let lower = values.min(), let last = values.max(),
         lastReadTokenIndex != tokenIndex || lastReadConfirmedTokenIndex != lastConfirmedTokenIndex
       else { return }
+      // Adding or clearing confirmation changes every preceding word's colour. Ordinary
+      // unconfirmed progress still needs only the span between the old and new active words.
+      let first = (lastReadConfirmedTokenIndex == nil) != (lastConfirmedTokenIndex == nil)
+        ? min(0, lower) : lower
       // One edit transaction, so the text storage invalidates and redraws the changed span once
       // instead of once per word; a progress event can cover a dozen words.
       textView.textStorage?.beginEditing()
-      for (range, index) in mappings where first...last ~= index {
+      var slot = mappingLowerBound(first)
+      while slot < mappings.count, mappings[slot].1 <= last {
+        let (range, index) = mappings[slot]
         textView.textStorage?.addAttribute(.foregroundColor, value: readColour(index), range: range)
+        slot += 1
       }
       textView.textStorage?.endEditing()
       lastReadTokenIndex = tokenIndex
@@ -1038,6 +1045,17 @@ struct ScriptTextView: NSViewRepresentable {
       let fraction = min(max((position - from) / (to - from), 0), 1)
       return max(0, here + (y(next) - here) * CGFloat(fraction))
     }
+    /// Mappings are appended in token order, with gaps for words the rendering omits.
+    /// Return count when no token reaches the target, including an empty document.
+    private func mappingLowerBound(_ tokenIndex: Int) -> Int {
+      var low = 0
+      var high = mappings.count
+      while low < high {
+        let middle = low + (high - low) / 2
+        if mappings[middle].1 < tokenIndex { low = middle + 1 } else { high = middle }
+      }
+      return low
+    }
     func mappingIndex(at position: Double) -> Int {
       var low = 0
       var high = mappings.count
@@ -1078,11 +1096,12 @@ struct ScriptTextView: NSViewRepresentable {
     /// discrete clicks start no live scroll, so it never showed there). The end of the gesture
     /// settles it once.
     func align(scroll: NSScrollView, tokenIndex: Int, guideFraction: Double, eases: Bool? = nil) {
-      guard !isLiveScrolling, (lastAligned != tokenIndex || lastGuideFraction != guideFraction),
-        let mapping = mappings.first(where: { $0.1 == tokenIndex }),
+      guard !isLiveScrolling, (lastAligned != tokenIndex || lastGuideFraction != guideFraction) else { return }
+      let slot = mappingLowerBound(tokenIndex)
+      guard slot < mappings.count, mappings[slot].1 == tokenIndex,
         let (manager, container, guideY) = prepareGuide(scroll, fraction: guideFraction)
       else { return }
-      let target = scrollY(of: mapping.0, manager: manager, container: container, guideY: guideY)
+      let target = scrollY(of: mappings[slot].0, manager: manager, container: container, guideY: guideY)
       let animate = eases ?? (lastAligned != nil && isActivelyRunning && !snapNextAlignment && !Self.reducesMotion())
       let destination = NSPoint(x: scroll.contentView.bounds.origin.x, y: target)
       let isSameDestination = lastAlignmentDestination.map {

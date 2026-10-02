@@ -18,6 +18,49 @@ final class PresenterControllerTests: XCTestCase {
     }
   }
 
+  func testReadStateAndAlignmentPreserveSparseAndEmptyMappings() throws {
+    let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
+    let view = NSTextView(frame: scroll.bounds)
+    scroll.documentView = view
+    let coordinator = ScriptTextView.Coordinator(onSeek: { _ in })
+    coordinator.textView = view
+    coordinator.render(document: PrompterDocument(markdown: (0..<200).map { "word\($0)" }.joined(separator: " ")),
+      fontName: "Helvetica", fontSize: 24, textOpacity: 0.8, highlightActiveWord: true)
+    // Rendering can omit tokens, such as a code fence's language tag.
+    coordinator.mappings.removeAll { $0.1 % 3 == 0 }
+    for (current, confirmed) in [(199, Optional(198)), (1, Optional(0)), (50, Optional(49)),
+      (50, Optional(80)), (50, nil), (50, Optional(20)), (50, nil), (0, nil), (-1, nil), (250, Optional(250))] {
+      coordinator.tokenIndex = current
+      coordinator.lastConfirmedTokenIndex = confirmed
+      coordinator.updateReadState()
+      coordinator.updateReadState() // An unchanged update must preserve the colours.
+      for (range, index) in coordinator.mappings {
+        let colour = try XCTUnwrap(view.textStorage?.attribute(.foregroundColor, at: range.location,
+          effectiveRange: nil) as? NSColor)
+        XCTAssertEqual(colour.alphaComponent, index <= (confirmed ?? -1) ? 0.8 * 0.38 : 0.8,
+          accuracy: 0.02, "current \(current), confirmed \(String(describing: confirmed)), word \(index)")
+        if index == current, confirmed.map({ index > $0 }) ?? true {
+          XCTAssertEqual(colour, NSColor.systemYellow.withAlphaComponent(0.8))
+        }
+      }
+    }
+    coordinator.align(scroll: scroll, tokenIndex: 100, guideFraction: 0.35, eases: false)
+    let origin = scroll.contentView.bounds.origin
+    for index in [-1, 0, 99, 250] {
+      coordinator.align(scroll: scroll, tokenIndex: index, guideFraction: 0.35, eases: false)
+      XCTAssertEqual(scroll.contentView.bounds.origin, origin, "unmapped \(index)")
+    }
+    coordinator.align(scroll: scroll, tokenIndex: 1, guideFraction: 0.35, eases: false)
+    XCTAssertLessThan(scroll.contentView.bounds.origin.y, origin.y, "mapped backward alignment still works")
+    coordinator.mappings = []
+    for index in [-1, 0, 250] {
+      coordinator.tokenIndex = index
+      coordinator.lastConfirmedTokenIndex = index
+      coordinator.updateReadState()
+      coordinator.align(scroll: scroll, tokenIndex: index, guideFraction: 0.35, eases: false)
+    }
+  }
+
   func testPresenterDraftRefreshesItsSnapshotAfterCancelAndReopen() {
     let first = ScriptRecord(metadata: .init(title: "First", fileName: "first.md", revision: 2,
       contentFingerprint: "first"), markdown: "first text")

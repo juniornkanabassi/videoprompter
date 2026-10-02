@@ -1549,14 +1549,16 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
       coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
     }
     var repaint = Duration.zero
+    var readState = Duration.zero
+    var alignment = Duration.zero
     var signature = Duration.zero
     let steps = Array(stride(from: 1, to: tokens.count - 1, by: 5).prefix(600))
     for index in steps {
       repaint += clock.measure {
         coordinator.tokenIndex = index + 1
         coordinator.lastConfirmedTokenIndex = index
-        coordinator.updateReadState()
-        coordinator.align(scroll: scroll, tokenIndex: index + 1, guideFraction: 0.35)
+        readState += clock.measure { coordinator.updateReadState() }
+        alignment += clock.measure { coordinator.align(scroll: scroll, tokenIndex: index + 1, guideFraction: 0.35) }
       }
       // ScriptTextView.updateNSView makes this check on every SwiftUI update, i.e. every word.
       signature += clock.measure {
@@ -1565,7 +1567,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     }
     let repaintAverage = repaint / steps.count
     let signatureAverage = signature / steps.count
-    print("[core-qa] 5k words (\(tokens.count) tokens): session \(sessionAverage) avg, \(slowest) worst over \(read.count) updates; presenter repaint+align \(repaintAverage) avg, document signature \(signatureAverage) avg; first render+layout \(render)")
+    print("[core-qa] 5k words (\(tokens.count) tokens): session \(sessionAverage) avg, \(slowest) worst over \(read.count) updates; presenter repaint+align \(repaintAverage) avg, read-state \(readState / steps.count) avg, alignment \(alignment / steps.count) avg, document signature \(signatureAverage) avg; first render+layout \(render)")
     #if DEBUG
       let sessionBudget = Duration.milliseconds(10)
     #else
