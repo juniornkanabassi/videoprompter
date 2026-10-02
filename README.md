@@ -6,7 +6,7 @@ Current version: **1.2.2** (build **37**), a preview.
 
 ## Watch the first use guide
 
-The [illustrated first use guide](https://juniornkanabassi.com/apps/vidprompt/#walkthrough) explains importing a script, Manual and Voice modes, the presenter window and optional camera recording. It uses genuine fictional-script interface captures from 1.2.1, labelled against the current 1.2.2 release, and includes a written transcript.
+The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walkthrough) shows how to add a script, set up Manual scrolling and use the presenter. It also introduces optional Voice tracking and the camera background. The guide uses genuine high-resolution VidPrompt 1.2.2 captures with fictional scripts, short on-screen instructions, music and sound effects. There is no narration. Written setup steps sit below the video, including permissions, linked Markdown files and recording controls.
 
 ## What you need
 
@@ -48,7 +48,7 @@ Install and removal on a fresh Mac by someone new to the app have not yet been f
 
 1. Open VidPrompt.
 2. Import a script or choose **New Script**.
-3. In **Script settings**, choose **Voice** or **Manual**.
+3. Open **Presenter settings** and choose **Voice** or **Manual**.
 4. Press **Present**.
 5. In the presenter, press **Start**. Press **Pause** to stop, or **Back to start** to return to the first word.
 
