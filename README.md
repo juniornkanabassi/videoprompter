@@ -2,9 +2,11 @@
 
 VidPrompt is a teleprompter for the Mac. You write or import a script, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. VidPrompt can also record from your camera.
 
-Published preview: **1.2.2** (build **37**).
+Current preview: **1.2.3** (build **38**).
 
-This checkout is the unshipped local **1.2.3** candidate (build **38**), awaiting final validation and packaging. The public download below still provides 1.2.2.
+This update makes long scripts faster to display, corrects word highlighting when the reading position changes, and reduces wrong-passage jumps around repeated phrases. It also prevents idle automation connections from blocking later commands.
+
+Voice tracking remains a preview. One recorded false-start timing check is unresolved, and tracking can pause while it finds the right passage after your wording differs from the script. Manual scrolling remains available.
 
 ## Watch the first use guide
 
@@ -18,7 +20,7 @@ The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walk
 
 ## Download
 
-[Download VidPrompt 1.2.2 preview](https://github.com/juniornkanabassi/vidprompt-releases/releases/latest/download/VidPrompt.dmg).
+[Download the latest VidPrompt preview](https://github.com/juniornkanabassi/vidprompt-releases/releases/latest/download/VidPrompt.dmg).
 
 The public [Releases page](https://github.com/juniornkanabassi/vidprompt-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VidPrompt.dmg`, so the download link above always points to the latest published version.
 
