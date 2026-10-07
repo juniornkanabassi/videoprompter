@@ -2,9 +2,9 @@
 
 Video Prompter is a teleprompter for the Mac. You write or import a script, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. Video Prompter can also record from your camera.
 
-Current preview: **2.0.0** (build **39**).
+Current release: **2.0.0** (build **39**).
 
-2.0.0 — renamed to Video Prompter, Developer ID signed and notarised, simplified interface.
+2.0.0 renames the app to Video Prompter (formerly VidPrompt), simplifies the interface, and is the first release signed with Developer ID and notarised by Apple.
 
 Voice tracking remains a preview. One recorded false-start timing check is unresolved, and tracking can pause while it finds the right passage after your wording differs from the script. Manual scrolling remains available.
 
@@ -24,7 +24,7 @@ The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walk
 
 The public [Releases page](https://github.com/juniornkanabassi/videoprompter-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VideoPrompter.dmg`, so the download link above always points to the latest published version.
 
-This is a self-signed preview, not an Apple notarised release. Read the requirements and first-launch guidance below before installing.
+Release 2.0.0 is signed with an Apple Developer ID and notarised by Apple, so macOS opens it normally after download. Read the requirements below before installing.
 
 Video Prompter does not update itself. To get a newer version, download the latest disk image again by hand and replace the app.
 
@@ -36,17 +36,9 @@ Video Prompter does not update itself. To get a newer version, download the late
 
 The disk image also contains a short install note.
 
-### If macOS blocks the app the first time
+### First launch
 
-This preview has not been signed with an Apple Developer ID or notarised by Apple, so macOS may say it cannot verify the developer. If that happens:
-
-1. Try to open Video Prompter once.
-2. Open **System Settings > Privacy & Security**, scroll to Security and choose **Open Anyway** for Video Prompter, if macOS offers it.
-3. Confirm the next prompt only if you trust the copy you downloaded.
-
-Apple warns that overriding this check carries risk, and this build has not been reviewed by Apple. Do not remove quarantine attributes or turn off Gatekeeper in Terminal. Apple's guide: [Open a Mac app from an unknown developer](https://support.apple.com/en-jo/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
-
-Install and removal on a fresh Mac by someone new to the app have not yet been fully tested.
+macOS checks the notarisation ticket once, online or from the copy stapled inside the app, and then opens Video Prompter without a warning. If macOS says the app is damaged or cannot be verified, the download was altered or incomplete. Delete it and download the disk image again from the Releases page. Do not remove quarantine attributes or turn off Gatekeeper in Terminal.
 
 ## First use
 
@@ -103,7 +95,6 @@ Installing Video Prompter does not import a JuniorPrompter library automatically
 ## Not included yet
 
 - Automatic updates (there is no Sparkle updater or signed update feed).
-- Developer ID signing and Apple notarisation.
 - OBS integration.
 - Editing from iPhone or iCloud.
 
@@ -128,9 +119,9 @@ zsh mcp/check-mcp.sh
 zsh build.sh
 ```
 
-The build produces `../Outputs/Video Prompter 2.0.0.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. The local ReadAlong Dev signing identity is used if available; otherwise the build is signed ad hoc. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+The build produces `../Outputs/Video Prompter 2.0.0.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. With the Developer ID certificate in the keychain, `build.sh` signs with it (hardened runtime, secure timestamp), submits the app to Apple's notary service through the `JuniorOS` keychain profile, staples the ticket and checks the result with `spctl`. Set `VIDEOPROMPTER_LOCAL_SIGNING=1` for a quick local build signed with the ReadAlong Dev identity and not notarised.
 
-To make a download disk image from an app bundle that has already been verified, run `checks/package-dmg.sh "/path/to/Video Prompter.app" /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and the install note, and reports the bundle's minimum macOS version and executable architectures. It requires arm64 in both the app and the CLI helper. It writes `Video Prompter <version>.dmg` and refuses to replace an existing DMG; a release upload must be named `VideoPrompter.dmg`. It does not sign or notarise the app.
+To make a download disk image from an app bundle that has already been verified, run `checks/package-dmg.sh "/path/to/Video Prompter.app" /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and the install note, and reports the bundle's minimum macOS version and executable architectures. It requires arm64 in both the app and the CLI helper. It writes `Video Prompter <version>.dmg` and refuses to replace an existing DMG; a release upload must be named `VideoPrompter.dmg`. For a Developer ID build it also signs, notarises and staples the disk image.
 
 Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and `VIDEOPROMPTER_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
@@ -206,4 +197,4 @@ The socket is `control.sock` in the app's data folder: folder permissions 0700, 
 
 ### Release status
 
-Current builds are signed with the local ReadAlong Dev identity, not Developer ID, and are not notarised. Normal Gatekeeper acceptance on a fresh Mac and the full install and removal workflow for a new user remain unverified. Sparkle, a signed appcast and an authorised public release pipeline are not shipped. No public release has been published. An unnotarised beta can be distributed separately with clear first-launch instructions, but the downloaded, quarantined install still needs verification on another Mac. A strict local signature check does not prove that first-launch workflow.
+Release builds are Developer ID signed, notarised and stapled, and so is the disk image. Gatekeeper acceptance is checked with `spctl` on the build Mac; the full install and removal workflow for a new user on another Mac remains unverified. Sparkle, a signed appcast and a one-command publish pipeline are not shipped yet, so updates are manual.

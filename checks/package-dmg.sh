@@ -49,6 +49,19 @@ GUIDE="$STAGE/Install Video Prompter $VERSION.txt"
 /usr/bin/sed "s/@APP_VERSION@/$VERSION/g; s/@MINIMUM_MACOS@/$MINIMUM/g; s/@MAIN_ARCHITECTURES@/$MAIN_ARCHS/g; s/@CLI_ARCHITECTURES@/$HELPER_ARCHS/g" "$ROOT/../Resources/Install Video Prompter.md" > "$GUIDE"
 WORK_DMG="$WORK/$NAME $VERSION.dmg"
 /usr/bin/hdiutil create -quiet -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$WORK_DMG"
+# A Developer ID app gets a signed, notarised and stapled disk image too, so the download itself is
+# trusted, not only the app inside it. env.sh decides the identity; local builds skip this.
+source "$ROOT/../env.sh"
+if (( DEVELOPER_ID_AVAILABLE )); then
+  /usr/bin/codesign --force --timestamp --sign "$SIGN_ID" "$WORK_DMG"
+  print "Submitting the disk image to Apple notary service (profile $NOTARY_PROFILE)…"
+  DMG_NOTARY_LOG="$WORK/notary.log"
+  xcrun notarytool submit "$WORK_DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$DMG_NOTARY_LOG"
+  grep -q "status: Accepted" "$DMG_NOTARY_LOG" || { print -u2 "Disk image notarisation was not accepted."; exit 1; }
+  xcrun stapler staple "$WORK_DMG"
+  xcrun stapler validate "$WORK_DMG"
+  /usr/bin/spctl -a -vv -t open --context context:primary-signature "$WORK_DMG"
+fi
 PUBLISH_TMP="$OUTPUT_DIR/.$NAME $VERSION.dmg.partial.$$"
 trap 'rm -rf "$WORK"; rm -f "$PUBLISH_TMP"' EXIT
 /usr/bin/ditto "$WORK_DMG" "$PUBLISH_TMP"
@@ -57,4 +70,4 @@ trap 'rm -rf "$WORK"; rm -f "$PUBLISH_TMP"' EXIT
 
 print "Created: $DMG"
 print "Requires macOS $MINIMUM or later. Main executable architectures: $MAIN_ARCHS. Bundled CLI architectures: $HELPER_ARCHS."
-print "This packaging step does not add Developer ID signing or notarisation; the app may be unsigned or locally signed."
+if (( DEVELOPER_ID_AVAILABLE )); then print "Disk image is Developer ID signed, notarised and stapled."; else print "Local build: the disk image is not Developer ID signed or notarised."; fi

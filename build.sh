@@ -20,13 +20,37 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/mcp" "$APP/Contents/Help
 cp "$BIN" "$APP/Contents/MacOS/VideoPrompter"
 cp "${BIN:h}/VideoPrompterCLI" "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/mcp/videoprompter-mcp.mjs" "$APP/Contents/Resources/mcp/"
-/usr/bin/codesign --force --options runtime --sign "$SIGN_ID" "$APP/Contents/Helpers/videoprompter"
+SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
+(( DEVELOPER_ID_AVAILABLE )) && SIGN_FLAGS+=(--timestamp)
+/usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
-/usr/bin/codesign --force --deep --options runtime --entitlements "$ROOT/Resources/Entitlements.plist" --sign "$SIGN_ID" "$APP"
-/usr/bin/codesign --verify --strict "$APP"
+/usr/bin/codesign "${SIGN_FLAGS[@]}" --deep --entitlements "$ROOT/Resources/Entitlements.plist" "$APP"
+/usr/bin/codesign --verify --deep --strict "$APP"
+# Developer ID builds are notarised and stapled before they are archived, so the archive and every
+# DMG made from it open on another Mac without a Gatekeeper warning. The ticket is stapled to the
+# app; package-dmg.sh notarises and staples the disk image as well.
+if (( DEVELOPER_ID_AVAILABLE )); then
+  NOTARY_ZIP="$WORK/notary-upload.zip"
+  /usr/bin/ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
+  print "Submitting to Apple notary service (profile $NOTARY_PROFILE)…"
+  NOTARY_LOG="$WORK/notary.log"
+  xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$NOTARY_LOG"
+  if ! grep -q "status: Accepted" "$NOTARY_LOG"; then
+    SUBMISSION_ID=$(awk '/^  id: /{print $2; exit}' "$NOTARY_LOG")
+    [[ -z "$SUBMISSION_ID" ]] || xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" || true
+    print -u2 "Notarisation was not accepted; see the log above."
+    exit 1
+  fi
+  xcrun stapler staple "$APP"
+  xcrun stapler validate "$APP"
+  /usr/bin/spctl -a -vv -t exec "$APP"
+  print "Developer ID signed, notarised and stapled."
+else
+  print "Local signing identity ($SIGN_ID); not notarised. Unset VIDEOPROMPTER_LOCAL_SIGNING for a release build."
+fi
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$TMP_ARCHIVE"
 mkdir -p "$OUTPUT_ROOT"
 /usr/bin/ditto "$TMP_ARCHIVE" "$OUTPUT_TMP"
