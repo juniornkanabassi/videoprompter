@@ -347,8 +347,8 @@ final class SpeechLogReplayTests: XCTestCase {
 
   func testExternalCandidateReplayUsesProviderRevisionIdentity() throws {
     let environment = ProcessInfo.processInfo.environment
-    guard let logPath = environment["VIDPROMPT_CANDIDATE_REPLAY_LOG_PATH"],
-      let scriptPath = environment["VIDPROMPT_CANDIDATE_REPLAY_SCRIPT_PATH"]
+    guard let logPath = environment["VIDEOPROMPTER_CANDIDATE_REPLAY_LOG_PATH"],
+      let scriptPath = environment["VIDEOPROMPTER_CANDIDATE_REPLAY_SCRIPT_PATH"]
     else {
       throw XCTSkip("Set candidate replay log and script paths to run an external replay.")
     }
@@ -382,14 +382,14 @@ final class SpeechLogReplayTests: XCTestCase {
         print("Recorded (dim painted in the rendered run): \(WordLatency.report(display: painted, alignment: replay.alignment, script: tokens))")
       }
     }
-    if environment["VIDPROMPT_CANDIDATE_REPLAY_VERBOSE"] == "1" {
+    if environment["VIDEOPROMPTER_CANDIDATE_REPLAY_VERBOSE"] == "1" {
       for line in replay.log { print(line) }
     }
     // The residual acceptance lag is dominated by the recogniser, not the matcher: in a long wait
     // the declined candidates have not yet reached the next script word at all. The bound guards
     // the matcher's share against regression.
     if !sorted.isEmpty {
-      let bound = Double(environment["VIDPROMPT_MAX_ACCEPTANCE_LAG_P90"] ?? "") ?? 1.3
+      let bound = Double(environment["VIDEOPROMPTER_MAX_ACCEPTANCE_LAG_P90"] ?? "") ?? 1.3
       XCTAssertLessThanOrEqual(p90, bound, "Spoken-word-to-dim lag regressed: p90 \(p90)s over \(bound)s.")
     }
     XCTAssertEqual(replay.finalToken, tokens.count - 1)

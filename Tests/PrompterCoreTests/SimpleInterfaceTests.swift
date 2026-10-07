@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import PrompterCore
 import XCTest
-@testable import VidPrompt
+@testable import VideoPrompter
 
 
 @MainActor
@@ -32,7 +32,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   func testScriptSwitchingInitialisesMountedEditorStateAndKeepsEditsIsolated() async throws {
     _ = NSApplication.shared
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("switch-ui-\(UUID())")
-    let suite = "VidPrompt.Switch.\(UUID())"
+    let suite = "VideoPrompter.Switch.\(UUID())"
     let defaults = UserDefaults(suiteName: suite)!
     defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
@@ -76,7 +76,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("empty-ui-\(UUID())")
-    let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
+    let suite = "VideoPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
@@ -98,7 +98,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
     // Geometry, not just AX presence: the whole guide stays inside the 200% detail column.
     let guidance = try XCTUnwrap(accessibilityObjects(host).first {
-      labels($0).first?.contains("VidPrompt keeps your script") == true
+      labels($0).first?.contains("Video Prompter keeps your script") == true
     })
     XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
     let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -121,7 +121,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let otherArguments = ["test", "--data-directory", otherRoot.path]
     defer {
       for directory in [root, otherRoot] {
-        let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(directory.standardizedFileURL.path))"
+        let suite = "VideoPrompter.\(MarkdownLibrary.fingerprint(directory.standardizedFileURL.path))"
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
       }
     }

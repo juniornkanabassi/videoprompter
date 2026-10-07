@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-@testable import VidPrompt
+@testable import VideoPrompter
 import PrompterCore
 
 final class FormattedMarkdownEditorTests: XCTestCase {

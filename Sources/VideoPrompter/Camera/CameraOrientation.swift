@@ -85,7 +85,7 @@ final class CameraAutoOrientation: NSObject, AVCaptureVideoDataOutputSampleBuffe
   }
 
   private let output = AVCaptureVideoDataOutput()
-  private let queue = DispatchQueue(label: "VidPrompt.camera.orientation")
+  private let queue = DispatchQueue(label: "VideoPrompter.camera.orientation")
   private let interval: TimeInterval
   private let onRotation: @Sendable (CameraRotation) -> Void
   private var lastSampled = Date.distantPast

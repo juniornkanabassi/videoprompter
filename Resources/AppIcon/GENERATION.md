@@ -1,6 +1,6 @@
-# VidPrompt icon
+# Video Prompter icon
 
-Renamed from JuniorPrompter on 1 October 2026; the same white microphone master is now `VidPrompt.png`/`VidPrompt.icns`; the amber Alpha variant was retired with the Alpha channel.
+Renamed from VidPrompt to Video Prompter on 8 October 2026; the same white microphone master is now `VideoPrompter.png`/`VideoPrompter.icns`. Earlier, on 1 October 2026, it was renamed from JuniorPrompter to VidPrompt and the amber Alpha variant was retired with the Alpha channel.
 
 Approved by Junior on 5 September 2026. Use the current white microphone-and-script master and ICNS going forward.
 
@@ -8,7 +8,7 @@ Approved by Junior on 5 September 2026. Use the current white microphone-and-scr
 
 Edit image 1, the VidPrompt icon. Use image 2 only as inspiration for clean Apple Mac icon dimensional craftsmanship and strong simple foreground/background hierarchy; do not copy its stars, sidebar symbols or purple colour. Keep image 1's recognisable large angled broadcast microphone silhouette as the main symbol and a script page behind it. Change the blue background to a white softly rounded macOS app tile. Simplify the microphone to smooth charcoal sculpted shapes with a broad foam capsule, one clean supporting yoke, minimal tiny hardware, no photographic grain, no cables, no logos. The page behind it is pale cool grey with three broad dark grey script lines, a very restrained warm coral reading marker. Reduce glossy glass and neon highlights; gentle depth, soft natural shadow and satin materials. Bold recognisable silhouette at 32 pixels, generous spacing, uncluttered. The microphone must clearly be the dominant object; script page legible behind. Original Apple-esque icon, not flat generic microphone glyph. Single centred finished square app icon, transparent outside rounded white tile, no typography, no surrounding mockup or comparison.
 
-Revised 5 September 2026 using the built-in image generation tool. Master is `VidPrompt.png`, packaged into `VidPrompt.icns`. Junior requested the first microphone-led composition on a white tile with simplified shapes and a script page. Sidebar Favorites Manager supplied visual hierarchy inspiration only. The previous blue-page design is superseded.
+Revised 5 September 2026 using the built-in image generation tool. Master is now `VideoPrompter.png`, packaged into `VideoPrompter.icns`. Junior requested the first microphone-led composition on a white tile with simplified shapes and a script page. Sidebar Favorites Manager supplied visual hierarchy inspiration only. The previous blue-page design is superseded.
 
 ## Previous generation prompt (superseded)
 

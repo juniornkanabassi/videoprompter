@@ -160,7 +160,7 @@ struct CameraView: View {
       switch model.authorization {
       case .denied, .restricted:
         VStack(spacing: 12) {
-          Text("VidPrompt does not have permission to use the camera.")
+          Text("Video Prompter does not have permission to use the camera.")
           Button("Open System Settings") {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
           }

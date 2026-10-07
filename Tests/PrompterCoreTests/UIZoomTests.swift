@@ -3,7 +3,7 @@ import PrompterCore
 import SwiftUI
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 
 @MainActor private protocol OffscreenHostingSizing { func holdWindowSize() }
 extension NSHostingView: OffscreenHostingSizing {
@@ -24,7 +24,7 @@ final class UIZoomTests: XCTestCase {
     try await super.setUp()
     _ = NSApplication.shared
     root = FileManager.default.temporaryDirectory.appendingPathComponent("zoom-\(UUID().uuidString)")
-    suite = "VidPromptTests.\(UUID().uuidString)"
+    suite = "VideoPrompterTests.\(UUID().uuidString)"
     defaults = UserDefaults(suiteName: suite)!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
   }

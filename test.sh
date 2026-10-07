@@ -4,6 +4,6 @@
 set -euo pipefail
 ROOT="${0:A:h}"
 source "$ROOT/env.sh"
-"$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDPROMPT_TEST_SCRATCH" >&2
-BUNDLE="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDPROMPT_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"
+"$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" >&2
+BUNDLE="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"
 exec "$XCTEST" "$@" "$BUNDLE"

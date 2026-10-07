@@ -1,6 +1,6 @@
 import AVFoundation
 import XCTest
-@testable import VidPrompt
+@testable import VideoPrompter
 
 final class MovieWriterTests: XCTestCase {
   func testUnsupportedAudioThrowsBeforeCreatingWriter() throws {

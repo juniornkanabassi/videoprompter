@@ -3,7 +3,7 @@ import PrompterCore
 import SwiftUI
 
 extension Notification.Name {
-  static let vidPromptImport = Notification.Name("VidPrompt.import")
+  static let videoPrompterImport = Notification.Name("VideoPrompter.import")
 }
 
 struct PrompterSettings: Codable, Equatable, Identifiable {
@@ -162,7 +162,7 @@ private enum PresenterSaveError: LocalizedError {
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
     guard let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count else { return .standard }
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
-    return UserDefaults(suiteName: "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
+    return UserDefaults(suiteName: "VideoPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
   }
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
     _ = AvailableFonts.presenter
@@ -687,11 +687,11 @@ private enum PresenterSaveError: LocalizedError {
   }
 }
 
-@main struct VidPromptApp: App {
+@main struct VideoPrompterApp: App {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   var body: some Scene {
-    WindowGroup("VidPrompt", id: "library") {
+    WindowGroup("Video Prompter", id: "library") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
         .onAppear { appDelegate.store = store }
@@ -718,7 +718,7 @@ private enum PresenterSaveError: LocalizedError {
             .keyboardShortcut("d", modifiers: .command)
             .disabled(store.selected == nil)
           Divider()
-          Button("Import Script…") { NotificationCenter.default.post(name: .vidPromptImport, object: nil) }
+          Button("Import Script…") { NotificationCenter.default.post(name: .videoPrompterImport, object: nil) }
             .keyboardShortcut("i", modifiers: .command)
             .disabled(!store.libraryAvailable)
           Button("Import from Clipboard") { store.importClipboard() }

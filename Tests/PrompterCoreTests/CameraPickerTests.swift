@@ -1,7 +1,7 @@
 import AVFoundation
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 
 /// The camera picker's preview choices and its session count. No camera is opened: the sessions
 /// are fakes, and the one real session in here is given a camera that does not exist.
@@ -129,7 +129,7 @@ final class CameraPickerTests: XCTestCase {
   /// Cam B is mounted on its side: its thumbnail turns by its own saved 90° and comes out
   /// portrait, while a camera with nothing saved stays as it is.
   func testThePreviewTakesEachCamerasOwnSavedRotation() throws {
-    let suite = "VidPrompt.picker.\(UUID().uuidString)"
+    let suite = "VideoPrompter.picker.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let store = CameraGuideStore(defaults: UserDefaults(suiteName: suite)!)
     var turned = CameraGuides()

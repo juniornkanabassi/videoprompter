@@ -9,7 +9,7 @@ final class ControlServer: @unchecked Sendable {
   private let handler: Handler
   /// Connections that make no read progress for this long are dropped, so idle peers cannot hold all eight slots.
   private let idleTimeout: DispatchTimeInterval
-  private let queue = DispatchQueue(label: "VidPrompt.control")
+  private let queue = DispatchQueue(label: "VideoPrompter.control")
   private var listener: DispatchSourceRead?
   private var inode: ino_t?
   // Mutable state is accessed exclusively on the server queue.

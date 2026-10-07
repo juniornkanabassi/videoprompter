@@ -1,14 +1,14 @@
 import AppKit
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 
 /// Camera orientation: the rotation's own geometry, the automatic chooser, the per-camera
 /// memory and the shared session's holder count. Nothing here opens a camera.
 @MainActor
 final class CameraOrientationTests: XCTestCase {
   private func defaults() -> UserDefaults {
-    let suite = "VidPrompt.orientation.\(UUID().uuidString)"
+    let suite = "VideoPrompter.orientation.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     return UserDefaults(suiteName: suite)!
   }

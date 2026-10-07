@@ -107,7 +107,7 @@ struct LibraryView: View {
                 Image(systemName: "doc.text").font(.largeTitle).foregroundStyle(.secondary)
                 Text("Your script, ready to read").font(.title2.bold())
                   .fixedSize(horizontal: false, vertical: true)
-                Text("VidPrompt keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Presenter settings.\n3. After adding a script, press Present.")
+                Text("Video Prompter keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Presenter settings.\n3. After adding a script, press Present.")
                   .fixedSize(horizontal: false, vertical: true)
                 Button { importing = true } label: {
                   Label { Text("Import Script…").fixedSize(horizontal: false, vertical: true) }
@@ -134,7 +134,7 @@ struct LibraryView: View {
         // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
-    .navigationTitle("VidPrompt")
+    .navigationTitle("Video Prompter")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup {
@@ -192,7 +192,7 @@ struct LibraryView: View {
       }
     }
     .alert(
-      "VidPrompt",
+      "Video Prompter",
       isPresented: Binding(
         get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })
     ) {
@@ -204,7 +204,7 @@ struct LibraryView: View {
     } message: {
       Text(store.errorMessage ?? "Unknown error")
     }
-    .onReceive(NotificationCenter.default.publisher(for: .vidPromptImport)) { _ in importing = true }
+    .onReceive(NotificationCenter.default.publisher(for: .videoPrompterImport)) { _ in importing = true }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md")!, .rtf, .pdf, UTType(filenameExtension: "docx")!]) { result in
       guard case .success(let url) = result else {
         if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled { importError = error.localizedDescription }
@@ -344,11 +344,11 @@ private struct EditorView: View {
           Button("Reveal in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([state?.url ?? URL(fileURLWithPath: path)])
           }.buttonStyle(.link).disabled(!present).help("Show the linked Markdown file in Finder")
-          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link).help("Keep this script in VidPrompt and stop updating the original file")
+          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link).help("Keep this script in Video Prompter and stop updating the original file")
         }.padding(.horizontal, 24).padding(.vertical, 6)
       } else {
         HStack {
-          Label("Stored in VidPrompt", systemImage: "doc.text")
+          Label("Stored in Video Prompter", systemImage: "doc.text")
             .font(.caption).foregroundStyle(.secondary)
           Spacer()
           Button("Link File…") { relinking = true }.buttonStyle(.link).help("Link a Markdown file so edits stay in sync both ways")

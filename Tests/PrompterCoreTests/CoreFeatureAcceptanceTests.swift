@@ -3,7 +3,7 @@ import AppKit
 import SwiftUI
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 import PrompterCore
 
 // MARK: - Harness
@@ -276,7 +276,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   private func makeStore() -> AppStore {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("vp-core-qa-\(UUID().uuidString)", isDirectory: true)
-    let suite = "VidPromptCoreQA.\(UUID().uuidString)"
+    let suite = "VideoPrompterCoreQA.\(UUID().uuidString)"
     addTeardownBlock {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -1061,7 +1061,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   func testTheVideoToggleDuringASessionKeepsTheAnchorAndTheSession() async throws {
     let (store, _) = try await presenting(try fixture("173 script.md"))
     let session = store.session
-    let suite = "VidPromptCoreQA.camera.\(UUID().uuidString)"
+    let suite = "VideoPrompterCoreQA.camera.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
     let camera = CameraModel(defaults: UserDefaults(suiteName: suite)!)
     let controller = PresenterController()

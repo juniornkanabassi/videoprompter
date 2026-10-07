@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Exercise a supplied built bundle with disposable data and PID-targeted GUI reads.
-Usage: source env.sh; python3 checks/check-built-app.py '/tmp/.../VidPrompt.app'
+Usage: source env.sh; python3 checks/check-built-app.py '/tmp/.../Video Prompter.app'
 No show, mouse, key, recording, installation or real-data operations.
 """
 import json, os, pathlib, socket, stat, subprocess, sys, tempfile, time
 app = pathlib.Path(sys.argv[1]).resolve()
-cli = app / 'Contents/Helpers/vidprompt'
-shim = app / 'Contents/Resources/mcp/vidprompt-mcp.mjs'
+cli = app / 'Contents/Helpers/videoprompter'
+shim = app / 'Contents/Resources/mcp/videoprompter-mcp.mjs'
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
 root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
@@ -58,7 +58,7 @@ try:
     subprocess.run(['open', '-g', '-n', '-a', str(app), '--env', 'CFFIXED_USER_HOME='+str(root / 'home'), '--args', '--data-directory', str(data), '-ApplePersistenceIgnoreState', 'YES', '-NSQuitAlwaysKeepsWindows', 'NO', '--agent-screen'], check=True, timeout=10)
     time.sleep(3)
     processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
-    matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VidPrompt') in line and str(data) in line]
+    matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VideoPrompter') in line and str(data) in line]
     assert len(matches) == 1, matches
     pid = matches[0]
     empty_gui = gui(pid)
@@ -77,7 +77,7 @@ try:
     time.sleep(1)
     # Identify only the executable and unique --data-directory owned by this check.
     processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
-    matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VidPrompt') in line and str(data) in line]
+    matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VideoPrompter') in line and str(data) in line]
     assert len(matches) == 1, matches
     pid = matches[0]
     assert imported['linked'] is True and imported['repeated'] is False
@@ -152,9 +152,9 @@ try:
     assert zoomed_rows and abs(float(zoomed_rows[0]['height']) / normal_height - 1.5) < 0.05, (normal_rows, zoomed_rows)
     assert visible['frontmostPID'] == before, (before, visible['frontmostPID'])
     # A symlink on PATH must retain the containing bundle's identity and version.
-    link = root / 'vidprompt'; link.symlink_to(cli)
+    link = root / 'videoprompter'; link.symlink_to(cli)
     env = dict(os.environ, PATH=str(root)+os.pathsep+os.environ['PATH'])
-    linked = subprocess.run(['vidprompt', '--data-directory', str(data), 'status', '--json'], env=env, capture_output=True, text=True, timeout=10)
+    linked = subprocess.run(['videoprompter', '--data-directory', str(data), 'status', '--json'], env=env, capture_output=True, text=True, timeout=10)
     assert linked.returncode == 0 and json.loads(linked.stdout)['result']['app'] == status['app']
     for number in range(200):
         extra = root / (f'Large library {number} '+('x' * 200)+'.md')
@@ -173,7 +173,7 @@ try:
 finally:
     if pid is None:
         processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
-        matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VidPrompt') in line and str(data) in line]
+        matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VideoPrompter') in line and str(data) in line]
         pid = matches[0] if len(matches) == 1 else None
     if pid:
         # Only the disposable PID owned by this check; no recordings or unsaved edits exist.

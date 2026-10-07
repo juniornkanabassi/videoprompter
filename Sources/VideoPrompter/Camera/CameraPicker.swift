@@ -337,8 +337,8 @@ enum CameraPreviewConnection {
 nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable
 {
-  private static let queue = DispatchQueue(label: "VidPrompt.camera.picker")
-  private static let frames = DispatchQueue(label: "VidPrompt.camera.picker.frames")
+  private static let queue = DispatchQueue(label: "VideoPrompter.camera.picker")
+  private static let frames = DispatchQueue(label: "VideoPrompter.camera.picker.frames")
   /// Touched on `queue` only, apart from handing it to the layer.
   private let session = AVCaptureSession()
   private let stopped = OSAllocatedUnfairLock(initialState: false)

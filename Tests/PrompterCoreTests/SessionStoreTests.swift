@@ -1,7 +1,7 @@
 import AVFoundation
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 import PrompterCore
 
 @MainActor
@@ -26,7 +26,7 @@ final class SessionStoreTests: XCTestCase {
   }
 
   func testReadingPositionsSurviveRelaunchAndRemapEditsPerScript() {
-    let suite = "VidPromptPositionTests.\(UUID().uuidString)"
+    let suite = "VideoPrompterPositionTests.\(UUID().uuidString)"
     let defaults = UserDefaults(suiteName: suite)!
     addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
     let now = 10.0
@@ -185,7 +185,7 @@ final class SessionStoreTests: XCTestCase {
     AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
   }
   private func freshDefaults() -> UserDefaults {
-    let name = "VidPromptTests.\(UUID().uuidString)"
+    let name = "VideoPrompterTests.\(UUID().uuidString)"
     addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
     return UserDefaults(suiteName: name)!
   }

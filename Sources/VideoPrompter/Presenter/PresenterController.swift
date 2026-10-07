@@ -92,7 +92,7 @@ import SwiftUI
     // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
-    panel.title = "VidPrompt · \(script.metadata.title)"
+    panel.title = "Video Prompter · \(script.metadata.title)"
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
@@ -512,7 +512,7 @@ private struct PresenterView: View {
   private var bottomNotice: some View {
     VStack(spacing: 6) {
       if draft.isEditing, draft.hasExternalChange(in: store) {
-        Text("This script changed outside VidPrompt. Finishing will keep this draft and show a conflict instead of overwriting it.")
+        Text("This script changed outside Video Prompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
           .foregroundStyle(.orange)
       }
       if let error = draft.errorMessage {

@@ -19,8 +19,12 @@ final class ControlCLITests: XCTestCase {
     for args in [["script", "import"], ["unknown"], ["set-mode", "timed"], ["set-zoom", "130"], ["status", "--show"], ["present", "--unknown", "x"], ["script", "import", "a", "--path", "b"]] { XCTAssertThrowsError(try ControlCLI.parse(args)) }
     XCTAssertEqual(try ControlCLI.parse(["script", "import", "--help"]).action, "help")
     XCTAssertEqual(ControlProtocol.bundleID, "com.juniornkanabassi.VidPrompt")
-    XCTAssertTrue(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["vidprompt"]).path.hasSuffix("/Library/Application Support/VidPrompt"))
-    XCTAssertEqual(ControlCLI.manifest()["serverInfo"] as? [String: String], ["name": "vidprompt", "version": "dev"])
+    // A temporary parent stands in for Application Support so the test never migrates real data.
+    let support = FileManager.default.temporaryDirectory.appendingPathComponent("videoprompter-support-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: support) }
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter").path)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "--data-directory", "/tmp/check"], applicationSupport: support).path, "/tmp/check")
+    XCTAssertEqual(ControlCLI.manifest()["serverInfo"] as? [String: String], ["name": "videoprompter", "version": "dev"])
     let tools = try XCTUnwrap(ControlCLI.manifest()["tools"] as? [[String: Any]])
     XCTAssertEqual(tools.count, ControlProtocol.commands.count)
     for (tool, command) in zip(tools, ControlProtocol.commands) {
@@ -28,5 +32,34 @@ final class ControlCLITests: XCTestCase {
       let schema = try XCTUnwrap(tool["inputSchema"] as? [String: Any])
       XCTAssertEqual(schema["required"] as? [String], command.params.filter(\.required).map(\.name))
     }
+  }
+  func testLegacyFolderMovesOnceToVideoPrompter() throws {
+    let fileManager = FileManager.default
+    let parent = fileManager.temporaryDirectory.appendingPathComponent("videoprompter-migration-\(UUID().uuidString)", isDirectory: true)
+    defer { try? fileManager.removeItem(at: parent) }
+    let legacy = parent.appendingPathComponent("VidPrompt"), current = parent.appendingPathComponent("Video Prompter")
+    // Only the legacy folder exists: it moves with its contents.
+    try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
+    try Data("old".utf8).write(to: legacy.appendingPathComponent("LibraryIndex.json"))
+    XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: parent).path, current.path)
+    XCTAssertFalse(fileManager.fileExists(atPath: legacy.path))
+    XCTAssertEqual(try String(contentsOf: current.appendingPathComponent("LibraryIndex.json"), encoding: .utf8), "old")
+    // Idempotent: a second call changes nothing.
+    XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: parent).path, current.path)
+    XCTAssertEqual(try String(contentsOf: current.appendingPathComponent("LibraryIndex.json"), encoding: .utf8), "old")
+    // A new folder that already exists is left alone, and so is a reappeared legacy folder.
+    try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
+    try Data("stale".utf8).write(to: legacy.appendingPathComponent("LibraryIndex.json"))
+    ControlProtocol.migrateLegacyFolder(in: parent)
+    XCTAssertEqual(try String(contentsOf: current.appendingPathComponent("LibraryIndex.json"), encoding: .utf8), "old")
+    XCTAssertEqual(try String(contentsOf: legacy.appendingPathComponent("LibraryIndex.json"), encoding: .utf8), "stale")
+    // A symlinked legacy folder is never moved.
+    let linked = parent.appendingPathComponent("linked", isDirectory: true), target = parent.appendingPathComponent("target", isDirectory: true)
+    try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
+    try fileManager.createDirectory(at: linked, withIntermediateDirectories: true)
+    try fileManager.createSymbolicLink(at: linked.appendingPathComponent("VidPrompt"), withDestinationURL: target)
+    ControlProtocol.migrateLegacyFolder(in: linked)
+    XCTAssertFalse(fileManager.fileExists(atPath: linked.appendingPathComponent("Video Prompter").path))
+    XCTAssertEqual(try fileManager.destinationOfSymbolicLink(atPath: linked.appendingPathComponent("VidPrompt").path), target.path)
   }
 }

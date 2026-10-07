@@ -2,7 +2,7 @@ import AppKit
 import CoreText
 import XCTest
 
-@testable import VidPrompt
+@testable import VideoPrompter
 import PrompterCore
 
 @MainActor

@@ -21,11 +21,11 @@ import PrompterCore
     if let id = UUID(uuidString: name), let script = store.scripts.first(where: { $0.id == id }) { return (script, nil) }
     let matches = store.scripts.filter { $0.metadata.title.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
     if matches.count > 1 { return (nil, .error("ambiguous_script", "Use a script id to choose between these titles.", candidates: matches.prefix(5).map(identity))) }
-    return (matches.first, matches.isEmpty ? .error("script_not_found", "Script not found. Use vidprompt script list.") : nil)
+    return (matches.first, matches.isEmpty ? .error("script_not_found", "Script not found. Use videoprompter script list.") : nil)
   }
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
     await store.waitForInitialLoad()
-    guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use vidprompt --help for supported actions.") }
+    guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use videoprompter --help for supported actions.") }
     guard params.keys.allSatisfy({ key in command.params.contains { $0.name == key } }),
       command.params.allSatisfy({ p in
         guard let value = params[p.name] else { return !p.required }
@@ -73,17 +73,17 @@ import PrompterCore
       if action == "present", presenter.isEditing { return .error("presenter_editing", "Finish or cancel the presenter edit first.") }
       let (record, error) = params["script"].map(lookup) ?? (store.selected, nil)
       if let error { return error }
-      guard let record else { return .error("no_active_script", "Select a script first: vidprompt script open <id|title>") }
+      guard let record else { return .error("no_active_script", "Select a script first: videoprompter script open <id|title>") }
       select(record)
       if action == "present" {
         presenter.present(store: store, activate: show)
         var value: [String: Any] = identity(record); value["presenter"] = "visible"; return .ok(value)
       }
-      if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("VidPrompt") }?.makeKeyAndOrderFront(nil) }
+      if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil) }
       return .ok(identity(record))
     case "pause", "resume", "back_to_start":
       if presenter.isEditing { return .error("presenter_editing", "Finish or cancel the presenter edit first.") }
-      guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return .error("no_active_script", "Present a script first: vidprompt present <id|title>") }
+      guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return .error("no_active_script", "Present a script first: videoprompter present <id|title>") }
       if action == "pause" { store.session.pause() }
       else if action == "resume" { store.session.play() }
       else { store.session.restart() }

@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import PrompterCore
 import XCTest
-@testable import VidPrompt
+@testable import VideoPrompter
 @testable import PrompterCore
 
 final class LinkedSecurityTests: XCTestCase {
@@ -14,7 +14,7 @@ final class LinkedSecurityTests: XCTestCase {
       let library = try MarkdownLibrary(rootURL: root)
       let record = try await library.create(title: "Relink", markdown: "library text")
       try "preview text".write(to: external, atomically: true, encoding: .utf8)
-      // A cooperating editor saves after VidPrompt's preview read, before it obtains
+      // A cooperating editor saves after Video Prompter's preview read, before it obtains
       // the writing reservation. The backup and any rollback must use this newer text.
       await library.setLinkedReadHook {
         var coordinationError: NSError?

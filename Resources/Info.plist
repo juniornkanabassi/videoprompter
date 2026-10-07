@@ -3,28 +3,29 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>VidPrompt</string>
+	<string>Video Prompter</string>
 	<key>CFBundleExecutable</key>
-	<string>VidPrompt</string>
+	<string>VideoPrompter</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
+	<!-- The identifier keeps its pre-2.0 VidPrompt name on purpose: changing it would lose the existing camera, microphone and speech permissions, the saved UserDefaults (settings, reading positions, zoom) and the control socket. -->
 	<key>CFBundleIdentifier</key>
 	<string>com.juniornkanabassi.VidPrompt</string>
 	<key>CFBundleName</key>
-	<string>VidPrompt</string>
+	<string>Video Prompter</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.3</string>
+	<string>2.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>38</string>
+	<string>39</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>VidPrompt shows a live preview of your camera so you can frame yourself while reading.</string>
+	<string>Video Prompter shows a live preview of your camera so you can frame yourself while reading.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>VidPrompt uses your selected microphone for voice tracking.</string>
+	<string>Video Prompter uses your selected microphone for voice tracking.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>VidPrompt uses on-device speech recognition to follow your script.</string>
+	<string>Video Prompter uses on-device speech recognition to follow your script.</string>
 </dict>
 </plist>

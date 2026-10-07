@@ -1,16 +1,16 @@
-# VidPrompt
+# Video Prompter
 
-VidPrompt is a teleprompter for the Mac. You write or import a script, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. VidPrompt can also record from your camera.
+Video Prompter is a teleprompter for the Mac. You write or import a script, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. Video Prompter can also record from your camera.
 
-Current preview: **1.2.3** (build **38**).
+Current preview: **2.0.0** (build **39**).
 
-This update makes long scripts faster to display, corrects word highlighting when the reading position changes, and reduces wrong-passage jumps around repeated phrases. It also prevents idle automation connections from blocking later commands.
+2.0.0 — renamed to Video Prompter, Developer ID signed and notarised, simplified interface.
 
 Voice tracking remains a preview. One recorded false-start timing check is unresolved, and tracking can pause while it finds the right passage after your wording differs from the script. Manual scrolling remains available.
 
 ## Watch the first use guide
 
-The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walkthrough) shows how to add a script, set up Manual scrolling and use the presenter. It also introduces optional Voice tracking and the camera background. The guide uses genuine high-resolution VidPrompt 1.2.2 captures with fictional scripts, short on-screen instructions, music and sound effects. There is no narration. Written setup steps sit below the video, including permissions, linked Markdown files and recording controls.
+The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walkthrough) shows how to add a script, set up Manual scrolling and use the presenter. It also introduces optional Voice tracking and the camera background. The guide uses genuine high-resolution captures of version 1.2.2 with fictional scripts, short on-screen instructions, music and sound effects. There is no narration. Written setup steps sit below the video, including permissions, linked Markdown files and recording controls.
 
 ## What you need
 
@@ -20,19 +20,19 @@ The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walk
 
 ## Download
 
-[Download the latest VidPrompt preview](https://github.com/juniornkanabassi/vidprompt-releases/releases/latest/download/VidPrompt.dmg).
+[Download the latest Video Prompter preview](https://github.com/juniornkanabassi/videoprompter-releases/releases/latest/download/VideoPrompter.dmg).
 
-The public [Releases page](https://github.com/juniornkanabassi/vidprompt-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VidPrompt.dmg`, so the download link above always points to the latest published version.
+The public [Releases page](https://github.com/juniornkanabassi/videoprompter-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VideoPrompter.dmg`, so the download link above always points to the latest published version.
 
 This is a self-signed preview, not an Apple notarised release. Read the requirements and first-launch guidance below before installing.
 
-VidPrompt does not update itself. To get a newer version, download the latest disk image again by hand and replace the app.
+Video Prompter does not update itself. To get a newer version, download the latest disk image again by hand and replace the app.
 
 ## Install
 
-1. Open `VidPrompt.dmg`.
-2. Drag `VidPrompt.app` onto the `Applications` shortcut in the window. If you prefer to keep apps in a named folder, create it inside Applications first and drag VidPrompt there instead.
-3. Eject the disk image, then open VidPrompt from Applications.
+1. Open `VideoPrompter.dmg`.
+2. Drag `Video Prompter.app` onto the `Applications` shortcut in the window. If you prefer to keep apps in a named folder, create it inside Applications first and drag Video Prompter there instead.
+3. Eject the disk image, then open Video Prompter from Applications.
 
 The disk image also contains a short install note.
 
@@ -40,8 +40,8 @@ The disk image also contains a short install note.
 
 This preview has not been signed with an Apple Developer ID or notarised by Apple, so macOS may say it cannot verify the developer. If that happens:
 
-1. Try to open VidPrompt once.
-2. Open **System Settings > Privacy & Security**, scroll to Security and choose **Open Anyway** for VidPrompt, if macOS offers it.
+1. Try to open Video Prompter once.
+2. Open **System Settings > Privacy & Security**, scroll to Security and choose **Open Anyway** for Video Prompter, if macOS offers it.
 3. Confirm the next prompt only if you trust the copy you downloaded.
 
 Apple warns that overriding this check carries risk, and this build has not been reviewed by Apple. Do not remove quarantine attributes or turn off Gatekeeper in Terminal. Apple's guide: [Open a Mac app from an unknown developer](https://support.apple.com/en-jo/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac).
@@ -50,7 +50,7 @@ Install and removal on a fresh Mac by someone new to the app have not yet been f
 
 ## First use
 
-1. Open VidPrompt.
+1. Open Video Prompter.
 2. Import a script or choose **New Script**.
 3. Open **Presenter settings** and choose **Voice** or **Manual**.
 4. Press **Present**.
@@ -79,24 +79,26 @@ Normally the presenter window is hidden from screen capture. Specific recording 
 
 ### Scripts and Markdown files
 
-Scripts are stored as Markdown. When you import a Markdown file, it stays **linked both ways** with the original: edits in VidPrompt change the original file, and changes to the original appear in VidPrompt. Other formats are converted on import and are not linked.
+Scripts are stored as Markdown. When you import a Markdown file, it stays **linked both ways** with the original: edits in Video Prompter change the original file, and changes to the original appear in Video Prompter. Other formats are converted on import and are not linked.
 
 ## Privacy
 
 - Voice follows you on your Mac. There is no hidden fallback to cloud transcription.
-- Your scripts and settings are kept in your user account, in `~/Library/Application Support/VidPrompt`. Recordings are saved to `~/Movies/VidPrompt` by default.
+- Your scripts and settings are kept in your user account, in `~/Library/Application Support/Video Prompter`. Recordings are saved to `~/Movies/Video Prompter` by default.
 - The disk image contains only the app, not your data.
 - The optional command-line and AI control (see below) works only for your own user account on the same Mac.
 
-## Remove VidPrompt
+## Remove Video Prompter
 
-Quit VidPrompt and move the app to the Bin. Removing the app does not delete your scripts or recordings; they stay in the folders listed under Privacy until you remove them yourself.
+Quit Video Prompter and move the app to the Bin. Removing the app does not delete your scripts or recordings; they stay in the folders listed under Privacy until you remove them yourself.
 
-If you set up the optional `vidprompt` command link or an AI host connection, remove those separately.
+If you set up the optional `videoprompter` command link or an AI host connection, remove those separately.
 
-## Earlier name
+## Earlier names
 
-VidPrompt was previously called JuniorPrompter. Installing VidPrompt does not import a JuniorPrompter library automatically. Keep any old library and its backups until you have checked that any recovery you plan has worked. Removing either app must not delete scripts or recordings.
+Video Prompter was formerly VidPrompt, and JuniorPrompter before that. Version 2.0.0 keeps the same bundle identifier, so permissions and settings carry over, and on first launch it moves the existing `VidPrompt` data and recordings folders to their new `Video Prompter` names.
+
+Installing Video Prompter does not import a JuniorPrompter library automatically. Keep any old library and its backups until you have checked that any recovery you plan has worked. Removing either app must not delete scripts or recordings.
 
 ## Not included yet
 
@@ -109,9 +111,9 @@ VidPrompt was previously called JuniorPrompter. Installing VidPrompt does not im
 
 ## Technical details
 
-The rest of this file is for people building VidPrompt from source or controlling it from scripts and AI tools.
+The rest of this file is for people building Video Prompter from source or controlling it from scripts and AI tools.
 
-VidPrompt is a native Swift app for macOS 26. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. The source has no external package dependencies.
+Video Prompter is a native Swift app for macOS 26. Its source is in the private repository https://github.com/juniornkanabassi/videoprompter. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. The source has no external package dependencies.
 
 ### Build and test
 
@@ -126,27 +128,27 @@ zsh mcp/check-mcp.sh
 zsh build.sh
 ```
 
-The build produces `../Outputs/VidPrompt 1.2.3.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. The local ReadAlong Dev signing identity is used if available; otherwise the build is signed ad hoc. These are local development archives, not Developer ID signed or notarised releases for other Macs.
+The build produces `../Outputs/Video Prompter 2.0.0.zip`. Builds are staged outside file-provider folders, signed with the hardened runtime, and both the app and its helper are verified. The local ReadAlong Dev signing identity is used if available; otherwise the build is signed ad hoc. These are local development archives, not Developer ID signed or notarised releases for other Macs.
 
-To make a download disk image from an app bundle that has already been verified, run `checks/package-dmg.sh /path/to/VidPrompt.app /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and the install note, and reports the bundle's minimum macOS version and executable architectures. It requires arm64 in both the app and the CLI helper. It writes `VidPrompt <version>.dmg` and refuses to replace an existing DMG; a release upload must be named `VidPrompt.dmg`. It does not sign or notarise the app.
+To make a download disk image from an app bundle that has already been verified, run `checks/package-dmg.sh "/path/to/Video Prompter.app" /path/to/output-folder`. It stages in `/private/tmp`, adds the standard Applications shortcut and the install note, and reports the bundle's minimum macOS version and executable architectures. It requires arm64 in both the app and the CLI helper. It writes `Video Prompter <version>.dmg` and refuses to replace an existing DMG; a release upload must be named `VideoPrompter.dmg`. It does not sign or notarise the app.
 
-Optional overrides: `VIDPROMPT_BUILD_ROOT`, `VIDPROMPT_TEST_SCRATCH` and `VIDPROMPT_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
+Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and `VIDEOPROMPTER_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
 ### Install from source
 
-From this source checkout, install with `zsh install.sh`. The guarded installer refuses to run while the app is open, verifies the archive and keeps the previous installation if anything fails. It also links `~/.local/bin/vidprompt`. Keep the previous archive so you can roll back.
+From this source checkout, install with `zsh install.sh`. The guarded installer refuses to run while the app is open, verifies the archive and keeps the previous installation if anything fails. It also links `~/.local/bin/videoprompter`. Keep the previous archive so you can roll back.
 
-A drag-installed app does not need this source tree, Xcode or `install.sh`. It includes the CLI at `Contents/Helpers/vidprompt` and the MCP adapter at `Contents/Resources/mcp/vidprompt-mcp.mjs`, but does not create a PATH link or configure an AI host.
+A drag-installed app does not need this source tree, Xcode or `install.sh`. It includes the CLI at `Contents/Helpers/videoprompter` and the MCP adapter at `Contents/Resources/mcp/videoprompter-mcp.mjs`, but does not create a PATH link or configure an AI host.
 
-App details: bundle ID `com.juniornkanabassi.VidPrompt`, data folder `~/Library/Application Support/VidPrompt`, default recordings folder `~/Movies/VidPrompt`.
+App details: bundle ID `com.juniornkanabassi.VidPrompt` (kept from the earlier name so permissions and settings survive), data folder `~/Library/Application Support/Video Prompter`, default recordings folder `~/Movies/Video Prompter`.
 
 ### Checking a built app in a disposable location
 
 ```sh
 work=$(mktemp -d /private/tmp/vp-check.XXXXXX)
-ditto -x -k '../Outputs/VidPrompt 1.2.3.zip' "$work"
+ditto -x -k '../Outputs/Video Prompter 2.0.0.zip' "$work"
 source env.sh
-python3 checks/check-built-app.py "$work/VidPrompt.app"
+python3 checks/check-built-app.py "$work/Video Prompter.app"
 ```
 
 The checker creates its own `--data-directory`, runs the packaged CLI and MCP, and reads the app's accessibility state without sending input or changing focus. The terminal needs Accessibility permission for the GUI checks; if it is denied, the check fails rather than passes. Only the checker's own disposable process is stopped. Evidence is kept in the temporary folder it prints. `test.sh` separately builds and runs the XCTest bundle; six external and audio acceptance tests are opt-in and reported as skipped unless configured.
@@ -155,52 +157,52 @@ For a manual test with disposable data, launch the app executable with `--data-d
 
 ### Command line and AI control
 
-VidPrompt exposes its existing app actions through a private Unix socket, a bundled CLI and an MCP shim. It requires macOS 26; MCP requires Node 18 or later and uses protocol version 2025-06-18. The source installer links `~/.local/bin/vidprompt` after a verified local install. A downloaded app does not create that link.
+Video Prompter exposes its existing app actions through a private Unix socket, a bundled CLI and an MCP shim. It requires macOS 26; MCP requires Node 18 or later and uses protocol version 2025-06-18. The source installer links `~/.local/bin/videoprompter` after a verified local install. A downloaded app does not create that link.
 
 For a standard drag installation, set the real app path and use the bundled helper directly:
 
 ```sh
-VIDPROMPT_APP="/Applications/VidPrompt.app"
-"$VIDPROMPT_APP/Contents/Helpers/vidprompt" --help
-"$VIDPROMPT_APP/Contents/Helpers/vidprompt" status --json
+VIDEOPROMPTER_APP="/Applications/Video Prompter.app"
+"$VIDEOPROMPTER_APP/Contents/Helpers/videoprompter" --help
+"$VIDEOPROMPTER_APP/Contents/Helpers/videoprompter" status --json
 ```
 
-The short `vidprompt` examples below assume the optional command link exists and `~/.local/bin` is on PATH. Otherwise, replace `vidprompt` with the full helper path. These CLI commands do not need Node.
+The short `videoprompter` examples below assume the optional command link exists and `~/.local/bin` is on PATH. Otherwise, replace `videoprompter` with the full helper path. These CLI commands do not need Node.
 
 | Command | Example |
 |---|---|
-| Report state (never launches) | `vidprompt status --json` |
-| List scripts | `vidprompt script list` |
-| Import, with retry protection | `vidprompt script import ./script.md --request-id take1` |
-| Select by ID or exact title | `vidprompt script open 'My Script'` |
-| Present the selection or a named script | `vidprompt present 'My Script'` |
-| Pause | `vidprompt pause` |
-| Resume | `vidprompt resume` |
-| Reset reading position | `vidprompt back-to-start` |
-| Set tracking (`voice` or `manual`) | `vidprompt set-mode manual` |
-| Set interface zoom (100, 110, 125, 150, 175 or 200) | `vidprompt set-zoom 150` |
-| MCP tools manifest | `vidprompt mcp-manifest` |
-| Full help | `vidprompt --help` |
+| Report state (never launches) | `videoprompter status --json` |
+| List scripts | `videoprompter script list` |
+| Import, with retry protection | `videoprompter script import ./script.md --request-id take1` |
+| Select by ID or exact title | `videoprompter script open 'My Script'` |
+| Present the selection or a named script | `videoprompter present 'My Script'` |
+| Pause | `videoprompter pause` |
+| Resume | `videoprompter resume` |
+| Reset reading position | `videoprompter back-to-start` |
+| Set tracking (`voice` or `manual`) | `videoprompter set-mode manual` |
+| Set interface zoom (100, 110, 125, 150, 175 or 200) | `videoprompter set-zoom 150` |
+| MCP tools manifest | `videoprompter mcp-manifest` |
+| Full help | `videoprompter --help` |
 
 Options can go before or after the command words. `--json` prints one response line. `--show` brings the library or presenter forward, and only works with `script open` or `present`. Other commands launch the app in the background if needed and wait up to 10 seconds. Exit codes: 0 success, 1 action or connection error, 2 usage error. A bundled helper uses its own app's identity. `--data-directory /private/tmp/vpc-test` isolates app data and preferences (keep the socket path under 104 UTF-8 bytes). On its own it does not isolate the whole account or window restoration; the packaged checker also uses an isolated home folder and restoration arguments.
 
 Claude Code:
 
 ```sh
-claude mcp add vidprompt -- node "/Applications/VidPrompt.app/Contents/Resources/mcp/vidprompt-mcp.mjs"
+claude mcp add videoprompter -- node "/Applications/Video Prompter.app/Contents/Resources/mcp/videoprompter-mcp.mjs"
 ```
 
 Codex, in `~/.codex/config.toml` (use the absolute path from `command -v node` if the host cannot find Node):
 
 ```toml
-[mcp_servers.vidprompt]
+[mcp_servers.videoprompter]
 command = "node"
-args = ["/Applications/VidPrompt.app/Contents/Resources/mcp/vidprompt-mcp.mjs"]
+args = ["/Applications/Video Prompter.app/Contents/Resources/mcp/videoprompter-mcp.mjs"]
 ```
 
 Change these example paths to match where you installed the app. Any other stdio MCP host needs the command `node` with the matching bundled shim path as its argument; add `--data-directory /private/tmp/vpc-test` to isolate a test connection. The shim finds its own bundled helper. You set up the host yourself; the app does not run any setup command.
 
-The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. VidPrompt data and disposable test data stay separate. Creation request IDs are idempotent within one app session. There are no delete, edit or recording actions. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
+The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. Video Prompter data and disposable test data stay separate. Creation request IDs are idempotent within one app session. There are no delete, edit or recording actions. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
 
 ### Release status
 

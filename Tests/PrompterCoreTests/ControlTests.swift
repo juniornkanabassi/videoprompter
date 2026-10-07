@@ -2,7 +2,7 @@ import AppKit
 import Darwin
 import PrompterCore
 import XCTest
-@testable import VidPrompt
+@testable import VideoPrompter
 
 @MainActor final class ControlTests: XCTestCase {
   func testActionsUseGUIStoreAndImportIsIdempotent() async throws {

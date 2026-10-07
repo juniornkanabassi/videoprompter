@@ -19,7 +19,7 @@ cat > "$WORK/input" <<'JSON'
 {"jsonrpc":"2.0","id":5,"method":"ping"}
 {"jsonrpc":"2.0","id":{},"method":"ping"}
 JSON
-VIDPROMPT_CLI="$WORK/cli" node "$ROOT/vidprompt-mcp.mjs" --data-directory /tmp/isolated < "$WORK/input" > "$WORK/output"
+VIDEOPROMPTER_CLI="$WORK/cli" node "$ROOT/videoprompter-mcp.mjs" --data-directory /tmp/isolated < "$WORK/input" > "$WORK/output"
 node --input-type=module - "$WORK/output" <<'JS'
 import assert from 'node:assert/strict'; import fs from 'node:fs';
 const r=fs.readFileSync(process.argv[2],'utf8').trim().split('\n').map(JSON.parse);

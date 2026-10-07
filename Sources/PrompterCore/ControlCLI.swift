@@ -38,7 +38,7 @@ public enum ControlCLI {
       }
     }
     if words == ["mcp-manifest"], flags.isEmpty, !show { return Invocation(action: "mcp-manifest", params: [:], json: true, dataDirectory: directory) }
-    guard let command = ControlProtocol.commands.first(where: { words.starts(with: $0.words) }) else { throw UsageError(description: "Unknown command. Use vidprompt --help.") }
+    guard let command = ControlProtocol.commands.first(where: { words.starts(with: $0.words) }) else { throw UsageError(description: "Unknown command. Use videoprompter --help.") }
     let values = Array(words.dropFirst(command.words.count)); let positional = command.params.filter(\.positional)
     guard values.count <= positional.count else { throw UsageError(description: "Too many arguments for \(command.words.joined(separator: " "))") }
     for (param, value) in zip(positional, values) {
@@ -59,10 +59,10 @@ public enum ControlCLI {
     return Invocation(action: command.action, params: flags, json: json, dataDirectory: directory)
   }
   public static func help() -> String {
-    "Usage: vidprompt <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")) — \($0.summary)\n  \($0.example)\n" + $0.params.map { "  --\($0.name)\($0.kind == "boolean" ? "" : " <value>")\($0.required ? " required" : " optional")\($0.positional ? " or positional" : "")\($0.choices.isEmpty ? "" : "; " + $0.choices.joined(separator: "|"))" }.joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest — print MCP tools JSON from this command table.\n  vidprompt mcp-manifest\n"
+    "Usage: videoprompter <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")) — \($0.summary)\n  \($0.example)\n" + $0.params.map { "  --\($0.name)\($0.kind == "boolean" ? "" : " <value>")\($0.required ? " required" : " optional")\($0.positional ? " or positional" : "")\($0.choices.isEmpty ? "" : "; " + $0.choices.joined(separator: "|"))" }.joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest — print MCP tools JSON from this command table.\n  videoprompter mcp-manifest\n"
   }
   public static func manifest(version: String = "dev") -> [String: Any] {
-    ["serverInfo": ["name": "vidprompt", "version": version], "tools": ControlProtocol.commands.map { command -> [String: Any] in
+    ["serverInfo": ["name": "videoprompter", "version": version], "tools": ControlProtocol.commands.map { command -> [String: Any] in
       var properties: [String: Any] = [:]
       for p in command.params {
         var spec: [String: Any] = ["type": p.kind == "integer" ? "integer" : p.kind == "boolean" ? "boolean" : "string", "description": p.help.isEmpty ? p.name : p.help]

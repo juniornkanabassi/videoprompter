@@ -4,7 +4,7 @@ import QuartzCore
 import Synchronization
 
 extension Notification.Name {
-  static let cameraPictureSizeDidChange = Notification.Name("VidPrompt.cameraPictureSizeDidChange")
+  static let cameraPictureSizeDidChange = Notification.Name("VideoPrompter.cameraPictureSizeDidChange")
 }
 
 /// Start when the first holder arrives, stop when the last one leaves.
@@ -89,7 +89,7 @@ struct CameraHolders {
   }
 
   let session = AVCaptureSession()
-  private let queue = DispatchQueue(label: "VidPrompt.camera.session")
+  private let queue = DispatchQueue(label: "VideoPrompter.camera.session")
   /// The format work and the frame watchdog, on `queue`. Internal for the stage view's latency log.
   private(set) lazy var probe = CameraFrameProbe(sessionQueue: queue)
   private var holders = CameraHolders()
@@ -257,14 +257,14 @@ extension SharedCameraSession.FormatChoice {
 final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   @unchecked Sendable
 {
-  /// `VIDPROMPT_CAMERA_LATENCY_LOG=1`: for ten seconds after the camera starts, log how
+  /// `VIDEOPROMPTER_CAMERA_LATENCY_LOG=1`: for ten seconds after the camera starts, log how
   /// long frames take from capture to the app and to the next screen refresh.
   static let logsLatency =
-    ProcessInfo.processInfo.environment["VIDPROMPT_CAMERA_LATENCY_LOG"] == "1"
+    ProcessInfo.processInfo.environment["VIDEOPROMPTER_CAMERA_LATENCY_LOG"] == "1"
   static let usesNativeFormat =
-    ProcessInfo.processInfo.environment["VIDPROMPT_CAMERA_NATIVE_FORMAT"] == "1"
+    ProcessInfo.processInfo.environment["VIDEOPROMPTER_CAMERA_NATIVE_FORMAT"] == "1"
   static let watchdog: TimeInterval = 1.5
-  static let logWindow = CameraLatency.logWindow(ProcessInfo.processInfo.environment["VIDPROMPT_CAMERA_LATENCY_SECONDS"])
+  static let logWindow = CameraLatency.logWindow(ProcessInfo.processInfo.environment["VIDEOPROMPTER_CAMERA_LATENCY_SECONDS"])
 
   private struct Shared {
     var frames = 0
@@ -292,7 +292,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     super.init()
     output.alwaysDiscardsLateVideoFrames = true
     output.videoSettings = [:]
-    output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "VidPrompt.camera.probe"))
+    output.setSampleBufferDelegate(self, queue: DispatchQueue(label: "VideoPrompter.camera.probe"))
   }
 
   /// Session queue only, right after the input is swapped. `signal` is the device with the format
@@ -376,7 +376,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
         failed.insert(current.device.uniqueID)
         self.current?.choice = current.choice.settled
         holdingFormat(session, force: true)
-        NSLog("VidPrompt camera: no frame in %.1f s, back to the format's default rate", Self.watchdog)
+        NSLog("Video Prompter camera: no frame in %.1f s, back to the format's default rate", Self.watchdog)
       }
       if !Self.logsLatency { detach(from: session) }
     }
@@ -390,7 +390,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
       let format = current.choice.wanted.format
       let selected = current.formats.indices.contains(format) ? Self.row(current.formats[format]) : nil
       NSLog(
-        "VidPrompt camera latency: %@; selected %@; pinned frame duration %@",
+        "Video Prompter camera latency: %@; selected %@; pinned frame duration %@",
         CameraLatency.report(
           samples, refreshes: refreshes, dropped: dropped,
           duration: measured > 0 ? measured : Self.logWindow, pinned: pinned),
