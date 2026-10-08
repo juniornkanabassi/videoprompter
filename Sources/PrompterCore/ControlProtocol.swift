@@ -41,15 +41,19 @@ public enum ControlProtocol {
   }
   /// The app was called VidPrompt before 2.0. Moves `<parent>/VidPrompt` to `<parent>/Video Prompter`
   /// once, only when the new folder is absent and the old one is a real folder (not a symlink).
-  /// Best effort: a failed move leaves both where they were. Returns the new folder.
-  @discardableResult public static func migrateLegacyFolder(in parent: URL) -> URL {
+  /// Best effort: a failed move keeps callers on the existing legacy folder so migration can retry.
+  @discardableResult public static func migrateLegacyFolder(
+    in parent: URL,
+    move: (URL, URL) throws -> Void = { try FileManager.default.moveItem(at: $0, to: $1) }
+  ) -> URL {
     let current = parent.appendingPathComponent("Video Prompter", isDirectory: true)
     let legacy = parent.appendingPathComponent("VidPrompt", isDirectory: true)
     let fileManager = FileManager.default
     // attributesOfItem does not follow symlinks, so a linked legacy folder is left alone.
     if !fileManager.fileExists(atPath: current.path),
        (try? fileManager.attributesOfItem(atPath: legacy.path)[.type] as? FileAttributeType) == .typeDirectory {
-      try? fileManager.moveItem(at: legacy, to: current)
+      do { try move(legacy, current) }
+      catch { return legacy }
     }
     return current
   }
