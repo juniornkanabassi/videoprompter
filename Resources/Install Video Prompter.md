@@ -1,6 +1,6 @@
 # Install Video Prompter
 
-Video Prompter @APP_VERSION@ requires macOS @MINIMUM_MACOS@ or later. The main app executable supports **@MAIN_ARCHITECTURES@**; the bundled command-line helper supports **@CLI_ARCHITECTURES@**. It is signed with an Apple Developer ID and notarised by Apple, so macOS opens it normally.
+Video Prompter @APP_VERSION@ requires macOS @MINIMUM_MACOS@ or later. The main app executable supports **@MAIN_ARCHITECTURES@**; the bundled command-line helper supports **@CLI_ARCHITECTURES@**. It is signed with an Apple Developer ID and notarised by Apple, and includes its notarisation ticket. macOS may ask you to confirm opening a downloaded app.
 
 1. Open the downloaded `Video Prompter @APP_VERSION@.dmg`.
 2. Drag `Video Prompter.app` onto the `Applications` shortcut in the window.
@@ -8,6 +8,6 @@ Video Prompter @APP_VERSION@ requires macOS @MINIMUM_MACOS@ or later. The main a
 
 If you prefer to keep apps in a named folder, create that folder inside Applications first and drag Video Prompter there instead.
 
-If macOS says the app is damaged or cannot be verified, the download was altered or incomplete. Delete it and download the disk image again from the Releases page. Do not remove quarantine attributes or bypass Gatekeeper in Terminal.
+If macOS says the app is damaged or cannot be verified, download a fresh copy and check your Mac’s security policy. Delete it and download the disk image again from the Releases page. Do not remove quarantine attributes or bypass Gatekeeper in Terminal.
 
 Allow camera or microphone access when you use those features. Video Prompter keeps scripts in your user account; the disk image contains only the app.

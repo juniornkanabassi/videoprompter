@@ -40,7 +40,10 @@ OUTPUT_DIR=${OUTPUT_DIR:A}
 DMG="$OUTPUT_DIR/$NAME $VERSION.dmg"
 [[ ! -e "$DMG" ]] || { print -u2 "Refusing to overwrite $DMG"; exit 1; }
 WORK=$(/usr/bin/mktemp -d /private/tmp/videoprompter-dmg.XXXXXX)
-trap 'rm -rf "$WORK"' EXIT
+KEEP_WORK=0
+PUBLISH_TMP=""
+cleanup() { (( KEEP_WORK )) || rm -rf "$WORK"; [[ -z "$PUBLISH_TMP" ]] || rm -f "$PUBLISH_TMP"; }
+trap cleanup EXIT
 STAGE="$WORK/$NAME"
 /bin/mkdir -p "$STAGE"
 /usr/bin/ditto "$APP" "$STAGE/$NAME.app"
@@ -56,18 +59,25 @@ if (( DEVELOPER_ID_AVAILABLE )); then
   /usr/bin/codesign --force --timestamp --sign "$SIGN_ID" "$WORK_DMG"
   print "Submitting the disk image to Apple notary service (profile $NOTARY_PROFILE)…"
   DMG_NOTARY_LOG="$WORK/notary.log"
-  xcrun notarytool submit "$WORK_DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$DMG_NOTARY_LOG"
+  KEEP_WORK=1
+  if ! xcrun notarytool submit "$WORK_DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$DMG_NOTARY_LOG"; then
+    print -u2 "Notarisation did not finish. Disk image and submission log retained at $WORK."
+    print -u2 "Query the submission ID in $DMG_NOTARY_LOG with: xcrun notarytool info <id> --keychain-profile ${(q)NOTARY_PROFILE}"
+    print -u2 "After Accepted: xcrun stapler staple ${(q)WORK_DMG} && xcrun stapler validate ${(q)WORK_DMG} && /usr/bin/spctl -a -vv -t open --context context:primary-signature ${(q)WORK_DMG} && /bin/cp -n ${(q)WORK_DMG} ${(q)DMG}"
+    exit 1
+  fi
   grep -q "status: Accepted" "$DMG_NOTARY_LOG" || { print -u2 "Disk image notarisation was not accepted."; exit 1; }
   xcrun stapler staple "$WORK_DMG"
   xcrun stapler validate "$WORK_DMG"
   /usr/bin/spctl -a -vv -t open --context context:primary-signature "$WORK_DMG"
 fi
 PUBLISH_TMP="$OUTPUT_DIR/.$NAME $VERSION.dmg.partial.$$"
-trap 'rm -rf "$WORK"; rm -f "$PUBLISH_TMP"' EXIT
+
 /usr/bin/ditto "$WORK_DMG" "$PUBLISH_TMP"
 /bin/mv -n "$PUBLISH_TMP" "$DMG"
 [[ ! -e "$PUBLISH_TMP" && -f "$DMG" ]] || { print -u2 "Could not publish DMG without overwriting an existing file: $DMG"; exit 1; }
 
+KEEP_WORK=0
 print "Created: $DMG"
 print "Requires macOS $MINIMUM or later. Main executable architectures: $MAIN_ARCHS. Bundled CLI architectures: $HELPER_ARCHS."
 if (( DEVELOPER_ID_AVAILABLE )); then print "Disk image is Developer ID signed, notarised and stapled."; else print "Local build: the disk image is not Developer ID signed or notarised."; fi

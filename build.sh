@@ -12,7 +12,8 @@ WORK=$(mktemp -d /private/tmp/videoprompter-package.XXXXXX)
 APP="$WORK/Video Prompter.app"
 TMP_ARCHIVE="$WORK/Video Prompter $VERSION.zip"
 OUTPUT_TMP="$OUTPUT_ROOT/.Video Prompter $VERSION.zip.$$"
-cleanup() { rm -rf "$WORK"; rm -f "$OUTPUT_TMP"; }
+KEEP_WORK=0
+cleanup() { (( KEEP_WORK )) || rm -rf "$WORK"; rm -f "$OUTPUT_TMP"; }
 trap cleanup EXIT
 MODULE_CACHE_PATH="$BUILD_ROOT/ModuleCache" CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/ClangModuleCache" SWIFT_MODULECACHE_PATH="$BUILD_ROOT/SwiftModuleCache" "$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT"
 BIN=$("$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT" --show-bin-path)/VideoPrompter
@@ -37,7 +38,13 @@ if (( DEVELOPER_ID_AVAILABLE )); then
   /usr/bin/ditto -c -k --keepParent "$APP" "$NOTARY_ZIP"
   print "Submitting to Apple notary service (profile $NOTARY_PROFILE)…"
   NOTARY_LOG="$WORK/notary.log"
-  xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$NOTARY_LOG"
+  KEEP_WORK=1
+  if ! xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$NOTARY_LOG"; then
+    print -u2 "Notarisation did not finish. App, upload and submission log retained at $WORK."
+    print -u2 "Query the submission ID in $NOTARY_LOG with: xcrun notarytool info <id> --keychain-profile ${(q)NOTARY_PROFILE}"
+    print -u2 "After Accepted: xcrun stapler staple ${(q)APP} && xcrun stapler validate ${(q)APP} && /usr/bin/spctl -a -vv -t exec ${(q)APP} && /usr/bin/ditto -c -k --sequesterRsrc --keepParent ${(q)APP} ${(q)ARCHIVE}"
+    exit 1
+  fi
   if ! grep -q "status: Accepted" "$NOTARY_LOG"; then
     SUBMISSION_ID=$(awk '/^  id: /{print $2; exit}' "$NOTARY_LOG")
     [[ -z "$SUBMISSION_ID" ]] || xcrun notarytool log "$SUBMISSION_ID" --keychain-profile "$NOTARY_PROFILE" || true
@@ -55,5 +62,6 @@ fi
 mkdir -p "$OUTPUT_ROOT"
 /usr/bin/ditto "$TMP_ARCHIVE" "$OUTPUT_TMP"
 /bin/mv -f "$OUTPUT_TMP" "$ARCHIVE"
+KEEP_WORK=0
 print "Built and verified $APP"
 print "Archive: ${ARCHIVE:A}"

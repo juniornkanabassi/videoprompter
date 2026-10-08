@@ -10,7 +10,7 @@ Voice tracking remains a preview. One recorded false-start timing check is unres
 
 ## Watch the first use guide
 
-The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walkthrough) shows how to add a script, set up Manual scrolling and use the presenter. It also introduces optional Voice tracking and the camera background. The guide uses genuine high-resolution captures of version 1.2.2 with fictional scripts, short on-screen instructions, music and sound effects. There is no narration. Written setup steps sit below the video, including permissions, linked Markdown files and recording controls.
+The [visual quick-start guide](https://juniornkanabassi.com/apps/videoprompter/#walkthrough) shows how to add a script, set up Manual scrolling and use the presenter. It also introduces optional Voice tracking and the camera background. The guide uses genuine high-resolution captures of version 1.2.2 with fictional scripts, short on-screen instructions, music and sound effects. There is no narration. Written setup steps sit below the video, including permissions, linked Markdown files and recording controls.
 
 ## What you need
 
@@ -20,7 +20,7 @@ The [visual quick-start guide](https://juniornkanabassi.com/apps/vidprompt/#walk
 
 ## Download
 
-[Download the latest Video Prompter preview](https://github.com/juniornkanabassi/videoprompter-releases/releases/latest/download/VideoPrompter.dmg).
+[Download the latest Video Prompter](https://github.com/juniornkanabassi/videoprompter-releases/releases/latest/download/VideoPrompter.dmg).
 
 The public [Releases page](https://github.com/juniornkanabassi/videoprompter-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VideoPrompter.dmg`, so the download link above always points to the latest published version.
 
@@ -38,17 +38,17 @@ The disk image also contains a short install note.
 
 ### First launch
 
-macOS checks the notarisation ticket once, online or from the copy stapled inside the app, and then opens Video Prompter without a warning. If macOS says the app is damaged or cannot be verified, the download was altered or incomplete. Delete it and download the disk image again from the Releases page. Do not remove quarantine attributes or turn off Gatekeeper in Terminal.
+The release includes Apple’s notarisation ticket. macOS may ask you to confirm opening a downloaded app. If it says the app is damaged or cannot be verified, download a fresh copy from the Releases page and check your Mac’s security policy. Do not remove quarantine attributes or turn off Gatekeeper in Terminal.
 
 ## First use
 
 1. Open Video Prompter.
-2. Import a script or choose **New Script**.
-3. Open **Presenter settings** and choose **Voice** or **Manual**.
+2. Choose **Add** to import a file or create a **New Script**.
+3. Open **Settings** and choose **Voice** or **Manual**.
 4. Press **Present**.
 5. In the presenter, press **Start**. Press **Pause** to stop, or **Back to start** to return to the first word.
 
-New libraries start with simple controls. **Show advanced settings** reveals detailed appearance, voice and saved settings. Showing or hiding them does not change any saved choices.
+New libraries start with simple controls. **More** in Settings reveals detailed appearance, voice and saved settings. Showing or hiding them does not change any saved choices.
 
 ### Voice or Manual
 
@@ -198,3 +198,5 @@ The socket is `control.sock` in the app's data folder: folder permissions 0700, 
 ### Release status
 
 Release builds are Developer ID signed, notarised and stapled, and so is the disk image. Gatekeeper acceptance is checked with `spctl` on the build Mac; the full install and removal workflow for a new user on another Mac remains unverified. Sparkle, a signed appcast and a one-command publish pipeline are not shipped yet, so updates are manual.
+
+If notarisation times out, the build retains its staged bundle or disk image and submission log in the printed temporary folder. Use the printed submission ID with `xcrun notarytool info` and the printed staple, verification and archive commands after Apple reports Accepted. Do not resubmit the same pending upload.
