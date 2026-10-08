@@ -27,4 +27,15 @@ mkdir -p "$VIDEOPROMPTER_TEST_SCRATCH"
 # ties them to one build's cdhash, so every new build silently loses them (black camera, silent mic).
 SIGN_ID="-"
 if /usr/bin/security find-identity -v -p codesigning 2>/dev/null | grep -q '"ReadAlong Dev"'; then SIGN_ID="ReadAlong Dev"; fi
-export SIGN_ID
+# Developer ID Application (Apple Developer Program, active 7 October 2026). Two certificates share
+# the same name, so sign by SHA-1 or codesign reports an ambiguous identity. Notarisation uses the
+# "JuniorOS" notarytool keychain profile. Set VIDEOPROMPTER_LOCAL_SIGNING=1 for a quick local build
+# with the ReadAlong Dev identity and no notarisation.
+DEVELOPER_ID_SHA1="C297CD17464A0EF6C93704A59BC2E1D4D1759400"
+NOTARY_PROFILE="${VIDEOPROMPTER_NOTARY_PROFILE:-JuniorOS}"
+DEVELOPER_ID_AVAILABLE=0
+if [[ -z "${VIDEOPROMPTER_LOCAL_SIGNING:-}" ]] && /usr/bin/security find-identity -v -p codesigning 2>/dev/null | grep -q "$DEVELOPER_ID_SHA1"; then
+  SIGN_ID="$DEVELOPER_ID_SHA1"
+  DEVELOPER_ID_AVAILABLE=1
+fi
+export SIGN_ID DEVELOPER_ID_AVAILABLE NOTARY_PROFILE

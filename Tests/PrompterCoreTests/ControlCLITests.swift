@@ -58,8 +58,65 @@ final class ControlCLITests: XCTestCase {
     try fileManager.createDirectory(at: target, withIntermediateDirectories: true)
     try fileManager.createDirectory(at: linked, withIntermediateDirectories: true)
     try fileManager.createSymbolicLink(at: linked.appendingPathComponent("VidPrompt"), withDestinationURL: target)
-    ControlProtocol.migrateLegacyFolder(in: linked)
+    XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: linked, move: { _, _ in
+      XCTFail("A symlinked legacy folder must never be moved")
+    }).path, linked.appendingPathComponent("Video Prompter").path)
     XCTAssertFalse(fileManager.fileExists(atPath: linked.appendingPathComponent("Video Prompter").path))
     XCTAssertEqual(try fileManager.destinationOfSymbolicLink(atPath: linked.appendingPathComponent("VidPrompt").path), target.path)
+  }
+  func testLegacySocketDefersMigrationUntilRemoved() throws {
+    let fileManager = FileManager.default
+    let parent = fileManager.temporaryDirectory.appendingPathComponent("videoprompter-migration-socket-\(UUID().uuidString)", isDirectory: true)
+    defer { try? fileManager.removeItem(at: parent) }
+    let legacy = parent.appendingPathComponent("VidPrompt", isDirectory: true)
+    let current = parent.appendingPathComponent("Video Prompter", isDirectory: true)
+    let contents = Data("existing library".utf8)
+    try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
+    try contents.write(to: legacy.appendingPathComponent("LibraryIndex.json"))
+    let marker = ControlProtocol.socketURL(dataRoot: legacy)
+    try Data().write(to: marker)
+    XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: parent, move: { _, _ in
+      XCTFail("A legacy socket must prevent moving the folder")
+    }).path, legacy.path)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "status"], applicationSupport: parent).path, legacy.path)
+    XCTAssertTrue(fileManager.fileExists(atPath: marker.path))
+    XCTAssertFalse(fileManager.fileExists(atPath: current.path))
+    XCTAssertEqual(try Data(contentsOf: legacy.appendingPathComponent("LibraryIndex.json")), contents)
+    try fileManager.removeItem(at: marker)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "status"], applicationSupport: parent).path, current.path)
+    XCTAssertFalse(fileManager.fileExists(atPath: legacy.path))
+    XCTAssertEqual(try Data(contentsOf: current.appendingPathComponent("LibraryIndex.json")), contents)
+  }
+  func testFailedLegacyMoveKeepsDataAndRecordingsUsableAndRetries() throws {
+    let fileManager = FileManager.default
+    let fixture = fileManager.temporaryDirectory.appendingPathComponent("videoprompter-migration-failure-\(UUID().uuidString)", isDirectory: true)
+    defer { try? fileManager.removeItem(at: fixture) }
+    // Both dataRoot and CameraRecorder.recordingsFolder use this shared migration path.
+    for (folder, filename) in [("Application Support", "LibraryIndex.json"), ("Movies", "take.mov")] {
+      let parent = fixture.appendingPathComponent(folder, isDirectory: true)
+      let legacy = parent.appendingPathComponent("VidPrompt", isDirectory: true)
+      let current = parent.appendingPathComponent("Video Prompter", isDirectory: true)
+      let contents = Data("existing \(filename)".utf8)
+      try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
+      try contents.write(to: legacy.appendingPathComponent(filename))
+      var attempts = 0
+      let resolved = ControlProtocol.migrateLegacyFolder(in: parent, move: { source, destination in
+        attempts += 1
+        XCTAssertEqual(source.path, legacy.path)
+        XCTAssertEqual(destination.path, current.path)
+        throw CocoaError(.fileWriteNoPermission)
+      })
+      XCTAssertEqual(attempts, 1)
+      XCTAssertEqual(resolved.path, legacy.path)
+      // Callers create their resolved folder before using it. This must not create an empty replacement.
+      try fileManager.createDirectory(at: resolved, withIntermediateDirectories: true)
+      XCTAssertEqual(try Data(contentsOf: resolved.appendingPathComponent(filename)), contents)
+      XCTAssertFalse(fileManager.fileExists(atPath: current.path))
+      try Data("new content".utf8).write(to: resolved.appendingPathComponent("after-failure"))
+      XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: parent).path, current.path)
+      XCTAssertFalse(fileManager.fileExists(atPath: legacy.path))
+      XCTAssertEqual(try Data(contentsOf: current.appendingPathComponent(filename)), contents)
+      XCTAssertEqual(try String(contentsOf: current.appendingPathComponent("after-failure"), encoding: .utf8), "new content")
+    }
   }
 }
