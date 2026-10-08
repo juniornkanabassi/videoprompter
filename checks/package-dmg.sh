@@ -63,13 +63,13 @@ if (( DEVELOPER_ID_AVAILABLE )); then
   if ! xcrun notarytool submit "$WORK_DMG" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$DMG_NOTARY_LOG"; then
     print -u2 "Notarisation did not finish. Disk image and submission log retained at $WORK."
     print -r -u2 "Query the submission ID in $DMG_NOTARY_LOG with: xcrun notarytool info <id> --keychain-profile ${(q)NOTARY_PROFILE}"
-    print -r -u2 "After Accepted: xcrun stapler staple ${(q)WORK_DMG} && xcrun stapler validate ${(q)WORK_DMG} && /usr/bin/spctl -a -vv -t open --context context:primary-signature ${(q)WORK_DMG} && /bin/cp -n ${(q)WORK_DMG} ${(q)DMG}"
+    print -r -u2 "After Accepted: xcrun stapler staple ${(q)WORK_DMG} && xcrun stapler validate ${(q)WORK_DMG} && /usr/sbin/spctl -a -vv -t open --context context:primary-signature ${(q)WORK_DMG} && /bin/cp -n ${(q)WORK_DMG} ${(q)DMG}"
     exit 1
   fi
   grep -q "status: Accepted" "$DMG_NOTARY_LOG" || { print -u2 "Disk image notarisation was not accepted."; exit 1; }
   xcrun stapler staple "$WORK_DMG"
   xcrun stapler validate "$WORK_DMG"
-  /usr/bin/spctl -a -vv -t open --context context:primary-signature "$WORK_DMG"
+  /usr/sbin/spctl -a -vv -t open --context context:primary-signature "$WORK_DMG"
 fi
 PUBLISH_TMP="$OUTPUT_DIR/.$NAME $VERSION.dmg.partial.$$"
 
