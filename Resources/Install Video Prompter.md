@@ -10,4 +10,6 @@ If you prefer to keep apps in a named folder, create that folder inside Applicat
 
 If macOS says the app is damaged or cannot be verified, download a fresh copy from the Releases page and check your Mac’s security policy. Do not remove quarantine attributes or bypass Gatekeeper in Terminal.
 
+If upgrading from VidPrompt, quit it first. After opening Video Prompter and checking your existing scripts, move the old VidPrompt.app to the Bin. Keep your previous download as a rollback.
+
 Allow camera or microphone access when you use those features. Video Prompter keeps scripts in your user account; the disk image contains only the app.

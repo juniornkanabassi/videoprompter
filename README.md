@@ -88,7 +88,7 @@ If you set up the optional `videoprompter` command link or an AI host connection
 
 ## Earlier names
 
-Video Prompter was formerly VidPrompt, and JuniorPrompter before that. Version 2.0.0 keeps the same bundle identifier, so permissions and settings carry over, and on first launch it moves the existing `VidPrompt` data and recordings folders to their new `Video Prompter` names.
+Video Prompter was formerly VidPrompt, and JuniorPrompter before that. Version 2.0.0 keeps the same bundle identifier for existing settings. On first launch it moves the existing `VidPrompt` data and recordings folders to their new `Video Prompter` names. If the move cannot finish, it continues using the original folder. The new signing identity may require fresh camera or microphone permission. Quit VidPrompt before opening Video Prompter. Once you have checked that your scripts are present, move the old `VidPrompt.app` to the Bin so you keep one active copy. Removing the old app does not delete its scripts.
 
 Installing Video Prompter does not import a JuniorPrompter library automatically. Keep any old library and its backups until you have checked that any recovery you plan has worked. Removing either app must not delete scripts or recordings.
 
