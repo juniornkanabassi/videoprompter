@@ -42,7 +42,7 @@ if (( DEVELOPER_ID_AVAILABLE )); then
   if ! xcrun notarytool submit "$NOTARY_ZIP" --keychain-profile "$NOTARY_PROFILE" --wait --timeout 30m | tee "$NOTARY_LOG"; then
     print -u2 "Notarisation did not finish. App, upload and submission log retained at $WORK."
     print -r -u2 "Query the submission ID in $NOTARY_LOG with: xcrun notarytool info <id> --keychain-profile ${(q)NOTARY_PROFILE}"
-    print -r -u2 "After Accepted: xcrun stapler staple ${(q)APP} && xcrun stapler validate ${(q)APP} && /usr/bin/spctl -a -vv -t exec ${(q)APP} && /usr/bin/ditto -c -k --sequesterRsrc --keepParent ${(q)APP} ${(q)ARCHIVE}"
+    print -r -u2 "After Accepted: xcrun stapler staple ${(q)APP} && xcrun stapler validate ${(q)APP} && /usr/bin/spctl -a -vv -t exec ${(q)APP} && /bin/mkdir -p ${(q)OUTPUT_ROOT} && /usr/bin/ditto -c -k --sequesterRsrc --keepParent ${(q)APP} ${(q)ARCHIVE}"
     exit 1
   fi
   if ! grep -q "status: Accepted" "$NOTARY_LOG"; then
