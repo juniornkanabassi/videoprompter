@@ -7,7 +7,6 @@ struct InspectorView: View {
   @ObservedObject var store: AppStore
   @ObservedObject private var session: SessionStore
   @ObservedObject private var camera = CameraModel.shared
-  @State private var showsGuideSettings = false
   @State private var presetName = ""
   @State private var devices: [AudioInputDevice] = []
   @State private var deviceObserver: AudioInputDeviceObserver?
@@ -19,104 +18,16 @@ struct InspectorView: View {
   init(store: AppStore) { self.store = store; self.session = store.session }
   var body: some View {
     Form {
-      Section {
-        Toggle("Show advanced settings", isOn: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 }))
-          .accessibilityLabel("Show advanced settings")
-          .help("Show extra appearance, voice and saved settings without changing your choices")
-        Text("Extra appearance, voice and saved settings. Your choices are kept.").font(.caption).foregroundStyle(.secondary)
-      }
-      Section {
+      Section { Text("Settings").font(.title2.weight(.semibold)) }
+      Section("Follow") {
         Picker("How it follows you", selection: $store.settings.mode) {
           ForEach(["Voice", "Manual"], id: \.self, content: Text.init)
         }.pickerStyle(.segmented).help("Voice follows your spoken words; Manual scrolls at a steady speed")
-        Text(store.settings.mode == "Voice" ? "Choose a microphone, then press Start in the presenter. The text follows your spoken words." : "Set a scroll speed, then press Start in the presenter. Pause whenever you need.")
+        Text(store.settings.mode == "Voice" ? "Follows the words you say." : "Scrolls at a steady speed.")
           .font(.caption).foregroundStyle(.secondary)
-        if store.settings.mode == "Manual" {
-          ValueSlider("Scroll speed", value: $store.settings.speed, in: 20...300,
-                      readout: "\(Int(store.settings.speed)) words per minute").help("Set how fast Manual moves through your script")
-        }
-        if store.settings.mode == "Voice", !store.showsSimpleInterface {
-          Toggle("Follow me when I repeat earlier words", isOn: $store.settings.allowsBackwardVoiceTracking).help("Allow the reading position to move back when you repeat a passage")
-          Picker("Spoken language", selection: $store.settings.speechLanguage) {
-            Text("Mixed English & French").tag("Mixed")
-            Text("Automatic (script language)").tag("Automatic")
-            Text("English").tag("English")
-            Text("French").tag("French")
-            ForEach(supportedSpeechLocales.filter { !["en-GB", "fr-FR"].contains($0.identifier) }, id: \.identifier) { locale in
-              Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
-            }
-          }.help("Choose the language you will speak; Automatic uses the script language")
-        }
-      } header: {
-        Label { Text("Following") } icon: { Image(systemName: "waveform").foregroundStyle(Color.accentColor) }
-      }
-      Section {
-        // Segmented while the three labels fit, a menu when the pane is narrower.
-        ViewThatFits(in: .horizontal) {
-          modePicker.pickerStyle(.segmented)
-          modePicker.pickerStyle(.menu)
-        }
-      } header: {
-        Label { Text("What to show") } icon: { Image(systemName: "rectangle.on.rectangle").foregroundStyle(Color.accentColor) }
-      }
-      if camera.presentsWithVideo {
-        Section("Camera") {
-          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }.help("Choose the camera shown behind your script")
-          Picker("Camera rotation", selection: camera.rotationChoice) {
-            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-          }.help("Rotate the camera picture, or choose Automatic")
-          Button("Framing guides") { showsGuideSettings.toggle() }.help("Show composition lines and an output frame marker")
-            .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
-            }
-          Toggle("Mirror camera", isOn: $camera.mirrored).help("Flip the camera picture left to right")
-        }.task { camera.start() }
-      }
-      Section {
-        Picker("Text font", selection: $store.settings.fontName) {
-          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
-        }.help("Choose the font used in the presenter")
-        ValueSlider("Text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
-                    readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
-        Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
-          .accessibilityLabel("Mirror for teleprompter glass")
-          .help("Flip text left to right so it reads correctly in reflected glass")
-        if !store.showsSimpleInterface {
-        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }.help("Narrow or widen the centred script column")
-        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text visibility") }.help("Make the script text more or less transparent")
-        // One control, not a Prompter-only slider that did nothing over video beside a Video one.
-        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
-          Text("Background darkness")
-        }.help("Make the backdrop darker; script-only and camera views keep separate values")
-        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Reading line position") }.help("Move the line where your current words appear")
-        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Reading line visibility") }.help("Fade the reading line; zero hides it")
-        Text("Advanced appearance").font(.headline)
-          Picker("Text weight", selection: $store.settings.fontWeight) {
-            Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
-          }.help("Choose regular or bold presenter text")
-          Picker("Alignment", selection: $store.settings.alignment) {
-            Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
-          }.help("Align the text within the script column")
-          Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
-          Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
-          Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror).help("Flip text top to bottom for your teleprompter setup")
-          Picker("Text rotation", selection: $store.settings.rotation) {
-            Text("0°").tag(0)
-            Text("180°").tag(180)
-          }.help("Rotate the script by half a turn")
-          Toggle("Show stage directions", isOn: $store.settings.showCues).help("Show bracketed stage directions alongside spoken text")
-          Toggle("Align window to screen edges", isOn: $store.settings.presenterSnappingEnabled).help("Snap the presenter to screen edges or centre after dragging")
-          Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord).help("Mark the current word as the script follows you")
-          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the script text colour")
-          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the background colour")
-        }
-      } header: {
-        Label { Text("Text") } icon: { Image(systemName: "textformat.size").foregroundStyle(Color.accentColor) }
-      }
-      if store.settings.mode == "Voice" {
-      Section {
-        HStack {
-          // The menu sizes to its longest name; let it give way and show the choice as a tooltip.
+        if store.settings.mode == "Voice" {
+          VStack(alignment: .leading, spacing: 6) {
+            Text("Microphone")
           Picker("Microphone", selection: Binding(
             get: { store.settings.audioDeviceUID ?? "" },
             set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
@@ -127,19 +38,66 @@ struct InspectorView: View {
             }
             ForEach(devices) { device in Text(device.name).tag(device.uid) }
           }
-          .frame(maxWidth: .infinity)
+          .labelsHidden().accessibilityLabel("Microphone")
+          .frame(maxWidth: .infinity, alignment: .leading)
           .help("Choose the microphone that Voice should listen to. " + (store.settings.audioDeviceUID.map { uid in
             devices.first { $0.uid == uid }?.name ?? "Selected microphone unavailable"
           } ?? "Choose a microphone"))
-          Button("Refresh microphones", systemImage: "arrow.clockwise") { devices = AudioCapture.inputDevices() }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .help("Look again for connected microphones")
+          }
+          HStack(spacing: 12) {
+            Button(session.isTestingMicrophone ? "Stop test" : "Test") {
+              if session.isTestingMicrophone { session.stopMicrophoneTest() }
+              else { session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
+            }.help("Check your microphone before presenting")
+              .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
+            InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping, showsScale: false)
+          }
+          if let notice = session.microphoneTestNotice {
+            Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
+          }
+        } else {
+          ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
+            readout: "\(Int(store.settings.speed)) words per minute").help("Set how fast Manual moves through your script")
         }
-        if !store.showsSimpleInterface {
-        // The capture hears each tick at once; the settings, and with them the whole inspector, the
-        // presenter and the saved copy, only follow once the drag pauses. A fixed-size slider with
-        // no readout, so nothing here changes the layout while it moves.
+      }
+      Section("Show") {
+        ViewThatFits(in: .horizontal) {
+          modePicker.pickerStyle(.segmented)
+          modePicker.pickerStyle(.menu)
+        }
+        if camera.presentsWithVideo {
+          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }.help("Choose the camera shown behind your script")
+          Picker("Rotation", selection: camera.rotationChoice) {
+            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
+          }.help("Rotate the camera picture, or choose Automatic")
+          Toggle("Mirror camera", isOn: $camera.mirrored).help("Flip the camera picture left to right")
+            .task { camera.start() }
+        }
+      }
+      Section("Text") {
+        Picker("Font", selection: $store.settings.fontName) {
+          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
+        }.help("Choose the font used in the presenter")
+        ValueSlider("Size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
+          readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
+        Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+          .accessibilityLabel("Mirror for teleprompter glass")
+          .help("Flip text left to right so it reads correctly in reflected glass")
+      }
+      Section {
+        DisclosureGroup("More", isExpanded: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 })) {
+          Group {
+            Text("Voice").font(.headline)
+          Picker("Spoken language", selection: $store.settings.speechLanguage) {
+            Text("Mixed English & French").tag("Mixed")
+            Text("Automatic (script language)").tag("Automatic")
+            Text("English").tag("English")
+            Text("French").tag("French")
+            ForEach(supportedSpeechLocales.filter { !["en-GB", "fr-FR"].contains($0.identifier) }, id: \.identifier) { locale in
+              Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
+            }
+          }.help("Choose the language you will speak; Automatic uses the script language")
+          Toggle("Follow me when I repeat earlier words", isOn: $store.settings.allowsBackwardVoiceTracking).help("Allow the reading position to move back when you repeat a passage")
         LabeledContent("Microphone volume") {
           Slider(value: Binding(
             get: { gainDraft ?? store.settings.inputGain },
@@ -153,26 +111,6 @@ struct InspectorView: View {
           guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
           commitGain()
         }
-        }
-        HStack {
-          Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
-            if session.isTestingMicrophone {
-              session.stopMicrophoneTest()
-            } else {
-              session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
-            }
-          }
-          .help("Check your microphone before presenting; speak normally during the test")
-          .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
-          if session.isTestingMicrophone {
-            Label("Testing. Speak normally.", systemImage: "mic.fill")
-              .foregroundStyle(.secondary)
-          }
-        }
-        InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping, showsScale: !store.showsSimpleInterface)
-        if !store.showsSimpleInterface {
-        // The clipping warning shares this row: a row of its own came and went with the signal and
-        // shook everything below it during a test.
         LabeledContent("Loudest sound") {
           HStack {
             if session.isClipping {
@@ -183,22 +121,44 @@ struct InspectorView: View {
               .monospacedDigit().lineLimit(1).fixedSize()
           }
         }
-        Text("dBFS measures sound against the microphone’s maximum level: 0 is the limit. Green below −20; yellow from −20 to −9; red above −9. Lower Microphone volume if the sound distorts.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        } else if session.isClipping {
-          Label("Microphone too loud. Lower Microphone volume in advanced settings.", systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        }
-        if let notice = session.microphoneTestNotice {
-          Label(notice, systemImage: "exclamationmark.triangle.fill")
-            .foregroundStyle(.secondary)
-        }
-      } header: {
-        Label { Text("Microphone") } icon: { Image(systemName: "mic.fill").foregroundStyle(Color.accentColor) }
-      }
-      }
-      if !store.showsSimpleInterface {
-      Section("Saved settings") {
+          .help("dBFS measures sound against the microphone’s maximum level. Zero is the limit. Lower Microphone volume if the sound distorts.")
+            Text("Layout").font(.headline)
+        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }.help("Narrow or widen the centred script column")
+        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text visibility") }.help("Make the script text more or less transparent")
+        // One control, not a Prompter-only slider that did nothing over video beside a Video one.
+        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
+          Text("Background darkness")
+        }.help("Make the backdrop darker; script-only and camera views keep separate values")
+        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Reading line position") }.help("Move the line where your current words appear")
+        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Reading line visibility") }.help("Fade the reading line; zero hides it")
+            Text("Typography").font(.headline)
+          Picker("Text weight", selection: $store.settings.fontWeight) {
+            Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
+          }.help("Choose regular or bold presenter text")
+          Picker("Alignment", selection: $store.settings.alignment) {
+            Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
+          }.help("Align the text within the script column")
+          Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
+          Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
+          ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the script text colour")
+          ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the background colour")
+            Text("Presenter").font(.headline)
+          Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror).help("Flip text top to bottom for your teleprompter setup")
+          Picker("Text rotation", selection: $store.settings.rotation) {
+            Text("0°").tag(0)
+            Text("180°").tag(180)
+          }.help("Rotate the script by half a turn")
+          Toggle("Show stage directions", isOn: $store.settings.showCues).help("Show bracketed stage directions alongside spoken text")
+          Toggle("Align window to screen edges", isOn: $store.settings.presenterSnappingEnabled).help("Snap the presenter to screen edges or centre after dragging")
+          Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord).help("Mark the current word as the script follows you")
+            Text("Editor text").font(.headline)
+            Picker("Editor font", selection: $store.previewFontName) {
+              ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
+            }.help("Change the editor font; presenter text has its own settings")
+            Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
+              Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
+            }.accessibilityLabel("Editor text size").help("Change text size while editing")
+            Text("Saved settings").font(.headline)
         HStack {
           TextField("Name these settings", text: $presetName).help("Give the current presenter settings a name")
           Button("Save") { store.savePreset(named: presetName); presetName = "" }.help("Save the current presenter settings for reuse")
@@ -219,7 +179,9 @@ struct InspectorView: View {
             Button("Delete", role: .destructive) { store.deletePreset(preset.id) }.help("Remove these saved settings")
           }
         }
-      }
+          }
+        }.accessibilityAction { store.simpleInterface.toggle() }
+          .help("Show extra voice, layout, typography and saved settings")
       }
     }.formStyle(.grouped).onChange(of: store.simpleInterface) { _, _ in commitGain() }.task {
       supportedSpeechLocales = await SpeechTranscriber.supportedLocales
@@ -249,8 +211,10 @@ struct InspectorView: View {
 
   private var modePicker: some View {
     Picker("What to show", selection: $camera.displayMode) {
-      ForEach(PresenterDisplayMode.allCases) { Text($0.label).tag($0) }
-    }.labelsHidden().help("Show the script, the camera picture, or both in the presenter")
+      Text("Script").tag(PresenterDisplayMode.prompterOnly)
+      Text("Script and camera").tag(PresenterDisplayMode.prompterWithVideo)
+      Text("Camera").tag(PresenterDisplayMode.videoOnly)
+    }.labelsHidden().accessibilityLabel("What to show").help("Show the script, the camera picture, or both in the presenter")
   }
 
   private func commitGain() {

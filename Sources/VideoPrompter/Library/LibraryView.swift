@@ -34,28 +34,17 @@ struct LibraryView: View {
               }
             }
               .contextMenu {
-                Button("Rename Folder") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
+                Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
                 Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }.help("Remove the folder; its scripts return to All Scripts")
               }
               .help("Choose which scripts to show").selectionDisabled()
           }
-          VStack(alignment: .leading, spacing: 4) {
-            Text("New folder").lineLimit(nil).fixedSize(horizontal: false, vertical: true)
-            HStack {
-              TextField("", text: $newFolderName)
-                .accessibilityLabel("New folder")
-                .textFieldStyle(.roundedBorder)
-                .help("Name a folder, then press Return to create it")
-                .onSubmit(createFolder)
-              Button("Create Folder", systemImage: "plus", action: createFolder)
-                .labelStyle(.iconOnly)
-                .help("Create folder")
-                .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-          }
         }
         Section("Scripts") {
-          ForEach(store.visible) { script in ScriptRow(script: script, link: store.linkStates[script.id]) }
+          ForEach(store.visible) { script in
+            ScriptRow(script: script, link: store.linkStates[script.id])
+              .contextMenu { scriptActions(script) }
+          }
         }
         if !store.trash.isEmpty {
           Section("Recently Deleted") {
@@ -70,20 +59,17 @@ struct LibraryView: View {
         }
       }
       .listStyle(.sidebar)
-      // New lives in the toolbar and File menu; this bar keeps Move to Trash (Command-Delete).
-      .safeAreaInset(edge: .bottom) {
-        HStack {
-          Spacer()
-          Button("Move to Trash", systemImage: "trash") { store.delete(selection) }
-            .labelStyle(.iconOnly)
-            .help("Move to Trash")
-            .disabled(selection.isEmpty)
-        }.padding(10)
+      .contextMenu {
+        Button("New Folder…") { store.namingNewFolder = true }
+          .disabled(!store.libraryAvailable)
       }
-      .onChange(of: selection) { _, value in if let id = value.first { store.selectedID = id } }
+      .onChange(of: selection) { _, value in
+        store.selectedIDs = value
+        if let id = value.first { store.selectedID = id }
+      }
       .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
         guard press.modifiers == .command, !selection.isEmpty,
-          !(NSApp.keyWindow?.firstResponder is NSTextView) else { return .ignored }
+          AppStore.canTrashSelection(in: NSApp.keyWindow) else { return .ignored }
         store.delete(selection)
         return .handled
       }
@@ -107,7 +93,7 @@ struct LibraryView: View {
                 Image(systemName: "doc.text").font(.largeTitle).foregroundStyle(.secondary)
                 Text("Your script, ready to read").font(.title2.bold())
                   .fixedSize(horizontal: false, vertical: true)
-                Text("Video Prompter keeps your script in view while you speak.\n1. Add a script.\n2. Choose Voice or Manual in Presenter settings.\n3. After adding a script, press Present.")
+                Text("Add a script.\nChoose Voice or Manual in Settings.\nPress Present.")
                   .fixedSize(horizontal: false, vertical: true)
                 Button { importing = true } label: {
                   Label { Text("Import Script…").fixedSize(horizontal: false, vertical: true) }
@@ -138,57 +124,26 @@ struct LibraryView: View {
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup {
-        Button("New Script", systemImage: "square.and.pencil") { store.create() }
-          .help("Start with a blank script (⇧⌘N)")
-          .disabled(!store.libraryAvailable)
-        Button("Import Script…", systemImage: "square.and.arrow.down") { importing = true }
-          .help("Add a Markdown, text, Word, PDF or RTF script (⌘I)")
-          .disabled(!store.libraryAvailable)
         Menu {
-          Button("Duplicate", systemImage: "plus.square.on.square") { store.duplicate() }
-            .help("Duplicate script")
-            .disabled(store.selected == nil)
-          Menu {
-            Button("All Scripts") { store.moveSelectedScripts(selection, to: nil) }.help("Remove the selected scripts from their folders")
-            ForEach(store.folders) { folder in
-              Button(folder.name) { store.moveSelectedScripts(selection, to: folder.id) }.help("Move the selected scripts to this folder")
-            }
-          } label: { Label("Move to folder", systemImage: "folder") }
-            .accessibilityLabel("Move to folder")
-            .help("Move to folder")
-            .disabled(selection.isEmpty)
-          Button("Import from Clipboard") { store.importClipboard() }.help("Create a script from copied text")
-          Button("Export Markdown…") {
-            guard let script = store.selected else { return }
-            let panel = NSSavePanel()
-            panel.nameFieldStringValue = "\(script.metadata.title).md"
-            panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
-            guard panel.runModal() == .OK, let url = panel.url else { return }
-            do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
-            catch { importError = "Could not export the script. \(error.localizedDescription)" }
-          }.help("Save a Markdown copy of the selected script").disabled(store.selected == nil)
-          Button("Reveal in Finder") {
-            guard let id = store.selectedID else { return }
-            Task {
-              do {
-                let url = try await store.library!.scriptURL(for: id)
-                NSWorkspace.shared.activateFileViewerSelecting([url])
-              } catch { importError = "Could not reveal the script. \(error.localizedDescription)" }
-            }
-          }.help("Show the selected script’s Markdown file in Finder").disabled(store.selected == nil)
-        } label: { Label("More Actions", systemImage: "ellipsis.circle") }
-          .accessibilityLabel("More Actions")
-          .help("More script actions")
-          .disabled(!store.libraryAvailable)
+          Button("New Script") { store.create() }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+          Button("Import File…") { importing = true }
+            .keyboardShortcut(ScriptShortcuts.importFile)
+          Button("Paste as New Script") { store.importClipboard() }
+          Divider()
+          Button("New Folder…") { store.namingNewFolder = true }
+        } label: { Label("Add", systemImage: "plus") }
+          .labelStyle(.iconOnly).accessibilityLabel("Add")
+          .help("Add a script or folder").disabled(!store.libraryAvailable)
         Button("Present", systemImage: "play.rectangle") { PresenterController.shared.present(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
           .tint(.accentColor)
           .help(store.selected == nil ? "Select a script to present" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(store.selected == nil)
-        Button("Presenter settings", systemImage: "sidebar.right") { store.inspector.toggle() }
+        Button("Settings", systemImage: "slider.horizontal.3") { store.inspector.toggle() }
           .labelStyle(.titleAndIcon)
-          .help(store.inspector ? "Hide presenter settings" : "Choose how the script follows you and how it looks")
+          .help(store.inspector ? "Hide settings" : "Choose how the script follows you and how it looks")
       }
     }
     .alert(
@@ -245,6 +200,17 @@ struct LibraryView: View {
     .alert("Import failed", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
       Button("OK") { importError = nil }
     } message: { Text(importError ?? "The document could not be imported.") }
+    .sheet(isPresented: Binding(get: { store.relinkingID != nil }, set: { if !$0 { store.relinkingID = nil } })) {
+      if let script = store.scripts.first(where: { $0.id == store.relinkingID }) {
+        RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom)
+      }
+    }
+    .alert("New Folder", isPresented: $store.namingNewFolder) {
+      TextField("Folder name", text: $newFolderName).help("Enter a name for this folder")
+      Button("Create", action: createFolder)
+        .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+      Button("Cancel", role: .cancel) { newFolderName = "" }
+    }
     .alert("Rename Folder", isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
       TextField("Folder name", text: $renamedFolderName).help("Enter a new name for this folder")
       Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
@@ -252,6 +218,29 @@ struct LibraryView: View {
     }
     // Allow the 200% sidebar plus the inspector and editor without changing window constraints mid-zoom.
     .frame(minWidth: 1132, minHeight: 500)
+  }
+
+  @ViewBuilder private func scriptActions(_ script: ScriptRecord) -> some View {
+    let id = script.id
+    let linked = script.metadata.linkedPath != nil
+    let broken = store.linkStates[id]?.isBroken == true
+    Button("Present") { store.selectedID = id; PresenterController.shared.present(store: store) }
+    Button("Duplicate") { store.selectedID = id; store.duplicate() }.keyboardShortcut("d")
+    Menu("Move to Folder") {
+      Button("All Scripts") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil) }
+      ForEach(store.folders) { folder in
+        Button(folder.name) { store.moveSelectedScripts(store.contextSelection(for: id), to: folder.id) }
+      }
+    }
+    Button("Export Markdown…") { store.exportMarkdown(script) }
+    Button("Reveal in Finder") { store.revealInFinder(id) }.disabled(broken)
+    if !linked { Button("Link File…") { store.relinkingID = id } }
+    if linked {
+      Button("Unlink") { store.unlink(id) }
+      if broken { Button("Find Linked File…") { store.relinkingID = id } }
+    }
+    Divider()
+    Button("Move to Trash", role: .destructive) { store.delete(store.contextSelection(for: id)) }.keyboardShortcut(.delete)
   }
 
   private func createFolder() {
@@ -291,7 +280,6 @@ private struct EditorView: View {
   @State private var title = ""
   @State private var tags = ""
   @State private var editNotice: String?
-  @State private var relinking = false
 
   init(store: AppStore, script: ScriptRecord) {
     self.store = store
@@ -307,23 +295,10 @@ private struct EditorView: View {
         TextField("Title", text: $title).textFieldStyle(.plain).font(.title2.weight(.semibold))
           .help("Name this script; press Return to save the title")
           .onSubmit { store.rename(title, for: script.metadata.id) }
-        TextField("Tags", text: $tags).help("Separate tags with commas; press Return to save them").textFieldStyle(.roundedBorder).frame(minWidth: 80, maxWidth: 190).onSubmit
+        TextField("Add tags", text: $tags).help("Separate tags with commas; press Return to save them").textFieldStyle(.plain).font(.caption).onSubmit
         { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
       }.padding(24)
       Divider()
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: 10) {
-          Text("Editor text").font(.caption).foregroundStyle(.secondary)
-          editorFontPicker
-          editorSizeStepper
-          Spacer()
-        }.fixedSize(horizontal: true, vertical: false)
-        VStack(alignment: .leading, spacing: 8) {
-          Text("Editor text").font(.caption).foregroundStyle(.secondary)
-          editorFontPicker.frame(maxWidth: .infinity)
-          editorSizeStepper
-        }
-      }.padding(.horizontal, 24).padding(.vertical, 8)
       if let editNotice {
         Text(editNotice).font(.callout).foregroundStyle(.secondary)
           .padding(.horizontal, 24).padding(.vertical, 8)
@@ -340,18 +315,13 @@ private struct EditorView: View {
             .lineLimit(1)
             .truncationMode(.middle).help("Edits stay in sync with this Markdown file: " + path)
           Spacer()
-          if !present { Button("Find linked file…") { relinking = true }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
-          Button("Reveal in Finder") {
-            NSWorkspace.shared.activateFileViewerSelecting([state?.url ?? URL(fileURLWithPath: path)])
-          }.buttonStyle(.link).disabled(!present).help("Show the linked Markdown file in Finder")
-          Button("Unlink") { store.unlink(script.metadata.id) }.buttonStyle(.link).help("Keep this script in Video Prompter and stop updating the original file")
+          if !present { Button("Find linked file…") { store.relinkingID = script.id }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
         }.padding(.horizontal, 24).padding(.vertical, 6)
       } else {
         HStack {
           Label("Stored in Video Prompter", systemImage: "doc.text")
             .font(.caption).foregroundStyle(.secondary)
           Spacer()
-          Button("Link File…") { relinking = true }.buttonStyle(.link).help("Link a Markdown file so edits stay in sync both ways")
         }.padding(.horizontal, 24).padding(.vertical, 6)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
@@ -367,21 +337,7 @@ private struct EditorView: View {
     .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id) }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
-    .sheet(isPresented: $relinking) { RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom) }
-  }
 
-  private var editorFontPicker: some View {
-    Picker("Editor font", selection: $store.previewFontName) {
-      ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
-    }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Editor font")
-      .help("Change the editor font; presenter text has its own settings")
-  }
-
-  private var editorSizeStepper: some View {
-    Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
-      Text("\(Int(store.previewFontSize)) pt").monospacedDigit().fixedSize()
-    }.fixedSize().accessibilityLabel("Editor text size")
-      .help("Change text size while editing; presenter text has its own settings")
   }
 
 }

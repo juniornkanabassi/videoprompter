@@ -96,6 +96,7 @@ final class UIZoomTests: XCTestCase {
   /// no control spills out of the window, a click on every visible control reaches what it
   /// reaches at actual size, and the editor's own text size (Make Text Bigger) is untouched.
   func testTheLibraryWindowScalesEveryPaneAndKeepsEveryControlClickable() async throws {
+    store.simpleInterface = false // Exercise every retained control inside More as well.
     let record = try await store.library!.create(
       title: "Zoom", markdown: (1...30).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n"))
     await store.reload()

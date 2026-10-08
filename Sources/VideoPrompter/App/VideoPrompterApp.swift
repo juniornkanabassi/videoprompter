@@ -1,9 +1,16 @@
 import AppKit
 import PrompterCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension Notification.Name {
   static let videoPrompterImport = Notification.Name("VideoPrompter.import")
+}
+
+/// Shared by the Add and File menus, so Import cannot steal the editor’s Italic shortcut.
+enum ScriptShortcuts {
+  static let importFile = KeyboardShortcut("i", modifiers: [.command, .shift])
+  static let italic = KeyboardShortcut("i", modifiers: .command)
 }
 
 struct PrompterSettings: Codable, Equatable, Identifiable {
@@ -88,10 +95,16 @@ private enum PresenterSaveError: LocalizedError {
   @Published var selectedFolderID: UUID?
   @Published var trash: [TrashEntry] = []
   @Published var selectedID: UUID?
+  /// The sidebar's selection, which File > Move to Trash acts on as a whole.
+  @Published var selectedIDs = Set<UUID>()
   @Published var search = ""
   @Published var inspector = true
+  /// Settings › More is expanded while this is false. The name is the stored key's.
   @Published var simpleInterface = true { didSet { persistSettings() } }
-  var showsSimpleInterface: Bool { simpleInterface }
+  /// File > New Folder…, the Add menu and the sidebar ask the library window for a name.
+  @Published var namingNewFolder = false
+  /// The script whose Markdown file is being linked or found again.
+  @Published var relinkingID: UUID?
   @Published var settings = PrompterSettings() { didSet { persistSettings() } }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
@@ -162,7 +175,8 @@ private enum PresenterSaveError: LocalizedError {
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
     guard let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count else { return .standard }
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
-    return UserDefaults(suiteName: "VideoPrompter.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
+    // Keep the legacy suite prefix so the public rename preserves isolated settings.
+    return UserDefaults(suiteName: "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
   }
   init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
     _ = AvailableFonts.presenter
@@ -308,6 +322,22 @@ private enum PresenterSaveError: LocalizedError {
       if selectedFolderID == id { selectedFolderID = nil }
     }
   }
+  /// Menu/shortcut deletion yields to native typing in the script, title and tags.
+  func trashSelectionFromMenu(in window: NSWindow? = NSApp.keyWindow) {
+    guard Self.canTrashSelection(in: window) else { return }
+    delete(selectedIDs)
+  }
+  static func canTrashSelection(in window: NSWindow?) -> Bool {
+    guard !(window is PresenterPanel), !(window?.firstResponder is NSTextView) else { return false }
+    if let field = window?.firstResponder as? NSTextField, field.isEditable { return false }
+    return true
+  }
+
+  /// Right-clicking within a selection keeps bulk actions; another row acts on itself.
+  func contextSelection(for id: UUID) -> Set<UUID> {
+    selectedIDs.contains(id) ? selectedIDs : [id]
+  }
+
   func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
     withLibrary { [self] library in
       try await library.moveScripts(ids, to: folderID)
@@ -338,7 +368,7 @@ private enum PresenterSaveError: LocalizedError {
     (preview.sourceURL.deletingPathExtension().lastPathComponent,
      ["md", "markdown"].contains(preview.sourceURL.pathExtension.lowercased()) ? preview.sourceURL : nil)
   }
-  /// File > Import from Clipboard and the toolbar's copy of it.
+  /// Paste as New Script, in the File and Add menus.
   func importClipboard() {
     guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
     create(title: "Pasted Script", markdown: markdown)
@@ -375,6 +405,23 @@ private enum PresenterSaveError: LocalizedError {
     withLibrary { [self] library in
       _ = try await library.restore(id)
       await reload()
+    }
+  }
+  func exportMarkdown(_ script: ScriptRecord) {
+    let panel = NSSavePanel()
+    panel.nameFieldStringValue = "\(script.metadata.title).md"
+    panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
+    catch { errorMessage = "Could not export the script. \(error.localizedDescription)" }
+  }
+  /// The linked file when there is one, otherwise the library's own copy.
+  func revealInFinder(_ id: UUID) {
+    withLibrary { [self] library in
+      let url: URL
+      if let linked = linkStates[id]?.url { url = linked }
+      else { url = try await library.scriptURL(for: id) }
+      NSWorkspace.shared.activateFileViewerSelecting([url])
     }
   }
 
@@ -697,7 +744,7 @@ private enum PresenterSaveError: LocalizedError {
         .onAppear { appDelegate.store = store }
     }
       .defaultSize(width: 1100, height: 750)
-      .windowResizability(.contentSize)
+      .windowResizability(.contentMinSize)
       .commands {
         CommandGroup(after: .textEditing) {
           Button("Find…") {
@@ -710,20 +757,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         SidebarCommands()
         InspectorCommands()
-        CommandGroup(after: .newItem) {
-          Button("New Script") { store.create() }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
-            .disabled(!store.libraryAvailable)
-          Button("Duplicate Script") { store.duplicate() }
-            .keyboardShortcut("d", modifiers: .command)
-            .disabled(store.selected == nil)
-          Divider()
-          Button("Import Script…") { NotificationCenter.default.post(name: .videoPrompterImport, object: nil) }
-            .keyboardShortcut("i", modifiers: .command)
-            .disabled(!store.libraryAvailable)
-          Button("Import from Clipboard") { store.importClipboard() }
-            .disabled(!store.libraryAvailable)
-        }
+        CommandGroup(after: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
             .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
@@ -737,6 +771,12 @@ private enum PresenterSaveError: LocalizedError {
           Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut("<", modifiers: .command)
           Divider()
         }
+        CommandMenu("Format") {
+          Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
+          Button("Italic") { FormattedMarkdownEditor.formatFocused(.italic) }.keyboardShortcut(ScriptShortcuts.italic)
+          Button("Heading") { FormattedMarkdownEditor.formatFocused(.heading) }
+          Button("Add or Edit Link…") { FormattedMarkdownEditor.formatFocused(.link) }.keyboardShortcut("k")
+        }
         CommandMenu("Prompter") {
           Button("Present Script") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("p", modifiers: [.command, .option])
@@ -746,6 +786,12 @@ private enum PresenterSaveError: LocalizedError {
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           Button("Start or Pause") { store.session.toggle() }
             .keyboardShortcut("s", modifiers: [.command, .option])
+          Button("Back to Start") { PresenterController.shared.moveReading { $0.restart() } }
+            .keyboardShortcut("r", modifiers: [.command, .option])
+          Button("Previous Passage") { PresenterController.shared.moveReading { $0.previousPassage() } }
+            .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+          Button("Next Passage") { PresenterController.shared.moveReading { $0.nextPassage() } }
+            .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
           Divider()
           PresenterVideoItems()
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
@@ -772,11 +818,48 @@ struct PresenterVideoItems: View {
   }
   var body: some View {
     Toggle("Script Only", isOn: choice(.prompterOnly))
-    Toggle("Script and camera", isOn: choice(.prompterWithVideo))
+    Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
     Toggle("Camera Only", isOn: choice(.videoOnly))
     Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
       .disabled(!camera.presentsWithVideo)
+  }
+}
+
+/// File menu: the library's script and folder actions. Each item is disabled when nothing applies.
+private struct FileItems: View {
+  @ObservedObject var store: AppStore
+  var body: some View {
+    let script = store.selected
+    let link = script.flatMap { store.linkStates[$0.id] }
+    Button("New Script") { store.create() }
+      .keyboardShortcut("n", modifiers: [.command, .shift])
+      .disabled(!store.libraryAvailable)
+    Button("New Folder…") { store.namingNewFolder = true }
+      .disabled(!store.libraryAvailable)
+    Button("Duplicate") { store.duplicate() }
+      .keyboardShortcut("d", modifiers: .command)
+      .disabled(script == nil)
+    Divider()
+    // Keep the native Italic shortcut available in both script editors.
+    Button("Import File…") { NotificationCenter.default.post(name: .videoPrompterImport, object: nil) }
+      .keyboardShortcut(ScriptShortcuts.importFile)
+      .disabled(!store.libraryAvailable)
+    Button("Paste as New Script") { store.importClipboard() }
+      .disabled(!store.libraryAvailable)
+    Button("Export Markdown…") { script.map(store.exportMarkdown) }
+      .disabled(script == nil)
+    Button("Reveal in Finder") { script.map { store.revealInFinder($0.id) } }
+      .disabled(script == nil || link?.isBroken == true)
+    Divider()
+    Button(link?.isBroken == true ? "Find Linked File…" : "Link File…") { store.relinkingID = script?.id }
+      .disabled(script == nil || (script?.metadata.linkedPath != nil && link?.isBroken != true))
+    Button("Unlink") { script.map { store.unlink($0.id) } }
+      .disabled(script?.metadata.linkedPath == nil)
+    Divider()
+    Button("Move to Trash") { store.trashSelectionFromMenu() }
+      .keyboardShortcut(.delete, modifiers: .command)
+      .disabled(store.selectedIDs.isEmpty)
   }
 }
 
@@ -804,14 +887,26 @@ private struct CameraCommands: Commands {
   }
   func applicationWillTerminate(_ notification: Notification) { controlServer?.stop() }
   func applicationDidFinishLaunching(_ notification: Notification) {
-    // Zoom In's "+" only matches with Shift held; take the unshifted Command-= too, as Safari does.
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+      if Self.deletesLineWhileTyping(event, in: NSApp.keyWindow) { return nil }
+      if let presenter = NSApp.keyWindow as? PresenterPanel, presenter.handlePassageKey(event) { return nil }
+      // Zoom In's "+" only matches with Shift held; take the unshifted Command-= too, as Safari does.
       guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
         event.charactersIgnoringModifiers == "=", let store = self?.store
       else { return event }
       store.stepUIZoom(in: true)
       return nil
     }
+  }
+  /// Command-Delete is File > Move to Trash, but in a text field or editor it keeps its text meaning,
+  /// delete to the start of the line, so typing can never bin a script. Runs before the menu sees it.
+  static func deletesLineWhileTyping(_ event: NSEvent, in window: NSWindow?) -> Bool {
+    guard event.type == .keyDown, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+      event.charactersIgnoringModifiers == "\u{7F}",
+      let text = window?.firstResponder as? NSTextView, text.isEditable
+    else { return false }
+    text.deleteToBeginningOfLine(nil)
+    return true
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     guard let store else { return .terminateNow }

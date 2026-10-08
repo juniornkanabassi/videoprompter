@@ -56,6 +56,26 @@ final class PresenterPresentTests: XCTestCase {
     panel.close()
   }
 
+  func testPresenterArrowsMovePassagesAndLeaveEditingAndModifiersAlone() async throws {
+    store.selectedID = try await script("Arrows").id
+    controller.present(store: store)
+    let shown = try XCTUnwrap(controller.panel)
+    func arrow(_ code: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
+      NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+        windowNumber: shown.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
+    }
+    let first = store.session.tokenIndex
+    XCTAssertTrue(shown.handlePassageKey(arrow(124)))
+    XCTAssertGreaterThan(store.session.tokenIndex, first)
+    XCTAssertTrue(shown.handlePassageKey(arrow(123)))
+    XCTAssertEqual(store.session.tokenIndex, first)
+    XCTAssertFalse(shown.handlePassageKey(arrow(124, modifiers: .command)))
+    try XCTUnwrap(draft).begin(session: store.session)
+    XCTAssertFalse(shown.handlePassageKey(arrow(124)))
+    XCTAssertEqual(store.session.tokenIndex, first)
+    draft?.cancel(resuming: false)
+  }
+
   /// 16 Sep log, 23:01:01–03 and 23:30:50–54: Present pressed four and six times in a row on an
   /// open presenter. Each press swapped in a new hosting view, so the capture session stopped
   /// and started again every time (`running -> 0`, `running -> 1`, graph torn down) and the text

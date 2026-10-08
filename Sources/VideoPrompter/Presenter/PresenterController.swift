@@ -74,6 +74,11 @@ import SwiftUI
     activeSession?.pause()
     return true
   }
+  func moveReading(_ action: (SessionStore) -> Void) {
+    guard let session = activeSession, !isEditing, camera.displayMode != .videoOnly else { return }
+    action(session)
+  }
+
   var isEditing: Bool { draft?.isEditing == true }
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
     guard draft?.isEditing != true else {
@@ -92,6 +97,11 @@ import SwiftUI
     // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
+    panel.onPassageKey = { [weak self] direction in
+      guard let self, !self.isEditing, self.camera.displayMode != .videoOnly else { return false }
+      self.moveReading { if direction == 123 { $0.previousPassage() } else { $0.nextPassage() } }
+      return true
+    }
     panel.title = "Video Prompter · \(script.metadata.title)"
     panel.settle()
     if isShowing {
@@ -192,6 +202,19 @@ private extension NSRect { var area: CGFloat { width * height } }
 /// only for a full-screen Space of its own, and every way in comes through `toggleFullScreen`:
 /// Prompter > Presenter Full Screen, View > Enter Full Screen (Ctrl-Cmd-F) and the green button.
 class PresenterPanel: NSPanel {
+  var onPassageKey: ((UInt16) -> Bool)?
+  /// Only the key presenter receives bare arrows; editing retains native cursor movement.
+  func handlePassageKey(_ event: NSEvent) -> Bool {
+    guard event.type == .keyDown, [123, 124].contains(event.keyCode),
+      event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+      !(firstResponder is NSTextView && (firstResponder as? NSTextView)?.isEditable == true)
+    else { return false }
+    return onPassageKey?(event.keyCode) == true
+  }
+  override func keyDown(with event: NSEvent) {
+    if !handlePassageKey(event) { super.keyDown(with: event) }
+  }
+
   /// `captureVisible` lets screen capture see the presenter, for testing only.
   convenience init(captureVisible: Bool) {
     self.init(
@@ -451,33 +474,21 @@ private struct PresenterView: View {
           bottomNotice.padding(.horizontal, 10).padding(.top, 6)
         }
         WrapLayout(spacing: 8) {
-          Label(session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
-                systemImage: session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
+          Label(draft.isEditing ? "Editing" : session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
+                systemImage: draft.isEditing ? "pencil" : session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
             .font(.caption.weight(.semibold))
             .frame(width: 88)
             .foregroundStyle(Color.primary)
             .padding(.horizontal, 8).padding(.vertical, 5)
-            .background((session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
-            .help(session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
-          if draft.isEditing {
-            Label("Editing", systemImage: "pencil")
-              .font(.callout.weight(.semibold)).foregroundStyle(.orange)
-              .padding(.horizontal, 6)
-              .help("Editing the script in place. Finish with ⌘Return, or cancel.")
-          }
+            .background((draft.isEditing ? Color.orange : session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
+            .help(draft.isEditing ? "Editing the script. Finish with ⌘Return, or cancel." : session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
           // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
           Group {
-            CapsuleButton("Previous passage", systemImage: "backward.end.fill", help: "Move to the previous passage", action: session.previousPassage)
             CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
                           systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position", action: session.toggle)
               .buttonStyle(.borderedProminent)
-            CapsuleButton("Next passage", systemImage: "forward.end.fill", help: "Move to the next passage", action: session.nextPassage)
-            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", showsTitle: true, help: "Return to the first word of the script", action: session.restart)
+            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          CapsuleButton(camera.presentsWithVideo ? "Hide camera" : "Show camera",
-                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
-            PresenterController.shared.toggleVideo()
-          }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
@@ -492,7 +503,8 @@ private struct PresenterView: View {
         }
         .buttonStyle(.bordered).padding(8)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 22)).padding(10)
-      }.uiZoom(store.uiZoom)
+      }.frame(maxWidth: .infinity, alignment: .center)
+        .uiZoom(store.uiZoom)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
     }
@@ -560,6 +572,7 @@ private struct CapsuleButton: View {
       else { Label(title, systemImage: systemImage).labelStyle(.iconOnly) }
     }
       .keyboardShortcut(shortcut)
+      .accessibilityLabel(title)
       .help(help ?? title)
   }
 }

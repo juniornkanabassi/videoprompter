@@ -5,6 +5,34 @@ import XCTest
 import PrompterCore
 
 final class FormattedMarkdownEditorTests: XCTestCase {
+  @MainActor func testFormatMenuReachesFocusedLibraryAndPresenterEditor() async throws {
+    _ = NSApplication.shared
+    var first = "First words"
+    var second = "Second words"
+    let host = NSHostingView(rootView: VStack {
+      FormattedMarkdownEditor(markdown: Binding(get: { first }, set: { first = $0 }), fontName: "System", fontSize: 18)
+      FormattedMarkdownEditor(markdown: Binding(get: { second }, set: { second = $0 }), fontName: "System", fontSize: 44,
+        typography: EditorTypography(textColor: .white))
+    })
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 600, height: 600), styleMask: [.titled], backing: .buffered, defer: true)
+    window.contentView = host
+    defer { window.contentView = nil }
+    for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
+    func editors(_ view: NSView) -> [NSTextView] { (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(editors) }
+    let views = editors(host)
+    XCTAssertEqual(views.count, 2)
+    for (index, action) in [EditorFormatAction.bold, .italic].enumerated() {
+      let view = views[index]
+      XCTAssertTrue(window.makeFirstResponder(view))
+      view.setSelectedRange(NSRange(location: 0, length: view.string.utf16.count))
+      XCTAssertTrue(FormattedMarkdownEditor.formatFocused(action, in: window))
+    }
+    XCTAssertEqual(first, "**First words**")
+    XCTAssertEqual(second, "*Second words*")
+    window.makeFirstResponder(nil)
+    XCTAssertFalse(FormattedMarkdownEditor.formatFocused(.bold, in: window))
+  }
+
   @MainActor func testRevisitedContentKeepsTypographyAndUndoIsolated() throws {
     let source = "# Heading\n\n**bold** and *italic* français"
     let firstModel = FormattedMarkdownEditModel.cached(markdown: source)

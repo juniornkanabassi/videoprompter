@@ -28,10 +28,6 @@ private final class FormattingTextView: NSTextView {
     super.setFrameSize(size)
   }
 
-  @objc func showFormatMenu(_ sender: NSButton) {
-    formatMenu().popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height), in: sender)
-  }
-
   override func menu(for event: NSEvent) -> NSMenu? {
     let menu = super.menu(for: event) ?? NSMenu()
     menu.addItem(.separator())
@@ -80,22 +76,22 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
   /// it, so editing in place still shows where the reading got to.
   var readThroughSourceOffset: Int? = nil
 
+  /// Menu actions follow the first responder, so both editing surfaces use the same formatter.
+  @discardableResult static func formatFocused(_ action: EditorFormatAction, in window: NSWindow? = NSApp.keyWindow) -> Bool {
+    guard let editor = window?.firstResponder as? FormattingTextView else { return false }
+    editor.onFormat?(action)
+    return true
+  }
+
   func makeCoordinator() -> Coordinator { Coordinator(self) }
 
   func makeNSView(context: Context) -> NSView {
     let root = NSView()
-    let header = NSView()
     let scroll = NSScrollView()
-    root.addSubview(header)
     root.addSubview(scroll)
-    header.translatesAutoresizingMaskIntoConstraints = false
     scroll.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([
-      header.topAnchor.constraint(equalTo: root.topAnchor),
-      header.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-      header.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-      header.heightAnchor.constraint(equalToConstant: 32),
-      scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+      scroll.topAnchor.constraint(equalTo: root.topAnchor),
       scroll.leadingAnchor.constraint(equalTo: root.leadingAnchor),
       scroll.trailingAnchor.constraint(equalTo: root.trailingAnchor),
       scroll.bottomAnchor.constraint(equalTo: root.bottomAnchor)
@@ -125,15 +121,6 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       coordinator.apply(action, in: view)
     }
     scroll.documentView = view
-    let formatButton = NSButton(title: "Format", target: view, action: #selector(FormattingTextView.showFormatMenu(_:)))
-    formatButton.bezelStyle = .rounded
-    formatButton.setAccessibilityLabel("Format selected text")
-    formatButton.translatesAutoresizingMaskIntoConstraints = false
-    header.addSubview(formatButton)
-    NSLayoutConstraint.activate([
-      formatButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-      formatButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8)
-    ])
     view.textContainerInset = NSSize(width: typography.horizontalInset, height: 8)
     context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography,
       readThrough: readThroughSourceOffset)

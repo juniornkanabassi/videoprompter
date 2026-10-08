@@ -183,19 +183,16 @@ struct CameraView: View {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
       ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model) }
       ToolbarItem {
-        Toggle("Mirror Camera", systemImage: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: $model.mirrored)
-          .help("Flip the camera picture left to right")
-      }
-      ToolbarItem {
-        Button("Framing guides", systemImage: "grid") { showsGuideSettings.toggle() }
-          .help("Choose composition lines and an output frame marker")
+        Menu {
+          Toggle("Mirror Camera", isOn: $model.mirrored).help("Flip the camera picture left to right")
+          Button("Framing Guides…") { showsGuideSettings = true }
+            .help("Choose composition lines and an output frame marker")
+          Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Camera window above other windows")
+        } label: { Label("Options", systemImage: "ellipsis.circle") }
+          .accessibilityLabel("Options").help("Camera mirroring, framing guides and window position")
           .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
             CameraGuideSettings(model: model).frame(width: 300).padding()
           }
-      }
-      ToolbarItem {
-        Toggle("Always on Top", systemImage: "pin", isOn: $model.alwaysOnTop)
-          .help("Keep the Camera window above other windows")
       }
     }
   }

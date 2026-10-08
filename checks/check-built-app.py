@@ -3,15 +3,20 @@
 Usage: source env.sh; python3 checks/check-built-app.py '/tmp/.../Video Prompter.app'
 No show, mouse, key, recording, installation or real-data operations.
 """
-import json, os, pathlib, socket, stat, subprocess, sys, tempfile, time
-app = pathlib.Path(sys.argv[1]).resolve()
+import argparse, json, os, pathlib, socket, stat, subprocess, sys, tempfile, time
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('app', type=pathlib.Path)
+parser.add_argument('--data-directory', type=pathlib.Path)
+args = parser.parse_args()
+app = args.app.resolve()
 cli = app / 'Contents/Helpers/videoprompter'
 shim = app / 'Contents/Resources/mcp/videoprompter-mcp.mjs'
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
 root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
 (root / 'home').mkdir()
-data = root / 'data'
+data = args.data_directory.resolve() if args.data_directory else root / 'data'
+assert data.is_relative_to(pathlib.Path('/private/tmp')) and not data.exists(), 'Use a fresh disposable data directory under /private/tmp'
 input_file = root / 'CLI Evidence.md'
 input_file.write_text('# CLI Evidence\n\nOne two three four five six seven eight nine ten.\n')
 pid = None
@@ -64,13 +69,14 @@ try:
     empty_gui = gui(pid)
     (root / 'empty-gui.json').write_text(json.dumps(empty_gui, indent=2))
     empty_text = json.dumps(empty_gui['windows'])
-    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Presenter settings', 'After adding a script, press Present', 'Import Script', 'New Script', 'Show advanced settings']:
+    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Settings', 'Press Present', 'Import Script', 'New Script', 'More']:
         assert label in empty_text, (label, empty_text)
     mirror_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch']
                        and row.get('AXDescription') == 'Mirror for teleprompter glass']
     assert mirror_switches, 'Glass mirroring needs a direct accessible label'
-    advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch'] and 'Show advanced settings' in str(row)]
+    advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXDisclosureTriangle', 'AXCheckBox', 'AXSwitch', 'AXButton'] and 'More' in str(row)]
     assert advanced_switches and all(row.get('AXValue') == '0' for row in advanced_switches), advanced_switches
+    assert 'Saved settings' not in empty_text and 'Microphone volume' not in empty_text, 'More must start collapsed'
     started = time.monotonic()
     imported = command(['script', 'import', str(input_file), '--request-id', 'once'])
     assert time.monotonic() - started < 10, 'Background import exceeded 10 seconds'
@@ -143,9 +149,11 @@ try:
     rows = visible['windows']
     rendered = json.dumps(rows)
     assert imported['title'] in rendered and 'Manual' in rendered and 'How it follows you' in rendered, rendered
-    assert any("Show advanced settings" in row.values() for row in rows), rendered
-    for label in ['Start', 'Back to start', 'Paused']:
+    assert any("More" in row.values() for row in rows), rendered
+    for label in ['Start', 'Back to start', 'Edit script', 'Close presenter', 'Paused']:
         assert any(label in row.values() for row in rows), (label, rendered)
+    for removed in ['Previous passage', 'Next passage', 'Show camera', 'Hide camera']:
+        assert not any(removed in row.values() for row in rows), ('Secondary action still in presenter chrome', removed)
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
     zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
