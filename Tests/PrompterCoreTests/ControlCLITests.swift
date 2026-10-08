@@ -64,6 +64,29 @@ final class ControlCLITests: XCTestCase {
     XCTAssertFalse(fileManager.fileExists(atPath: linked.appendingPathComponent("Video Prompter").path))
     XCTAssertEqual(try fileManager.destinationOfSymbolicLink(atPath: linked.appendingPathComponent("VidPrompt").path), target.path)
   }
+  func testLegacySocketDefersMigrationUntilRemoved() throws {
+    let fileManager = FileManager.default
+    let parent = fileManager.temporaryDirectory.appendingPathComponent("videoprompter-migration-socket-\(UUID().uuidString)", isDirectory: true)
+    defer { try? fileManager.removeItem(at: parent) }
+    let legacy = parent.appendingPathComponent("VidPrompt", isDirectory: true)
+    let current = parent.appendingPathComponent("Video Prompter", isDirectory: true)
+    let contents = Data("existing library".utf8)
+    try fileManager.createDirectory(at: legacy, withIntermediateDirectories: true)
+    try contents.write(to: legacy.appendingPathComponent("LibraryIndex.json"))
+    let marker = ControlProtocol.socketURL(dataRoot: legacy)
+    try Data().write(to: marker)
+    XCTAssertEqual(ControlProtocol.migrateLegacyFolder(in: parent, move: { _, _ in
+      XCTFail("A legacy socket must prevent moving the folder")
+    }).path, legacy.path)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "status"], applicationSupport: parent).path, legacy.path)
+    XCTAssertTrue(fileManager.fileExists(atPath: marker.path))
+    XCTAssertFalse(fileManager.fileExists(atPath: current.path))
+    XCTAssertEqual(try Data(contentsOf: legacy.appendingPathComponent("LibraryIndex.json")), contents)
+    try fileManager.removeItem(at: marker)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "status"], applicationSupport: parent).path, current.path)
+    XCTAssertFalse(fileManager.fileExists(atPath: legacy.path))
+    XCTAssertEqual(try Data(contentsOf: current.appendingPathComponent("LibraryIndex.json")), contents)
+  }
   func testFailedLegacyMoveKeepsDataAndRecordingsUsableAndRetries() throws {
     let fileManager = FileManager.default
     let fixture = fileManager.temporaryDirectory.appendingPathComponent("videoprompter-migration-failure-\(UUID().uuidString)", isDirectory: true)

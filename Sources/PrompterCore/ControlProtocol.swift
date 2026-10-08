@@ -52,6 +52,8 @@ public enum ControlProtocol {
     // attributesOfItem does not follow symlinks, so a linked legacy folder is left alone.
     if !fileManager.fileExists(atPath: current.path),
        (try? fileManager.attributesOfItem(atPath: legacy.path)[.type] as? FileAttributeType) == .typeDirectory {
+      // Defer even stale sockets until cleanup so a live legacy daemon keeps its data root.
+      if fileManager.fileExists(atPath: socketURL(dataRoot: legacy).path) { return legacy }
       do { try move(legacy, current) }
       catch { return legacy }
     }
