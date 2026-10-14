@@ -8,7 +8,6 @@
 	<string>VideoPrompter</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
-	<!-- The identifier keeps its pre-2.0 VidPrompt name on purpose: changing it would lose the existing camera, microphone and speech permissions, the saved UserDefaults (settings, reading positions, zoom) and the control socket. -->
 	<key>CFBundleIdentifier</key>
 	<string>com.juniornkanabassi.VidPrompt</string>
 	<key>CFBundleName</key>
@@ -16,9 +15,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>2.0.1</string>
 	<key>CFBundleVersion</key>
-	<string>39</string>
+	<string>40</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>NSCameraUsageDescription</key>

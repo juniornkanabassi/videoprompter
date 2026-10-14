@@ -489,6 +489,11 @@ private struct PresenterView: View {
               .buttonStyle(.borderedProminent)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
+          CapsuleButton(camera.presentsWithVideo ? "Hide camera" : "Show camera",
+                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
+            PresenterController.shared.toggleVideo()
+          }
+          if camera.presentsWithVideo { CameraPicker(model: camera, zoom: store.uiZoom) }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
