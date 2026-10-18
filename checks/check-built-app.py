@@ -3,18 +3,29 @@
 Usage: source env.sh; python3 checks/check-built-app.py '/tmp/.../Video Prompter.app'
 No show, mouse, key, recording, installation or real-data operations.
 """
-import argparse, json, os, pathlib, socket, stat, subprocess, sys, tempfile, time
+import argparse, json, os, pathlib, plistlib, shutil, socket, stat, subprocess, sys, tempfile, time
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('app', type=pathlib.Path)
 parser.add_argument('--data-directory', type=pathlib.Path)
 args = parser.parse_args()
-app = args.app.resolve()
-cli = app / 'Contents/Helpers/videoprompter'
-shim = app / 'Contents/Resources/mcp/videoprompter-mcp.mjs'
+supplied = args.app.resolve()
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
 root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
 (root / 'home').mkdir()
+# The shipped bundle must be validly signed. The check then runs a copy with its own bundle identifier, because
+# AppKit window and split-view autosave write to the standard defaults domain, which would otherwise be the real app's.
+subprocess.run(['codesign', '--verify', '--deep', '--strict', str(supplied)], check=True, timeout=60)
+CHECK_ID = 'com.juniornkanabassi.VidPrompt.check'
+app = root / 'Video Prompter.app'
+subprocess.run(['ditto', str(supplied), str(app)], check=True, timeout=120)
+subprocess.run(['/usr/libexec/PlistBuddy', '-c', 'Set :CFBundleIdentifier '+CHECK_ID, str(app / 'Contents/Info.plist')], check=True)
+# Keep the shipped entitlements and hardened-runtime flags; only the identity changes.
+subprocess.run(['codesign', '--force', '--deep', '--sign', '-', '--preserve-metadata=entitlements,flags', str(app)], check=True, timeout=120)
+def bundle_id(bundle): return plistlib.loads((bundle / 'Contents/Info.plist').read_bytes())['CFBundleIdentifier']
+assert bundle_id(supplied) == 'com.juniornkanabassi.VidPrompt' and bundle_id(app) == CHECK_ID, (bundle_id(supplied), bundle_id(app))
+cli = app / 'Contents/Helpers/videoprompter'
+shim = app / 'Contents/Resources/mcp/videoprompter-mcp.mjs'
 data = args.data_directory.resolve() if args.data_directory else root / 'data'
 assert data.is_relative_to(pathlib.Path('/private/tmp')) and not data.exists(), 'Use a fresh disposable data directory under /private/tmp'
 input_file = root / 'CLI Evidence.md'
@@ -152,8 +163,12 @@ try:
     assert any("More" in row.values() for row in rows), rendered
     for label in ['Start', 'Back to start', 'Edit script', 'Close presenter', 'Paused']:
         assert any(label in row.values() for row in rows), (label, rendered)
-    for removed in ['Previous passage', 'Next passage', 'Show camera', 'Hide camera']:
+    for removed in ['Previous passage', 'Next passage']:
         assert not any(removed in row.values() for row in rows), ('Secondary action still in presenter chrome', removed)
+    camera_buttons = [label for label in ['Show camera', 'Hide camera'] if any(label in row.values() for row in rows)]
+    assert len(camera_buttons) == 1, ('Presenter bar must offer exactly one of Show/Hide camera', camera_buttons, rendered)
+    # Framing guides appear only while the camera is on (a fresh data directory starts with it off).
+    assert any('Framing guides' in row.values() for row in rows) == (camera_buttons == ['Hide camera']), (camera_buttons, rendered)
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
     zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
@@ -175,7 +190,7 @@ try:
     large_reply = json.loads(large_mcp.stdout)
     assert large_mcp.returncode == 0 and large_reply['result']['isError'] is False, large_reply
     assert len(json.loads(large_reply['result']['content'][0]['text'])['result']['scripts']) == 201
-    report = {'ok': True, 'bundle': str(app), 'data': str(data), 'pid': pid, 'commands': replies, 'mcp': messages, 'gui': visible, 'frontmostUnchanged': True}
+    report = {'ok': True, 'bundle': str(supplied), 'checkedCopy': str(app), 'data': str(data), 'pid': pid, 'commands': replies, 'mcp': messages, 'gui': visible, 'frontmostUnchanged': True}
     (root / 'evidence.json').write_text(json.dumps(report, indent=2))
     print(json.dumps({'ok': True, 'commands': len(replies), 'tools': 10, 'guiRows': len(rows), 'evidence': str(root / 'evidence.json')}))
 finally:
@@ -186,4 +201,9 @@ finally:
     if pid:
         # Only the disposable PID owned by this check; no recordings or unsaved edits exist.
         os.kill(pid, 15)
+    # The check bundle id has its own defaults domain and saved state; remove them so nothing outlives the check.
+    subprocess.run(['defaults', 'delete', CHECK_ID], capture_output=True)
+    library = pathlib.Path.home() / 'Library'
+    (library / 'Preferences' / (CHECK_ID+'.plist')).unlink(missing_ok=True)
+    shutil.rmtree(library / 'Saved Application State' / (CHECK_ID+'.savedState'), ignore_errors=True)
     print('Disposable evidence retained at '+str(root), file=sys.stderr)
