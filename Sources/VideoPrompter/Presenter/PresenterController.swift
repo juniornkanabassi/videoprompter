@@ -381,6 +381,7 @@ private struct PresenterView: View {
   @ObservedObject var draft: PresenterDraft
   @ObservedObject private var camera = CameraModel.shared
   @State private var editorNotice: String?
+  @State private var showsGuideSettings = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
   private var showsScript: Bool { camera.displayMode != .videoOnly || draft.isEditing }
   var body: some View {
@@ -493,7 +494,13 @@ private struct PresenterView: View {
                         systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
             PresenterController.shared.toggleVideo()
           }
-          if camera.presentsWithVideo { CameraPicker(model: camera, zoom: store.uiZoom) }
+          if camera.presentsWithVideo {
+            CameraPicker(model: camera, zoom: store.uiZoom)
+            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", help: "Choose composition lines and an output frame marker") { showsGuideSettings = true }
+              .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
+                CameraGuideSettings(model: camera).frame(width: 300).padding()
+              }
+          }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
