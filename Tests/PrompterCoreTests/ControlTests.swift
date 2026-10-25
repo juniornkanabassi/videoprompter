@@ -15,7 +15,8 @@ import XCTest
     await store.reload()
     let presenter = PresenterController()
     defer { presenter.closeNow() }
-    let actions = ControlActions(store: store, presenter: presenter)
+    // Own camera and recorder models, so no command here writes the shared preferences.
+    let actions = ControlActions(store: store, presenter: presenter, camera: CameraModel(defaults: defaults), recorder: CameraRecorder(defaults: defaults))
     for action in ["pause", "resume", "back_to_start"] {
       let reply = await actions.handle(action, [:])
       XCTAssertEqual((reply.body["error"] as? [String: String])?["code"], "no_active_script")
@@ -63,7 +64,7 @@ import XCTest
       XCTAssertEqual(store.session.tokenIndex, savedPosition)
     }
     let status = (await actions.handle("status", [:])).body["result"] as? [String: Any]
-    for key in ["running", "app", "version", "library", "scripts", "selected", "presenter", "script", "state", "mode", "position", "zoom", "textSize"] { XCTAssertNotNil(status?[key]) }
+    for key in ["running", "app", "version", "library", "scripts", "selected", "presenter", "script", "state", "mode", "position", "zoom", "textSize", "speed", "camera", "recording"] { XCTAssertNotNil(status?[key]) }
     _ = try await store.createScript(title: title.uppercased(), markdown: "duplicate")
     let reply5 = (await actions.handle("script_open", ["script": title]))
     XCTAssertEqual((reply5.body["error"] as? [String: Any])?["code"] as? String, "ambiguous_script")
@@ -73,6 +74,169 @@ import XCTest
       let reply7 = (await actions.handle(command.action, [:]))
       XCTAssertNotEqual((reply7.body["error"] as? [String: Any])?["code"] as? String, "unknown_action")
     }
+  }
+  func testLibrarySettingsCameraAndRecordingActions() async throws {
+    _ = NSApplication.shared
+    OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await store.reload()
+    let presenter = PresenterController()
+    defer { presenter.closeNow() }
+    let camera = CameraModel(defaults: defaults)
+    let recorder = CameraRecorder(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: recorder)
+    func code(_ reply: ControlResult) -> String? { (reply.body["error"] as? [String: Any])?["code"] as? String }
+    func value(_ reply: ControlResult) -> [String: Any] { reply.body["result"] as? [String: Any] ?? [:] }
+    let markdown = "# Intro\n\nOne two three four five six.\n\nSeven eight nine ten."
+
+    // Creation acts once per request id, even for overlapping retries, and selects the new script.
+    async let first = actions.handle("script_create", ["text": markdown, "title": "Intro", "requestId": "c1"])
+    async let second = actions.handle("script_create", ["text": markdown, "title": "Intro", "requestId": "c1"])
+    let created = await [first, second]
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertEqual(created.compactMap { value($0)["repeated"] as? Bool }.sorted { !$0 && $1 }, [false, true])
+    let id = try XCTUnwrap(value(created[0])["id"] as? String)
+    XCTAssertEqual(store.selectedID?.uuidString, id)
+    let read = await actions.handle("script_read", ["script": "intro"])
+    XCTAssertEqual(value(read)["markdown"] as? String, markdown)
+
+    // Rename, tags, folders and move go through the library and show in the store.
+    _ = await actions.handle("script_rename", ["script": id, "title": "Launch"])
+    XCTAssertEqual(store.scripts.first?.metadata.title, "Launch")
+    let reply1 = await actions.handle("script_rename", ["script": id, "title": "  "])
+    XCTAssertEqual(code(reply1), "invalid_params")
+    _ = await actions.handle("script_tag", ["script": "Launch", "tags": "b, a"])
+    XCTAssertEqual(store.scripts.first?.metadata.tags, ["a", "b"])
+    _ = await actions.handle("script_tag", ["script": "Launch", "tags": "none"])
+    XCTAssertEqual(store.scripts.first?.metadata.tags, [])
+    _ = await actions.handle("folder_create", ["name": "Drafts", "requestId": "f1"])
+    let again = await actions.handle("folder_create", ["name": "Drafts", "requestId": "f1"])
+    XCTAssertEqual(value(again)["repeated"] as? Bool, true)
+    XCTAssertEqual(store.folders.count, 1)
+    _ = await actions.handle("script_move", ["script": id, "folder": "drafts"])
+    XCTAssertEqual(store.scripts.first?.metadata.folderID, store.folders.first?.id)
+    _ = await actions.handle("folder_rename", ["folder": "Drafts", "name": "In progress"])
+    XCTAssertEqual(store.folders.first?.name, "In progress")
+    _ = await actions.handle("script_move", ["script": id, "folder": "none"])
+    XCTAssertNil(store.scripts.first?.metadata.folderID)
+    let reply2 = await actions.handle("script_move", ["script": id, "folder": "Absent"])
+    XCTAssertEqual(code(reply2), "folder_not_found")
+
+    // Export never replaces a file unless asked.
+    let exported = root.appendingPathComponent("export.md")
+    _ = await actions.handle("script_export", ["script": id, "path": exported.path])
+    XCTAssertEqual(try String(contentsOf: exported, encoding: .utf8), markdown)
+    let reply3 = await actions.handle("script_export", ["script": id, "path": exported.path])
+    XCTAssertEqual(code(reply3), "file_exists")
+    let replaced = await actions.handle("script_export", ["script": id, "path": exported.path, "replace": "true"])
+    XCTAssertEqual(replaced.body["ok"] as? Bool, true)
+
+    // Settings change the same values the Settings panel binds to, all or nothing.
+    _ = await actions.handle("settings_set", ["speed": "150", "textSize": "60", "mirror": "on", "alignment": "centre", "textColour": "#ff0000", "readingLine": "40"])
+    XCTAssertEqual(store.settings.speed, 150); XCTAssertEqual(store.settings.fontSize, 60)
+    XCTAssertTrue(store.settings.horizontalMirror); XCTAssertEqual(store.settings.alignment, "Center")
+    XCTAssertEqual(store.settings.textColorHex, "#FF0000"); XCTAssertEqual(store.settings.guideFraction, 0.4, accuracy: 0.001)
+    let reply4 = await actions.handle("settings_set", ["speed": "200", "textColour": "red"])
+    XCTAssertEqual(code(reply4), "invalid_params")
+    XCTAssertEqual(store.settings.speed, 150)
+    for bad in [[:], ["speed": "301"], ["mirror": "yes"], ["font": "Comic Sans Nonexistent"]] {
+      let reply5 = await actions.handle("settings_set", bad)
+      XCTAssertEqual(code(reply5), "invalid_params", "\(bad)")
+    }
+    let reply6 = await actions.handle("settings_get", [:])
+    XCTAssertEqual(value(reply6)["speed"] as? Int, 150)
+    let reply7 = await actions.handle("status", [:])
+    XCTAssertEqual(value(reply7)["speed"] as? Int, 150)
+
+    // Saved settings round trip.
+    _ = await actions.handle("preset_save", ["name": "Studio", "requestId": "p1"])
+    _ = await actions.handle("preset_save", ["name": "Studio", "requestId": "p1"])
+    XCTAssertEqual(store.presets.count, 1)
+    _ = await actions.handle("settings_set", ["speed": "200"])
+    _ = await actions.handle("preset_apply", ["preset": "studio"])
+    XCTAssertEqual(store.settings.speed, 150)
+
+    // Reading position commands need a visible presenter, as pause and resume do.
+    let reply8 = await actions.handle("presenter_close", [:])
+    XCTAssertEqual(value(reply8)["changed"] as? Bool, false)
+    for action in ["next_passage", "previous_passage"] {
+      let reply9 = await actions.handle(action, [:])
+      XCTAssertEqual(code(reply9), "no_active_script")
+    }
+    let reply10 = await actions.handle("seek", ["word": "2"])
+    XCTAssertEqual(code(reply10), "no_active_script")
+    if !CameraModel.shared.presentsWithVideo {
+      camera.displayMode = .prompterOnly
+      _ = await actions.handle("present", ["script": id])
+      let seek = await actions.handle("seek", ["word": "3"])
+      XCTAssertEqual((value(seek)["position"] as? [String: Int])?["word"], 3)
+      let nextReply = await actions.handle("next_passage", [:])
+      let next = (value(nextReply)["position"] as? [String: Int])?["word"] ?? 0
+      XCTAssertGreaterThan(next, 3)
+      let previousReply = await actions.handle("previous_passage", [:])
+      let previous = (value(previousReply)["position"] as? [String: Int])?["word"] ?? .max
+      XCTAssertLessThan(previous, next)
+      let reply11 = await actions.handle("seek", ["word": "999"])
+      XCTAssertEqual(code(reply11), "invalid_params")
+      let reply12 = await actions.handle("script_delete", ["script": id, "yes": "true"])
+      XCTAssertEqual(code(reply12), "script_presented")
+      let reply13 = await actions.handle("presenter_close", [:])
+      XCTAssertEqual(value(reply13)["changed"] as? Bool, true)
+      XCTAssertNotEqual(presenter.panel?.isVisible, true)
+    }
+
+    // Delete needs --yes, moves to Recently Deleted, and restore brings the script back.
+    let reply14 = await actions.handle("script_delete", ["script": id])
+    XCTAssertEqual(code(reply14), "invalid_params")
+    let reply15 = await actions.handle("script_delete", ["script": id, "yes": "false"])
+    XCTAssertEqual(code(reply15), "confirmation_required")
+    presenter.closeNow()
+    _ = await actions.handle("script_delete", ["script": id, "yes": "true"])
+    XCTAssertTrue(store.scripts.isEmpty)
+    let reply16 = await actions.handle("script_trash", [:])
+    XCTAssertEqual((value(reply16)["scripts"] as? [[String: Any]])?.count, 1)
+    _ = await actions.handle("script_restore", ["script": "Launch"])
+    XCTAssertEqual(store.scripts.map(\.id.uuidString), [id])
+    let copy = await actions.handle("script_duplicate", ["script": id, "requestId": "d1"])
+    _ = await actions.handle("script_duplicate", ["script": id, "requestId": "d1"])
+    XCTAssertEqual(store.scripts.count, 2)
+    XCTAssertEqual(store.selectedID?.uuidString, value(copy)["id"] as? String)
+
+    // Camera display, mirroring, rotation and guides change the shared camera model.
+    let reply17 = await actions.handle("camera_set", [:])
+    XCTAssertEqual(code(reply17), "invalid_params")
+    _ = await actions.handle("camera_set", ["view": "off", "mirror": "on", "rotation": "90"])
+    XCTAssertEqual(camera.displayMode, .prompterOnly); XCTAssertTrue(camera.mirrored); XCTAssertEqual(camera.guides.rotation, .quarter)
+    _ = await actions.handle("camera_set", ["rotation": "auto"])
+    XCTAssertTrue(camera.guides.automaticRotation)
+    _ = await actions.handle("camera_guides", ["thirds": "on", "marker": "9:16", "colour": "#00ff00", "visibility": "50"])
+    XCTAssertTrue(camera.guides.thirds); XCTAssertEqual(camera.guides.marker, CameraAspect(width: 9, height: 16))
+    XCTAssertEqual(camera.guides.colorHex, "#00FF00"); XCTAssertEqual(camera.guides.opacity, 0.5, accuracy: 0.001)
+    let reply18 = await actions.handle("camera_guides", ["marker": "wide", "thirds": "off"])
+    XCTAssertEqual(code(reply18), "invalid_params")
+    XCTAssertTrue(camera.guides.thirds)
+    _ = await actions.handle("camera_guides", ["marker": "off"])
+    XCTAssertNil(camera.guides.marker)
+
+    // Recording needs --yes and a showing camera; it never raises a permission prompt.
+    let reply19 = await actions.handle("record_start", [:])
+    XCTAssertEqual(code(reply19), "invalid_params")
+    let reply20 = await actions.handle("record_start", ["yes": "false"])
+    XCTAssertEqual(code(reply20), "confirmation_required")
+    let start = await actions.handle("record_start", ["yes": "true"])
+    XCTAssertTrue(["permission_required", "camera_not_showing"].contains(code(start) ?? ""), "\(start.body)")
+    XCTAssertFalse(recorder.isRecording)
+    let reply21 = await actions.handle("record_stop", [:])
+    XCTAssertEqual(code(reply21), "not_recording")
+    _ = await actions.handle("record_set", ["quality": "high", "floatAudio": "on"])
+    XCTAssertEqual(recorder.preset, .high); XCTAssertTrue(recorder.floatAudio)
+    let statusReply = await actions.handle("status", [:])
+    let status = value(statusReply)
+    XCTAssertEqual((status["recording"] as? [String: Any])?["quality"] as? String, "high")
+    XCTAssertEqual((status["camera"] as? [String: Any])?["view"] as? String, "off")
   }
   func testReplyOver64KBIsComplete() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")

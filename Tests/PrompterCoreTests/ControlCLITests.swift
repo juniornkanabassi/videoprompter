@@ -4,14 +4,43 @@ import XCTest
 
 final class ControlCLITests: XCTestCase {
   func testCommandParsingHelpAndManifestShareTheTable() throws {
+    // A valid value for any parameter, so every command parses from the table alone.
+    func sample(_ p: ControlParam) -> String {
+      if let choice = p.choices.first { return choice }
+      if p.kind == "boolean" { return "true" }
+      if p.kind == "integer" || p.kind == "number" { return String(Int(p.range?.lowerBound ?? 1)) }
+      return "example"
+    }
     for command in ControlProtocol.commands {
-      let values = command.params.filter(\.required).map { $0.choices.first ?? "example" }
-      let invocation = try ControlCLI.parse(["--json"] + command.words + values + ["--data-directory", "/tmp/check"])
+      let required = command.params.filter(\.required)
+      let values = required.filter(\.positional).map(sample)
+      let named = required.filter { !$0.positional }.flatMap { [$0.flag, sample($0)] }
+      let invocation = try ControlCLI.parse(["--json"] + command.words + values + named + ["--data-directory", "/tmp/check"])
       XCTAssertEqual(invocation.action, command.action); XCTAssertTrue(invocation.json)
       XCTAssertEqual(invocation.dataDirectory, "/tmp/check")
       XCTAssertTrue(ControlCLI.help().contains(command.example))
-      let flags = command.params.filter(\.required).flatMap { ["--" + $0.name, $0.choices.first ?? "example"] }
+      for p in command.params { XCTAssertTrue(ControlCLI.help().contains(p.flag), p.flag) }
+      let flags = required.flatMap { ["--" + $0.name, sample($0)] }
       XCTAssertEqual(try ControlCLI.parse(command.words + flags).action, command.action)
+      // Every example in the help parses as written.
+      let example = command.example.replacingOccurrences(of: "'", with: "\"").components(separatedBy: "\"").enumerated().flatMap { pair -> [String] in
+        pair.offset % 2 == 1 ? [pair.element] : pair.element.split(separator: " ").map(String.init)
+      }
+      XCTAssertEqual(example.first, "videoprompter")
+      XCTAssertEqual(try ControlCLI.parse(Array(example.dropFirst())).action, command.action, command.example)
+    }
+    XCTAssertEqual(Set(ControlProtocol.commands.map(\.action)).count, ControlProtocol.commands.count)
+    // Kebab and camel spellings, bare booleans and ranges.
+    XCTAssertEqual(try ControlCLI.parse(["settings", "set", "--text-size", "60", "--textWidth=80"]).params, ["textSize": "60", "textWidth": "80"])
+    XCTAssertEqual(try ControlCLI.parse(["script", "delete", "--yes", "My Script"]).params, ["yes": "true", "script": "My Script"])
+    XCTAssertEqual(try ControlCLI.parse(["script", "delete", "My Script", "--yes", "true"]).params["yes"], "true")
+    XCTAssertEqual(try ControlCLI.parse(["record", "start", "--yes", "--request-id", "take1"]).params, ["yes": "true", "requestId": "take1"])
+    XCTAssertEqual(try ControlCLI.parse(["script", "create", "--text", "-"]).params["text"], "-")
+    XCTAssertEqual(try ControlCLI.parse(["camera", "set", "only"]).params["view"], "only")
+    XCTAssertEqual(try ControlCLI.parse(["seek", "12"]).params["word"], "12")
+    for args in [["settings", "set", "--speed", "301"], ["settings", "set", "--speed", "fast"], ["settings", "set", "--mirror", "yes"], ["seek", "0"],
+                 ["script", "delete", "My Script"], ["record", "start"], ["camera", "set", "sideways"], ["script", "rename", "My Script"], ["presenter", "close", "--show"]] {
+      XCTAssertThrowsError(try ControlCLI.parse(args), args.joined(separator: " "))
     }
     for flag in ["--request-id", "--requestId"] { XCTAssertEqual(try ControlCLI.parse(["script", "import", "a.md", flag, "same"]).params["requestId"], "same") }
     XCTAssertEqual(try ControlCLI.parse(["script", "open", "--script=--Football"]).params["script"], "--Football")
@@ -32,6 +61,17 @@ final class ControlCLITests: XCTestCase {
       let schema = try XCTUnwrap(tool["inputSchema"] as? [String: Any])
       XCTAssertEqual(schema["required"] as? [String], command.params.filter(\.required).map(\.name))
     }
+    let names = tools.compactMap { $0["name"] as? String }
+    for action in ["presenter_close", "next_passage", "previous_passage", "seek", "settings_get", "settings_set", "script_create", "script_read", "script_rename",
+                   "script_delete", "script_restore", "folder_list", "script_move", "script_export", "camera_list", "camera_select", "camera_set", "camera_guides",
+                   "record_start", "record_stop", "preset_apply", "microphone_list"] {
+      XCTAssertTrue(names.contains(action), action)
+    }
+    let settings = try XCTUnwrap(tools.first { $0["name"] as? String == "settings_set" }?["inputSchema"] as? [String: Any])
+    let speed = try XCTUnwrap((settings["properties"] as? [String: Any])?["speed"] as? [String: Any])
+    XCTAssertEqual(speed["type"] as? String, "integer"); XCTAssertEqual(speed["minimum"] as? Int, 20); XCTAssertEqual(speed["maximum"] as? Int, 300)
+    let record = try XCTUnwrap(tools.first { $0["name"] as? String == "record_start" }?["inputSchema"] as? [String: Any])
+    XCTAssertEqual(record["required"] as? [String], ["yes"])
   }
   func testLegacyFolderMovesOnceToVideoPrompter() throws {
     let fileManager = FileManager.default

@@ -162,20 +162,49 @@ The short `videoprompter` examples below assume the optional command link exists
 
 | Command | Example |
 |---|---|
-| Report state (never launches) | `videoprompter status --json` |
+| Report state, including speed, camera and recording (never launches) | `videoprompter status --json` |
 | List scripts | `videoprompter script list` |
+| Read a script's Markdown, folder and tags | `videoprompter script read 'My Script'` |
+| Create a script from text, with retry protection | `videoprompter script create --title Intro --text '# Intro' --request-id intro1` |
+| Create a script from standard input | `cat intro.md \| videoprompter script create --title Intro --text -` |
 | Import, with retry protection | `videoprompter script import ./script.md --request-id take1` |
 | Select by ID or exact title | `videoprompter script open 'My Script'` |
+| Rename a script | `videoprompter script rename 'My Script' --title 'Launch video'` |
+| Replace a script's tags (`none` clears them) | `videoprompter script tag 'My Script' --tags 'launch, draft'` |
+| Move a script to a folder (`none` for All Scripts) | `videoprompter script move 'My Script' --folder Drafts` |
+| Duplicate a script, with retry protection | `videoprompter script duplicate 'My Script' --request-id copy1` |
+| Save a script's Markdown to a file (`--replace` to overwrite) | `videoprompter script export 'My Script' --path ./my-script.md` |
+| Move a script to Recently Deleted | `videoprompter script delete 'My Script' --yes` |
+| List Recently Deleted | `videoprompter script trash` |
+| Restore from Recently Deleted | `videoprompter script restore 'My Script'` |
+| List, create and rename folders | `videoprompter folder list`, `folder create Drafts --request-id drafts1`, `folder rename Drafts --name 'In progress'` |
 | Present the selection or a named script | `videoprompter present 'My Script'` |
+| Close the presenter | `videoprompter presenter close` |
 | Pause | `videoprompter pause` |
 | Resume | `videoprompter resume` |
 | Reset reading position | `videoprompter back-to-start` |
+| Next or previous passage | `videoprompter next-passage`, `videoprompter previous-passage` |
+| Move to a word number, as `status` counts them | `videoprompter seek 120` |
 | Set tracking (`voice` or `manual`) | `videoprompter set-mode manual` |
 | Set interface zoom (100, 110, 125, 150, 175 or 200) | `videoprompter set-zoom 150` |
+| Report or change presenter settings: speed, text size, font, mirroring, reading line, colours, spacing, stage directions, language, Voice microphone and more | `videoprompter settings get`, `videoprompter settings set --speed 150 --text-size 60 --mirror on` |
+| List, apply and save saved settings | `videoprompter preset list`, `preset apply Studio`, `preset save Studio --request-id studio1` |
+| List cameras, with view, mirroring, rotation and framing guides | `videoprompter camera list` |
+| Choose a camera | `videoprompter camera select 'FaceTime HD Camera'` |
+| Show the camera behind the script (`on`), alone (`only`) or not (`off`); mirror or rotate it | `videoprompter camera set on --rotation auto` |
+| Framing guides and frame marker for the selected camera | `videoprompter camera guides --thirds on --marker 9:16` |
+| List microphones for Voice and for recording | `videoprompter microphone list` |
+| Start recording the shown camera, with retry protection | `videoprompter record start --yes --request-id take1` |
+| Stop recording and report the saved file | `videoprompter record stop` |
+| Recording quality, microphone and audio format | `videoprompter record set --quality high --float-audio off` |
 | MCP tools manifest | `videoprompter mcp-manifest` |
-| Full help | `videoprompter --help` |
+| Full help, with every option and its valid values | `videoprompter --help` |
 
-Options can go before or after the command words. `--json` prints one response line. `--show` brings the library or presenter forward, and only works with `script open` or `present`. Other commands launch the app in the background if needed and wait up to 10 seconds. Exit codes: 0 success, 1 action or connection error, 2 usage error. A bundled helper uses its own app's identity. `--data-directory /private/tmp/vpc-test` isolates app data and preferences (keep the socket path under 104 UTF-8 bytes). On its own it does not isolate the whole account or window restoration; the packaged checker also uses an isolated home folder and restoration arguments.
+Options can go before or after the command words, and flags can be written `--text-size 60`, `--text-size=60` or `--textSize=60`. `--json` prints one response line. `--show` brings the library or presenter forward, and only works with `script open` or `present`; no other command changes focus. Other commands launch the app in the background if needed and wait up to 10 seconds. Exit codes: 0 success, 1 action or connection error, 2 usage error. A bundled helper uses its own app's identity. `--data-directory /private/tmp/vpc-test` isolates app data and preferences (keep the socket path under 104 UTF-8 bytes). On its own it does not isolate the whole account or window restoration; the packaged checker also uses an isolated home folder and restoration arguments.
+
+Every command acts through the running app, so its effect shows in the library, Settings panel, presenter or Camera window at once. Commands that would discard work refuse instead: presenter commands answer `presenter_editing` while a presenter edit is open, `script delete` answers `script_presented` for the script on screen, and recording settings and camera choice answer `recording_active` while recording. Errors carry a short `code` and a message naming the next step. Creating, importing or duplicating a script selects it, as the app does, so when several agents share one app, pass a script ID to `present` rather than relying on the selection.
+
+`script delete` needs `--yes` and only moves the script to Recently Deleted, where `script restore` or the app's Restore button brings it back. `record start` needs `--yes`, never raises a permission prompt and needs the camera already showing, in the Camera window or behind the script after `camera set on`; the Camera window shows the timer and Stop button. Recordings go to `Movies/Video Prompter`, and `record stop` reports the file. Script text can be created, read and exported but not replaced, and folders and saved settings cannot be deleted from the command line, because the app has no undo for those. Window placement, full screen, the microphone test, linking files and the editor's own font remain in the app.
 
 Claude Code:
 
@@ -193,7 +222,7 @@ args = ["/Applications/Video Prompter.app/Contents/Resources/mcp/videoprompter-m
 
 Change these example paths to match where you installed the app. Any other stdio MCP host needs the command `node` with the matching bundled shim path as its argument; add `--data-directory /private/tmp/vpc-test` to isolate a test connection. The shim finds its own bundled helper. You set up the host yourself; the app does not run any setup command.
 
-The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. Video Prompter data and disposable test data stay separate. Creation request IDs are idempotent within one app session. There are no delete, edit or recording actions. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
+The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. Video Prompter data and disposable test data stay separate. Creation request IDs (`script create`, `script import`, `script duplicate`, `folder create`, `preset save` and `record start`) are idempotent within one app session: a repeated ID returns the first result with `"repeated": true`. Text sent with `--text` must fit in a 64 KB request. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
 
 ### Release status
 
