@@ -263,7 +263,9 @@ enum GoogleDocsError: LocalizedError {
 extension GoogleDocs: ASWebAuthenticationPresentationContextProviding {
   nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     MainActor.assumeIsolated {
-      UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.keyWindow }.first ?? ASPresentationAnchor()
+      // Sign-in starts from a button on screen, so there is always a window scene.
+      let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+      return scenes.lazy.compactMap(\.keyWindow).first ?? ASPresentationAnchor(windowScene: scenes[0])
     }
   }
 }

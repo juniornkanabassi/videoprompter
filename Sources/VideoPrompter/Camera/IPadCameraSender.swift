@@ -348,7 +348,7 @@ class LinkPipe: @unchecked Sendable {
 }
 
 /// The usbmuxd tunnel: a plain socket written from one serial queue.
-final class SocketPipe: LinkPipe {
+final class SocketPipe: LinkPipe, @unchecked Sendable {
   private let socket: Int32
   private let queue = DispatchQueue(label: "VideoPrompter.ipadlink.usb", qos: .userInteractive)
   private var isOpen = true
@@ -378,7 +378,7 @@ final class SocketPipe: LinkPipe {
 }
 
 /// The Wi-Fi connection to an iPad found with Bonjour.
-final class NetworkPipe: LinkPipe {
+final class NetworkPipe: LinkPipe, @unchecked Sendable {
   private let connection: NWConnection
 
   private init(_ connection: NWConnection) {

@@ -23,7 +23,7 @@ import UIKit
   }
 
   /// The camera list's entry for a Mac sending its camera over the Mac link.
-  static let macLinkID = "mac-link"
+  nonisolated static let macLinkID = "mac-link"
   nonisolated let capture = CaptureBox()
   let link = MacLink()
   var isShowingMac: Bool { selectedID == Self.macLinkID }

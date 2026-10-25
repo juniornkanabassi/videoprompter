@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Network
 import PrompterCore
+import SwiftUI
 import UIKit
 
 /// Receives the camera a Mac sends with File › Send Camera to iPad. Over USB-C the Mac reaches
@@ -135,7 +136,8 @@ final class LinkReceiver: @unchecked Sendable {
     new.stateUpdateHandler = { [weak self, weak new] state in
       switch state {
       case .failed, .cancelled:
-        self?.queue.async { if let new { self?.closed(new) } }
+        guard let self, let new else { return }
+        self.queue.async { self.closed(new) }
       default: break
       }
     }
