@@ -33,6 +33,7 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 /usr/libexec/PlistBuddy -c "Add :VPSourceCommit string $COMMIT" "$APP/Contents/Info.plist"
 # Updates only in a Developer ID build with a real public key. Any other build has no feed, so the app starts no
 # updater and shows no Check for Updates item (Updates.swift), and can never replace itself with a release.
