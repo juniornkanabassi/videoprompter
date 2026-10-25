@@ -2,7 +2,11 @@ import AuthenticationServices
 import CryptoKit
 import Foundation
 import Security
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// One document in the signed-in account's Google Drive.
 struct GoogleDoc: Identifiable, Hashable, Sendable {
@@ -28,8 +32,9 @@ enum GoogleDocsError: LocalizedError {
   }
 }
 
-/// Brings scripts in from Google Docs, one way: the doc stays the master and the iPad keeps a
-/// Markdown copy in the scripts folder, which can be refreshed from the doc later.
+/// Brings scripts in from Google Docs, one way: the doc stays the master and the app keeps a
+/// Markdown copy as a script, which can be refreshed from the doc later. Shared by the Mac and
+/// iPad apps, so it builds against either AppKit or UIKit.
 ///
 /// Two routes. A pasted link works with no sign-in for documents shared with "Anyone with the
 /// link", through Google's own export address. Signing in with Google (OAuth with PKCE, read-only
@@ -263,10 +268,37 @@ enum GoogleDocsError: LocalizedError {
 extension GoogleDocs: ASWebAuthenticationPresentationContextProviding {
   nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
     MainActor.assumeIsolated {
+      #if canImport(UIKit)
       // Sign-in starts from a button on screen, so there is always a window scene.
       let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
       return scenes.lazy.compactMap(\.keyWindow).first ?? ASPresentationAnchor(windowScene: scenes[0])
+      #else
+      return NSApp.keyWindow ?? NSApp.mainWindow ?? ASPresentationAnchor()
+      #endif
     }
+  }
+}
+
+/// Which Google Doc each imported script came from, and the script's text as last imported, so
+/// an update can tell whether it would throw away an edit made since. Keyed by script ID.
+struct GoogleDocLinks {
+  struct Link: Codable, Equatable {
+    var document: String
+    var fingerprint: String
+  }
+  private static let key = "googleDocLinks"
+  let defaults: UserDefaults
+
+  subscript(script: UUID) -> Link? {
+    get { all[script.uuidString] }
+    nonmutating set {
+      var links = all
+      links[script.uuidString] = newValue
+      defaults.set(try? JSONEncoder().encode(links), forKey: Self.key)
+    }
+  }
+  private var all: [String: Link] {
+    defaults.data(forKey: Self.key).flatMap { try? JSONDecoder().decode([String: Link].self, from: $0) } ?? [:]
   }
 }
 

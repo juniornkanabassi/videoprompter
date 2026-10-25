@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Add › From Google Docs. A pasted link always works for a document shared with "Anyone with the
-/// link"; signing in with Google adds the account's own documents, searchable, newest first.
+/// Import from Google Docs, on the Mac and the iPad. A pasted link always works for a document
+/// shared with "Anyone with the link"; signing in with Google adds the account's own documents,
+/// searchable, newest first. `importDocument` brings one in and returns why it failed, or nil.
 struct GoogleDocsSheet: View {
-  @EnvironmentObject private var store: PadStore
   @ObservedObject var google: GoogleDocs
+  let importDocument: (String) async -> String?
   @Environment(\.dismiss) private var dismiss
   @State private var link = ""
   @State private var search = ""
@@ -17,9 +18,11 @@ struct GoogleDocsSheet: View {
     Form {
       Section {
         TextField("https://docs.google.com/document/d/…", text: $link)
-          .textInputAutocapitalization(.never)
           .autocorrectionDisabled()
+          #if os(iOS)
+          .textInputAutocapitalization(.never)
           .keyboardType(.URL)
+          #endif
           .onSubmit { importLink() }
         Button {
           importLink()
@@ -43,7 +46,6 @@ struct GoogleDocsSheet: View {
         if google.isSignedIn {
           Section("Your Google Docs") {
             TextField("Search", text: $search)
-              .textInputAutocapitalization(.never)
               .onSubmit { Task { await load() } }
             if loading && docs.isEmpty { ProgressView() }
             ForEach(docs) { doc in
@@ -88,8 +90,13 @@ struct GoogleDocsSheet: View {
         Section { Text(problem).foregroundStyle(.red) }
       }
     }
-    .navigationTitle("From Google Docs")
+    .navigationTitle("Import from Google Docs")
+    #if os(iOS)
     .navigationBarTitleDisplayMode(.inline)
+    #else
+    .formStyle(.grouped)
+    .frame(minWidth: 480, minHeight: 420)
+    #endif
     .toolbar { Button("Done") { dismiss() } }
     .task(id: google.isSignedIn) { if google.isSignedIn { await load() } }
     .onChange(of: search) {
@@ -111,16 +118,10 @@ struct GoogleDocsSheet: View {
   private func bringIn(_ id: String) async {
     importing = id
     problem = nil
-    store.errorMessage = nil
-    let done = await store.importGoogleDoc(id)
+    // A failure is shown here rather than as an alert behind the sheet.
+    problem = await importDocument(id)
     importing = nil
-    if done {
-      dismiss()
-    } else {
-      // Shown here rather than as an alert behind the sheet.
-      problem = store.errorMessage
-      store.errorMessage = nil
-    }
+    if problem == nil { dismiss() }
   }
 
   private func load() async {

@@ -11,6 +11,8 @@
 		4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D855FD629A122F15A7FE97E /* PrompterSettings.swift */; };
 		4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD650CCB71926F8862A6220 /* SpeechProvider.swift */; };
 		231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */; };
+		AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */; };
+		EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */; };
 		A698447D355A4D7944783966 /* CameraGuides.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09486326B37D8BA3B702E4C6 /* CameraGuides.swift */; };
 		311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */; };
 		DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */; };
@@ -25,6 +27,8 @@
 		3D855FD629A122F15A7FE97E /* PrompterSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PrompterSettings.swift; sourceTree = "<group>"; };
 		0AD650CCB71926F8862A6220 /* SpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech/SpeechProvider.swift; sourceTree = "<group>"; };
 		79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/DocumentImporter.swift; sourceTree = "<group>"; };
+		FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocsSheet.swift; sourceTree = "<group>"; };
+		34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocs.swift; sourceTree = "<group>"; };
 		09486326B37D8BA3B702E4C6 /* CameraGuides.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraGuides.swift; sourceTree = "<group>"; };
 		769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraOrientation.swift; sourceTree = "<group>"; };
 		B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LexendDeca-Variable.ttf"; sourceTree = "<group>"; };
@@ -65,6 +69,8 @@
 				3D855FD629A122F15A7FE97E /* PrompterSettings.swift */,
 				0AD650CCB71926F8862A6220 /* SpeechProvider.swift */,
 				79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */,
+				FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */,
+				34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */,
 				09486326B37D8BA3B702E4C6 /* CameraGuides.swift */,
 				769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */,
 			);
@@ -174,6 +180,8 @@
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
 				231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */,
+				AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */,
+				EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */,
 				A698447D355A4D7944783966 /* CameraGuides.swift in Sources */,
 				311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */,
 			);

@@ -174,39 +174,23 @@ import UIKit
 
   // MARK: Google Docs
 
-  /// Which Google Doc each imported script came from, and the script's text as last imported,
-  /// so a refresh can tell whether it would throw away an edit made here or on the Mac.
-  struct GoogleLink: Codable, Equatable {
-    var document: String
-    var fingerprint: String
-  }
-  private static let googleLinksKey = "googleDocLinks"
-  private var googleLinks: [String: GoogleLink] {
-    get {
-      defaults.data(forKey: Self.googleLinksKey)
-        .flatMap { try? JSONDecoder().decode([String: GoogleLink].self, from: $0) } ?? [:]
-    }
-    set { defaults.set(try? JSONEncoder().encode(newValue), forKey: Self.googleLinksKey) }
-  }
+  private var googleLinks: GoogleDocLinks { GoogleDocLinks(defaults: defaults) }
 
-  func isFromGoogle(_ script: FolderScript) -> Bool { googleLinks[script.id.uuidString] != nil }
+  func isFromGoogle(_ script: FolderScript) -> Bool { googleLinks[script.id] != nil }
 
-  /// Imports a Google Doc as a new script and selects it. Returns false, with the reason shown,
-  /// when Google would not give the document up.
-  @discardableResult
-  func importGoogleDoc(_ document: String) async -> Bool {
+  /// Imports a Google Doc as a new script and selects it. Returns why it failed, or nil.
+  func importGoogleDoc(_ document: String) async -> String? {
     do {
       let (name, markdown) = try await google.export(document)
       var title = name
       var n = 2
       while folder.scripts.contains(where: { $0.title == title }) { title = "\(name) \(n)"; n += 1 }
       let script = try folder.create(title: title, markdown: markdown)
-      googleLinks[script.id.uuidString] = GoogleLink(document: document, fingerprint: MarkdownLibrary.fingerprint(markdown))
+      googleLinks[script.id] = .init(document: document, fingerprint: MarkdownLibrary.fingerprint(markdown))
       selectedID = script.id
-      return true
+      return nil
     } catch {
-      errorMessage = error.localizedDescription
-      return false
+      return error.localizedDescription
     }
   }
 
@@ -215,13 +199,12 @@ import UIKit
   /// Fetches the script's Google Doc again. Without `overwrite`, a script edited since the last
   /// import is left alone and `.hasLocalEdits` comes back, so the caller can ask first.
   func refreshFromGoogle(_ script: FolderScript, overwrite: Bool = false) async -> GoogleRefresh? {
-    guard let link = googleLinks[script.id.uuidString] else { return nil }
+    guard let link = googleLinks[script.id] else { return nil }
     do {
       let current = try ScriptFolder.read(script.url)
       if !overwrite, MarkdownLibrary.fingerprint(current) != link.fingerprint { return .hasLocalEdits }
       let (_, markdown) = try await google.export(link.document)
-      let fingerprint = MarkdownLibrary.fingerprint(markdown)
-      googleLinks[script.id.uuidString] = GoogleLink(document: link.document, fingerprint: fingerprint)
+      googleLinks[script.id] = .init(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
       guard markdown != current else { return .unchanged }
       // Written straight over the file: the doc is the master. An open presenter picks the
       // change up from the folder like an edit made on the Mac, keeping its place.

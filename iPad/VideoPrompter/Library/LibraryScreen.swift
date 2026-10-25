@@ -94,7 +94,7 @@ struct LibraryScreen: View {
       NavigationStack { SettingsScreen() }.environmentObject(store)
     }
     .sheet(isPresented: $showingGoogle) {
-      NavigationStack { GoogleDocsSheet(google: store.google) }.environmentObject(store)
+      NavigationStack { GoogleDocsSheet(google: store.google, importDocument: store.importGoogleDoc) }.environmentObject(store)
     }
   }
 

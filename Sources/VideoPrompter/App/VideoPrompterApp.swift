@@ -743,6 +743,8 @@ private enum PresenterSaveError: LocalizedError {
         }
         CameraCommands()
       }
+    Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store) }
+      .defaultSize(width: 520, height: 560)
     Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
   }
@@ -773,6 +775,7 @@ struct PresenterVideoItems: View {
 /// File menu: the library's script and folder actions. Each item is disabled when nothing applies.
 private struct FileItems: View {
   @ObservedObject var store: AppStore
+  @Environment(\.openWindow) private var openWindow
   var body: some View {
     let script = store.selected
     let link = script.flatMap { store.linkStates[$0.id] }
@@ -791,6 +794,10 @@ private struct FileItems: View {
       .disabled(!store.libraryAvailable)
     Button("Paste as New Script") { store.importClipboard() }
       .disabled(!store.libraryAvailable)
+    Button("Import from Google Docs…") { openWindow(id: "google-docs") }
+      .disabled(!store.libraryAvailable)
+    Button("Update from Google Docs") { store.updateSelectedFromGoogle() }
+      .disabled(script.map { !store.isFromGoogle($0.id) } ?? true)
     Button("Export Markdown…") { script.map(store.exportMarkdown) }
       .disabled(script == nil)
     Button("Reveal in Finder") { script.map { store.revealInFinder($0.id) } }
