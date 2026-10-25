@@ -856,7 +856,7 @@ private enum PresenterSaveError: LocalizedError {
             .help("Open the presenter with just the camera; present a script later to add it")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
-          Button("Start or Pause") { store.session.toggle() }
+          Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
             .keyboardShortcut("s", modifiers: [.command, .option])
           Button("Back to Start") { PresenterController.shared.moveReading { $0.restart() } }
             .keyboardShortcut("r", modifiers: [.command, .option])
@@ -867,9 +867,9 @@ private enum PresenterSaveError: LocalizedError {
           Divider()
           PresenterVideoItems()
           Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
-            .keyboardShortcut("m", modifiers: [.command, .option])
+            // Not Option-Command-M: that is Window > Minimise All.
+            .keyboardShortcut("l", modifiers: [.command, .option])
             .help("Pin the selected passage over the camera picture, as a reference monitor")
-            .disabled(store.selected == nil)
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
             .keyboardShortcut("f", modifiers: [.command, .control])
         }

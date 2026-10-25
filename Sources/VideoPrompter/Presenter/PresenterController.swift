@@ -68,11 +68,19 @@ import SwiftUI
   /// the presenter first; reading pauses, since the script itself is out of view.
   func monitorSelection(store: AppStore, text: String? = ReferenceMonitor.focusedSelection()) {
     guard let text, !isEditing else { return }
-    if panel?.isVisible != true { present(store: store) }
-    guard panel?.isVisible == true else { return }
+    // A camera-only presenter takes the script first, so Back to script has something to show.
+    if panel?.isVisible != true || isShowingWithoutScript { present(store: store) }
+    guard panel?.isVisible == true, !isShowingWithoutScript else { return }
     activeSession?.pause()
     ReferenceMonitor.shared.begin(text, camera: camera)
+    // Key, so Esc reaches Back to script even when the command came from the library.
     panel?.orderFrontRegardless()
+    panel?.makeKey()
+  }
+  /// The Prompter menu's Start or Pause. Nothing starts while the script is out of sight.
+  func toggleReading(store: AppStore) {
+    guard !isShowingWithoutScript, !ReferenceMonitor.shared.isActive else { return }
+    store.session.toggle()
   }
   func endMonitor() { ReferenceMonitor.shared.end(camera: camera) }
   func toggleFullScreen() {
@@ -84,7 +92,15 @@ import SwiftUI
     // The red button or Cmd-W in full screen: leave the Space first, then close.
     if isFullScreen { closeNow(); return false }
     activeSession?.pause()
+    resetTransientViews()
     return true
+  }
+  /// Ends the monitor and the camera-only presenter, putting back the view the person chose.
+  private func resetTransientViews() {
+    endMonitor()
+    if isShowingWithoutScript || cameraOnlyForWantOfScript { camera.restoreSavedDisplayMode() }
+    isShowingWithoutScript = false
+    cameraOnlyForWantOfScript = false
   }
   func moveReading(_ action: (SessionStore) -> Void) {
     guard let session = activeSession, !isEditing, !isShowingWithoutScript, camera.displayMode != .videoOnly else { return }
@@ -94,8 +110,8 @@ import SwiftUI
   var isEditing: Bool { draft?.isEditing == true }
   /// True while the presenter shows the camera with no script in it.
   private(set) var isShowingWithoutScript = false
-  /// Camera only was chosen because there was no script. Kept across a close, so the first script
-  /// presented afterwards still comes up over the camera instead of hidden behind it.
+  /// Camera only was shown because there was no script, so a script added to it comes up over the
+  /// camera instead of hidden behind it. Cleared, with the saved view put back, when it closes.
   private var cameraOnlyForWantOfScript = false
 
   /// The library's Present: the selected script, or with none selected the camera on its own.
@@ -108,13 +124,15 @@ import SwiftUI
   func presentCamera(store: AppStore) {
     guard draft?.isEditing != true else { panel?.makeKeyAndOrderFront(nil); return }
     closesAfterFullScreen = false
-    camera.displayMode = .videoOnly
+    endMonitor()
     if let panel, panel.isVisible, panel.contentView is NSHostingView<PresenterView> {
-      cameraOnlyForWantOfScript = isShowingWithoutScript
+      // A script already showing: this is the person choosing Camera only, which is saved.
+      if isShowingWithoutScript { camera.showTemporarily(.videoOnly) } else { camera.displayMode = .videoOnly }
       activeSession?.pause()
       panel.makeKeyAndOrderFront(nil)
       return
     }
+    camera.showTemporarily(.videoOnly)
     let panel = self.panel ?? makePanel()
     self.panel = panel
     store.session.pause()
@@ -146,8 +164,10 @@ import SwiftUI
     // view restarted the camera and threw the open edit away.
     let isShowing = panel.isVisible && store.session.activeScriptID == script.id
       && panel.contentView is NSHostingView<PresenterView> && !isShowingWithoutScript
+    // A new script never inherits a passage pinned over the last one.
+    if !isShowing { endMonitor() }
     // A script added to a camera-only presenter shows over the picture rather than hiding it.
-    if cameraOnlyForWantOfScript, camera.displayMode == .videoOnly { camera.displayMode = .prompterWithVideo }
+    if cameraOnlyForWantOfScript, camera.displayMode == .videoOnly { camera.showTemporarily(.prompterWithVideo) }
     cameraOnlyForWantOfScript = false
     isShowingWithoutScript = false
     // For the script already presented this only passes on settings; the anchor stays.
@@ -188,10 +208,10 @@ import SwiftUI
     draft.requestClose()
   }
   func closeNow() {
-    endMonitor()
-    isShowingWithoutScript = false
     activeSession?.pause()
+    // The flags go with the panel, so a present during the full-screen exit still rebuilds it.
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
+    resetTransientViews()
     panel?.orderOut(nil)
     // The camera is already let go: the stage view stops holding it when `orderOut` clears the
     // window's `isVisible`. Dropping the hosting view also stops the hidden presenter observing the
@@ -520,6 +540,9 @@ private struct PresenterView: View {
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
           .padding(.bottom, 8)
+          // Read through the same glass as the script.
+          .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
+          .rotationEffect(.degrees(Double(store.settings.rotation)))
         }
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
@@ -579,7 +602,7 @@ private struct PresenterView: View {
             }.pickerStyle(.inline)
             Divider()
             Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
-              .disabled(draft.isEditing || !hasScript)
+              .disabled(draft.isEditing)
               .help("Drag across a passage first; it is pinned over the camera picture")
             Button("Camera Settings…") { showsCameraSettings = true }
               .disabled(!camera.presentsWithVideo)
@@ -587,11 +610,14 @@ private struct PresenterView: View {
             // A titled label: an icon-only one dropped the menu from the accessibility tree, and a
             // Text image drew as a blank square in the bordered bar.
             Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.titleAndIcon)
+          } primaryAction: {
+            // One click still turns the camera on or off, as the old camera button did.
+            PresenterController.shared.toggleVideo()
           }
-          .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+          .menuStyle(.button).menuIndicator(.visible).fixedSize()
           .accessibilityLabel("Presenter view")
           .accessibilityValue(camera.displayMode.label)
-          .help("Show the script, the camera, or both; \(camera.displayMode.label) now")
+          .help("Click to show or hide the camera; the arrow has every view, Camera Settings and the monitor. \(camera.displayMode.label) now")
           .background {
             Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
               CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
@@ -1304,11 +1330,17 @@ private final class TrackingTextView: NSTextView {
       guard glyph < manager.numberOfGlyphs else { super.mouseDown(with: event); return }
       let character = manager.characterIndexForGlyph(at: glyph)
       if character != NSNotFound {
+        // Control-click is the context menu, not a seek.
+        guard !event.modifierFlags.contains(.control) else { super.mouseDown(with: event); return }
         setSelectedRange(NSRange(location: 0, length: 0))
         // AppKit's own tracking runs until the button comes up: a drag leaves a selection for
-        // the reference monitor, and a plain click still moves the reading position.
+        // the reference monitor, and a plain click still moves the reading position. A click
+        // that wobbles over one character is still a click.
         super.mouseDown(with: event)
-        if selectedRange().length == 0 { onCharacterClick?(character) }
+        if selectedRange().length <= 1 {
+          setSelectedRange(NSRange(location: selectedRange().location, length: 0))
+          onCharacterClick?(character)
+        }
         return
       }
     }

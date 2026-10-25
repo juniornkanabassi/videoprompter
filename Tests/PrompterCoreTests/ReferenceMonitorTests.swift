@@ -13,6 +13,22 @@ final class ReferenceMonitorTests: XCTestCase {
     XCTAssertEqual(ReferenceMonitor.clean("## Opening\n\n**Welcome** back.\n- First point"),
                    "Opening\n\nWelcome back.\nFirst point")
     XCTAssertEqual(ReferenceMonitor.clean("  \n\n  "), "")
+    XCTAssertEqual(ReferenceMonitor.clean("Hello [Look at the camera.] there, *friend*."), "Hello  there, friend.")
+  }
+
+  func testTemporaryCameraOnlyIsNeverSaved() {
+    let suite = "VideoPrompter.monitor.\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let defaults = UserDefaults(suiteName: suite)!
+    let camera = CameraModel(defaults: defaults)
+    camera.displayMode = .prompterOnly
+    let monitor = ReferenceMonitor()
+    monitor.begin("Lines to check.", camera: camera)
+    XCTAssertEqual(camera.displayMode, .videoOnly)
+    XCTAssertEqual(CameraModel(defaults: defaults).displayMode, .prompterOnly, "a relaunch keeps the person's own view")
+    camera.showTemporarily(.videoOnly)
+    camera.restoreSavedDisplayMode()
+    XCTAssertEqual(camera.displayMode, .prompterOnly)
   }
 
   func testMonitorShowsCameraOnlyAndRestoresTheEarlierView() {

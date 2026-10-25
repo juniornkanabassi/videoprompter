@@ -54,9 +54,27 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   /// controls are unaffected. The old Bool key is still written, so an older build reads it too.
   @Published var displayMode: PresenterDisplayMode {
     didSet {
+      guard !showingTemporarily else { return }
       defaults.set(displayMode.rawValue, forKey: "presenterDisplayMode")
       defaults.set(displayMode != .prompterOnly, forKey: "presenterWithVideo")
     }
+  }
+  private var showingTemporarily = false
+  /// Camera only forced by the reference monitor or a presenter with no script. It is not saved,
+  /// so a quit or a close leaves the person's own choice for next time.
+  func showTemporarily(_ mode: PresenterDisplayMode) {
+    showingTemporarily = true
+    displayMode = mode
+    showingTemporarily = false
+  }
+  /// The last view the person chose, as saved.
+  var savedDisplayMode: PresenterDisplayMode {
+    defaults.string(forKey: "presenterDisplayMode").flatMap(PresenterDisplayMode.init)
+      ?? (defaults.bool(forKey: "presenterWithVideo") ? .prompterWithVideo : .prompterOnly)
+  }
+  func restoreSavedDisplayMode() {
+    let saved = savedDisplayMode
+    if displayMode != saved { displayMode = saved }
   }
   /// Whether the picture is shown at all: the capsule button, the menu and the camera ask this.
   var presentsWithVideo: Bool {

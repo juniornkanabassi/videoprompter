@@ -419,7 +419,9 @@ import Speech
     guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return notPresenting }
     switch action {
     case "pause": store.session.pause()
-    case "resume": store.session.play()
+    case "resume":
+      guard !presenter.isShowingWithoutScript else { return .error("camera_only_view", "The presenter shows only the camera. Present a script first: videoprompter present <id|title>") }
+      store.session.play()
     case "back_to_start": store.session.restart()
     default:
       // The Prompter menu's passage items, which do nothing while only the camera shows.
