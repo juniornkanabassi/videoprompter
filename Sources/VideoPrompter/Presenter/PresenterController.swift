@@ -87,11 +87,46 @@ import SwiftUI
     return true
   }
   func moveReading(_ action: (SessionStore) -> Void) {
-    guard let session = activeSession, !isEditing, camera.displayMode != .videoOnly else { return }
+    guard let session = activeSession, !isEditing, !isShowingWithoutScript, camera.displayMode != .videoOnly else { return }
     action(session)
   }
 
   var isEditing: Bool { draft?.isEditing == true }
+  /// True while the presenter shows the camera with no script in it.
+  private(set) var isShowingWithoutScript = false
+
+  /// The library's Present: the selected script, or with none selected the camera on its own.
+  func presentFromLibrary(store: AppStore) {
+    if store.selected != nil { present(store: store) } else { presentCamera(store: store) }
+  }
+
+  /// The camera alone, as a monitor for recording without a script. Presenting a script later adds
+  /// it over the same picture; the View menu adds the camera to a script the other way round.
+  func presentCamera(store: AppStore) {
+    guard draft?.isEditing != true else { panel?.makeKeyAndOrderFront(nil); return }
+    closesAfterFullScreen = false
+    camera.displayMode = .videoOnly
+    if let panel, panel.isVisible, panel.contentView is NSHostingView<PresenterView> {
+      activeSession?.pause()
+      panel.makeKeyAndOrderFront(nil)
+      return
+    }
+    let panel = self.panel ?? makePanel()
+    self.panel = panel
+    store.session.pause()
+    activeSession = store.session
+    isShowingWithoutScript = true
+    panel.onPassageKey = { _ in false }
+    panel.title = "Video Prompter · Camera"
+    panel.settle()
+    let draft = PresenterDraft()
+    self.draft = draft
+    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: false))
+    recoverVisibleFrame(panel)
+    panel.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
@@ -105,7 +140,10 @@ import SwiftUI
     // Present on the presenter already showing this script only brings it forward: a new hosting
     // view restarted the camera and threw the open edit away.
     let isShowing = panel.isVisible && store.session.activeScriptID == script.id
-      && panel.contentView is NSHostingView<PresenterView>
+      && panel.contentView is NSHostingView<PresenterView> && !isShowingWithoutScript
+    // A script added to a camera-only presenter shows over the picture rather than hiding it.
+    if isShowingWithoutScript, camera.displayMode == .videoOnly { camera.displayMode = .prompterWithVideo }
+    isShowingWithoutScript = false
     // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
@@ -123,7 +161,7 @@ import SwiftUI
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
-    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
+    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: true))
     let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen") ? NSScreen.agentScreen : nil)
     if let area = targetScreen?.visibleFrame, !isFullScreen {
       panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
@@ -145,6 +183,7 @@ import SwiftUI
   }
   func closeNow() {
     endMonitor()
+    isShowingWithoutScript = false
     activeSession?.pause()
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
     panel?.orderOut(nil)
@@ -306,6 +345,10 @@ class PresenterPanel: NSPanel {
   private var originalMarkdown: String
   var hasEdits: Bool { markdown != originalMarkdown }
 
+  /// For the camera-only presenter, which has no script to edit.
+  convenience init() {
+    self.init(record: ScriptRecord(metadata: ScriptMetadata(title: "", fileName: ""), markdown: ""))
+  }
   init(record: ScriptRecord) {
     recordID = record.id
     expectedFingerprint = record.metadata.contentFingerprint
@@ -392,12 +435,14 @@ private struct PresenterView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
+  /// False for the camera on its own; the session may still hold an earlier script, never shown.
+  var hasScript = true
   @ObservedObject private var camera = CameraModel.shared
   @ObservedObject private var monitor = ReferenceMonitor.shared
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
-  private var showsScript: Bool { camera.displayMode != .videoOnly || draft.isEditing }
+  private var showsScript: Bool { hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
   var body: some View {
     GeometryReader { geometry in
       let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
@@ -456,6 +501,12 @@ private struct PresenterView: View {
         .clipped()
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
+        }
+        if !hasScript, camera.displayMode != .videoOnly {
+          Text("No script yet. Choose one in the library and press Present to add it here.")
+            .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
+            .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         if let passage = monitor.passage, !showsScript {
           ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
@@ -522,7 +573,7 @@ private struct PresenterView: View {
             }.pickerStyle(.inline)
             Divider()
             Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
-              .disabled(draft.isEditing)
+              .disabled(draft.isEditing || !hasScript)
               .help("Drag across a passage first; it is pinned over the camera picture")
             Button("Camera Settings…") { showsCameraSettings = true }
               .disabled(!camera.presentsWithVideo)

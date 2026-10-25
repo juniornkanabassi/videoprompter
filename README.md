@@ -73,6 +73,8 @@ Normally the presenter window is hidden from screen capture. Specific recording 
 
 The **View** menu in the presenter bar switches between Script only, Script and camera, and Camera only. **Camera Settings…** in the same menu holds the camera choice, rotation, mirroring and framing guides.
 
+To record without a script, press **Present** with no script selected, or choose **Camera Only** in an empty library or **Present Camera Only** in the Prompter menu. The presenter opens with just the camera. When you have a script, select it and press **Present** again: it appears over the same camera picture. Going the other way, choose **Script and camera** from the View menu to add the camera to a script you are already reading.
+
 To use the presenter as a reference monitor, drag across a passage in the presenter or the library editor, then choose **Monitor Selection with Camera** from the View menu or the Prompter menu (⌥⌘M). The camera fills the presenter with that passage pinned across the bottom. Press **Back to script** or Esc to return to the full script. A single click in the presenter still moves the reading position.
 
 ### Scripts and Markdown files

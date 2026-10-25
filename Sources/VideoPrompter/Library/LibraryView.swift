@@ -103,6 +103,10 @@ struct LibraryView: View {
                   Label { Text("New Script").fixedSize(horizontal: false, vertical: true) }
                     icon: { Image(systemName: "square.and.pencil") }
                 }.help("Start with a blank script and type or paste your words")
+                Button { PresenterController.shared.presentCamera(store: store) } label: {
+                  Label { Text("Camera Only").fixedSize(horizontal: false, vertical: true) }
+                    icon: { Image(systemName: "video") }
+                }.help("Open the presenter with just the camera, to record without a script")
               }.multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(20)
             }
           } else {
@@ -135,12 +139,12 @@ struct LibraryView: View {
         } label: { Label("Add", systemImage: "plus") }
           .labelStyle(.iconOnly).accessibilityLabel("Add")
           .help("Add a script or folder").disabled(!store.libraryAvailable)
-        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.present(store: store) }
+        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
           .tint(.accentColor)
-          .help(store.selected == nil ? "Select a script to present" : "Open the selected script in the floating presenter (⌥⌘P)")
-          .disabled(store.selected == nil)
+          .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
+          .disabled(!store.libraryAvailable)
         Button("Settings", systemImage: "slider.horizontal.3") { store.inspector.toggle() }
           .labelStyle(.titleAndIcon)
           .help(store.inspector ? "Hide settings" : "Choose how the script follows you and how it looks")
