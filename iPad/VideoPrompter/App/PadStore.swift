@@ -1,0 +1,173 @@
+import Combine
+import Foundation
+import PrompterCore
+import UIKit
+
+/// The iPad app's state: the scripts folder, the reading session shared with the Mac app, and
+/// the presenter settings. Presets live in the scripts folder so the Mac and iPad share them;
+/// the settings that belong to this iPad's hardware (mirroring, microphone) stay on the iPad.
+@MainActor final class PadStore: ObservableObject {
+  let folder = ScriptFolder()
+  let session = SessionStore()
+  let camera = PadCamera()
+  @Published var selectedID: UUID?
+  @Published var presentingID: UUID?
+  @Published var errorMessage: String?
+  @Published var settings = PrompterSettings() {
+    didSet {
+      guard settings != oldValue else { return }
+      persist()
+      if session.activeRecord != nil { session.updateSettings(settings) }
+    }
+  }
+  @Published var presets: [PrompterSettings] = [] {
+    didSet {
+      guard presets != oldValue else { return }
+      persist()
+      folder.writePresets(presets)
+    }
+  }
+
+  private let defaults: UserDefaults
+  private var bag = Set<AnyCancellable>()
+  private var presentedModified: Date?
+  private static let settingsKey = "padSettings"
+  private static let presetsKey = "padPresets"
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    if let data = defaults.data(forKey: Self.settingsKey),
+      let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
+    { settings = saved } else {
+      // An iPad under teleprompter glass is the usual case, so a first launch starts mirrored.
+      settings.horizontalMirror = true
+      settings.fontSize = 56
+    }
+    if let data = defaults.data(forKey: Self.presetsKey),
+      let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
+    { presets = saved }
+    folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    folder.$scripts.dropFirst().sink { [weak self] scripts in
+      Task { @MainActor in self?.foldersChanged(scripts) }
+    }.store(in: &bag)
+    pullPresets()
+  }
+
+  private func persist() {
+    if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: Self.settingsKey) }
+    if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: Self.presetsKey) }
+  }
+
+  // MARK: Presets
+
+  /// Presets made on the Mac appear here, and the other way round. The newer file wins.
+  func pullPresets() {
+    guard let shared = folder.readPresets(), shared != presets else { return }
+    presets = shared
+  }
+
+  func savePreset(named name: String) {
+    var preset = settings
+    preset.id = UUID()
+    preset.name = name.trimmingCharacters(in: .whitespaces).isEmpty ? "Preset \(presets.count + 1)" : name
+    presets.append(preset)
+  }
+
+  /// A preset brings its look, but this iPad keeps its own mirroring and microphone.
+  func apply(_ preset: PrompterSettings) {
+    var next = preset
+    next.horizontalMirror = settings.horizontalMirror
+    next.verticalMirror = settings.verticalMirror
+    next.audioDeviceUID = settings.audioDeviceUID
+    next.inputGain = settings.inputGain
+    next.rotation = settings.rotation
+    settings = next
+  }
+
+  func deletePresets(at offsets: IndexSet) { presets.remove(atOffsets: offsets) }
+
+  // MARK: Scripts
+
+  var selected: FolderScript? { selectedID.flatMap(folder.script) }
+
+  func newScript() {
+    var title = "New Script"
+    var n = 2
+    while folder.scripts.contains(where: { $0.title == title }) { title = "New Script \(n)"; n += 1 }
+    do {
+      let script = try folder.create(title: title, markdown: "# \(title)\n\n")
+      selectedID = script.id
+    } catch { errorMessage = error.localizedDescription }
+  }
+
+  func importFile(_ url: URL) async {
+    let scoped = url.startAccessingSecurityScopedResource()
+    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+    do {
+      let preview = try await DocumentImporter().preview(url: url)
+      var title = url.deletingPathExtension().lastPathComponent
+      if folder.scripts.contains(where: { $0.title == title }) { title += " (imported)" }
+      let script = try folder.create(title: title, markdown: preview.markdown)
+      selectedID = script.id
+      if let warning = preview.warnings.first { errorMessage = warning }
+    } catch { errorMessage = error.localizedDescription }
+  }
+
+  func record(for script: FolderScript) -> ScriptRecord? {
+    do { return try folder.record(for: script) } catch {
+      errorMessage = error.localizedDescription
+      return nil
+    }
+  }
+
+  func save(_ markdown: String, to script: FolderScript) -> Bool {
+    do {
+      let record = try folder.save(markdown, to: script)
+      if session.activeScriptID == script.id { session.applyEditedRecord(record) }
+      return true
+    } catch {
+      errorMessage = error.localizedDescription
+      return false
+    }
+  }
+
+  // MARK: Presenting
+
+  func present(_ script: FolderScript) {
+    guard let record = record(for: script) else { return }
+    ensureMicrophone()
+    session.present(record: record, settings: settings)
+    presentedModified = script.modified
+    presentingID = script.id
+    UIApplication.shared.isIdleTimerDisabled = true
+  }
+
+  func closePresenter() {
+    session.pause()
+    presentingID = nil
+    UIApplication.shared.isIdleTimerDisabled = false
+  }
+
+  /// Voice needs a microphone chosen; the built-in one unless another is plugged in and chosen.
+  func ensureMicrophone() {
+    let devices = AudioCapture.inputDevices()
+    if settings.audioDeviceUID.map({ uid in devices.contains { $0.uid == uid } }) != true {
+      settings.audioDeviceUID = AudioCapture.defaultDevice()?.uid
+    }
+  }
+
+  /// A change saved on the Mac reaches the open presenter as an edit: the reading position is
+  /// carried across exactly as it is for an edit made here.
+  private func foldersChanged(_ scripts: [FolderScript]) {
+    pullPresets()
+    guard let id = presentingID ?? session.activeScriptID,
+      let script = scripts.first(where: { $0.id == id }), script.isDownloaded,
+      script.modified != presentedModified,
+      let record = try? folder.record(for: script),
+      record.markdown != session.activeRecord?.markdown
+    else { return }
+    presentedModified = script.modified
+    session.applyEditedRecord(record)
+  }
+}

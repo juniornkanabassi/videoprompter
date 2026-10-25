@@ -1,4 +1,8 @@
+#if canImport(AppKit)
 import AppKit
+#else
+import UIKit
+#endif
 import Foundation
 import PDFKit
 
@@ -30,7 +34,9 @@ struct DocumentImporter: Sendable {
     switch url.pathExtension.lowercased() {
     case "md", "markdown", "txt": return try text(url)
     case "rtf": return try rich(url, .rtf)
+    #if os(macOS)
     case "docx": return try rich(url, .officeOpenXML)
+    #endif
     case "pdf": return try pdf(url)
     default: throw DocumentImportError.unsupportedType(url.pathExtension)
     }
