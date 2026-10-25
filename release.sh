@@ -91,7 +91,11 @@ if [[ -z $ZIP ]]; then
   ZIP="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}/Video Prompter $SRC_VERSION.zip"
 fi
 [[ -f $ZIP ]] || die "no zip at $ZIP"
-/usr/bin/ditto -x -k "$ZIP" "$WORK/app" || die "could not unpack $ZIP"
+# Everything from here reads private copies, so a build that replaces the zip or disk image mid-run cannot change
+# what is checked, signed and published.
+SRC_ZIP=$ZIP ZIP="$WORK/input.zip"
+/bin/cp "$SRC_ZIP" "$ZIP" || die "could not copy $SRC_ZIP"
+/usr/bin/ditto -x -k "$ZIP" "$WORK/app" || die "could not unpack $SRC_ZIP"
 APP="$WORK/app/Video Prompter.app"
 plist() { /usr/libexec/PlistBuddy -c "Print $1" "$APP/Contents/Info.plist" 2>/dev/null || true; }
 VERSION=$(plist CFBundleShortVersionString)
@@ -100,18 +104,20 @@ KEY=$(plist SUPublicEDKey)
 COMMIT=$(plist VPSourceCommit)
 /usr/bin/codesign --verify --deep --strict "$APP" || die "the zipped app does not verify"
 if /usr/bin/xcrun stapler validate -q "$APP" 2>/dev/null; then SIGNING=notarised; else SIGNING=not-notarised; fi
-print "Video Prompter $VERSION (build $BUILD, commit ${COMMIT:-unknown}), $SIGNING: $ZIP"
+print "Video Prompter $VERSION (build $BUILD, commit ${COMMIT:-unknown}), $SIGNING: $SRC_ZIP"
 [[ -n $KEY && $KEY != REPLACE_WITH_* ]] || die "SUPublicEDKey in the app is not set"
 problems=()
 [[ $COMMIT == $HEAD ]] || problems+=("the zip was built from '${COMMIT:-an unknown commit}', not HEAD $HEAD")
 (( CLEAN )) || problems+=("the source has uncommitted changes")
 # The disk image must hold this same build. It is read-only mounted without browsing, at a private mount point.
 if [[ -z $DMG ]]; then
-  DMG="${ZIP%.zip}.dmg"
   # package-dmg.sh names it "Video Prompter <version>.dmg" beside the zip, from this same zipped app.
-  [[ -f $DMG ]] || zsh "$ROOT/checks/package-dmg.sh" "$APP" "${ZIP:h}" || die "checks/package-dmg.sh failed"
+  DMG="${SRC_ZIP:h}/Video Prompter $VERSION.dmg"
+  [[ -f $DMG ]] || zsh "$ROOT/checks/package-dmg.sh" "$APP" "${SRC_ZIP:h}" || die "checks/package-dmg.sh failed"
 fi
 [[ -f $DMG ]] || die "no disk image at $DMG"
+/bin/cp "$DMG" "$WORK/input.dmg" || die "could not copy $DMG"
+DMG="$WORK/input.dmg"
 /usr/bin/xcrun stapler validate -q "$DMG" 2>/dev/null || problems+=("the disk image is not notarised and stapled")
 /usr/sbin/spctl -a -t open --context context:primary-signature "$DMG" 2>/dev/null || problems+=("Gatekeeper does not accept the disk image")
 mkdir "$MNT"
@@ -269,6 +275,9 @@ if (( DRY )); then
   print "asset VideoPrompter_$VERSION.zip: $BYTES bytes, sha256 $SHA (Sparkle appcast enclosure)"
   print "asset VideoPrompter.dmg: $DMG_BYTES bytes, sha256 $DMG_SHA (website download)"
 else
+  # The tag goes on the commit checked in step 1; refuse if the checkout moved or changed since.
+  [[ $(git -C "$ROOT" rev-parse HEAD) == $HEAD && -z $(git -C "$ROOT" status --porcelain) ]] \
+    || die "the checkout changed since step 1 (HEAD was $HEAD); nothing uploaded"
   if (( EXISTS )); then
     HAVE=$(gh release view "v$VERSION" --repo $REPO --json assets --jq '.assets[].name')
     missing=()
@@ -311,11 +320,11 @@ print "Wrote $APPCAST"
 
 step "7. Tag v$VERSION"
 if (( DRY )); then
-  print "dry run, not run: git tag -a v$VERSION -m 'Video Prompter $VERSION'"
+  print "dry run, not run: git tag -a v$VERSION -m 'Video Prompter $VERSION' $HEAD"
   print "\nDry run done: appcast $APPCAST"
 elif (( TAGGED )); then
   print "v$VERSION is already on HEAD. The website session commits $APPCAST and the release object above."
 else
-  git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" || die "git tag failed"
+  git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" "$HEAD" || die "git tag failed"
   print "Tagged v$VERSION (not pushed). The website session commits $APPCAST and the release object above."
 fi
