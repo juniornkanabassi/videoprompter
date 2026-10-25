@@ -31,7 +31,7 @@
 	<key>SUFeedURL</key>
 	<string>https://juniornkanabassi.com/apps/videoprompter/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_VIDEOPROMPTER_PUBLIC_KEY</string>
+	<string>7coaQ3dXjyB/fEwh8kst1OOCgq/EwgOHwYPJZLVAAeM=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>
