@@ -20,9 +20,9 @@ The [visual quick-start guide](https://juniornkanabassi.com/apps/videoprompter/#
 
 ## Download
 
-[Download the latest Video Prompter](https://github.com/juniornkanabassi/videoprompter-releases/releases/latest/download/VideoPrompter.dmg).
+[Download the latest Video Prompter](https://github.com/juniornkanabassi/videoprompter/releases/latest/download/VideoPrompter.dmg).
 
-The public [Releases page](https://github.com/juniornkanabassi/videoprompter-releases/releases) contains the disk image, installation notes and SHA-256 checksum. The app source remains private. Every release uses the filename `VideoPrompter.dmg`, so the download link above always points to the latest published version.
+The [Releases page](https://github.com/juniornkanabassi/videoprompter/releases) contains the disk image, installation notes and SHA-256 checksum. Releases up to 2.0.2 are on the archived [videoprompter-releases](https://github.com/juniornkanabassi/videoprompter-releases/releases). Every release uses the filename `VideoPrompter.dmg`, so the download link above always points to the latest published version.
 
 Release 2.0.0 is signed with an Apple Developer ID and notarised by Apple, so macOS opens it normally after download. Read the requirements below before installing.
 
@@ -196,6 +196,6 @@ The socket is `control.sock` in the app's data folder: folder permissions 0700, 
 
 ### Release status
 
-Release builds are Developer ID signed, notarised and stapled, and so is the disk image. Gatekeeper acceptance is checked with `spctl` on the build Mac; the full install and removal workflow for a new user on another Mac remains unverified. Updates use Sparkle 2.10.0, as in Talk & Read. The feed is `https://juniornkanabassi.com/apps/videoprompter/appcast.xml` and each update is a zip signed with an EdDSA key kept in the login keychain (account `videoprompter`). `zsh release.sh --website <website checkout> --notes <notes.md>` builds, signs the zip, writes the appcast item, publishes `VideoPrompter_<version>.zip` and `VideoPrompter.dmg` to videoprompter-releases, verifies both downloads and tags the source; `--dry-run` does everything except publish. Updates stay off in local builds and until `SUPublicEDKey` in `Resources/Info.plist` holds the real public key from Sparkle's `generate_keys --account videoprompter`.
+Release builds are Developer ID signed, notarised and stapled, and so is the disk image. Gatekeeper acceptance is checked with `spctl` on the build Mac; the full install and removal workflow for a new user on another Mac remains unverified. Updates use Sparkle 2.10.0, as in Talk & Read. The feed is `https://juniornkanabassi.com/apps/videoprompter/appcast.xml` and each update is a zip signed with an EdDSA key kept in the login keychain (account `videoprompter`). `zsh release.sh --website <website checkout> --notes <notes.md>` builds, signs the zip, writes the appcast item, publishes `VideoPrompter_<version>.zip` and `VideoPrompter.dmg` as a release of this repository from a pushed `v<version>` tag, then verifies both downloads; `--dry-run` does everything except publish. Updates stay off in local builds and until `SUPublicEDKey` in `Resources/Info.plist` holds the real public key from Sparkle's `generate_keys --account videoprompter`.
 
 If notarisation times out, the build retains its staged bundle or disk image and submission log in the printed temporary folder. Use the printed submission ID with `xcrun notarytool info` and the printed staple, verification and archive commands after Apple reports Accepted. Do not resubmit the same pending upload.
