@@ -32,17 +32,17 @@ import UIKit
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
   private var presentedModified: Date?
-  /// The scripts the folder held at the last look, kept across launches, to notice files
-  /// deleted anywhere, including while the app was closed.
-  private var knownIDs: Set<UUID>?
-  private var knownRoot: String?
+  /// The scripts each folder held at the last look, by folder path and kept across launches,
+  /// to notice files deleted anywhere, including while the app was closed or another folder
+  /// was in use.
+  private var knownIDs: [String: [String]]
   private static let settingsKey = "padSettings"
   private static let presetsKey = "padPresets"
-  private static let knownIDsKey = "padKnownScripts"
-  private static let knownRootKey = "padKnownScriptsFolder"
+  private static let knownIDsKey = "padKnownScriptsByFolder"
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    knownIDs = defaults.dictionary(forKey: Self.knownIDsKey) as? [String: [String]] ?? [:]
     if let data = defaults.data(forKey: Self.settingsKey),
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
     { settings = saved } else {
@@ -53,10 +53,6 @@ import UIKit
     if let data = defaults.data(forKey: Self.presetsKey),
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
-    if let saved = defaults.stringArray(forKey: Self.knownIDsKey) {
-      knownIDs = Set(saved.compactMap(UUID.init(uuidString:)))
-      knownRoot = defaults.string(forKey: Self.knownRootKey)
-    }
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     // The first value is the listing the folder made at launch, compared with the last launch's.
@@ -194,8 +190,10 @@ import UIKit
     // An unreachable folder lists nothing, which says nothing about what was deleted.
     guard FileManager.default.fileExists(atPath: root) else { return }
     var current = Set(scripts.map(\.id))
-    // Choosing another folder is not deleting the old one's scripts.
-    if let known = knownIDs, knownRoot == root {
+    // Each folder is compared only with its own last listing: choosing another folder is not
+    // deleting the old one's scripts.
+    if let saved = knownIDs[root] {
+      let known = Set(saved.compactMap(UUID.init(uuidString:)))
       for id in known.subtracting(current) {
         // The script on screen stays until the presenter closes, which comes back here.
         if id == presentingID { current.insert(id); continue }
@@ -204,10 +202,8 @@ import UIKit
         folder.forget(id)
       }
     }
-    knownIDs = current
-    knownRoot = root
-    defaults.set(current.map(\.uuidString), forKey: Self.knownIDsKey)
-    defaults.set(root, forKey: Self.knownRootKey)
+    knownIDs[root] = current.map(\.uuidString)
+    defaults.set(knownIDs, forKey: Self.knownIDsKey)
   }
 
   // MARK: Google Docs

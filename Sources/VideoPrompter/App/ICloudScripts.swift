@@ -15,6 +15,9 @@ import SwiftUI
 /// - Presets are shared through `Video Prompter presets.json` in the same folder.
 @MainActor enum ICloudScripts {
   static let enabledKey = "keepScriptsInICloud"
+  /// Set when the setting goes off, and cleared once every iCloud link has been undone, so a
+  /// failed unlink (a full disk, say) is tried again on the poll and after a relaunch.
+  static let unlinkPendingKey = "unlinkICloudScriptsPending"
   static let presetsFileName = "Video Prompter presets.json"
   /// The poll runs every two seconds; this pass checks every link, so it runs at most every five.
   /// The pass in progress, if any, so turning the setting off can wait for it.
@@ -107,19 +110,21 @@ extension AppStore {
     set {
       objectWillChange.send()
       UserDefaults.standard.set(newValue, forKey: ICloudScripts.enabledKey)
-      Task { newValue ? await syncICloudScripts() : await unlinkICloudScripts() }
+      UserDefaults.standard.set(!newValue, forKey: ICloudScripts.unlinkPendingKey)
+      Task { newValue ? await syncICloudScripts() : await unlinkICloudScripts(reportingFailure: true) }
     }
   }
 
   /// Turning the setting off stops the sharing, not just the copying of new scripts: every
   /// script linked into the iCloud folder goes back to its library copy, so nothing more is
   /// written there or read from there. The files already in iCloud Drive stay where they are.
-  func unlinkICloudScripts() async {
+  func unlinkICloudScripts(reportingFailure: Bool = false) async {
     // A pass already under way finishes first (it stops at its next check of the setting), so
     // it cannot link a script after this has unlinked them.
     await ICloudScripts.pass?.value
     guard let library else { return }
     let states = await library.linkStates()
+    var failed = 0
     for (id, state) in states {
       let inside: Bool
       switch state {
@@ -127,14 +132,28 @@ extension AppStore {
       case .missing(let path): inside = ICloudScripts.isInside(path: path)
       default: inside = false
       }
-      guard inside, let metadata = try? await library.unlink(id) else { continue }
+      guard inside else { continue }
+      guard let metadata = try? await library.unlink(id) else { failed += 1; continue }
       if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
+    }
+    // Turned back on meanwhile: the links are wanted again, so nothing is left pending.
+    if failed == 0 || keepsScriptsInICloud {
+      UserDefaults.standard.set(false, forKey: ICloudScripts.unlinkPendingKey)
+    } else if reportingFailure {
+      errorMessage = "\(failed) script\(failed == 1 ? "" : "s") could not be unlinked from iCloud Drive yet. Video Prompter will keep trying."
     }
     await refreshLinkStates()
   }
 
   /// One pass of the iCloud folder sync. Runs on the library's two-second poll while it is on.
   func syncICloudScripts() async {
+    if !keepsScriptsInICloud, UserDefaults.standard.bool(forKey: ICloudScripts.unlinkPendingKey),
+      ICloudScripts.pass == nil, Date().timeIntervalSince(ICloudScripts.lastPass) >= 5
+    {
+      ICloudScripts.lastPass = Date()
+      await unlinkICloudScripts()
+      return
+    }
     guard keepsScriptsInICloud, library != nil, ICloudScripts.isAvailable, ICloudScripts.pass == nil,
       Date().timeIntervalSince(ICloudScripts.lastPass) >= 5 else { return }
     ICloudScripts.lastPass = Date()
