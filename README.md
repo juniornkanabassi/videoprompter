@@ -6,7 +6,7 @@ I record in English and French in the same take, so I built a prompter that foll
 
 [Download Video Prompter](https://github.com/juniornkanabassi/videoprompter/releases/latest/download/VideoPrompter.dmg) · [Release notes](https://github.com/juniornkanabassi/videoprompter/releases/latest) · [App page](https://juniornkanabassi.com/apps/videoprompter/)
 
-The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one.
+The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Releases up to 2.0.2 are also kept on the archived [videoprompter-releases](https://github.com/juniornkanabassi/videoprompter-releases/releases) repository.
 
 ## Watch the quick-start guide
 
@@ -29,7 +29,7 @@ You do not need an Apple Developer account, Xcode or this source code to use the
 
 The app and the disk image are signed with my Developer ID and notarised by Apple, so macOS opens them normally, though it may ask you to confirm the first time. If macOS says the app is damaged or cannot be verified, download a fresh copy from the Releases page. Please do not remove quarantine attributes or turn off Gatekeeper in Terminal to get round it.
 
-Video Prompter does not update itself yet. To get a newer version, download the disk image again and replace the app. Your scripts and settings stay where they are.
+From the first release built with Sparkle, Video Prompter checks for updates once a day and shows you each new version with its release notes. It installs only after you agree, and Video Prompter › Check for Updates… checks straight away. Versions up to 2.0.2 do not update themselves, so install that first Sparkle release by hand from the disk image. Your scripts and settings stay where they are.
 
 ## First use
 
@@ -97,7 +97,6 @@ Quit VidPrompt before opening Video Prompter. Once you have checked your scripts
 
 ## Not included yet
 
-- Automatic updates.
 - OBS integration.
 - Editing from iPhone or iCloud.
 

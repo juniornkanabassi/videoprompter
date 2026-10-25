@@ -9,12 +9,21 @@ func emit(_ value: [String: Any], json: Bool) {
     if let scripts = result["scripts"] as? [[String: Any]] {
       if scripts.isEmpty { print("No scripts.") }
       for script in scripts { print("\(script["id"] ?? "")  \(script["title"] ?? "")") }
+    } else if let key = ["folders", "presets", "cameras", "microphones"].first(where: { result[$0] is [[String: Any]] }), let rows = result[key] as? [[String: Any]] {
+      if rows.isEmpty { print("No \(key).") }
+      for row in rows { print("\(row["id"] ?? "")  \(row["name"] ?? "")\(row["selected"] as? Bool == true ? "  (selected)" : "")") }
     } else if let running = result["running"] as? Bool {
       if !running { print("Video Prompter is not running.") }
       else {
         let selected = result["selected"] as? [String: Any]
-        print("Video Prompter \(result["version"] ?? "") — \(result["state"] ?? "stopped"), \(result["mode"] ?? "voice"), zoom \(result["zoom"] ?? 100)%; selected: \(selected?["title"] ?? "none")")
+        let camera = (result["camera"] as? [String: Any])?["view"] ?? "off"
+        let recording = (result["recording"] as? [String: Any])?["active"] as? Bool == true ? ", recording" : ""
+        print("Video Prompter \(result["version"] ?? ""): \(result["state"] ?? "stopped"), \(result["mode"] ?? "voice"), speed \(result["speed"] ?? 120) wpm, zoom \(result["zoom"] ?? 100)%, camera \(camera)\(recording); selected: \(selected?["title"] ?? "none")")
       }
+    } else if let markdown = result["markdown"] as? String {
+      print(markdown)
+    } else if let file = result["file"] as? String {
+      print("Saved \(file)")
     } else if let title = result["title"] {
       print("\(title) (\(result["id"] ?? ""))\(result["linked"] as? Bool == true ? ", linked" : "")\(result["repeated"] as? Bool == true ? ", repeated" : "")")
     } else {
@@ -62,6 +71,13 @@ let root = ControlProtocol.dataRoot(bundleIdentifier: bundleID, arguments: argum
 let path = ControlProtocol.socketURL(dataRoot: root).path
 if path.utf8.count > 103 { failure("Control socket path exceeds 103 bytes. Use a shorter --data-directory.", json: invocation.json) }
 if let value = invocation.params["path"] { invocation.params["path"] = URL(fileURLWithPath: value).path }
+// `--text -` reads the script from standard input; the request still has to fit in 64 KB.
+if invocation.params["text"] == "-" {
+  guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8), !text.isEmpty else {
+    failure("Standard input was empty or not UTF-8 text.", code: "usage", json: invocation.json, exitCode: 2)
+  }
+  invocation.params["text"] = text
+}
 var fd = connectSocket(path)
 if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["running": false, "app": bundleID, "socket": path]], json: invocation.json); exit(0) }
 if fd == nil {

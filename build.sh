@@ -15,20 +15,52 @@ OUTPUT_TMP="$OUTPUT_ROOT/.Video Prompter $VERSION.zip.$$"
 KEEP_WORK=0
 cleanup() { (( KEEP_WORK )) || rm -rf "$WORK"; rm -f "$OUTPUT_TMP"; }
 trap cleanup EXIT
+# The commit this builds ("-dirty" with uncommitted changes); release.sh publishes only a clean HEAD's build.
+COMMIT=$("$GIT" -C "$ROOT" rev-parse HEAD)
+[[ -z $("$GIT" -C "$ROOT" status --porcelain) ]] || COMMIT+="-dirty"
 MODULE_CACHE_PATH="$BUILD_ROOT/ModuleCache" CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/ClangModuleCache" SWIFT_MODULECACHE_PATH="$BUILD_ROOT/SwiftModuleCache" "$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT"
 BIN=$("$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT" --show-bin-path)/VideoPrompter
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/mcp" "$APP/Contents/Helpers"
 cp "$BIN" "$APP/Contents/MacOS/VideoPrompter"
 cp "${BIN:h}/VideoPrompterCLI" "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/mcp/videoprompter-mcp.mjs" "$APP/Contents/Resources/mcp/"
+# Sparkle, found through the app's rpath @executable_path/../Frameworks; ditto keeps its symlinks.
+[[ -d "${BIN:h}/Sparkle.framework" ]] || { print -u2 "No Sparkle.framework in ${BIN:h}"; exit 1; }
+mkdir -p "$APP/Contents/Frameworks"
+/usr/bin/ditto "${BIN:h}/Sparkle.framework" "$APP/Contents/Frameworks/Sparkle.framework"
 SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 (( DEVELOPER_ID_AVAILABLE )) && SIGN_FLAGS+=(--timestamp)
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Add :VPSourceCommit string $COMMIT" "$APP/Contents/Info.plist"
+# Updates only in a Developer ID build with a real public key. Any other build has no feed, so the app starts no
+# updater and shows no Check for Updates item (Updates.swift), and can never replace itself with a release.
+PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c 'Print SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true)
+if (( ! DEVELOPER_ID_AVAILABLE )) || [[ -z "$PUBLIC_KEY" || "$PUBLIC_KEY" == REPLACE_WITH_* ]]; then
+  /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" -c "Delete :SUPublicEDKey" "$APP/Contents/Info.plist"
+  print "Updates off in this build (no Developer ID identity, or SUPublicEDKey is not set)"
+fi
 if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
-/usr/bin/codesign "${SIGN_FLAGS[@]}" --deep --entitlements "$ROOT/Resources/Entitlements.plist" "$APP"
+# Sparkle's nested code inside-out, as its documentation gives for apps outside the App Store, then the framework.
+# The XPC services keep their own entitlements. No --deep on the app: it would re-sign all of this and the helper.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+/usr/bin/codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Autoupdate"
+/usr/bin/codesign "${SIGN_FLAGS[@]}" "$SPARKLE/Versions/B/Updater.app"
+for xpc in "$SPARKLE"/Versions/B/XPCServices/*.xpc(N); do
+  /usr/bin/codesign "${SIGN_FLAGS[@]}" --preserve-metadata=entitlements "$xpc"
+done
+/usr/bin/codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
+# Hardened runtime only loads Sparkle when it shares the app's Team ID. A local identity (ReadAlong Dev or ad hoc) has
+# none, so only those builds turn library validation off; Developer ID builds keep it.
+ENTITLEMENTS="$ROOT/Resources/Entitlements.plist"
+if (( ! DEVELOPER_ID_AVAILABLE )); then
+  ENTITLEMENTS="$WORK/Entitlements.plist"
+  cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ENTITLEMENTS"
+fi
+/usr/bin/codesign "${SIGN_FLAGS[@]}" --entitlements "$ENTITLEMENTS" "$APP"
 /usr/bin/codesign --verify --deep --strict "$APP"
 # Developer ID builds are notarised and stapled before they are archived, so the archive and every
 # DMG made from it open on another Mac without a Gatekeeper warning. The ticket is stapled to the
