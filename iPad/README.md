@@ -31,11 +31,11 @@ Rotation, mirroring and the framing guides apply to either source and are rememb
 
 ## Scripts from Google Docs
 
-Add › From Google Docs copies a document in as Markdown. The doc stays the master: Update from Google Docs on the script fetches it again, and asks first if the script was edited since.
+Add › From Google Docs on the iPad, or File › Import from Google Docs… on the Mac, copies a document in as Markdown. The code is shared (`Sources/VideoPrompter/Import/GoogleDocs.swift` and `GoogleDocsSheet.swift`), so any future Apple target gets it too. The doc stays the master: Update from Google Docs on the script fetches it again, and asks first if the script was edited since.
 
 A pasted link works with no setup for documents shared with "Anyone with the link".
 
-Signing in with Google lists and searches the account's documents, shared drives included, and opens documents shared only with the account (a Workspace domain's, say). It needs an OAuth client: in Google Cloud Console create a project, enable the Google Drive API, set up the consent screen with the `drive.readonly` scope, and create an OAuth client of type iOS for bundle ID `com.juniornkanabassi.VideoPrompter`. Put its client ID in `Info.plist` under `GoogleClientID`. Until the app is verified by Google, sign-in works for up to 100 listed test users and ends after seven days.
+Signing in with Google lists and searches the account's documents, shared drives included, and opens documents shared only with the account (a Workspace domain's, say). It needs an OAuth client: in Google Cloud Console create a project, enable the Google Drive API, set up the consent screen with the `drive.readonly` scope, and create an OAuth client of type iOS for bundle ID `com.juniornkanabassi.VideoPrompter`. Put its client ID under `GoogleClientID` in both `iPad/Info.plist` and `Resources/Info.plist` (Google's iOS client type also serves macOS apps). Until the app is verified by Google, sign-in works for up to 100 listed test users and ends after seven days.
 
 ## Build
 
