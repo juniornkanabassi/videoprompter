@@ -15,9 +15,11 @@ OUTPUT_TMP="$OUTPUT_ROOT/.Video Prompter $VERSION.zip.$$"
 KEEP_WORK=0
 cleanup() { (( KEEP_WORK )) || rm -rf "$WORK"; rm -f "$OUTPUT_TMP"; }
 trap cleanup EXIT
-# The commit this builds ("-dirty" with uncommitted changes); release.sh publishes only a clean HEAD's build.
+# The commit this builds, taken before compiling ("-dirty" with uncommitted or untracked changes); release.sh
+# publishes only a clean HEAD's build.
 COMMIT=$("$GIT" -C "$ROOT" rev-parse HEAD)
-[[ -z $("$GIT" -C "$ROOT" status --porcelain) ]] || COMMIT+="-dirty"
+STATUS=$("$GIT" -C "$ROOT" status --porcelain --untracked-files=all) || { print -u2 "git status failed"; exit 1; }
+[[ -z $STATUS ]] || COMMIT+="-dirty"
 MODULE_CACHE_PATH="$BUILD_ROOT/ModuleCache" CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/ClangModuleCache" SWIFT_MODULECACHE_PATH="$BUILD_ROOT/SwiftModuleCache" "$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT"
 BIN=$("$SWIFT" build --package-path "$ROOT" --configuration release --scratch-path "$BUILD_ROOT" --show-bin-path)/VideoPrompter
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/mcp" "$APP/Contents/Helpers"
@@ -33,6 +35,9 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# A checkout that moved or changed while compiling marks the build dirty.
+STATUS=$("$GIT" -C "$ROOT" status --porcelain --untracked-files=all) || { print -u2 "git status failed"; exit 1; }
+[[ $("$GIT" -C "$ROOT" rev-parse HEAD) == ${COMMIT%-dirty} && -z $STATUS ]] || COMMIT="${COMMIT%-dirty}-dirty"
 /usr/libexec/PlistBuddy -c "Add :VPSourceCommit string $COMMIT" "$APP/Contents/Info.plist"
 # Updates only in a Developer ID build with a real public key. Any other build has no feed, so the app starts no
 # updater and shows no Check for Updates item (Updates.swift), and can never replace itself with a release.
