@@ -940,27 +940,37 @@ final class PresenterControllerTests: XCTestCase {
       let current = target(for: index)
       return current > start + 20 && abs(current - previous) < 0.5
     }
+    // Waits on what the animation does, not on the clock: a fixed 0.65 s wait for a 0.60 s
+    // animation failed every time on a loaded Mac, where the animation runs late.
+    func waitUntil(_ timeout: TimeInterval = 5, _ condition: () -> Bool) {
+      let deadline = Date().addingTimeInterval(timeout)
+      while !condition(), Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.005)) }
+    }
+    var y: CGFloat { scroll.contentView.bounds.origin.y }
+
     let sameLineIndex = try! XCTUnwrap(sameLinePair)
     let sameLineTarget = target(for: sameLineIndex)
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex - 1, guideFraction: 0.35)
+    let animations = coordinator.alignmentAnimationCount
     RunLoop.main.run(until: Date().addingTimeInterval(0.10))
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.55))
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, sameLineTarget, accuracy: 2,
+    XCTAssertEqual(coordinator.alignmentAnimationCount, animations,
       "A same-line token update must not restart the existing alignment")
+    waitUntil { abs(y - sameLineTarget) <= 2 }
+    XCTAssertEqual(y, sameLineTarget, accuracy: 2, "The existing alignment still lands on the line")
     coordinator.snapNextAlignment = true
     coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
 
     coordinator.align(scroll: scroll, tokenIndex: 5, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
-    let intermediate = scroll.contentView.bounds.origin.y
+    waitUntil(2) { abs(y - start) > 0.5 }
+    let intermediate = y
     let firstTarget = target(for: 5)
     XCTAssertTrue(min(start, firstTarget) < intermediate && intermediate < max(start, firstTarget))
 
     coordinator.align(scroll: scroll, tokenIndex: 10, guideFraction: 0.35)
     XCTAssertEqual(scroll.contentView.bounds.origin.y, intermediate, accuracy: 1)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
-    let retargeted = scroll.contentView.bounds.origin.y
+    waitUntil(2) { abs(y - intermediate) > 0.5 }
+    let retargeted = y
     let secondTarget = target(for: 10)
     XCTAssertTrue(min(intermediate, secondTarget) < retargeted && retargeted < max(intermediate, secondTarget))
 

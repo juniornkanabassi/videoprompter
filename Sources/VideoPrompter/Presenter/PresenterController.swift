@@ -747,6 +747,8 @@ struct ScriptTextView: NSViewRepresentable {
     /// Seek revisions the hand scroll itself caused, which must not lift the suppression.
     private var pendingUserSeeks = 0
     var snapNextAlignment = false
+    /// Eased alignments started, so a test can tell a restarted animation from one still running.
+    private(set) var alignmentAnimationCount = 0
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
     /// Every mapping's rendered midY, measured on the gesture's first scroll event. Only geometry
@@ -1152,6 +1154,7 @@ struct ScriptTextView: NSViewRepresentable {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
       } ?? false
       if animate && !isSameDestination {
+        alignmentAnimationCount += 1
         NSAnimationContext.runAnimationGroup { context in
           context.duration = 0.60
           context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
