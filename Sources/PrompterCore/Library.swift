@@ -197,7 +197,7 @@ public actor MarkdownLibrary {
   }
   public func createLinked(title: String, markdown: String, folderID: UUID? = nil, to url: URL) throws -> ScriptRecord {
     _ = try checkedRelinkText(url)
-    guard let bookmark = (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
+    guard let bookmark = Self.bookmark(for: url)
     else { throw PrompterCoreError.unsafePath(url.path) }
     return try createScript(title: title, markdown: markdown, folderID: folderID,
       tags: [], link: (url.standardizedFileURL.path, bookmark))
@@ -355,7 +355,7 @@ public actor MarkdownLibrary {
     let old = index
     index.scripts[position].linkedPath = url.standardizedFileURL.path
     index.scripts[position].linkedBookmark =
-      (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
+      Self.bookmark(for: url)
     // The fingerprint records what the library copy holds, not what the file holds now: an
     // import seeds the copy from the preview, and a file changed since that preview would
     // otherwise look unchanged and be silently overwritten with the stale preview text.
@@ -392,7 +392,7 @@ public actor MarkdownLibrary {
     let metadata = index.scripts[position]
     let libraryURL = try validatedURL(metadata.fileName, in: scriptsURL)
     let local = try readText(libraryURL)
-    guard let bookmark = (try? url.bookmarkData(options: .withSecurityScope)) ?? (try? url.bookmarkData())
+    guard let bookmark = Self.bookmark(for: url)
     else { throw PrompterCoreError.unsafePath(url.path) }
     let old = index
     lastLinkSync[id] = nil
@@ -566,7 +566,7 @@ public actor MarkdownLibrary {
     guard let path = metadata.linkedPath else { return .unlinked }
     var stale = false
     if let data = metadata.linkedBookmark {
-      for options: URL.BookmarkResolutionOptions in [.withSecurityScope, []] {
+      for options in Self.bookmarkResolutionOptions {
         if let url = try? URL(resolvingBookmarkData: data, options: options, relativeTo: nil, bookmarkDataIsStale: &stale) {
           guard (try? Self.withLinkAccess(url, { try validateLinkTarget($0) })) != nil else { return .missing(path: url.path) }
           // ponytail: a stale bookmark is reported but not rewritten; relink to refresh it.
@@ -580,6 +580,19 @@ public actor MarkdownLibrary {
   private static func modificationDate(of url: URL) -> Date? {
     (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date
   }
+  /// A security-scoped bookmark where macOS offers one. iPadOS has no such option: a URL the
+  /// document picker handed over makes a bookmark that already carries its access.
+  private static func bookmark(for url: URL) -> Data? {
+    #if os(macOS)
+    if let data = try? url.bookmarkData(options: .withSecurityScope) { return data }
+    #endif
+    return try? url.bookmarkData()
+  }
+  #if os(macOS)
+  private static let bookmarkResolutionOptions: [URL.BookmarkResolutionOptions] = [.withSecurityScope, []]
+  #else
+  private static let bookmarkResolutionOptions: [URL.BookmarkResolutionOptions] = [[]]
+  #endif
   private static func withLinkAccess<T>(_ url: URL, _ body: (URL) throws -> T) rethrows -> T {
     let scoped = url.startAccessingSecurityScopedResource()
     defer { if scoped { url.stopAccessingSecurityScopedResource() } }

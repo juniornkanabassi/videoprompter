@@ -1,5 +1,7 @@
 import AVFoundation
+#if canImport(AppKit)
 import AppKit
+#endif
 import Combine
 import Foundation
 import PrompterCore

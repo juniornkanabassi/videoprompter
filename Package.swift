@@ -3,8 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "VideoPrompter",
-    platforms: [.macOS("26.0")],
-    products: [.executable(name: "VideoPrompter", targets: ["VideoPrompter"]), .executable(name: "VideoPrompterCLI", targets: ["VideoPrompterCLI"])],
+    platforms: [.macOS("26.0"), .iOS("26.0")],
+    products: [.library(name: "PrompterCore", targets: ["PrompterCore"]), .executable(name: "VideoPrompter", targets: ["VideoPrompter"]), .executable(name: "VideoPrompterCLI", targets: ["VideoPrompterCLI"])],
     targets: [
         .target(name: "PrompterCore", path: "Sources/PrompterCore"),
         .executableTarget(name: "VideoPrompter", dependencies: ["PrompterCore"], path: "Sources/VideoPrompter"),
