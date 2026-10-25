@@ -94,6 +94,9 @@ import SwiftUI
   var isEditing: Bool { draft?.isEditing == true }
   /// True while the presenter shows the camera with no script in it.
   private(set) var isShowingWithoutScript = false
+  /// Camera only was chosen because there was no script. Kept across a close, so the first script
+  /// presented afterwards still comes up over the camera instead of hidden behind it.
+  private var cameraOnlyForWantOfScript = false
 
   /// The library's Present: the selected script, or with none selected the camera on its own.
   func presentFromLibrary(store: AppStore) {
@@ -107,6 +110,7 @@ import SwiftUI
     closesAfterFullScreen = false
     camera.displayMode = .videoOnly
     if let panel, panel.isVisible, panel.contentView is NSHostingView<PresenterView> {
+      cameraOnlyForWantOfScript = isShowingWithoutScript
       activeSession?.pause()
       panel.makeKeyAndOrderFront(nil)
       return
@@ -116,6 +120,7 @@ import SwiftUI
     store.session.pause()
     activeSession = store.session
     isShowingWithoutScript = true
+    cameraOnlyForWantOfScript = true
     panel.onPassageKey = { _ in false }
     panel.title = "Video Prompter · Camera"
     panel.settle()
@@ -142,7 +147,8 @@ import SwiftUI
     let isShowing = panel.isVisible && store.session.activeScriptID == script.id
       && panel.contentView is NSHostingView<PresenterView> && !isShowingWithoutScript
     // A script added to a camera-only presenter shows over the picture rather than hiding it.
-    if isShowingWithoutScript, camera.displayMode == .videoOnly { camera.displayMode = .prompterWithVideo }
+    if cameraOnlyForWantOfScript, camera.displayMode == .videoOnly { camera.displayMode = .prompterWithVideo }
+    cameraOnlyForWantOfScript = false
     isShowingWithoutScript = false
     // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
@@ -578,8 +584,9 @@ private struct PresenterView: View {
             Button("Camera Settings…") { showsCameraSettings = true }
               .disabled(!camera.presentsWithVideo)
           } label: {
-            // An icon-only Label drops a button-style Menu from the accessibility tree; a Text image keeps it.
-            Text(Image(systemName: camera.displayMode.systemImage))
+            // A titled label: an icon-only one dropped the menu from the accessibility tree, and a
+            // Text image drew as a blank square in the bordered bar.
+            Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.titleAndIcon)
           }
           .menuStyle(.button).menuIndicator(.hidden).fixedSize()
           .accessibilityLabel("Presenter view")
