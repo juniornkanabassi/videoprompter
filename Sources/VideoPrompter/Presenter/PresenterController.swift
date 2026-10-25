@@ -381,7 +381,7 @@ private struct PresenterView: View {
   @ObservedObject var draft: PresenterDraft
   @ObservedObject private var camera = CameraModel.shared
   @State private var editorNotice: String?
-  @State private var showsGuideSettings = false
+  @State private var showsCameraSettings = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
   private var showsScript: Bool { camera.displayMode != .videoOnly || draft.isEditing }
   var body: some View {
@@ -490,16 +490,28 @@ private struct PresenterView: View {
               .buttonStyle(.borderedProminent)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          CapsuleButton(camera.presentsWithVideo ? "Hide camera" : "Show camera",
-                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
-            PresenterController.shared.toggleVideo()
-          }
-          if camera.presentsWithVideo {
-            CameraPicker(model: camera, zoom: store.uiZoom)
-            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", help: "Choose composition lines and an output frame marker") { showsGuideSettings = true }
-              .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
-                CameraGuideSettings(model: camera).frame(width: 300).padding()
+          // One View menu instead of a camera toggle, picker and guides button: the bar keeps the
+          // same width whether or not the camera is on.
+          Menu {
+            Picker("What to show", selection: $camera.displayMode) {
+              ForEach(PresenterDisplayMode.allCases) { mode in
+                Label(mode.label, systemImage: mode.systemImage).tag(mode)
               }
+            }.pickerStyle(.inline)
+            Divider()
+            Button("Camera Settings…") { showsCameraSettings = true }
+              .disabled(!camera.presentsWithVideo)
+          } label: {
+            Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.iconOnly)
+          }
+          .menuStyle(.button).menuIndicator(.hidden).fixedSize()
+          .accessibilityLabel("Presenter view")
+          .accessibilityValue(camera.displayMode.label)
+          .help("Show the script, the camera, or both; \(camera.displayMode.label) now")
+          .background {
+            Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
+              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
+            }
           }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
