@@ -330,16 +330,17 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// Session queue only, whenever the input port's format changes. A DeckLink that has streamed
   /// nothing yet reports its 720x486 default as the mode it detected, and `pin` held that: on
   /// 25 October Cam B's 4K signal showed in standard definition for the whole session. When the
-  /// port then delivers a larger picture than the pinned format, the delivered size is the real
-  /// signal, so pin again from it. A delivered size `pin` already saw, or one no larger than the
-  /// pinned format (the normal 4K signal shown at 1080p), changes nothing, so this cannot loop.
+  /// port then delivers a picture that is neither the signal `pin` saw nor the pinned format, the
+  /// card has a new signal, larger or smaller, so pin again from it. The pinned format arriving
+  /// (the normal 4K signal shown at 1080p) changes nothing, so this cannot loop. DeckLink only:
+  /// other cameras deliver sizes that differ from their active format for their own reasons.
   func follow(delivered: CMVideoDimensions, subType: FourCharCode, in session: AVCaptureSession) {
-    guard let current, let signalSize,
+    guard let current, let signalSize, current.device.modelID == "DeckLink",
       delivered.width != signalSize.width || delivered.height != signalSize.height,
       current.formats.indices.contains(current.choice.wanted.format)
     else { return }
     let pinned = CMVideoFormatDescriptionGetDimensions(current.formats[current.choice.wanted.format].formatDescription)
-    guard Int64(delivered.width) * Int64(delivered.height) > Int64(pinned.width) * Int64(pinned.height) else { return }
+    guard delivered.width != pinned.width || delivered.height != pinned.height else { return }
     let sameSize = current.device.formats.filter {
       let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
       return d.width == delivered.width && d.height == delivered.height
