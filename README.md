@@ -33,6 +33,8 @@ From the first release built with Sparkle, Video Prompter checks for updates onc
 
 ## First use
 
+A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Welcome Script brings it back.
+
 1. Choose Add to import a file, or create a New Script.
 2. Open Settings and choose Voice or Manual.
 3. Press Present.
