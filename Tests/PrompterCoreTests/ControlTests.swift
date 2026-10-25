@@ -334,6 +334,32 @@ import XCTest
     XCTAssertEqual(store.scripts.map(\.id), [replacement.id])
   }
 
+  func testRenameRetryNeverRenamesAScriptThatTookTheOldName() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let first = try await store.createScript(title: "Draft", markdown: "one")
+    let folder = try await store.createLibraryFolder(named: "Old")
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let rename = ["script": "Draft", "title": "Ready", "requestId": "rename1"]
+    let folderRename = ["folder": "Old", "name": "New", "requestId": "folder1"]
+    let renamed = await actions.handle("script_rename", rename)
+    let folderRenamed = await actions.handle("folder_rename", folderRename)
+    XCTAssertEqual(renamed.body["ok"] as? Bool, true)
+    XCTAssertEqual(folderRenamed.body["ok"] as? Bool, true)
+    let second = try await store.createScript(title: "Draft", markdown: "two")
+    _ = try await store.createLibraryFolder(named: "Old")
+    let retry = await actions.handle("script_rename", rename)
+    XCTAssertEqual((retry.body["result"] as? [String: Any])?["repeated"] as? Bool, true)
+    XCTAssertEqual((retry.body["result"] as? [String: Any])?["id"] as? String, first.id.uuidString)
+    let folderRetry = await actions.handle("folder_rename", folderRename)
+    XCTAssertEqual((folderRetry.body["result"] as? [String: Any])?["id"] as? String, folder.id.uuidString)
+    XCTAssertEqual(store.scripts.first { $0.id == second.id }?.metadata.title, "Draft")
+    XCTAssertEqual(store.folders.filter { $0.name == "Old" }.count, 1)
+  }
+
   func testDuplicateRetryAfterRenameUsesCachedResult() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }

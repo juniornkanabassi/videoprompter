@@ -170,31 +170,34 @@ import Speech
       if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil) }
       return .ok(identity(record))
     case "script_rename", "script_tag", "script_move":
-      guard store.libraryAvailable else { return unavailable }
-      let (record, error) = lookup(params["script"]!)
-      if let error { return error }
-      guard let record else { return unavailable }
-      do {
-        switch action {
-        case "script_rename":
-          let title = params["title"]!.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !title.isEmpty else { return .error("invalid_params", "Titles cannot be empty.") }
-          try await store.updateScriptMetadata(record.id, title: title)
-        case "script_tag":
-          let raw = params["tags"]!
-          let tags: [String] = raw.trimmingCharacters(in: .whitespaces).lowercased() == "none" ? [] : raw.split(separator: ",").map(String.init)
-          try await store.updateScriptMetadata(record.id, tags: tags)
-        default:
-          var folderID: UUID?
-          if params["folder"]!.lowercased() != "none" {
-            let (found, error) = folder(named: params["folder"]!)
-            if let error { return error }
-            folderID = found?.id
+      // Resolved inside the retry guard: a retry never renames a different script that took the old name.
+      return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable else { return unavailable }
+        let (record, error) = lookup(params["script"]!)
+        if let error { return error }
+        guard let record else { return unavailable }
+        do {
+          switch action {
+          case "script_rename":
+            let title = params["title"]!.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return .error("invalid_params", "Titles cannot be empty.") }
+            try await store.updateScriptMetadata(record.id, title: title)
+          case "script_tag":
+            let raw = params["tags"]!
+            let tags: [String] = raw.trimmingCharacters(in: .whitespaces).lowercased() == "none" ? [] : raw.split(separator: ",").map(String.init)
+            try await store.updateScriptMetadata(record.id, tags: tags)
+          default:
+            var folderID: UUID?
+            if params["folder"]!.lowercased() != "none" {
+              let (found, error) = folder(named: params["folder"]!)
+              if let error { return error }
+              folderID = found?.id
+            }
+            try await store.moveScripts([record.id], to: folderID)
           }
-          try await store.moveScripts([record.id], to: folderID)
-        }
-      } catch { return .error("library_failed", "The library could not be updated. Nothing was changed.") }
-      return .ok(details(store.scripts.first(where: { $0.id == record.id }) ?? record))
+        } catch { return .error("library_failed", "The library could not be updated. Nothing was changed.") }
+        return .ok(details(store.scripts.first(where: { $0.id == record.id }) ?? record))
+      }
     case "script_duplicate":
       return await once(action, params) { [self] () -> ControlResult in
         guard store.libraryAvailable else { return unavailable }
@@ -280,15 +283,17 @@ import Speech
         } catch { return .error("library_failed", "The folder could not be created.") }
       }
     case "folder_rename":
-      guard store.libraryAvailable else { return unavailable }
-      let (found, error) = folder(named: params["folder"]!)
-      if let error { return error }
-      guard let found else { return unavailable }
-      let name = params["name"]!.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !name.isEmpty else { return .error("invalid_params", "Folder names cannot be empty.") }
-      do { try await store.renameLibraryFolder(found.id, name: name) }
-      catch { return .error("library_failed", "The folder could not be renamed. Nothing was changed.") }
-      return .ok(["id": found.id.uuidString, "name": name])
+      return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable else { return unavailable }
+        let (found, error) = folder(named: params["folder"]!)
+        if let error { return error }
+        guard let found else { return unavailable }
+        let name = params["name"]!.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return .error("invalid_params", "Folder names cannot be empty.") }
+        do { try await store.renameLibraryFolder(found.id, name: name) }
+        catch { return .error("library_failed", "The folder could not be renamed. Nothing was changed.") }
+        return .ok(["id": found.id.uuidString, "name": name])
+      }
     case "presenter_close":
       if presenter.isEditing { return editing }
       guard presenter.panel?.isVisible == true else { return .ok(["presenter": "hidden", "changed": false, "state": state]) }
