@@ -7,6 +7,7 @@ import PrompterCore
   @Published private(set) var isRecording = false
   @Published private(set) var isBusy = false
   @Published private(set) var startedAt: Date?
+  private(set) var recordingID: UUID?
   @Published private(set) var lastFile: URL?
   @Published var errorMessage: String?
   @Published var preset: RecordingPreset { didSet { defaults.set(preset.rawValue, forKey: "recordingPreset") } }
@@ -42,7 +43,8 @@ import PrompterCore
   func start(camera: CameraModel) async {
     guard !isBusy, !isRecording else { return }
     isBusy = true; cancelStart = false; errorMessage = nil
-    defer { isBusy = false }
+    recordingID = UUID()
+    defer { isBusy = false; if !isRecording { recordingID = nil } }
     do {
       guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.") }
       if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .video) }
@@ -125,7 +127,7 @@ import PrompterCore
         }
       }
       do { lastFile = try await sink.finish() } catch { errorMessage = "Recording could not be finished: \(error.localizedDescription)" }
-      shared.release(); self.sink = nil; startedAt = nil; isBusy = false
+      shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; isBusy = false
     }
     stopTask = task; await task.value; stopTask = nil
   }

@@ -30,6 +30,25 @@ private actor PresenterSaveGate {
 
 @MainActor
 final class AppStoreTests: XCTestCase {
+  func testMetadataActionUpdatesMemoryAndDiskAndThrowsWithoutChangingMemory() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpm-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    try await store.updateScriptMetadata(record.id, title: "Renamed", tags: [" draft ", "ready", "draft"])
+    let updated = try XCTUnwrap(store.scripts.first)
+    XCTAssertEqual(updated.metadata.title, "Renamed")
+    XCTAssertEqual(updated.metadata.tags, ["draft", "ready"])
+    await store.reload()
+    XCTAssertEqual(store.scripts.first?.metadata, updated.metadata)
+    do {
+      try await store.updateScriptMetadata(record.id, title: " ")
+      XCTFail("An empty title should be rejected")
+    } catch {}
+    XCTAssertEqual(store.scripts.first?.metadata, updated.metadata)
+  }
+
   func testDuplicateFlushesDraftAndKeepsTheInvokedScriptWhenSelectionChanges() async throws {
     let (store, root, outside) = makeStore()
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
