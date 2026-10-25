@@ -58,13 +58,22 @@ import SwiftUI
   /// The text selected in a script: the focused one, else the presenter's (a non-activating panel,
   /// so its script often holds a selection without being first responder), else the library
   /// editor's, which the View menu reaches only after the presenter has become key.
-  static func focusedSelection() -> String? {
-    if let text = NSApp.keyWindow?.firstResponder as? NSTextView, let value = selection(in: text) { return value }
-    if let root = PresenterController.shared.panel?.contentView,
-      let value = textViews(in: root).lazy.compactMap(selection).first { return value }
-    if let text = NSApp.mainWindow?.firstResponder as? NSTextView, let value = selection(in: text) { return value }
+  static func focusedSelection() -> Selection? {
+    let panel = PresenterController.shared.panel
+    if let window = NSApp.keyWindow, let text = window.firstResponder as? NSTextView, let value = selection(in: text) {
+      return Selection(text: value, inPresenter: window === panel)
+    }
+    if let root = panel?.contentView, let value = textViews(in: root).lazy.compactMap(selection).first {
+      return Selection(text: value, inPresenter: true)
+    }
+    if let text = NSApp.mainWindow?.firstResponder as? NSTextView, let value = selection(in: text) {
+      return Selection(text: value, inPresenter: false)
+    }
     return nil
   }
+  /// Selected words, and whether they came from the presenter rather than the library editor,
+  /// whose script may not be the one presented.
+  struct Selection { let text: String; let inPresenter: Bool }
   /// Never a title or tags field: those edit through the window's shared field editor.
   private static func selection(in text: NSTextView) -> String? {
     let range = text.selectedRange()

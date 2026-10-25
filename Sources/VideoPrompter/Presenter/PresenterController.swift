@@ -66,13 +66,15 @@ import SwiftUI
 
   /// Pins the selected passage over the full camera picture. From the library editor this opens
   /// the presenter first; reading pauses, since the script itself is out of view.
-  func monitorSelection(store: AppStore, text: String? = ReferenceMonitor.focusedSelection()) {
-    guard let text, !isEditing else { return }
-    // A camera-only presenter takes the script first, so Back to script has something to show.
-    if panel?.isVisible != true || isShowingWithoutScript { present(store: store) }
+  func monitorSelection(store: AppStore, selection: ReferenceMonitor.Selection? = ReferenceMonitor.focusedSelection()) {
+    guard let selection, !isEditing else { return }
+    // The script the words belong to is presented first, so Back to script returns to it: a
+    // camera-only presenter has none, and a library selection may be from another script.
+    let otherScript = !selection.inPresenter && store.selected?.id != activeSession?.activeScriptID
+    if panel?.isVisible != true || isShowingWithoutScript || otherScript { present(store: store) }
     guard panel?.isVisible == true, !isShowingWithoutScript else { return }
     activeSession?.pause()
-    ReferenceMonitor.shared.begin(text, camera: camera)
+    ReferenceMonitor.shared.begin(selection.text, camera: camera)
     // Key, so Esc reaches Back to script even when the command came from the library.
     panel?.orderFrontRegardless()
     panel?.makeKey()
@@ -98,7 +100,8 @@ import SwiftUI
   /// Ends the monitor and the camera-only presenter, putting back the view the person chose.
   private func resetTransientViews() {
     endMonitor()
-    if isShowingWithoutScript || cameraOnlyForWantOfScript { camera.restoreSavedDisplayMode() }
+    // Every view the person picks is saved, so one that differs was only ever temporary.
+    camera.restoreSavedDisplayMode()
     isShowingWithoutScript = false
     cameraOnlyForWantOfScript = false
   }

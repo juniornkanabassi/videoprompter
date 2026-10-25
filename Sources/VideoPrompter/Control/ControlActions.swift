@@ -420,6 +420,7 @@ import Speech
     switch action {
     case "pause": store.session.pause()
     case "resume":
+      guard !ReferenceMonitor.shared.isActive else { return .error("monitor_active", "A passage is pinned over the camera. Press Back to script in the presenter first.") }
       guard !presenter.isShowingWithoutScript else { return .error("camera_only_view", "The presenter shows only the camera. Present a script first: videoprompter present <id|title>") }
       store.session.play()
     case "back_to_start": store.session.restart()
