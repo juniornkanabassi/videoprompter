@@ -21,12 +21,12 @@ Edits on either side reach the other a few seconds after iCloud syncs. If both s
 
 ## Build
 
-Open `iPad/VideoPrompter.xcodeproj` in Xcode 26, choose your team under Signing & Capabilities, and run on the iPad. From the command line:
+Open `iPad/VideoPrompter.xcodeproj` in Xcode 26, and run on the iPad (the project signs automatically with team M6L2VW4W5Z). From the command line:
 
 ```sh
 xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter \
   -destination 'generic/platform=iOS' -allowProvisioningUpdates \
-  DEVELOPMENT_TEAM=<team id> build
+  build
 ```
 
 ## TestFlight
@@ -38,7 +38,7 @@ xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter \
 ```sh
 xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter \
   -destination 'generic/platform=iOS' -archivePath /private/tmp/VideoPrompter-iPad.xcarchive \
-  -allowProvisioningUpdates DEVELOPMENT_TEAM=<team id> archive
+  -allowProvisioningUpdates archive
 xcodebuild -exportArchive -archivePath /private/tmp/VideoPrompter-iPad.xcarchive \
   -exportOptionsPlist iPad/ExportOptions.plist -exportPath /private/tmp/VideoPrompter-iPad -allowProvisioningUpdates
 ```

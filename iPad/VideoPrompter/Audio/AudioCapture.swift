@@ -50,7 +50,7 @@ public final class AudioCapture: @unchecked Sendable {
   static func configureSession() {
     let session = AVAudioSession.sharedInstance()
     guard session.category != .record || session.mode != .measurement else { return }
-    try? session.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
+    try? session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
   }
 
   public static func inputDevices() -> [AudioInputDevice] {
@@ -273,6 +273,8 @@ public final class AudioInputDeviceObserver: @unchecked Sendable {
   private var token: NSObjectProtocol?
 
   fileprivate init(onChange: @escaping () -> Void) {
+    // Delivered on the main queue, where the session that passed `onChange` lives.
+    nonisolated(unsafe) let onChange = onChange
     token = NotificationCenter.default.addObserver(
       forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
     ) { _ in onChange() }

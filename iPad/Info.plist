@@ -49,8 +49,6 @@
 		<key>UIColorName</key>
 		<string></string>
 	</dict>
-	<key>UIRequiresFullScreen</key>
-	<false/>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
