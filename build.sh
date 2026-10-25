@@ -35,6 +35,7 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # A checkout that moved or changed while compiling marks the build dirty.
 STATUS=$("$GIT" -C "$ROOT" status --porcelain --untracked-files=all) || { print -u2 "git status failed"; exit 1; }
 [[ $("$GIT" -C "$ROOT" rev-parse HEAD) == ${COMMIT%-dirty} && -z $STATUS ]] || COMMIT="${COMMIT%-dirty}-dirty"
