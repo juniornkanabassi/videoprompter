@@ -6,7 +6,7 @@ I record in English and French in the same take, so I built a prompter that foll
 
 [Download Video Prompter](https://github.com/juniornkanabassi/videoprompter/releases/latest/download/VideoPrompter.dmg) · [Release notes](https://github.com/juniornkanabassi/videoprompter/releases/latest) · [App page](https://juniornkanabassi.com/apps/videoprompter/)
 
-The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Older releases, including 1.2.2, stay on the [videoprompter-releases](https://github.com/juniornkanabassi/videoprompter-releases/releases) repository.
+The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Older releases, back to the VidPrompt previews, are on the [Releases page](https://github.com/juniornkanabassi/videoprompter/releases) too.
 
 ## Watch the quick-start guide
 
