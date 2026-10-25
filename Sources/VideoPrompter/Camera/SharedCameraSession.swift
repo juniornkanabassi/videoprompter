@@ -308,7 +308,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   private var generation = 0
   /// The signal's size as `pin` read it, so `follow` can tell a different delivered picture.
   private var signalSize: CMVideoDimensions?
-  /// Set by `follow`: the next `watch` measures the signal's rate from the frames themselves.
+  /// Set by `follow` for the pin it just made: watches measure the signal's rate from the frames
+  /// until one completes the measurement. `pin` clears it, so it never outlives its device.
   private var measuresRate = false
 
   init(sessionQueue: DispatchQueue) {
@@ -332,6 +333,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     generation += 1
     current = nil
     signalSize = nil
+    measuresRate = false
     guard let device = signal?.device else { return }
     let formats = device.formats
     guard let signal,
@@ -407,7 +409,6 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
     let toHost = session.synchronizationClock.map { host - CMClockGetTime($0).seconds } ?? 0
     let measuresRate = self.measuresRate
-    self.measuresRate = false
     shared.withLock {
       $0.frames = 0
       $0.toHost = toHost
@@ -434,6 +435,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
         defer { $0.measuresRate = false }
         return ($0.frames > 0, $0.rateTimes)
       }
+      // This watch ran to its end, so its measurement is done, whatever it found.
+      if measuresRate { self.measuresRate = false }
       if session.isRunning, current.choice.revert(sawFrame: sawFrame) != nil {
         failed.insert(current.device.uniqueID)
         self.current?.choice = current.choice.settled
@@ -451,6 +454,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
           holdingFormat(session)
           NSLog("Video Prompter camera: frames arrive every %.2f ms, not %.2f ms; pinning that rate",
                 measured.seconds * 1000, pinned.seconds * 1000)
+          // A rate like any other: check it shows frames, and keep the output for that check.
+          return watch(session)
         }
       }
       if !Self.logsLatency { detach(from: session) }
