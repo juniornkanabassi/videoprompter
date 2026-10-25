@@ -145,6 +145,13 @@ extension AppStore {
   }
 
   private func runICloudPass() async {
+    var changed = false
+    await runICloudSteps(changed: &changed)
+    // Even a pass cut short by the setting going off shows what it already changed.
+    if changed { await reload() }
+  }
+
+  private func runICloudSteps(changed: inout Bool) async {
     guard let library else { return }
     let fm = FileManager.default
     do { try fm.createDirectory(at: ICloudScripts.folder, withIntermediateDirectories: true) } catch {
@@ -152,27 +159,28 @@ extension AppStore {
       keepsScriptsInICloud = false
       return
     }
-    var changed = false
     let states = await library.linkStates()
     let folders = Dictionary(uniqueKeysWithValues: await library.listFolders().map { ($0.id, $0.name) })
     var linked = Set<String>()
     for metadata in await library.listScripts() {
+      // Turned off mid-pass: stop here, before anything more is written or deleted.
+      guard keepsScriptsInICloud else { return }
       switch states[metadata.id] {
       case .resolved(let url), .staleBookmark(let url):
         if ICloudScripts.isInside(url) { linked.insert(url.standardizedFileURL.path) }
       case .missing(let path) where ICloudScripts.isInside(path: path):
         // Deleted on the iPad. The script goes to the library's Trash, where it can be restored.
         if !fm.fileExists(atPath: path), (try? await library.delete(metadata.id)) != nil {
-          session.forgetPosition(for: metadata.id)
+          session.forgetScript(metadata.id)
           MacGoogleDocs.links[metadata.id] = nil
           changed = true
         }
       case .none, .unlinked:
         // Not yet in iCloud: write it out and link it. A script linked to some other file
         // (an Obsidian note, say) keeps that link and stays on the Mac only.
-        guard keepsScriptsInICloud else { return }
         do {
           let record = try await library.read(metadata.id)
+          guard keepsScriptsInICloud else { return }
           var directory = ICloudScripts.folder
           if let name = metadata.folderID.flatMap({ folders[$0] }) {
             directory.appendPathComponent(ICloudScripts.safeName(name), isDirectory: true)
@@ -193,14 +201,15 @@ extension AppStore {
     let trashed = Set(await library.listTrash().compactMap(\.metadata.linkedPath)
       .map { URL(fileURLWithPath: $0).standardizedFileURL.path })
     let folderIDs = Dictionary(await library.listFolders().map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+    guard keepsScriptsInICloud else { return }
     for url in ICloudScripts.files() where !linked.contains(url.path) {
+      guard keepsScriptsInICloud else { return }
       if trashed.contains(url.path) {
         // Deleted here: the iPad should lose it too.
         try? fm.trashItem(at: url, resultingItemURL: nil)
         continue
       }
       // New on the iPad (or dropped in from Finder): import it, linked, into the matching folder.
-      guard keepsScriptsInICloud else { return }
       guard let markdown = ICloudScripts.read(url) else { continue }
       let parent = url.deletingLastPathComponent()
       var folderID: UUID?
@@ -209,6 +218,7 @@ extension AppStore {
         folderID = folderIDs[name]
         if folderID == nil { folderID = try? await library.createFolder(name: name).id }
       }
+      guard keepsScriptsInICloud else { return }
       do {
         _ = try await library.createLinked(
           title: url.deletingPathExtension().lastPathComponent, markdown: markdown, folderID: folderID, to: url)
@@ -217,8 +227,7 @@ extension AppStore {
         errorMessage = "“\(url.lastPathComponent)” from iCloud Drive could not be added. \(error.localizedDescription)"
       }
     }
-    syncICloudPresets()
-    if changed { await reload() }
+    if keepsScriptsInICloud { syncICloudPresets() }
   }
 
   /// Presets: whichever side changed since the last pass wins, so a preset saved on the iPad

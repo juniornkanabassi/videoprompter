@@ -32,11 +32,14 @@ import UIKit
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
   private var presentedModified: Date?
-  /// The scripts the folder held at the last look, to notice files deleted anywhere.
+  /// The scripts the folder held at the last look, kept across launches, to notice files
+  /// deleted anywhere, including while the app was closed.
   private var knownIDs: Set<UUID>?
-  private var knownRoot: URL?
+  private var knownRoot: String?
   private static let settingsKey = "padSettings"
   private static let presetsKey = "padPresets"
+  private static let knownIDsKey = "padKnownScripts"
+  private static let knownRootKey = "padKnownScriptsFolder"
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -50,9 +53,14 @@ import UIKit
     if let data = defaults.data(forKey: Self.presetsKey),
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
+    if let saved = defaults.stringArray(forKey: Self.knownIDsKey) {
+      knownIDs = Set(saved.compactMap(UUID.init(uuidString:)))
+      knownRoot = defaults.string(forKey: Self.knownRootKey)
+    }
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
-    folder.$scripts.dropFirst().sink { [weak self] scripts in
+    // The first value is the listing the folder made at launch, compared with the last launch's.
+    folder.$scripts.sink { [weak self] scripts in
       Task { @MainActor in self?.foldersChanged(scripts) }
     }.store(in: &bag)
     pullPresets()
@@ -151,6 +159,8 @@ import UIKit
     session.pause()
     presentingID = nil
     UIApplication.shared.isIdleTimerDisabled = false
+    // A script deleted while it was on screen is cleaned up now.
+    forgetRemoved(folder.scripts)
   }
 
   /// Voice needs a microphone chosen; the built-in one unless another is plugged in and chosen.
@@ -180,20 +190,24 @@ import UIKit
   /// (which holds a copy of its text), its Google link and its identity all go. Skipped while
   /// the folder itself is unreachable, when an empty list means nothing.
   private func forgetRemoved(_ scripts: [FolderScript]) {
-    let current = Set(scripts.map(\.id))
-    defer {
-      knownIDs = current
-      knownRoot = folder.rootURL
-    }
+    let root = folder.rootURL.standardizedFileURL.path
+    // An unreachable folder lists nothing, which says nothing about what was deleted.
+    guard FileManager.default.fileExists(atPath: root) else { return }
+    var current = Set(scripts.map(\.id))
     // Choosing another folder is not deleting the old one's scripts.
-    guard let known = knownIDs, knownRoot == folder.rootURL,
-      FileManager.default.fileExists(atPath: folder.rootURL.path)
-    else { return }
-    for id in known.subtracting(current) where id != presentingID {
-      session.forgetPosition(for: id)
-      googleLinks[id] = nil
-      folder.forget(id)
+    if let known = knownIDs, knownRoot == root {
+      for id in known.subtracting(current) {
+        // The script on screen stays until the presenter closes, which comes back here.
+        if id == presentingID { current.insert(id); continue }
+        session.forgetScript(id)
+        googleLinks[id] = nil
+        folder.forget(id)
+      }
     }
+    knownIDs = current
+    knownRoot = root
+    defaults.set(current.map(\.uuidString), forKey: Self.knownIDsKey)
+    defaults.set(root, forKey: Self.knownRootKey)
   }
 
   // MARK: Google Docs

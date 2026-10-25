@@ -335,12 +335,11 @@ private enum PresenterSaveError: LocalizedError {
           return
         }
         try await library.delete(id)
-        session.forgetPosition(for: id)
+        session.forgetScript(id)
         MacGoogleDocs.links[id] = nil
         scripts.removeAll { $0.metadata.id == id }
         trash = await library.listTrash()
         if selectedID == id { selectedID = visible.first?.id }
-        if session.activeScriptID == id { session.stop() }
       }
     }
   }
