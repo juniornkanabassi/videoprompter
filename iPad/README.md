@@ -61,7 +61,7 @@ xcodebuild -exportArchive -archivePath /private/tmp/VideoPrompter-iPad.xcarchive
   -exportOptionsPlist iPad/ExportOptions.plist -exportPath /private/tmp/VideoPrompter-iPad -allowProvisioningUpdates
 ```
 
-`ExportOptions.plist` uploads straight to App Store Connect. Internal testers on the team can install the build in TestFlight once it finishes processing; external testers need Apple's beta review the first time.
+The team has no registered devices, so a signed archive fails with "No profiles were found"; archive with `CODE_SIGNING_ALLOWED=NO` and let the export sign for App Store distribution. `ExportOptions.plist` carries the team ID and uploads straight to App Store Connect, once the app record exists there. Internal testers on the team can install the build in TestFlight once it finishes processing; external testers need Apple's beta review the first time.
 
 ## Controls while presenting
 
