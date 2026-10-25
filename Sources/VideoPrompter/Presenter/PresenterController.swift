@@ -748,6 +748,8 @@ struct ScriptTextView: NSViewRepresentable {
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
+    /// Every mapping's rendered midY, measured on the gesture's first scroll event.
+    private var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
     /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
@@ -809,6 +811,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
             self?.isLiveScrolling = true
+            self?.liveScrollMidYs = nil
             if self?.manualPosition != nil { self?.isHandScrolled = true }
           }
         },
@@ -987,37 +990,25 @@ struct ScriptTextView: NSViewRepresentable {
       manager.ensureLayout(for: container)
       let guide = scroll.contentView.bounds.origin.y
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
-      guard let nearest = Self.nearestMapping(count: mappings.count, to: guide, midY: { slot in
-        let glyph = manager.glyphRange(forCharacterRange: self.mappings[slot].0, actualCharacterRange: nil)
+      // Each word is measured once per gesture, not twice per trackpad event (60 to 120 a second,
+      // and a long script lagged behind the fingers). Layout holds still while the hand scrolls;
+      // anything that moves it invalidates the alignment, which drops these.
+      let midYs = liveScrollMidYs ?? mappings.map { range in
+        let glyph = manager.glyphRange(forCharacterRange: range.0, actualCharacterRange: nil)
         return manager.boundingRect(forGlyphRange: glyph, in: container).midY
-      }).map({ mappings[$0] }) else { return }
+      }
+      liveScrollMidYs = midYs
+      guard let slot = Self.nearestSlot(midYs, to: guide) else { return }
+      let nearest = mappings[slot]
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
       if manualPosition != nil { pendingUserSeeks += 1 }
       (onUserScroll ?? onSeek)(nearest.1)
     }
-    /// The slot whose word sits nearest `guide`, the first of equals as `min(by:)` gave. Text runs
-    /// down the page, so `midY` only grows with the slot and a binary search needs a handful of
-    /// measurements. Scanning every word measured the whole script twice per trackpad event,
-    /// 60 to 120 times a second, and a long script lagged behind the fingers.
-    static func nearestMapping(count: Int, to guide: CGFloat, midY: (Int) -> CGFloat) -> Int? {
-      guard count > 0 else { return nil }
-      var low = 0
-      var high = count
-      while low < high {
-        let middle = low + (high - low) / 2
-        if midY(middle) < guide { low = middle + 1 } else { high = middle }
-      }
-      // `low` is the first word at or below the guide; the last one above it may be nearer.
-      var best = min(low, count - 1)
-      var distance = abs(midY(best) - guide)
-      if low > 0, abs(midY(low - 1) - guide) <= distance {
-        best = low - 1
-        distance = abs(midY(best) - guide)
-      }
-      // Words on one line share a distance: walk back to the line's first, as the scan chose.
-      while best > 0, abs(midY(best - 1) - guide) <= distance { best -= 1 }
-      return best
+    /// The first slot nearest `guide`. A scan, not a search: mappings are in token order, which is
+    /// not always page order (a code fence's language tag can map to a later line of its body).
+    static func nearestSlot(_ midYs: [CGFloat], to guide: CGFloat) -> Int? {
+      midYs.indices.min { abs(midYs[$0] - guide) < abs(midYs[$1] - guide) }
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
@@ -1031,6 +1022,7 @@ struct ScriptTextView: NSViewRepresentable {
       snapToGuide()
     }
     func invalidateAlignment() {
+      liveScrollMidYs = nil
       lastAligned = nil
       lastGuideFraction = nil
       lastAlignmentDestination = nil
