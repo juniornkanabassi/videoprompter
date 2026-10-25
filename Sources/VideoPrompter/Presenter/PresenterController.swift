@@ -20,8 +20,13 @@ import SwiftUI
     panel.map { $0.isVisible && !$0.isMiniaturized && !$0.isInFullScreen } ?? false
   }
 
-  init(camera: CameraModel = .shared) {
+  /// Where the presenter's last frame is kept, per data directory. Nil in tests and on an agent
+  /// screen, which place the panel themselves.
+  private let frameDefaults: UserDefaults?
+
+  init(camera: CameraModel = .shared, frameDefaults: UserDefaults? = PresenterFrameMemory.defaultStore()) {
     self.camera = camera
+    self.frameDefaults = frameDefaults
     super.init()
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
     // property. `dropFirst` skips the value the presenter opens with.
@@ -39,6 +44,16 @@ import SwiftUI
     finishPendingClose()
   }
   func windowDidFailToEnterFullScreen(_ window: NSWindow) { (window as? PresenterPanel)?.settle() }
+  // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
+  // rather than at the main screen's corner. AppKit's own autosave forgot a second screen whose
+  // visible frame it had recorded differently, and kept one frame for every data directory.
+  func windowDidMove(_ notification: Notification) { rememberFrame(notification) }
+  func windowDidResize(_ notification: Notification) { rememberFrame(notification) }
+  private func rememberFrame(_ notification: Notification) {
+    guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
+      !window.styleMask.contains(.fullScreen), let screen = window.screen else { return }
+    PresenterFrameMemory.save(window.frame, on: .init(screen), to: frameDefaults)
+  }
   func windowDidExitFullScreen(_ notification: Notification) {
     (notification.object as? PresenterPanel)?.settle()
     finishPendingClose()
@@ -244,10 +259,8 @@ import SwiftUI
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
-    // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
-    // rather than at the main screen's corner. Tests and agent screens place it themselves.
-    if NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") {
-      value.setFrameAutosaveName("Video Prompter Presenter")
+    if let frame = PresenterFrameMemory.restored(from: frameDefaults, screens: NSScreen.screens.map(PresenterFrameMemory.Screen.init)) {
+      value.setFrame(frame, display: false)
     }
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
@@ -288,6 +301,52 @@ import SwiftUI
 }
 
 private extension NSRect { var area: CGFloat { width * height } }
+
+/// The presenter's last frame with the display it was on, so a restart puts it back there.
+enum PresenterFrameMemory {
+  struct Screen {
+    let id: UInt32
+    let name: String
+    let frame: NSRect
+    let visibleFrame: NSRect
+    init(id: UInt32, name: String, frame: NSRect, visibleFrame: NSRect) {
+      self.id = id; self.name = name; self.frame = frame; self.visibleFrame = visibleFrame
+    }
+    @MainActor init(_ screen: NSScreen) {
+      let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+      self.init(id: number?.uint32Value ?? 0, name: screen.localizedName, frame: screen.frame, visibleFrame: screen.visibleFrame)
+    }
+  }
+  static let key = "presenterFrame"
+
+  @MainActor static func defaultStore() -> UserDefaults? {
+    guard NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") else { return nil }
+    return AppStore.preferences()
+  }
+
+  static func save(_ frame: NSRect, on screen: Screen, to defaults: UserDefaults?) {
+    defaults?.set(["frame": NSStringFromRect(frame), "display": Int(screen.id), "name": screen.name], forKey: key)
+  }
+
+  /// The saved frame, moved fully inside its display's visible area, or nil when that display is
+  /// gone. The display is found by its ID, else by name, since IDs can change after a reconnect.
+  static func restored(from defaults: UserDefaults?, screens: [Screen]) -> NSRect? {
+    guard let saved = defaults?.dictionary(forKey: key), let text = saved["frame"] as? String else { return nil }
+    let frame = NSRectFromString(text)
+    guard frame.width >= 100, frame.height >= 100 else { return nil }
+    let id = (saved["display"] as? Int).map(UInt32.init)
+    guard let screen = screens.first(where: { $0.id == id }) ?? screens.first(where: { $0.name == saved["name"] as? String })
+    else { return nil }
+    return clamp(frame, into: screen.visibleFrame)
+  }
+
+  static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
+    let size = NSSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
+    let x = min(max(frame.minX, area.minX), area.maxX - size.width)
+    let y = min(max(frame.minY, area.minY), area.maxY - size.height)
+    return NSRect(origin: NSPoint(x: x, y: y), size: size)
+  }
+}
 
 /// The presenter window. At rest it is `.fullScreenAuxiliary`, which is what lets it float over
 /// another app's full-screen Space (OBS, verified on 7 September). It turns `.fullScreenPrimary`
