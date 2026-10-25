@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import AVFoundation
 import Darwin
 import PrompterCore
 import XCTest
@@ -13,10 +14,12 @@ import XCTest
     let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await store.reload()
-    let presenter = PresenterController()
+    let camera = CameraModel(defaults: defaults)
+    camera.displayMode = .prompterOnly
+    let presenter = PresenterController(camera: camera)
     defer { presenter.closeNow() }
     // Own camera and recorder models, so no command here writes the shared preferences.
-    let actions = ControlActions(store: store, presenter: presenter, camera: CameraModel(defaults: defaults), recorder: CameraRecorder(defaults: defaults))
+    let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: CameraRecorder(defaults: defaults))
     for action in ["pause", "resume", "back_to_start"] {
       let reply = await actions.handle(action, [:])
       XCTAssertEqual((reply.body["error"] as? [String: String])?["code"], "no_active_script")
@@ -47,7 +50,7 @@ import XCTest
     XCTAssertEqual(store.uiZoom, 1.5)
     let reply4 = (await actions.handle("set_zoom", ["zoom": "130"]))
     XCTAssertEqual(reply4.body["ok"] as? Bool, false)
-    if !CameraModel.shared.presentsWithVideo {
+    do {
       _ = await actions.handle("present", ["script": id])
       XCTAssertEqual(store.session.activeScriptID?.uuidString, id)
       XCTAssertEqual(OffscreenPanels.activations, 0)
@@ -83,14 +86,15 @@ import XCTest
     let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await store.reload()
-    let presenter = PresenterController()
-    defer { presenter.closeNow() }
     let camera = CameraModel(defaults: defaults)
+    camera.displayMode = .prompterOnly
+    let presenter = PresenterController(camera: camera)
+    defer { presenter.closeNow() }
     let recorder = CameraRecorder(defaults: defaults)
     let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: recorder)
     func code(_ reply: ControlResult) -> String? { (reply.body["error"] as? [String: Any])?["code"] as? String }
     func value(_ reply: ControlResult) -> [String: Any] { reply.body["result"] as? [String: Any] ?? [:] }
-    let markdown = "# Intro\n\nOne two three four five six.\n\nSeven eight nine ten."
+    let markdown = "# Intro\n\nOne two three four five six.\n\nSeven eight nine ten.\n\nEleven twelve thirteen.\n\nFourteen fifteen sixteen."
 
     // Creation acts once per request id, even for overlapping retries, and selects the new script.
     async let first = actions.handle("script_create", ["text": markdown, "title": "Intro", "requestId": "c1"])
@@ -131,7 +135,11 @@ import XCTest
     XCTAssertEqual(try String(contentsOf: exported, encoding: .utf8), markdown)
     let reply3 = await actions.handle("script_export", ["script": id, "path": exported.path])
     XCTAssertEqual(code(reply3), "file_exists")
-    let replaced = await actions.handle("script_export", ["script": id, "path": exported.path, "replace": "true"])
+    let unconfirmed = await actions.handle("script_export", ["script": id, "path": exported.path, "replace": "true"])
+    XCTAssertEqual(code(unconfirmed), "confirmation_required")
+    let declined = await actions.handle("script_export", ["script": id, "path": exported.path, "replace": "true", "yes": "false"])
+    XCTAssertEqual(code(declined), "confirmation_required")
+    let replaced = await actions.handle("script_export", ["script": id, "path": exported.path, "replace": "true", "yes": "true"])
     XCTAssertEqual(replaced.body["ok"] as? Bool, true)
 
     // Settings change the same values the Settings panel binds to, all or nothing.
@@ -168,15 +176,21 @@ import XCTest
     }
     let reply10 = await actions.handle("seek", ["word": "2"])
     XCTAssertEqual(code(reply10), "no_active_script")
-    if !CameraModel.shared.presentsWithVideo {
+    do {
       camera.displayMode = .prompterOnly
       _ = await actions.handle("present", ["script": id])
       let seek = await actions.handle("seek", ["word": "3"])
       XCTAssertEqual((value(seek)["position"] as? [String: Int])?["word"], 3)
-      let nextReply = await actions.handle("next_passage", [:])
+      let nextReply = await actions.handle("next_passage", ["requestId": "n1"])
+      let repeatedNext = await actions.handle("next_passage", ["requestId": "n1"])
+      XCTAssertEqual(value(repeatedNext)["repeated"] as? Bool, true)
+      XCTAssertEqual(value(repeatedNext)["position"] as? [String: Int], value(nextReply)["position"] as? [String: Int])
       let next = (value(nextReply)["position"] as? [String: Int])?["word"] ?? 0
       XCTAssertGreaterThan(next, 3)
-      let previousReply = await actions.handle("previous_passage", [:])
+      let previousReply = await actions.handle("previous_passage", ["requestId": "p1"])
+      let repeatedPrevious = await actions.handle("previous_passage", ["requestId": "p1"])
+      XCTAssertEqual(value(repeatedPrevious)["repeated"] as? Bool, true)
+      XCTAssertEqual(value(repeatedPrevious)["position"] as? [String: Int], value(previousReply)["position"] as? [String: Int])
       let previous = (value(previousReply)["position"] as? [String: Int])?["word"] ?? .max
       XCTAssertLessThan(previous, next)
       let reply11 = await actions.handle("seek", ["word": "999"])
@@ -238,6 +252,107 @@ import XCTest
     XCTAssertEqual((status["recording"] as? [String: Any])?["quality"] as? String, "high")
     XCTAssertEqual((status["camera"] as? [String: Any])?["view"] as? String, "off")
   }
+  func testCreateInFolderIsRetrySafeAndPersists() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await store.waitForInitialLoad()
+    let folder = try await store.createLibraryFolder(named: "Drafts")
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let params = ["title": "Folder script", "text": "one two", "folder": folder.id.uuidString, "requestId": "folder-script"]
+    async let first = actions.handle("script_create", params)
+    async let second = actions.handle("script_create", params)
+    let results = await [first, second]
+    XCTAssertTrue(results.allSatisfy { $0.body["ok"] as? Bool == true })
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertEqual(store.selectedFolderID, folder.id)
+    XCTAssertEqual(store.selected?.metadata.folderID, folder.id)
+    await store.reload()
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertEqual(store.scripts.first?.metadata.folderID, folder.id)
+  }
+
+  func testDeleteRechecksPresenterAfterSaving() async throws {
+    _ = NSApplication.shared
+    OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    store.settings.mode = "Manual"
+    let camera = CameraModel(defaults: defaults)
+    camera.displayMode = .prompterOnly
+    let presenter = PresenterController(camera: camera)
+    defer { presenter.closeNow() }
+    let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: CameraRecorder(defaults: defaults))
+    store.saveGate = { presenter.present(store: store, activate: false) }
+    store.updateMarkdown("one two three", for: record.id)
+    let result = await actions.handle("script_delete", ["script": record.id.uuidString, "yes": "true"])
+    XCTAssertEqual((result.body["error"] as? [String: Any])?["code"] as? String, "script_presented")
+    XCTAssertEqual(store.scripts.count, 1)
+    XCTAssertTrue(store.trash.isEmpty)
+  }
+
+  func testVoiceSettingsDoNotRequestPermission() async throws {
+    _ = NSApplication.shared
+    OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    _ = try await store.createScript(title: "Read", markdown: "one two")
+    store.settings.mode = "Manual"
+    var preset = store.settings; preset.mode = "Voice"; preset.name = "Voice preset"
+    store.presets = [preset]
+    let camera = CameraModel(defaults: defaults)
+    camera.displayMode = .prompterOnly
+    let presenter = PresenterController(camera: camera)
+    defer { presenter.closeNow() }
+    presenter.present(store: store, activate: false)
+    for (authorization, expected) in [(AVAuthorizationStatus.notDetermined, "permission_required"), (.denied, "microphone_denied"), (.restricted, "microphone_denied")] {
+      let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: CameraRecorder(defaults: defaults), audioAuthorization: { authorization })
+      for (action, params) in [("set_mode", ["mode": "voice"]), ("preset_apply", ["preset": preset.id.uuidString])] {
+        let result = await actions.handle(action, params)
+        XCTAssertEqual((result.body["error"] as? [String: Any])?["code"] as? String, expected)
+        XCTAssertEqual(store.settings.mode, "Manual")
+      }
+      // A settings update can restart an existing Voice session too.
+      presenter.closeNow()
+      store.settings.mode = "Voice"
+      presenter.present(store: store, activate: false)
+      let oldSpeed = store.settings.speed
+      let result = await actions.handle("settings_set", ["speed": "201"])
+      XCTAssertEqual((result.body["error"] as? [String: Any])?["code"] as? String, expected)
+      XCTAssertEqual(store.settings.speed, oldSpeed)
+      presenter.closeNow()
+      store.settings.mode = "Manual"
+      presenter.present(store: store, activate: false)
+    }
+    XCTAssertNil(ControlActions.voicePermissionError(authorization: .authorized))
+  }
+
+  func testCameraChangesRefuseActiveOrBusyRecording() {
+    for (recording, busy) in [(true, false), (false, true), (true, true)] {
+      let result = ControlActions.cameraChangeError(recording: recording, busy: busy)
+      XCTAssertEqual((result?.body["error"] as? [String: Any])?["code"] as? String, "recording_active")
+    }
+    XCTAssertNil(ControlActions.cameraChangeError(recording: false, busy: false))
+  }
+
+  func testRecordingStopRequiresMatchingIDOrForce() {
+    let id = UUID()
+    for requested in [nil, UUID().uuidString] {
+      let result = ControlActions.recordingStopError(recordingID: id, requested: requested, force: false)
+      XCTAssertEqual((result?.body["error"] as? [String: Any])?["code"] as? String, "recording_owned")
+    }
+    XCTAssertNil(ControlActions.recordingStopError(recordingID: id, requested: id.uuidString, force: false))
+    XCTAssertNil(ControlActions.recordingStopError(recordingID: id, requested: nil, force: true))
+    XCTAssertNotNil(ControlActions.recordingStopError(recordingID: nil, requested: nil, force: false))
+  }
+
   func testReplyOver64KBIsComplete() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     let path = root.appendingPathComponent("control.sock")

@@ -35,6 +35,12 @@ final class ControlCLITests: XCTestCase {
     XCTAssertEqual(try ControlCLI.parse(["script", "delete", "--yes", "My Script"]).params, ["yes": "true", "script": "My Script"])
     XCTAssertEqual(try ControlCLI.parse(["script", "delete", "My Script", "--yes", "true"]).params["yes"], "true")
     XCTAssertEqual(try ControlCLI.parse(["record", "start", "--yes", "--request-id", "take1"]).params, ["yes": "true", "requestId": "take1"])
+    XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--recording", "take1"]).params, ["recording": "take1"])
+    XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--force"]).params, ["force": "true"])
+    XCTAssertEqual(try ControlCLI.parse(["script", "export", "Intro", "--path", "/tmp/export.md", "--replace", "--yes"]).params["yes"], "true")
+    for command in ["next-passage", "previous-passage"] {
+      XCTAssertEqual(try ControlCLI.parse([command, "--request-id", "step1"]).params, ["requestId": "step1"])
+    }
     XCTAssertEqual(try ControlCLI.parse(["script", "create", "--text", "-"]).params["text"], "-")
     XCTAssertEqual(try ControlCLI.parse(["camera", "set", "only"]).params["view"], "only")
     XCTAssertEqual(try ControlCLI.parse(["seek", "12"]).params["word"], "12")

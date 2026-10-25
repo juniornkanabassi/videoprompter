@@ -11,10 +11,12 @@ import Speech
   private let presenter: PresenterController
   private let camera: CameraModel
   private let recorder: CameraRecorder
+  private let audioAuthorization: () -> AVAuthorizationStatus
   /// Creation requests by action and request id, so a retry returns the first result.
   private var requests: [String: Task<ControlResult, Never>] = [:]
-  init(store: AppStore, presenter: PresenterController = .shared, camera: CameraModel = .shared, recorder: CameraRecorder = .shared) {
+  init(store: AppStore, presenter: PresenterController = .shared, camera: CameraModel = .shared, recorder: CameraRecorder = .shared, audioAuthorization: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }) {
     self.store = store; self.presenter = presenter; self.camera = camera; self.recorder = recorder
+    self.audioAuthorization = audioAuthorization
   }
   private func identity(_ script: ScriptRecord) -> [String: String] { ["id": script.id.uuidString, "title": script.metadata.title] }
   private var position: [String: Int] { ["word": store.session.document.spokenTokens.isEmpty ? 0 : store.session.tokenIndex + 1, "words": store.session.document.spokenTokens.count] }
@@ -138,13 +140,8 @@ import Speech
       return await once(action, params) { [self] () -> ControlResult in
         let title = (params["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         do {
-          store.search = ""; store.selectedFolderID = nil
-          var record = try await store.createScript(title: title.isEmpty ? "Untitled Script" : title, markdown: params["text"]!)
-          if let folderID, let library = store.library {
-            try await library.moveScripts([record.id], to: folderID)
-            record.metadata.folderID = folderID
-            if let i = store.scripts.firstIndex(where: { $0.id == record.id }) { store.scripts[i].metadata.folderID = folderID }
-          }
+          store.search = ""; store.selectedFolderID = folderID
+          let record = try await store.createScript(title: title.isEmpty ? "Untitled Script" : title, markdown: params["text"]!)
           return .ok(details(record))
         } catch { return .error("create_failed", "The script could not be created. Check the title and that the library folder is writable.") }
       }
@@ -198,26 +195,21 @@ import Speech
             if let error { return error }
             folderID = found?.id
           }
-          try await library.moveScripts([record.id], to: folderID)
-          for i in store.scripts.indices where store.scripts[i].id == record.id { store.scripts[i].metadata.folderID = folderID }
-          // As the GUI's move does: a filtered list never keeps a selection it no longer shows.
-          if let selectedID = store.selectedID, !store.visible.contains(where: { $0.id == selectedID }) { store.selectedID = store.visible.first?.id }
+          try await store.moveScripts([record.id], to: folderID)
         }
       } catch { return .error("library_failed", "The library could not be updated. Nothing was changed.") }
       return .ok(details(store.scripts.first(where: { $0.id == record.id }) ?? record))
     case "script_duplicate":
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
+      guard store.libraryAvailable else { return unavailable }
       let (record, error) = lookup(params["script"]!)
       if let error { return error }
       guard let record else { return unavailable }
       return await once(action, params) { [self] () -> ControlResult in
-        guard await store.flushPendingSaves() else { return .error("unsaved_edits", "Save the pending edits before duplicating scripts.") }
         do {
-          let item = try await library.duplicate(record.id)
-          store.scripts.insert(item, at: 0)
-          store.selectedID = item.id
+          let item = try await store.duplicateScript(record.id)
           return .ok(details(item))
-        } catch { return .error("library_failed", "The script could not be duplicated.") }
+        } catch let error as AppStore.PendingEditsError { return .error("unsaved_edits", error.description) }
+        catch { return .error("library_failed", "The script could not be duplicated.") }
       }
     case "script_export":
       guard store.libraryAvailable else { return unavailable }
@@ -233,6 +225,7 @@ import Speech
       }
       if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) {
         guard isTrue(params["replace"]) else { return .error("file_exists", "A file already exists there. Pass --replace to overwrite it.") }
+        guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --replace --yes to overwrite an existing file.") }
         guard attributes[.type] as? FileAttributeType == .typeRegular else { return .error("invalid_params", "Only a regular file can be replaced.") }
       }
       do { try record.markdown.write(to: url, atomically: true, encoding: .utf8) }
@@ -241,23 +234,18 @@ import Speech
       return .ok(value)
     case "script_delete":
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to move this script to Recently Deleted.") }
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
+      guard store.libraryAvailable else { return unavailable }
       let (record, error) = lookup(params["script"]!)
       if let error { return error }
       guard let record else { return unavailable }
-      if store.session.activeScriptID == record.id {
-        if presenter.isEditing { return editing }
-        if presenter.panel?.isVisible == true { return .error("script_presented", "This script is being presented. Close the presenter first: videoprompter presenter close") }
-      }
-      guard await store.flushPendingSaves() else { return .error("unsaved_edits", "Save the pending edits before moving scripts to Trash.") }
-      do { try await library.delete(record.id) }
+      if let error = deletionError(record.id) { return error }
+      do {
+        try await store.deleteScript(record.id) {
+          if let error = deletionError(record.id) { throw Refusal(result: error) }
+        }
+      } catch let error as Refusal { return error.result }
+      catch let error as AppStore.PendingEditsError { return .error("unsaved_edits", error.description) }
       catch { return .error("library_failed", "The script could not be moved to Recently Deleted. Nothing was changed.") }
-      // The same follow-up as the GUI's Move to Trash.
-      store.session.forgetPosition(for: record.id)
-      store.scripts.removeAll { $0.metadata.id == record.id }
-      store.trash = await library.listTrash()
-      if store.selectedID == record.id { store.selectedID = store.visible.first?.id }
-      if store.session.activeScriptID == record.id { store.session.stop() }
       var value: [String: Any] = identity(record); value["deleted"] = true
       value["restore"] = "videoprompter script restore \(record.id.uuidString)"
       return .ok(value)
@@ -273,10 +261,9 @@ import Speech
       let (entry, error) = choose(params["script"]!, in: store.trash, id: { $0.id.uuidString }, title: { $0.metadata.title }, kind: "script", list: "script trash")
       if let error { return error }
       guard let entry else { return unavailable }
-      do { _ = try await library.restore(entry.id) }
+      do { try await store.restoreScript(entry.id) }
       catch PrompterCoreError.destinationExists { return .error("library_failed", "A script file with the same name is already in the library. Nothing was changed.") }
       catch { return .error("library_failed", "The script could not be restored. Nothing was changed.") }
-      await store.reload()
       guard let restored = store.scripts.first(where: { $0.id == entry.id }) else { return .ok(["id": entry.id.uuidString, "title": entry.metadata.title]) }
       return .ok(details(restored))
     case "folder_list":
@@ -285,26 +272,24 @@ import Speech
         ["id": folder.id.uuidString, "name": folder.name, "scripts": store.scripts.filter { $0.metadata.folderID == folder.id }.count]
       }])
     case "folder_create":
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
+      guard store.libraryAvailable else { return unavailable }
       let name = params["name"]!.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !name.isEmpty else { return .error("invalid_params", "Folder names cannot be empty.") }
       return await once(action, params) { [self] () -> ControlResult in
         do {
-          let folder = try await library.createFolder(name: name)
-          store.folders.append(folder)
+          let folder = try await store.createLibraryFolder(named: name)
           return .ok(["id": folder.id.uuidString, "name": folder.name])
         } catch { return .error("library_failed", "The folder could not be created.") }
       }
     case "folder_rename":
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
+      guard store.libraryAvailable else { return unavailable }
       let (found, error) = folder(named: params["folder"]!)
       if let error { return error }
       guard let found else { return unavailable }
       let name = params["name"]!.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !name.isEmpty else { return .error("invalid_params", "Folder names cannot be empty.") }
-      do { try await library.renameFolder(found.id, name: name) }
+      do { try await store.renameLibraryFolder(found.id, name: name) }
       catch { return .error("library_failed", "The folder could not be renamed. Nothing was changed.") }
-      if let i = store.folders.firstIndex(where: { $0.id == found.id }) { store.folders[i].name = name }
       return .ok(["id": found.id.uuidString, "name": name])
     case "presenter_close":
       if presenter.isEditing { return editing }
@@ -312,27 +297,15 @@ import Speech
       presenter.close()
       return .ok(["presenter": presenter.panel?.isVisible == true ? "closing" : "hidden", "changed": true, "state": state])
     case "pause", "resume", "back_to_start", "next_passage", "previous_passage", "seek":
-      if presenter.isEditing { return editing }
-      guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return notPresenting }
-      switch action {
-      case "pause": store.session.pause()
-      case "resume": store.session.play()
-      case "back_to_start": store.session.restart()
-      default:
-        // The Prompter menu's passage items, which do nothing while only the camera shows.
-        guard camera.displayMode != .videoOnly else { return .error("camera_only_view", "The presenter shows only the camera. Show the script first: videoprompter camera set on") }
-        if action == "seek" {
-          let count = store.session.document.spokenTokens.count
-          guard let word = Int(params["word"]!), word >= 1, word <= count else { return .error("invalid_params", "Word must be from 1 to \(count).") }
-          presenter.moveReading { $0.seek(to: word - 1) }
-        } else if action == "next_passage" {
-          presenter.moveReading { $0.nextPassage() }
-        } else {
-          presenter.moveReading { $0.previousPassage() }
-        }
+      if action == "next_passage" || action == "previous_passage" {
+        return await once(action, params) { [self] in navigate(action, params) }
       }
-      return .ok(["state": state, "position": position])
-    case "set_mode": store.settings.mode = params["mode"] == "manual" ? "Manual" : "Voice"; return .ok(["mode": store.settings.mode.lowercased()])
+      return navigate(action, params)
+    case "set_mode":
+      let mode = params["mode"] == "manual" ? "Manual" : "Voice"
+      if let error = voicePermissionError(mode: mode) { return error }
+      store.settings.mode = mode
+      return .ok(["mode": store.settings.mode.lowercased()])
     case "set_zoom":
       guard let zoom = Double(params["zoom"] ?? ""), AppStore.uiZoomSteps.contains(zoom / 100) else { return .error("invalid_params", "Zoom must be 100, 110, 125, 150, 175 or 200.") }
       store.uiZoom = zoom / 100; return .ok(["zoom": Int(zoom)])
@@ -344,6 +317,7 @@ import Speech
       let (preset, error) = choose(params["preset"]!, in: store.presets, id: { $0.id.uuidString }, title: { $0.name }, kind: "preset", list: "preset list")
       if let error { return error }
       guard let preset else { return .error("preset_not_found", "Use videoprompter preset list.") }
+      if let error = voicePermissionError(mode: PrompterSettings.normalisedMode(preset.mode)) { return error }
       store.applyPreset(preset)
       return .ok(["id": preset.id.uuidString, "name": preset.name, "settings": settingsSnapshot])
     case "preset_save":
@@ -361,7 +335,7 @@ import Speech
       value["access"] = Self.access(AVCaptureDevice.authorizationStatus(for: .video))
       return .ok(value)
     case "camera_select":
-      guard !recorder.isRecording, !recorder.isBusy else { return .error("recording_active", "Stop recording before choosing another camera: videoprompter record stop") }
+      if let error = Self.cameraChangeError(recording: recorder.isRecording, busy: recorder.isBusy) { return error }
       camera.refresh()
       let (device, error) = choose(params["camera"]!, in: camera.devices, id: { $0.uid }, title: { $0.name }, kind: "camera", list: "camera list")
       if let error { return error }
@@ -369,6 +343,7 @@ import Speech
       camera.selectedUID = device.uid
       return .ok(cameraState)
     case "camera_set":
+      if let error = Self.cameraChangeError(recording: recorder.isRecording, busy: recorder.isBusy) { return error }
       guard !params.isEmpty else { return .error("invalid_params", "Give at least one of view, mirror or rotation. Example: \(command.example)") }
       if let view = params["view"], view != "off" {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
@@ -400,6 +375,7 @@ import Speech
       return await once(action, params) { [self] () -> ControlResult in await startRecording() }
     case "record_stop":
       guard recorder.isRecording || recorder.isBusy else { return .error("not_recording", "Nothing is recording.") }
+      if let error = Self.recordingStopError(recordingID: recorder.recordingID, requested: params["recording"], force: isTrue(params["force"])) { return error }
       let wasRecording = recorder.isRecording
       let previous = recorder.lastFile
       await recorder.stop()
@@ -424,6 +400,57 @@ import Speech
       return .ok(recordingSettings)
     default: return .error("unknown_action", "Unsupported action.")
     }
+  }
+
+  private func navigate(_ action: String, _ params: [String: String]) -> ControlResult {
+    if presenter.isEditing { return editing }
+    guard store.session.activeRecord != nil, presenter.panel?.isVisible == true else { return notPresenting }
+    switch action {
+    case "pause": store.session.pause()
+    case "resume": store.session.play()
+    case "back_to_start": store.session.restart()
+    default:
+      // The Prompter menu's passage items, which do nothing while only the camera shows.
+      guard camera.displayMode != .videoOnly else { return .error("camera_only_view", "The presenter shows only the camera. Show the script first: videoprompter camera set on") }
+      if action == "seek" {
+        let count = store.session.document.spokenTokens.count
+        guard let word = Int(params["word"]!), word >= 1, word <= count else { return .error("invalid_params", "Word must be from 1 to \(count).") }
+        presenter.moveReading { $0.seek(to: word - 1) }
+      } else if action == "next_passage" {
+        presenter.moveReading { $0.nextPassage() }
+      } else {
+        presenter.moveReading { $0.previousPassage() }
+      }
+    }
+    return .ok(["state": state, "position": position])
+  }
+
+  private struct Refusal: Error { let result: ControlResult }
+  private func deletionError(_ id: UUID) -> ControlResult? {
+    guard store.session.activeScriptID == id else { return nil }
+    if presenter.isEditing { return editing }
+    if presenter.panel?.isVisible == true { return .error("script_presented", "This script is being presented. Close the presenter first: videoprompter presenter close") }
+    return nil
+  }
+  private func voicePermissionError(mode: String) -> ControlResult? {
+    guard mode == "Voice", presenter.panel?.isVisible == true else { return nil }
+    return Self.voicePermissionError(authorization: audioAuthorization())
+  }
+  static func voicePermissionError(authorization: AVAuthorizationStatus) -> ControlResult? {
+    switch authorization {
+    case .authorized: return nil
+    case .notDetermined: return .error("permission_required", "Start Voice mode once in Video Prompter so a person can answer the microphone permission prompt.")
+    default: return .error("microphone_denied", "Microphone access is off. Allow Video Prompter in System Settings > Privacy & Security > Microphone.")
+    }
+  }
+  static func cameraChangeError(recording: Bool, busy: Bool) -> ControlResult? {
+    guard recording || busy else { return nil }
+    return .error("recording_active", "Stop recording before changing the camera: use record stop --recording <id> or --force.")
+  }
+  static func recordingStopError(recordingID: UUID?, requested: String?, force: Bool) -> ControlResult? {
+    guard !force else { return nil }
+    if let recordingID, requested == recordingID.uuidString { return nil }
+    return .error("recording_owned", "Pass --recording <id returned by record start> or --force to stop this recording.")
   }
 
   // MARK: Settings
@@ -518,6 +545,7 @@ import Speech
       }
     }
     if let value = number(params, "microphoneVolume") { s.inputGain = value / 100 }
+    if let error = voicePermissionError(mode: s.mode) { return error }
     // The Settings panel stops a running microphone test when the microphone changes.
     if params["microphone"] != nil { store.session.stopMicrophoneTest() }
     store.settings = s
@@ -583,6 +611,7 @@ import Speech
     var value = recordingSettings
     value["active"] = recorder.isRecording
     value["busy"] = recorder.isBusy
+    if let id = recorder.recordingID { value["recording"] = id.uuidString }
     if let started = recorder.startedAt { value["startedAt"] = ISO8601DateFormatter().string(from: started) }
     if let file = recorder.lastFile { value["lastFile"] = file.path }
     if let message = recorder.errorMessage { value["error"] = message }

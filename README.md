@@ -173,7 +173,7 @@ The short `videoprompter` examples below assume the optional command link exists
 | Replace a script's tags (`none` clears them) | `videoprompter script tag 'My Script' --tags 'launch, draft'` |
 | Move a script to a folder (`none` for All Scripts) | `videoprompter script move 'My Script' --folder Drafts` |
 | Duplicate a script, with retry protection | `videoprompter script duplicate 'My Script' --request-id copy1` |
-| Save a script's Markdown to a file (`--replace` to overwrite) | `videoprompter script export 'My Script' --path ./my-script.md` |
+| Save a script's Markdown to a file (`--replace --yes` to overwrite) | `videoprompter script export 'My Script' --path ./my-script.md` |
 | Move a script to Recently Deleted | `videoprompter script delete 'My Script' --yes` |
 | List Recently Deleted | `videoprompter script trash` |
 | Restore from Recently Deleted | `videoprompter script restore 'My Script'` |
@@ -195,7 +195,7 @@ The short `videoprompter` examples below assume the optional command link exists
 | Framing guides and frame marker for the selected camera | `videoprompter camera guides --thirds on --marker 9:16` |
 | List microphones for Voice and for recording | `videoprompter microphone list` |
 | Start recording the shown camera, with retry protection | `videoprompter record start --yes --request-id take1` |
-| Stop recording and report the saved file | `videoprompter record stop` |
+| Stop recording and report the saved file | `videoprompter record stop --recording <id>` |
 | Recording quality, microphone and audio format | `videoprompter record set --quality high --float-audio off` |
 | MCP tools manifest | `videoprompter mcp-manifest` |
 | Full help, with every option and its valid values | `videoprompter --help` |
@@ -204,7 +204,7 @@ Options can go before or after the command words, and flags can be written `--te
 
 Every command acts through the running app, so its effect shows in the library, Settings panel, presenter or Camera window at once. Commands that would discard work refuse instead: presenter commands answer `presenter_editing` while a presenter edit is open, `script delete` answers `script_presented` for the script on screen, and recording settings and camera choice answer `recording_active` while recording. Errors carry a short `code` and a message naming the next step. Creating, importing or duplicating a script selects it, as the app does, so when several agents share one app, pass a script ID to `present` rather than relying on the selection.
 
-`script delete` needs `--yes` and only moves the script to Recently Deleted, where `script restore` or the app's Restore button brings it back. `record start` needs `--yes`, never raises a permission prompt and needs the camera already showing, in the Camera window or behind the script after `camera set on`; the Camera window shows the timer and Stop button. Recordings go to `Movies/Video Prompter`, and `record stop` reports the file. Script text can be created, read and exported but not replaced, and folders and saved settings cannot be deleted from the command line, because the app has no undo for those. Window placement, full screen, the microphone test, linking files and the editor's own font remain in the app.
+`script delete` needs `--yes` and only moves the script to Recently Deleted, where `script restore` or the app's Restore button brings it back. `record start` needs `--yes`, never raises a permission prompt and needs the camera already showing, in the Camera window or behind the script after `camera set on`; the Camera window shows the timer and Stop button. Recordings go to `Movies/Video Prompter`, and `record start` returns a recording id. Stop with `record stop --recording <id>` (or `--force` to stop any recording); it reports the saved file. Camera view, mirror and rotation changes are refused while recording. Script text can be created, read and exported but not replaced, and folders and saved settings cannot be deleted from the command line, because the app has no undo for those. Window placement, full screen, the microphone test, linking files and the editor's own font remain in the app.
 
 Claude Code:
 
