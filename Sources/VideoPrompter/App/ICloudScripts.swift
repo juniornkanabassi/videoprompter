@@ -17,6 +17,8 @@ import SwiftUI
   static let enabledKey = "keepScriptsInICloud"
   static let presetsFileName = "Video Prompter presets.json"
   /// The poll runs every two seconds; this pass checks every link, so it runs at most every five.
+  /// The pass in progress, if any, so turning the setting off can wait for it.
+  static var pass: Task<Void, Never>?
   static var lastPass = Date.distantPast
 
   static var cloudDocs: URL {
@@ -113,6 +115,9 @@ extension AppStore {
   /// script linked into the iCloud folder goes back to its library copy, so nothing more is
   /// written there or read from there. The files already in iCloud Drive stay where they are.
   func unlinkICloudScripts() async {
+    // A pass already under way finishes first (it stops at its next check of the setting), so
+    // it cannot link a script after this has unlinked them.
+    await ICloudScripts.pass?.value
     guard let library else { return }
     let states = await library.linkStates()
     for (id, state) in states {
@@ -130,9 +135,17 @@ extension AppStore {
 
   /// One pass of the iCloud folder sync. Runs on the library's two-second poll while it is on.
   func syncICloudScripts() async {
-    guard keepsScriptsInICloud, let library, ICloudScripts.isAvailable,
+    guard keepsScriptsInICloud, library != nil, ICloudScripts.isAvailable, ICloudScripts.pass == nil,
       Date().timeIntervalSince(ICloudScripts.lastPass) >= 5 else { return }
     ICloudScripts.lastPass = Date()
+    let pass = Task { await runICloudPass() }
+    ICloudScripts.pass = pass
+    await pass.value
+    ICloudScripts.pass = nil
+  }
+
+  private func runICloudPass() async {
+    guard let library else { return }
     let fm = FileManager.default
     do { try fm.createDirectory(at: ICloudScripts.folder, withIntermediateDirectories: true) } catch {
       errorMessage = "The Video Prompter folder in iCloud Drive could not be created. \(error.localizedDescription)"
@@ -149,13 +162,15 @@ extension AppStore {
         if ICloudScripts.isInside(url) { linked.insert(url.standardizedFileURL.path) }
       case .missing(let path) where ICloudScripts.isInside(path: path):
         // Deleted on the iPad. The script goes to the library's Trash, where it can be restored.
-        if !fm.fileExists(atPath: path) {
-          try? await library.delete(metadata.id)
+        if !fm.fileExists(atPath: path), (try? await library.delete(metadata.id)) != nil {
+          session.forgetPosition(for: metadata.id)
+          MacGoogleDocs.links[metadata.id] = nil
           changed = true
         }
       case .none, .unlinked:
         // Not yet in iCloud: write it out and link it. A script linked to some other file
         // (an Obsidian note, say) keeps that link and stays on the Mac only.
+        guard keepsScriptsInICloud else { return }
         do {
           let record = try await library.read(metadata.id)
           var directory = ICloudScripts.folder
@@ -185,6 +200,7 @@ extension AppStore {
         continue
       }
       // New on the iPad (or dropped in from Finder): import it, linked, into the matching folder.
+      guard keepsScriptsInICloud else { return }
       guard let markdown = ICloudScripts.read(url) else { continue }
       let parent = url.deletingLastPathComponent()
       var folderID: UUID?

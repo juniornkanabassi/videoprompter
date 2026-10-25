@@ -43,6 +43,8 @@ extension AppStore {
     Task {
       do {
         let (_, markdown) = try await MacGoogleDocs.docs.export(link.document)
+        // Deleted while Google answered: do not bring it, or its link, back.
+        guard MacGoogleDocs.links[id] != nil, scripts.contains(where: { $0.id == id }) else { return }
         MacGoogleDocs.links[id] = .init(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
         updateMarkdown(markdown, for: id)
       } catch {

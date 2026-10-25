@@ -176,6 +176,13 @@ enum ScriptFolderError: LocalizedError {
 
   func script(_ id: UUID) -> FolderScript? { scripts.first { $0.id == id } }
 
+  /// A script whose file is gone keeps no identity: a new file later saved at the same path
+  /// is a new script, not the old one with its reading position and Google link.
+  func forget(_ id: UUID) {
+    ids = ids.filter { $0.value != id }
+    defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
+  }
+
   /// The script as a record the shared session can present. The revision follows the content,
   /// so a change made on the Mac moves the saved reading position the way an edit would.
   func record(for script: FolderScript) throws -> ScriptRecord {
@@ -244,9 +251,8 @@ enum ScriptFolderError: LocalizedError {
     var error: NSError?
     var failure: Error?
     NSFileCoordinator().coordinate(writingItemAt: script.url, options: .forDeleting, error: &error) { url in
-      do { try FileManager.default.trashItem(at: url, resultingItemURL: nil) } catch {
-        do { try FileManager.default.removeItem(at: url) } catch { failure = error }
-      }
+      // Recently Deleted or nothing: a script is never removed for good without a way back.
+      do { try FileManager.default.trashItem(at: url, resultingItemURL: nil) } catch { failure = error }
     }
     if let failure = failure ?? error { throw failure }
     refresh()

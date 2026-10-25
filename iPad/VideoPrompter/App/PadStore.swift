@@ -32,6 +32,9 @@ import UIKit
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
   private var presentedModified: Date?
+  /// The scripts the folder held at the last look, to notice files deleted anywhere.
+  private var knownIDs: Set<UUID>?
+  private var knownRoot: URL?
   private static let settingsKey = "padSettings"
   private static let presetsKey = "padPresets"
 
@@ -162,6 +165,7 @@ import UIKit
   /// carried across exactly as it is for an edit made here.
   private func foldersChanged(_ scripts: [FolderScript]) {
     pullPresets()
+    forgetRemoved(scripts)
     guard let id = presentingID ?? session.activeScriptID,
       let script = scripts.first(where: { $0.id == id }), script.isDownloaded,
       script.modified != presentedModified,
@@ -170,6 +174,26 @@ import UIKit
     else { return }
     presentedModified = script.modified
     session.applyEditedRecord(record)
+  }
+
+  /// A script deleted here, on the Mac or in Files leaves nothing behind: its reading position
+  /// (which holds a copy of its text), its Google link and its identity all go. Skipped while
+  /// the folder itself is unreachable, when an empty list means nothing.
+  private func forgetRemoved(_ scripts: [FolderScript]) {
+    let current = Set(scripts.map(\.id))
+    defer {
+      knownIDs = current
+      knownRoot = folder.rootURL
+    }
+    // Choosing another folder is not deleting the old one's scripts.
+    guard let known = knownIDs, knownRoot == folder.rootURL,
+      FileManager.default.fileExists(atPath: folder.rootURL.path)
+    else { return }
+    for id in known.subtracting(current) where id != presentingID {
+      session.forgetPosition(for: id)
+      googleLinks[id] = nil
+      folder.forget(id)
+    }
   }
 
   // MARK: Google Docs
@@ -206,6 +230,10 @@ import UIKit
       let current = try ScriptFolder.read(script.url)
       if !overwrite, MarkdownLibrary.fingerprint(current) != link.fingerprint { return .hasLocalEdits }
       let (_, markdown) = try await google.export(link.document)
+      // Deleted while Google answered: do not bring it back.
+      guard googleLinks[script.id] != nil, folder.script(script.id) != nil,
+        FileManager.default.fileExists(atPath: script.url.path)
+      else { return nil }
       googleLinks[script.id] = .init(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
       guard markdown != current else { return .unchanged }
       // Written straight over the file: the doc is the master. An open presenter picks the

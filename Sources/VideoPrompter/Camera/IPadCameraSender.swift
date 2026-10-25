@@ -45,9 +45,13 @@ import VideoToolbox
   private var usbDevices: [Int] = []
   private var pipe: LinkPipe?
   private var connecting = false
+  /// Bumped by every start and stop, so a connection begun under one run never attaches to the
+  /// next or survives the switch being turned off.
+  private var generation = 0
   private var retry: Task<Void, Never>?
 
   private func start() {
+    generation += 1
     let camera = CameraModel.shared
     camera.start()
     guard let uid = camera.selectedUID else {
@@ -95,6 +99,7 @@ import VideoToolbox
   }
 
   private func stop() {
+    generation += 1
     retry?.cancel()
     mux?.stop()
     mux = nil
@@ -157,6 +162,7 @@ import VideoToolbox
     connecting = true
     let usb = usbDevices
     let wifi = wifiTargets
+    let run = generation
     Task {
       var opened: LinkPipe?
       for device in usb {
@@ -181,8 +187,10 @@ import VideoToolbox
         }
       }
       connecting = false
-      guard isOn else {
+      // Turned off, restarted, or Wi-Fi switched off while this was connecting: drop it.
+      guard isOn, run == generation, opened?.name != "Wi-Fi" || usesWiFi else {
         opened?.close()
+        if isOn { connectIfNeeded() }
         return
       }
       guard let opened else {
