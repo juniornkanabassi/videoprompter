@@ -80,6 +80,28 @@ struct CameraHolders {
     /// The signal's own duration when the format lists it, else the format's default: setting
     /// a duration the format does not list throws. A listed single rate gives the device's own
     /// value, so 2002/60000 goes in as the 1001/30000 the card offers.
+    /// The listed duration nearest the mean gap between delivered frames' presentation times
+    /// (seconds), counting only gaps near the median so a missed frame does not count; nil with
+    /// too few frames to tell. After a re-pin the rate `pin` used is the one it wrote itself, so
+    /// the frames are the only trustworthy measure of the signal's own rate.
+    static func measuredDuration(_ times: [Double], in format: VideoFormat) -> CMTime? {
+      let gaps = zip(times.dropFirst(), times).map { $0 - $1 }.filter { $0 > 0 }.sorted()
+      guard gaps.count >= 3 else { return nil }
+      let median = gaps[gaps.count / 2]
+      let near = gaps.filter { abs($0 - median) < median * 0.25 }
+      let mean = near.reduce(0, +) / Double(near.count)
+      return format.frameDurations.flatMap { [$0.lowerBound, $0.upperBound] }
+        .min { abs($0.seconds - mean) < abs($1.seconds - mean) }
+    }
+    /// Whether a DeckLink's delivered picture is a new signal: neither the size `pin` read as the
+    /// signal nor the pinned format. The pinned format arriving is the preview working, so a re-pin
+    /// it causes cannot cause another.
+    static func isNewSignal(
+      delivered: CMVideoDimensions, signal: CMVideoDimensions, pinned: CMVideoDimensions
+    ) -> Bool {
+      func same(_ a: CMVideoDimensions, _ b: CMVideoDimensions) -> Bool { a.width == b.width && a.height == b.height }
+      return !same(delivered, signal) && !same(delivered, pinned)
+    }
     static func frameDuration(_ signal: CMTime, in format: VideoFormat) -> CMTime {
       guard signal.isNumeric, signal > .zero,
         let range = format.frameDurations.first(where: { $0.contains(signal) })
@@ -118,10 +140,14 @@ struct CameraHolders {
   private func refreshDeliveredSize() {
     let session = self.session
     let uid = attachedUID
+    let probe = self.probe
     queue.async {
       let port = session.inputs.compactMap { $0 as? AVCaptureDeviceInput }
         .flatMap(\.ports).first { $0.mediaType == .video }
       guard let description = port?.formatDescription else { return }
+      probe.follow(
+        delivered: CMVideoFormatDescriptionGetDimensions(description),
+        subType: description.mediaSubType.rawValue, in: session)
       let size = CMVideoFormatDescriptionGetPresentationDimensions(
         description, usePixelAspectRatio: true, useCleanAperture: false)
       Task { @MainActor in
@@ -277,6 +303,9 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     var toHost = 0.0
     var samples: [CameraLatency.Sample] = []
     var refreshes: [Double] = []
+    /// Presentation times of the first frames after a re-pin, while the rate is measured.
+    var rateTimes: [Double] = []
+    var measuresRate = false
   }
   private let shared = Mutex(Shared())
   private let sessionQueue: DispatchQueue
@@ -286,6 +315,11 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// Devices whose pinned rate showed nothing: they keep the format's default rate for this run.
   private var failed = Set<String>()
   private var generation = 0
+  /// The signal's size as `pin` read it, so `follow` can tell a different delivered picture.
+  private var signalSize: CMVideoDimensions?
+  /// Set by `follow` for the pin it just made: watches measure the signal's rate from the frames
+  /// until one completes the measurement. `pin` clears it, so it never outlives its device.
+  private var measuresRate = false
 
   init(sessionQueue: DispatchQueue) {
     self.sessionQueue = sessionQueue
@@ -307,6 +341,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   ) {
     generation += 1
     current = nil
+    signalSize = nil
+    measuresRate = false
     guard let device = signal?.device else { return }
     let formats = device.formats
     guard let signal,
@@ -316,7 +352,37 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     else { return }
     if failed.contains(device.uniqueID) { choice = choice.settled }
     current = (device, formats, choice)
+    signalSize = CMVideoFormatDescriptionGetDimensions(signal.format.formatDescription)
     holdingFormat(session)
+  }
+
+  /// Session queue only, whenever the input port's format changes. A DeckLink that has streamed
+  /// nothing yet reports its 720x486 default as the mode it detected, and `pin` held that: on
+  /// 25 October Cam B's 4K signal showed in standard definition for the whole session. When the
+  /// port then delivers a picture that is neither the signal `pin` saw nor the pinned format, the
+  /// card has a new signal, larger or smaller, so pin again from it. The pinned format arriving
+  /// (the normal 4K signal shown at 1080p) changes nothing, so this cannot loop. DeckLink only:
+  /// other cameras deliver sizes that differ from their active format for their own reasons.
+  func follow(delivered: CMVideoDimensions, subType: FourCharCode, in session: AVCaptureSession) {
+    guard let current, let signalSize, current.device.modelID == "DeckLink",
+      current.formats.indices.contains(current.choice.wanted.format),
+      SharedCameraSession.FormatChoice.isNewSignal(
+        delivered: delivered, signal: signalSize,
+        pinned: CMVideoFormatDescriptionGetDimensions(current.formats[current.choice.wanted.format].formatDescription))
+    else { return }
+    let sameSize = current.device.formats.filter {
+      let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+      return d.width == delivered.width && d.height == delivered.height
+    }
+    guard let format = sameSize.first(where: { $0.formatDescription.mediaSubType.rawValue == subType }) ?? sameSize.first
+    else { return }
+    NSLog("Video Prompter camera: the signal is %dx%d, not the %dx%d first reported; choosing the format again",
+          delivered.width, delivered.height, signalSize.width, signalSize.height)
+    // The pinned rate came from the same card, so it is the signal's rate unless the new format lacks it.
+    pin((device: current.device, format: format, duration: current.device.activeVideoMinFrameDuration), in: session)
+    // That duration is the one pin wrote for the default mode, not the signal's: measure it.
+    measuresRate = true
+    if session.isRunning { watch(session) }
   }
 
   /// Session queue only: start with the format held, then check it.
@@ -343,7 +409,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// first frame or latency is logged; after `watchdog` seconds with no frame, the device goes
   /// back to the format's default rate for the rest of the run.
   func watch(_ session: AVCaptureSession) {
-    guard let current, current.choice.wanted != current.choice.fallback || Self.logsLatency else {
+    guard let current, current.choice.wanted != current.choice.fallback || Self.logsLatency || measuresRate else {
       detach(from: session)
       return
     }
@@ -351,9 +417,12 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let generation = self.generation
     let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
     let toHost = session.synchronizationClock.map { host - CMClockGetTime($0).seconds } ?? 0
+    let measuresRate = self.measuresRate
     shared.withLock {
       $0.frames = 0
       $0.toHost = toHost
+      $0.rateTimes = []
+      $0.measuresRate = measuresRate
       if Self.logsLatency {
         $0.logStart = host
         $0.logUntil = host + Self.logWindow
@@ -371,12 +440,32 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     }
     sessionQueue.asyncAfter(deadline: .now() + Self.watchdog) { [self] in
       guard generation == self.generation else { return }
-      let sawFrame = shared.withLock { $0.frames > 0 }
+      let (sawFrame, rateTimes) = shared.withLock {
+        defer { $0.measuresRate = false }
+        return ($0.frames > 0, $0.rateTimes)
+      }
+      // This watch ran to its end, so its measurement is done, whatever it found.
+      if measuresRate { self.measuresRate = false }
       if session.isRunning, current.choice.revert(sawFrame: sawFrame) != nil {
         failed.insert(current.device.uniqueID)
         self.current?.choice = current.choice.settled
         holdingFormat(session, force: true)
         NSLog("Video Prompter camera: no frame in %.1f s, back to the format's default rate", Self.watchdog)
+      } else if measuresRate, session.isRunning, current.formats.indices.contains(current.choice.wanted.format),
+        let measured = SharedCameraSession.FormatChoice.measuredDuration(
+          rateTimes, in: Self.row(current.formats[current.choice.wanted.format]))
+      {
+        let pinned = current.choice.wanted.frameDuration.isValid
+          ? current.choice.wanted.frameDuration : current.device.activeVideoMinFrameDuration
+        if abs(measured.seconds - pinned.seconds) > pinned.seconds * 0.05 {
+          let format = current.choice.wanted.format
+          self.current?.choice = .init(wanted: .init(format: format, frameDuration: measured), fallback: current.choice.fallback)
+          holdingFormat(session)
+          NSLog("Video Prompter camera: frames arrive every %.2f ms, not %.2f ms; pinning that rate",
+                measured.seconds * 1000, pinned.seconds * 1000)
+          // A rate like any other: check it shows frames, and keep the output for that check.
+          return watch(session)
+        }
       }
       if !Self.logsLatency { detach(from: session) }
     }
@@ -422,6 +511,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let presented = sampleBuffer.presentationTimeStamp.seconds
     shared.withLock {
       $0.frames += 1
+      if $0.measuresRate, $0.rateTimes.count < 12 { $0.rateTimes.append(presented) }
       if delivered < $0.logUntil {
         $0.samples.append(.init(capture: presented + $0.toHost, delivered: delivered))
       }

@@ -800,6 +800,9 @@ struct ScriptTextView: NSViewRepresentable {
     text.onCharacterClick = { context.coordinator.seek($0) }
     text.onLayout = { [weak scroll] in
       guard let scroll else { return }
+      context.coordinator.dropScrollGeometry()
+      // During a full layout the caller aligns once it returns; see `layOutScript`.
+      guard !context.coordinator.isLayingOutScript else { return }
       context.coordinator.invalidateAlignment()
       context.coordinator.alignToCurrent(in: scroll)
     }
@@ -851,6 +854,31 @@ struct ScriptTextView: NSViewRepresentable {
     var mappings: [(NSRange, Int)] = []
     /// The system's Reduce Motion; tests that only check where the text lands set it to skip the easing.
     static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// How long an eased move takes. Ease-out, so the line starts moving at full speed the moment
+    /// the reader reaches it, and a new target picks up from wherever the last move had got to:
+    /// the 0.60 s ease-in-out this replaced started every line from rest and put the line on the
+    /// guide over a second after the reader got there at a fast pace.
+    static let easedMoveSeconds = 0.20
+    /// Moves the script: eased, or at once, which also stops an easing in flight. Tests swap it to
+    /// see what was asked for, since an eased scroll does not advance while the screen is locked.
+    static var moveClip: (NSClipView, NSPoint, _ eased: Bool) -> Void = { clip, destination, eased in
+      if eased {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = easedMoveSeconds
+          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          clip.animator().setBoundsOrigin(destination)
+        }
+      } else {
+        // A zero-length animator move is what replaces an animator move in flight; the layer's
+        // own animations go too, and the plain assignment leaves the origin exact.
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0
+          clip.animator().setBoundsOrigin(destination)
+        }
+        clip.layer?.removeAllAnimations()
+        clip.setBoundsOrigin(destination)
+      }
+    }
     private var renderedDocument: PrompterDocument?
     private var renderedStyle = ""
     var tokenIndex = 0
@@ -879,6 +907,10 @@ struct ScriptTextView: NSViewRepresentable {
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
+    /// Every mapping's rendered midY, measured on the gesture's first scroll event. Only geometry
+    /// clears it (a new gesture, a render, a resize): each hand-scroll seek re-aligns, and clearing
+    /// it there too would measure the whole script again on every event.
+    private(set) var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
     /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
@@ -933,6 +965,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self, weak scroll] _ in
           MainActor.assumeIsolated {
             guard let self, let scroll else { return }
+            self.dropScrollGeometry()
             self.snapToGuide()
             self.alignToCurrent(in: scroll)
           }
@@ -940,6 +973,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
             self?.isLiveScrolling = true
+            self?.dropScrollGeometry()
             if self?.manualPosition != nil { self?.isHandScrolled = true }
           }
         },
@@ -1021,6 +1055,7 @@ struct ScriptTextView: NSViewRepresentable {
         }
       }
       mappings = []
+      dropScrollGeometry()
       let plain = attributed.string as NSString
       let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
@@ -1115,19 +1150,28 @@ struct ScriptTextView: NSViewRepresentable {
       guard isLiveScrolling, let textView,
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       let guide = scroll.contentView.bounds.origin.y
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
-      guard let nearest = mappings.min(by: { left, right in
-        let leftGlyph = manager.glyphRange(forCharacterRange: left.0, actualCharacterRange: nil)
-        let rightGlyph = manager.glyphRange(forCharacterRange: right.0, actualCharacterRange: nil)
-        return abs(manager.boundingRect(forGlyphRange: leftGlyph, in: container).midY - guide)
-          < abs(manager.boundingRect(forGlyphRange: rightGlyph, in: container).midY - guide)
-      }) else { return }
+      // Each word is measured once per gesture, not twice per trackpad event (60 to 120 a second,
+      // and a long script lagged behind the fingers). Layout holds still while the hand scrolls;
+      // a render, resize or reflow drops these.
+      let midYs = liveScrollMidYs ?? mappings.map { range in
+        let glyph = manager.glyphRange(forCharacterRange: range.0, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyph, in: container).midY
+      }
+      liveScrollMidYs = midYs
+      guard let slot = Self.nearestSlot(midYs, to: guide) else { return }
+      let nearest = mappings[slot]
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
       if manualPosition != nil { pendingUserSeeks += 1 }
       (onUserScroll ?? onSeek)(nearest.1)
+    }
+    /// The first slot nearest `guide`. A scan, not a search: mappings are in token order, which is
+    /// not always page order (a code fence's language tag can map to a later line of its body).
+    static func nearestSlot(_ midYs: [CGFloat], to guide: CGFloat) -> Int? {
+      midYs.indices.min { abs(midYs[$0] - guide) < abs(midYs[$1] - guide) }
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
@@ -1138,6 +1182,7 @@ struct ScriptTextView: NSViewRepresentable {
     func setSideInset(_ inset: CGFloat) {
       guard let textView, abs(textView.textContainerInset.width - inset) > 0.5 else { return }
       textView.textContainerInset.width = inset
+      dropScrollGeometry()
       snapToGuide()
     }
     func invalidateAlignment() {
@@ -1145,6 +1190,7 @@ struct ScriptTextView: NSViewRepresentable {
       lastGuideFraction = nil
       lastAlignmentDestination = nil
     }
+    func dropScrollGeometry() { liveScrollMidYs = nil }
     /// Re-align on the next update without easing.
     func snapToGuide() {
       invalidateAlignment()
@@ -1164,8 +1210,20 @@ struct ScriptTextView: NSViewRepresentable {
       if abs(textView.textContainerInset.height - edgeInset) > 0.5 {
         textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       return (manager, container, guideY)
+    }
+    /// True while `layOutScript` runs. Each paragraph laid out grows the text view, and its
+    /// `onLayout` used to align (and so lay out again) inside this very call: one open of a
+    /// 4,800-word script ran 134 nested align passes, nested up to 15 deep, about 400 ms.
+    private(set) var isLayingOutScript = false
+    /// The whole script laid out, with the size changes it causes left to the caller, which
+    /// measures and aligns once afterwards.
+    private func layOutScript(_ manager: NSLayoutManager, _ container: NSTextContainer) {
+      guard !isLayingOutScript else { return }
+      isLayingOutScript = true
+      defer { isLayingOutScript = false }
+      manager.ensureLayout(for: container)
     }
     /// Where the scroll must sit to put this rendered range on the guide.
     private func scrollY(
@@ -1263,16 +1321,7 @@ struct ScriptTextView: NSViewRepresentable {
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
       } ?? false
-      if animate && !isSameDestination {
-        NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.60
-          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-          scroll.contentView.animator().setBoundsOrigin(destination)
-        }
-      } else if !animate {
-        scroll.contentView.layer?.removeAllAnimations()
-        scroll.contentView.setBoundsOrigin(destination)
-      }
+      if !animate || !isSameDestination { Self.moveClip(scroll.contentView, destination, animate) }
       if !animate || !isSameDestination { scroll.reflectScrolledClipView(scroll.contentView) }
       lastAligned = tokenIndex
       lastGuideFraction = guideFraction

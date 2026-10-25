@@ -139,6 +139,27 @@ final class RecognitionTests: XCTestCase {
     XCTAssertEqual(match?.direction, .forward)
     XCTAssertEqual(match?.tokenIndex, 7)
   }
+  /// 25 October: "Liverpool are a bigger club than", said while reading "Liverpool are bigger than
+  /// Barça", must not be credited to the same words a paragraph on.
+  func testWordsJustReadAreNotCreditedToTheSameWordsFurtherOn() {
+    let script = PrompterDocument(markdown: """
+      If Arsenal are bigger than PSG, then Liverpool are bigger than Barça. This will all make sense \
+      later on in the video. 3 years ago, I made a video arguing that PSG were a bigger club than Arsenal.
+      """).spokenTokens
+    XCTAssertEqual(script[10].normalised, "than")
+    XCTAssertNil(PhraseMatcher().match(
+      recognised: ["liverpool", "are", "a", "bigger", "club", "than"], script: script, currentIndex: 10))
+  }
+  /// A real skip ahead, onto words not read just before, is still followed.
+  func testASkipAheadOntoNewWordsIsStillFollowed() {
+    let script = PrompterDocument(markdown: """
+      If Arsenal are bigger than PSG, then Liverpool are bigger than Barça. This will all make sense \
+      later on in the video. 3 years ago, I made a video arguing that PSG were a bigger club than Arsenal.
+      """).spokenTokens
+    let match = PhraseMatcher().match(
+      recognised: ["made", "a", "video", "arguing"], script: script, currentIndex: 10)
+    XCTAssertEqual(match.map { script[$0.tokenIndex].normalised }, "arguing")
+  }
   func testCommonFourWordPhraseCannotRewind() {
     let script = PrompterDocument(
       markdown: "the and this that meaningful middle passage continues onward"
