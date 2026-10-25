@@ -15,6 +15,7 @@
 		EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */; };
 		A698447D355A4D7944783966 /* CameraGuides.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09486326B37D8BA3B702E4C6 /* CameraGuides.swift */; };
 		311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */; };
+		2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */; };
 		DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */; };
 		932B66FBA0F63A68B7B66FE6 /* Lexend-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */; };
 		B04E630E40B5392C4792BD4C /* PrompterCore in Frameworks */ = {isa = PBXBuildFile; productRef = E07036B5367EDC4E164C8BB4 /* PrompterCore */; };
@@ -31,6 +32,7 @@
 		34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocs.swift; sourceTree = "<group>"; };
 		09486326B37D8BA3B702E4C6 /* CameraGuides.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraGuides.swift; sourceTree = "<group>"; };
 		769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraOrientation.swift; sourceTree = "<group>"; };
+		4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraLinkSecurity.swift; sourceTree = "<group>"; };
 		B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LexendDeca-Variable.ttf"; sourceTree = "<group>"; };
 		BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lexend-Variable.ttf"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -73,6 +75,7 @@
 				34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */,
 				09486326B37D8BA3B702E4C6 /* CameraGuides.swift */,
 				769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */,
+				4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */,
 			);
 			name = "Shared with the Mac app";
 			path = ../Sources/VideoPrompter;
@@ -184,6 +187,7 @@
 				EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */,
 				A698447D355A4D7944783966 /* CameraGuides.swift in Sources */,
 				311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */,
+				2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

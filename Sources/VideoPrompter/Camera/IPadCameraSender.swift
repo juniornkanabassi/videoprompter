@@ -30,9 +30,9 @@ import VideoToolbox
       if isOn { usesWiFi ? startBrowsing() : stopBrowsing() }
     }
   }
-  /// iPads the user has agreed to send to over Wi-Fi, by their Bonjour name.
-  private var trustedNames = Set(UserDefaults.standard.stringArray(forKey: "sendCameraTrustedIPads") ?? []) {
-    didSet { UserDefaults.standard.set(Array(trustedNames), forKey: "sendCameraTrustedIPads") }
+  /// The pairing code for each iPad the user has paired over Wi-Fi, by its Bonjour name.
+  private var codes = UserDefaults.standard.dictionary(forKey: "sendCameraPairingCodes") as? [String: String] ?? [:] {
+    didSet { UserDefaults.standard.set(codes, forKey: "sendCameraPairingCodes") }
   }
   /// Asked about and refused in this run, so the question is not repeated.
   private var declinedNames = Set<String>()
@@ -121,19 +121,28 @@ import VideoToolbox
     connectIfNeeded()
   }
 
-  /// Only iPads the user has named as theirs are sent to. A new one is asked about once, with
-  /// the warning that Wi-Fi carries the picture unencrypted.
+  /// Only paired iPads are sent to. A new one is paired once, with the code its Settings show.
   private func wifiChanged(_ endpoints: [NWEndpoint]) {
-    for name in endpoints.compactMap(Self.serviceName) where !trustedNames.contains(name) && !declinedNames.contains(name) {
-      let alert = NSAlert()
-      alert.messageText = "Send this Mac's camera to “\(name)” over Wi-Fi?"
-      alert.informativeText = "Only say yes if this is your iPad. On Wi-Fi the picture is not encrypted, so use it on a network you trust; a USB-C cable needs no question."
-      alert.addButton(withTitle: "Send to This iPad")
-      alert.addButton(withTitle: "Not Now")
-      if alert.runModal() == .alertFirstButtonReturn { trustedNames.insert(name) } else { declinedNames.insert(name) }
+    for name in endpoints.compactMap(Self.serviceName) where codes[name] == nil && !declinedNames.contains(name) {
+      if let code = Self.askForCode(name) { codes[name] = code } else { declinedNames.insert(name) }
     }
-    wifiTargets = endpoints.filter { Self.serviceName($0).map(trustedNames.contains) ?? false }
+    wifiTargets = endpoints.filter { Self.serviceName($0).map { codes[$0] != nil } ?? false }
     connectIfNeeded()
+  }
+
+  private static func askForCode(_ name: String) -> String? {
+    let alert = NSAlert()
+    alert.messageText = "Pair with “\(name)” over Wi-Fi"
+    alert.informativeText = "Enter the code shown on the iPad in Settings › Camera from a Mac. Only pair with your own iPad; the picture is encrypted with this code."
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
+    field.placeholderString = "6-digit code"
+    alert.accessoryView = field
+    alert.window.initialFirstResponder = field
+    alert.addButton(withTitle: "Pair")
+    alert.addButton(withTitle: "Not Now")
+    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
+    let code = field.stringValue.filter(\.isNumber)
+    return code.count == 6 ? code : nil
   }
 
   private static func serviceName(_ endpoint: NWEndpoint) -> String? {
@@ -158,10 +167,17 @@ import VideoToolbox
       }
       if opened == nil {
         for endpoint in wifi {
-          if let pipe = await NetworkPipe.open(endpoint) {
+          guard let name = Self.serviceName(endpoint), let code = codes[name] else { continue }
+          switch await NetworkPipe.open(endpoint, code: code) {
+          case .opened(let pipe):
             opened = pipe
+          case .refused:
+            // The iPad has a different code now: pair again next time it is seen.
+            codes[name] = nil
+          case .unreachable:
             break
           }
+          if opened != nil { break }
         }
       }
       connecting = false
@@ -219,7 +235,7 @@ struct IPadCameraCommands: Commands {
       Toggle("Send Camera to iPad", isOn: $sender.isOn)
         .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
       Toggle("Also Send over Wi-Fi", isOn: $sender.usesWiFi)
-        .help("Also looks for your iPad on the same Wi-Fi. The picture is not encrypted on Wi-Fi.")
+        .help("Also looks for your iPad on the same Wi-Fi, paired with the code its Settings show. The picture is encrypted with that code.")
       if sender.isOn { Text(sender.status) }
     }
   }
@@ -429,25 +445,31 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
     super.init(name: "Wi-Fi")
   }
 
-  static func open(_ endpoint: NWEndpoint) async -> NetworkPipe? {
-    let parameters = NWParameters.tcp
-    if let tcp = parameters.defaultProtocolStack.transportProtocol as? NWProtocolTCP.Options { tcp.noDelay = true }
-    let connection = NWConnection(to: endpoint, using: parameters)
-    let ready = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+  enum Outcome {
+    case opened(NetworkPipe)
+    /// The TLS handshake failed: the codes do not match.
+    case refused
+    case unreachable
+  }
+
+  static func open(_ endpoint: NWEndpoint, code: String) async -> Outcome {
+    let connection = NWConnection(to: endpoint, using: CameraLinkSecurity.parameters(code: code))
+    let state = await withCheckedContinuation { (continuation: CheckedContinuation<State, Never>) in
       let once = Once(continuation)
       connection.stateUpdateHandler = { state in
         switch state {
-        case .ready: once.finish(true)
-        case .failed, .cancelled, .waiting: once.finish(false)
+        case .ready: once.finish(.ready)
+        case .failed(.tls), .waiting(.tls): once.finish(.refused)
+        case .failed, .cancelled, .waiting: once.finish(.unreachable)
         default: break
         }
       }
       connection.start(queue: DispatchQueue(label: "VideoPrompter.ipadlink.wifi"))
-      DispatchQueue.global().asyncAfter(deadline: .now() + 3) { once.finish(false) }
+      DispatchQueue.global().asyncAfter(deadline: .now() + 3) { once.finish(.unreachable) }
     }
-    guard ready else {
+    guard state == .ready else {
       connection.cancel()
-      return nil
+      return state == .refused ? .refused : .unreachable
     }
     let pipe = NetworkPipe(connection)
     connection.stateUpdateHandler = { [weak pipe] state in
@@ -456,15 +478,17 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
       default: break
       }
     }
-    return pipe
+    return .opened(pipe)
   }
+
+  private enum State { case ready, refused, unreachable }
 
   /// Resumes the continuation with the first answer only: ready, failed or timed out.
   private final class Once: @unchecked Sendable {
     private let lock = NSLock()
-    private var continuation: CheckedContinuation<Bool, Never>?
-    init(_ continuation: CheckedContinuation<Bool, Never>) { self.continuation = continuation }
-    func finish(_ value: Bool) {
+    private var continuation: CheckedContinuation<State, Never>?
+    init(_ continuation: CheckedContinuation<State, Never>) { self.continuation = continuation }
+    func finish(_ value: State) {
       let waiting = lock.withLock {
         defer { continuation = nil }
         return continuation

@@ -208,10 +208,16 @@ private struct MacLinkSettings: View {
     Section {
       LabeledContent("Mac", value: link.macName ?? "Not connected")
       Toggle("Allow a Mac on the same Wi-Fi", isOn: $link.allowsWiFi)
+      if link.allowsWiFi {
+        LabeledContent("Pairing code") {
+          Text(link.pairingCode).font(.title3.monospacedDigit().weight(.semibold))
+        }
+        Button("New Code") { link.newPairingCode() }
+      }
     } header: {
       Text("Camera from a Mac")
     } footer: {
-      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up. For Wi-Fi, turn on the option here and File › Also Send over Wi-Fi on the Mac; the picture is not encrypted on Wi-Fi, so use it only on a network you trust.")
+      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up. For Wi-Fi, turn on the option here and File › Also Send over Wi-Fi on the Mac, then type the pairing code into the Mac when it asks. The picture is encrypted with that code; a new code unpairs every Mac.")
     }
   }
 }

@@ -87,7 +87,7 @@ struct GoogleDocsSheet: View {
             }
           } footer: {
             VStack(alignment: .leading, spacing: 4) {
-              Text("Video Prompter asks Google for read-only access to your Drive, to list your documents and copy the ones you choose into the app. It never changes your Drive, and nothing goes anywhere but this device. Signing out here also revokes the access at Google.")
+              Text("Video Prompter asks Google for read-only access to your Drive, to list your documents and copy the ones you choose into the app as scripts. It never changes your Drive, and your Google data is never sent to the developer. Imported scripts are stored like your other scripts, including in iCloud Drive if you use it. Signing out also revokes the access at Google.")
               Link("Privacy Policy", destination: PrivacyPolicy.url)
             }
           }

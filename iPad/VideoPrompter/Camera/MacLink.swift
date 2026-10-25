@@ -21,6 +21,27 @@ import UIKit
       restartWiFi()
     }
   }
+  /// The code a Mac needs to send over Wi-Fi, shown in Settings. It keys the TLS that the Wi-Fi
+  /// link runs over, so only a Mac given the code can connect and nothing else can read the
+  /// picture. A new code unpairs every Mac.
+  @Published private(set) var pairingCode: String = {
+    if let code = UserDefaults.standard.string(forKey: "macLinkCode") { return code }
+    let code = CameraLinkSecurity.newCode()
+    UserDefaults.standard.set(code, forKey: "macLinkCode")
+    return code
+  }()
+
+  func newPairingCode() {
+    pairingCode = CameraLinkSecurity.newCode()
+    UserDefaults.standard.set(pairingCode, forKey: "macLinkCode")
+    if allowsWiFi {
+      wifi?.cancel()
+      wifi = nil
+      receiver.dropWiFi()
+      restartWiFi()
+    }
+  }
+
   /// Called when a Mac connects or goes, so the camera can switch to it and back.
   var onChange: (() -> Void)?
 
@@ -64,7 +85,7 @@ import UIKit
       // Turning Wi-Fi off also ends a Mac already sending over it; USB-C carries on.
       receiver.dropWiFi()
     } else if wifi == nil || wifi?.state == .cancelled {
-      let parameters = NWParameters.tcp
+      let parameters = CameraLinkSecurity.parameters(code: pairingCode)
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
       listener.service = NWListener.Service(name: UIDevice.current.name, type: CameraLink.bonjourType)
