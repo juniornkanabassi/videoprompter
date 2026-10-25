@@ -737,6 +737,7 @@ private enum PresenterSaveError: LocalizedError {
 @main struct VideoPrompterApp: App {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  init() { Updates.shared.start() }
   var body: some Scene {
     WindowGroup("Video Prompter", id: "library") {
       LibraryView(store: store)
@@ -798,6 +799,7 @@ private enum PresenterSaveError: LocalizedError {
             .keyboardShortcut("f", modifiers: [.command, .control])
         }
         CameraCommands()
+        UpdateCommands()
       }
     Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
