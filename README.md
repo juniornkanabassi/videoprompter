@@ -50,7 +50,13 @@ Voice tracking is still a preview. It can hesitate when your wording differs fro
 
 Scripts are stored as Markdown. When you import a Markdown file it stays linked both ways with the original. Edits in Video Prompter change the file, and changes to the file appear in Video Prompter. Other formats are converted on import and are not linked.
 
-While the camera is on, the presenter bar has a camera switcher and Framing guides (rule of thirds, a centre cross, a centre target and a frame marker). Recording is in the Camera toolbar and uses the preview format you have pinned, normally no larger than 1920×1080. I have not yet tested recording with real cameras and microphones. The presenter window is normally hidden from screen capture, so it should not appear in a screen recording, though I have not yet confirmed this with specific recording and screen-sharing apps.
+The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. **Camera Settings…** in the same menu holds the camera choice, rotation, mirroring and Framing guides (rule of thirds, a centre cross, a centre target and a frame marker).
+
+To record without a script, press **Present** with no script selected, or choose **Present Camera Only** from the Prompter menu. The presenter shows just the camera. Select a script and press **Present** again to add it over the same picture.
+
+To use the presenter as a reference monitor, drag across a passage in the presenter or the editor, then choose **Monitor Selection with Camera** from the View menu or the Prompter menu (⌥⌘L). The camera fills the presenter with that passage pinned across the bottom. Press **Back to script** or Esc to return. A single click in the presenter still moves the reading position.
+
+Recording is in the Camera toolbar and uses the preview format you have pinned, normally no larger than 1920×1080. I have not yet tested recording with real cameras and microphones. The presenter window is normally hidden from screen capture, so it should not appear in a screen recording, though I have not yet confirmed this with specific recording and screen-sharing apps.
 
 ## Privacy
 

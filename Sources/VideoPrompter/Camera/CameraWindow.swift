@@ -21,6 +21,13 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     case .videoOnly: "Camera only"
     }
   }
+  var systemImage: String {
+    switch self {
+    case .prompterOnly: "text.alignleft"
+    case .prompterWithVideo: "video.fill"
+    case .videoOnly: "camera.fill"
+    }
+  }
 }
 
 @MainActor final class CameraModel: ObservableObject {
@@ -47,9 +54,29 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   /// controls are unaffected. The old Bool key is still written, so an older build reads it too.
   @Published var displayMode: PresenterDisplayMode {
     didSet {
+      guard !showingTemporarily else { return }
       defaults.set(displayMode.rawValue, forKey: "presenterDisplayMode")
       defaults.set(displayMode != .prompterOnly, forKey: "presenterWithVideo")
     }
+  }
+  private var showingTemporarily = false
+  /// True while `showTemporarily` assigns, which is when `$displayMode` subscribers hear of it.
+  var isShowingTemporarily: Bool { showingTemporarily }
+  /// Camera only forced by the reference monitor or a presenter with no script. It is not saved,
+  /// so a quit or a close leaves the person's own choice for next time.
+  func showTemporarily(_ mode: PresenterDisplayMode) {
+    showingTemporarily = true
+    displayMode = mode
+    showingTemporarily = false
+  }
+  /// The last view the person chose, as saved.
+  var savedDisplayMode: PresenterDisplayMode {
+    defaults.string(forKey: "presenterDisplayMode").flatMap(PresenterDisplayMode.init)
+      ?? (defaults.bool(forKey: "presenterWithVideo") ? .prompterWithVideo : .prompterOnly)
+  }
+  func restoreSavedDisplayMode() {
+    let saved = savedDisplayMode
+    if displayMode != saved { displayMode = saved }
   }
   /// Whether the picture is shown at all: the capsule button, the menu and the camera ask this.
   var presentsWithVideo: Bool {
@@ -263,10 +290,38 @@ struct ToolbarPopUp<Value: Hashable>: NSViewRepresentable {
 /// toggles: there are too many of them now to sit in the toolbar.
 struct CameraGuideSettings: View {
   @ObservedObject var model: CameraModel
+  var body: some View {
+    Form { CameraGuideSections(model: model) }.formStyle(.grouped)
+  }
+}
+
+/// Every camera choice in one place: the presenter's View menu and the Settings panel both open
+/// this, so the camera, its turn, mirroring and the guides are never split across three screens.
+struct CameraSettingsPanel: View {
+  @ObservedObject var model: CameraModel
+  var zoom = 1.0
+  var body: some View {
+    Form {
+      Section("Camera") {
+        LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
+          .help("Choose the camera shown behind your script")
+        Picker("Rotation", selection: model.rotationChoice) {
+          ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
+        }.help("Rotate the camera picture, or choose Automatic")
+        Toggle("Mirror camera", isOn: $model.mirrored).help("Flip the camera picture left to right")
+      }
+      CameraGuideSections(model: model)
+    }.formStyle(.grouped).task { model.start() }
+  }
+}
+
+/// The guide and frame marker sections, shared by both panels above.
+struct CameraGuideSections: View {
+  @ObservedObject var model: CameraModel
   @State private var customWidth = 2.39
   @State private var customHeight = 1.0
   var body: some View {
-    Form {
+    Group {
       Section("Framing guides") {
         Toggle("Rule of thirds", isOn: $model.guides.thirds).help("Divide the picture into thirds to help compose your shot")
         Toggle("Centre cross", isOn: $model.guides.axes).help("Mark the horizontal and vertical centre of the picture")
@@ -293,7 +348,7 @@ struct CameraGuideSettings: View {
           LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1).accessibilityLabel("Shade outside") }.help("Darken the area outside the frame marker")
         }
       }
-    }.formStyle(.grouped)
+    }
   }
   private var custom: CameraAspect { CameraAspect(width: customWidth, height: customHeight) }
   private var guideColor: Binding<Color> {

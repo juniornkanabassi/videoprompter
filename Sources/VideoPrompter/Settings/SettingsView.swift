@@ -15,6 +15,7 @@ struct InspectorView: View {
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
   @State private var supportedSpeechLocales: [Locale] = []
+  @State private var showsCameraSettings = false
   init(store: AppStore) { self.store = store; self.session = store.session }
   var body: some View {
     Form {
@@ -66,12 +67,11 @@ struct InspectorView: View {
           modePicker.pickerStyle(.menu)
         }
         if camera.presentsWithVideo {
-          LabeledContent("Camera") { CameraPicker(model: camera, zoom: store.uiZoom) }.help("Choose the camera shown behind your script")
-          Picker("Rotation", selection: camera.rotationChoice) {
-            ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-          }.help("Rotate the camera picture, or choose Automatic")
-          Toggle("Mirror camera", isOn: $camera.mirrored).help("Flip the camera picture left to right")
-            .task { camera.start() }
+          Button("Camera Settings…") { showsCameraSettings = true }
+            .help("Choose the camera, its rotation, mirroring and framing guides")
+            .popover(isPresented: $showsCameraSettings, arrowEdge: .leading) {
+              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
+            }
         }
       }
       Section("Text") {

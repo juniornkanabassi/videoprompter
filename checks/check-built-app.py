@@ -174,10 +174,10 @@ try:
         assert any(label in row.values() for row in rows), (label, rendered)
     for removed in ['Previous passage', 'Next passage']:
         assert not any(removed in row.values() for row in rows), ('Secondary action still in presenter chrome', removed)
-    camera_buttons = [label for label in ['Show camera', 'Hide camera'] if any(label in row.values() for row in rows)]
-    assert len(camera_buttons) == 1, ('Presenter bar must offer exactly one of Show/Hide camera', camera_buttons, rendered)
-    # Framing guides appear only while the camera is on (a fresh data directory starts with it off).
-    assert any('Framing guides' in row.values() for row in rows) == (camera_buttons == ['Hide camera']), (camera_buttons, rendered)
+    # The camera toggle, camera picker and Framing guides all live in the presenter's View menu now.
+    assert any('Presenter view' in row.values() for row in rows), ('Presenter bar must offer the View menu', rendered)
+    for removed in ['Show camera', 'Hide camera', 'Framing guides']:
+        assert not any(removed in row.values() for row in rows), ('Camera control still loose in presenter chrome', removed)
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
     zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
