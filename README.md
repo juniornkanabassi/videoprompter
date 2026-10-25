@@ -114,4 +114,8 @@ zsh build.sh
 
 ## Licence
 
-The licence for Video Prompter's own code is in [LICENSE](LICENSE). The name and icon are not covered by it. The bundled Lexend fonts are under the SIL Open Font License, in [Resources/Fonts/OFL.txt](Resources/Fonts/OFL.txt).
+Copyright (C) 2026 Junior Nkanabassi. Licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later); see [LICENSE](LICENSE). The Video Prompter name and icon are not covered by the licence.
+
+In plain terms, you can use, change and share this code, but anything you distribute that is built on it has to stay open source under the same licence.
+
+The bundled Lexend fonts are under the SIL Open Font License, in [Resources/Fonts/OFL.txt](Resources/Fonts/OFL.txt), and Sparkle, which handles updates, is under the MIT licence.
