@@ -50,7 +50,7 @@ enum ScriptRenderer {
     let weight: UIFont.Weight = bold || style.fontWeight == "Bold" ? .bold : .regular
     let descriptor = UIFontDescriptor(fontAttributes: [
       .family: style.fontName,
-      .traits: [UIFontDescriptor.TraitKey.weight: weight],
+      .traits: [UIFontDescriptor.TraitKey.weight: weight.rawValue],
     ])
     let font = UIFont(descriptor: descriptor, size: size)
     // An unknown family falls back to the system font rather than to Times.

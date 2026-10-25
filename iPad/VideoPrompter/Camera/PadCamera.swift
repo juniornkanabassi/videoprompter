@@ -61,8 +61,8 @@ import UIKit
 
   private func start() {
     Task {
-      let allowed = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
-        ? true : await AVCaptureDevice.requestAccess(for: .video)
+      var allowed = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
+      if !allowed { allowed = await AVCaptureDevice.requestAccess(for: .video) }
       guard allowed else {
         notice = "Allow camera access in Settings › Privacy & Security › Camera."
         isOn = false
