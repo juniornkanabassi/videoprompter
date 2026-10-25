@@ -670,6 +670,8 @@ struct ScriptTextView: NSViewRepresentable {
     text.onLayout = { [weak scroll] in
       guard let scroll else { return }
       context.coordinator.dropScrollGeometry()
+      // During a full layout the caller aligns once it returns; see `layOutScript`.
+      guard !context.coordinator.isLayingOutScript else { return }
       context.coordinator.invalidateAlignment()
       context.coordinator.alignToCurrent(in: scroll)
     }
@@ -995,7 +997,7 @@ struct ScriptTextView: NSViewRepresentable {
       guard isLiveScrolling, let textView,
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       let guide = scroll.contentView.bounds.origin.y
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
       // Each word is measured once per gesture, not twice per trackpad event (60 to 120 a second,
@@ -1055,8 +1057,20 @@ struct ScriptTextView: NSViewRepresentable {
       if abs(textView.textContainerInset.height - edgeInset) > 0.5 {
         textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       return (manager, container, guideY)
+    }
+    /// True while `layOutScript` runs. Each paragraph laid out grows the text view, and its
+    /// `onLayout` used to align (and so lay out again) inside this very call: one open of a
+    /// 4,800-word script ran 134 nested align passes, nested up to 15 deep, about 400 ms.
+    private(set) var isLayingOutScript = false
+    /// The whole script laid out, with the size changes it causes left to the caller, which
+    /// measures and aligns once afterwards.
+    private func layOutScript(_ manager: NSLayoutManager, _ container: NSTextContainer) {
+      guard !isLayingOutScript else { return }
+      isLayingOutScript = true
+      defer { isLayingOutScript = false }
+      manager.ensureLayout(for: container)
     }
     /// Where the scroll must sit to put this rendered range on the guide.
     private func scrollY(
