@@ -100,6 +100,10 @@ Installing Video Prompter does not import a JuniorPrompter library automatically
 
 ---
 
+## Video Prompter for iPad (in testing)
+
+An iPad version for teleprompters that cannot take a computer is in testing through TestFlight. It follows your voice the same way, mirrors for the glass, and takes a Bluetooth clicker or foot pedal. To share scripts with it, turn on File › Keep Scripts in iCloud Drive for iPad on the Mac. See [iPad/README.md](iPad/README.md).
+
 ## Technical details
 
 The rest of this file is for people building Video Prompter from source or controlling it from scripts and AI tools.

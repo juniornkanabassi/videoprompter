@@ -171,6 +171,7 @@ private enum PresenterSaveError: LocalizedError {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
         await self?.refreshExternalChanges()
+        await self?.syncICloudScripts()
       }
     }
     // Coming back from MarkEdit or Obsidian should not wait for the next tick.
@@ -698,6 +699,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         SidebarCommands()
         InspectorCommands()
+        ICloudCommands(store: store)
         CommandGroup(after: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
