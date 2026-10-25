@@ -245,6 +245,8 @@ import XCTest
     XCTAssertFalse(recorder.isRecording)
     let reply21 = await actions.handle("record_stop", [:])
     XCTAssertEqual(code(reply21), "not_recording")
+    let stopRetry = await actions.handle("record_stop", ["requestId": "stop"])
+    XCTAssertEqual(code(stopRetry), "not_recording")
     _ = await actions.handle("record_set", ["quality": "high", "floatAudio": "on"])
     XCTAssertEqual(recorder.preset, .high); XCTAssertTrue(recorder.floatAudio)
     let statusReply = await actions.handle("status", [:])
@@ -272,6 +274,90 @@ import XCTest
     await store.reload()
     XCTAssertEqual(store.scripts.count, 1)
     XCTAssertEqual(store.scripts.first?.metadata.folderID, folder.id)
+    let namedParams = ["title": "Named folder script", "text": "three four", "folder": "Drafts", "requestId": "named-folder"]
+    let named = await actions.handle("script_create", namedParams)
+    XCTAssertEqual(named.body["ok"] as? Bool, true)
+    try await store.renameLibraryFolder(folder.id, name: "Renamed")
+    let retry = await actions.handle("script_create", namedParams)
+    XCTAssertEqual((retry.body["result"] as? [String: Any])?["repeated"] as? Bool, true)
+    XCTAssertEqual((retry.body["result"] as? [String: Any])?["id"] as? String, (named.body["result"] as? [String: Any])?["id"] as? String)
+    XCTAssertEqual(store.scripts.count, 2)
+  }
+
+  func testDeleteRefusesOverlappingOpenAndPresent() async throws {
+    _ = NSApplication.shared
+    OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    let other = try await store.createScript(title: "Keep", markdown: "three four")
+    let camera = CameraModel(defaults: defaults)
+    let presenter = PresenterController(camera: camera)
+    defer { presenter.closeNow() }
+    let actions = ControlActions(store: store, presenter: presenter, camera: camera, recorder: CameraRecorder(defaults: defaults))
+    store.deleteGate = {
+      XCTAssertTrue(store.deletingIDs.contains(record.id))
+      for action in ["script_open", "present"] {
+        let result = await actions.handle(action, ["script": record.id.uuidString])
+        XCTAssertEqual((result.body["error"] as? [String: Any])?["code"] as? String, "script_deleting")
+        XCTAssertEqual(store.selectedID, other.id)
+      }
+      store.selectedID = record.id
+      presenter.present(store: store, activate: false)
+      XCTAssertNil(store.session.activeScriptID)
+      XCTAssertNil(presenter.panel)
+    }
+    let result = await actions.handle("script_delete", ["script": record.id.uuidString, "yes": "true"])
+    XCTAssertEqual(result.body["ok"] as? Bool, true)
+    XCTAssertTrue(store.deletingIDs.isEmpty)
+    XCTAssertEqual(store.scripts.map(\.id), [other.id])
+  }
+
+  func testDeleteRetryDoesNotDeleteReplacementWithSameTitle() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let params = ["script": "Read", "yes": "true", "requestId": "delete"]
+    let first = await actions.handle("script_delete", params)
+    XCTAssertEqual(first.body["ok"] as? Bool, true)
+    let replacement = try await store.createScript(title: "Read", markdown: "three four")
+    let retry = await actions.handle("script_delete", params)
+    let value = retry.body["result"] as? [String: Any]
+    XCTAssertEqual(value?["repeated"] as? Bool, true)
+    XCTAssertEqual(value?["id"] as? String, record.id.uuidString)
+    XCTAssertEqual(store.scripts.map(\.id), [replacement.id])
+  }
+
+  func testDuplicateRetryAfterRenameUsesCachedResult() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let params = ["script": "Read", "requestId": "duplicate"]
+    let first = await actions.handle("script_duplicate", params)
+    let rename = await actions.handle("script_rename", ["script": record.id.uuidString, "title": "Renamed"])
+    XCTAssertEqual(rename.body["ok"] as? Bool, true)
+    let tag = await actions.handle("script_tag", ["script": record.id.uuidString, "tags": " draft,ready,draft "])
+    XCTAssertEqual(tag.body["ok"] as? Bool, true)
+    let retry = await actions.handle("script_duplicate", params)
+    let value = retry.body["result"] as? [String: Any]
+    XCTAssertEqual(value?["repeated"] as? Bool, true)
+    XCTAssertEqual(value?["id"] as? String, (first.body["result"] as? [String: Any])?["id"] as? String)
+    XCTAssertEqual(store.scripts.count, 2)
+    let updated = try XCTUnwrap(store.scripts.first { $0.id == record.id })
+    XCTAssertEqual(updated.metadata.title, "Renamed")
+    XCTAssertEqual(updated.metadata.tags, ["draft", "ready"])
+    await store.reload()
+    XCTAssertEqual(store.scripts.first { $0.id == record.id }?.metadata, updated.metadata)
   }
 
   func testDeleteRechecksPresenterAfterSaving() async throws {

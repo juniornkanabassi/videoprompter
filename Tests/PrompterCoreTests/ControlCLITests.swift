@@ -41,6 +41,9 @@ final class ControlCLITests: XCTestCase {
     for command in ["next-passage", "previous-passage"] {
       XCTAssertEqual(try ControlCLI.parse([command, "--request-id", "step1"]).params, ["requestId": "step1"])
     }
+    for args in [["script", "delete", "Read", "--yes"], ["record", "stop", "--force"]] {
+      XCTAssertEqual(try ControlCLI.parse(args + ["--request-id", "retry"]).params["requestId"], "retry")
+    }
     XCTAssertEqual(try ControlCLI.parse(["script", "create", "--text", "-"]).params["text"], "-")
     XCTAssertEqual(try ControlCLI.parse(["camera", "set", "only"]).params["view"], "only")
     XCTAssertEqual(try ControlCLI.parse(["seek", "12"]).params["word"], "12")

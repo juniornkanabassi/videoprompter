@@ -12,7 +12,7 @@ import Speech
   private let camera: CameraModel
   private let recorder: CameraRecorder
   private let audioAuthorization: () -> AVAuthorizationStatus
-  /// Creation requests by action and request id, so a retry returns the first result.
+  /// Requests by action and request id, so a retry returns the first result.
   private var requests: [String: Task<ControlResult, Never>] = [:]
   init(store: AppStore, presenter: PresenterController = .shared, camera: CameraModel = .shared, recorder: CameraRecorder = .shared, audioAuthorization: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }) {
     self.store = store; self.presenter = presenter; self.camera = camera; self.recorder = recorder
@@ -52,9 +52,6 @@ import Speech
     let folder = record.metadata.folderID.flatMap { id in store.folders.first { $0.id == id } }
     value["folder"] = folder.map { ["id": $0.id.uuidString, "name": $0.name] } as Any? ?? NSNull()
     return value
-  }
-  private func apply(_ metadata: ScriptMetadata) {
-    if let i = store.scripts.firstIndex(where: { $0.metadata.id == metadata.id }) { store.scripts[i].metadata = metadata }
   }
   private func isTrue(_ value: String?) -> Bool { ["true", "1"].contains(value ?? "false") }
   private func on(_ value: Bool) -> String { value ? "on" : "off" }
@@ -131,13 +128,13 @@ import Speech
       return .ok(value)
     case "script_create":
       guard store.libraryAvailable else { return unavailable }
-      let folderID: UUID?
-      if let name = params["folder"] {
-        let (found, error) = folder(named: name)
-        if let error { return error }
-        folderID = found?.id
-      } else { folderID = nil }
       return await once(action, params) { [self] () -> ControlResult in
+        let folderID: UUID?
+        if let name = params["folder"] {
+          let (found, error) = folder(named: name)
+          if let error { return error }
+          folderID = found?.id
+        } else { folderID = nil }
         let title = (params["title"] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         do {
           store.search = ""; store.selectedFolderID = folderID
@@ -164,6 +161,7 @@ import Speech
       let (record, error) = params["script"].map(lookup) ?? (store.selected, nil)
       if let error { return error }
       guard let record else { return .error("no_active_script", "Select a script first: videoprompter script open <id|title>") }
+      guard !store.deletingIDs.contains(record.id) else { return .error("script_deleting", "This script is being deleted.") }
       select(record)
       if action == "present" {
         presenter.present(store: store, activate: show)
@@ -172,7 +170,7 @@ import Speech
       if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil) }
       return .ok(identity(record))
     case "script_rename", "script_tag", "script_move":
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
+      guard store.libraryAvailable else { return unavailable }
       let (record, error) = lookup(params["script"]!)
       if let error { return error }
       guard let record else { return unavailable }
@@ -181,13 +179,11 @@ import Speech
         case "script_rename":
           let title = params["title"]!.trimmingCharacters(in: .whitespacesAndNewlines)
           guard !title.isEmpty else { return .error("invalid_params", "Titles cannot be empty.") }
-          let metadata = try await library.updateMetadata(record.id, title: title)
-          apply(metadata)
+          try await store.updateScriptMetadata(record.id, title: title)
         case "script_tag":
           let raw = params["tags"]!
           let tags: [String] = raw.trimmingCharacters(in: .whitespaces).lowercased() == "none" ? [] : raw.split(separator: ",").map(String.init)
-          let metadata = try await library.updateMetadata(record.id, tags: tags)
-          apply(metadata)
+          try await store.updateScriptMetadata(record.id, tags: tags)
         default:
           var folderID: UUID?
           if params["folder"]!.lowercased() != "none" {
@@ -200,11 +196,11 @@ import Speech
       } catch { return .error("library_failed", "The library could not be updated. Nothing was changed.") }
       return .ok(details(store.scripts.first(where: { $0.id == record.id }) ?? record))
     case "script_duplicate":
-      guard store.libraryAvailable else { return unavailable }
-      let (record, error) = lookup(params["script"]!)
-      if let error { return error }
-      guard let record else { return unavailable }
       return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable else { return unavailable }
+        let (record, error) = lookup(params["script"]!)
+        if let error { return error }
+        guard let record else { return unavailable }
         do {
           let item = try await store.duplicateScript(record.id)
           return .ok(details(item))
@@ -234,21 +230,23 @@ import Speech
       return .ok(value)
     case "script_delete":
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to move this script to Recently Deleted.") }
-      guard store.libraryAvailable else { return unavailable }
-      let (record, error) = lookup(params["script"]!)
-      if let error { return error }
-      guard let record else { return unavailable }
-      if let error = deletionError(record.id) { return error }
-      do {
-        try await store.deleteScript(record.id) {
-          if let error = deletionError(record.id) { throw Refusal(result: error) }
-        }
-      } catch let error as Refusal { return error.result }
-      catch let error as AppStore.PendingEditsError { return .error("unsaved_edits", error.description) }
-      catch { return .error("library_failed", "The script could not be moved to Recently Deleted. Nothing was changed.") }
-      var value: [String: Any] = identity(record); value["deleted"] = true
-      value["restore"] = "videoprompter script restore \(record.id.uuidString)"
-      return .ok(value)
+      return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable else { return unavailable }
+        let (record, error) = lookup(params["script"]!)
+        if let error { return error }
+        guard let record else { return unavailable }
+        if let error = deletionError(record.id) { return error }
+        do {
+          try await store.deleteScript(record.id) {
+            if let error = deletionError(record.id) { throw Refusal(result: error) }
+          }
+        } catch let error as Refusal { return error.result }
+        catch let error as AppStore.PendingEditsError { return .error("unsaved_edits", error.description) }
+        catch { return .error("library_failed", "The script could not be moved to Recently Deleted. Nothing was changed.") }
+        var value: [String: Any] = identity(record); value["deleted"] = true
+        value["restore"] = "videoprompter script restore \(record.id.uuidString)"
+        return .ok(value)
+      }
     case "script_trash":
       guard store.libraryAvailable else { return unavailable }
       if let library = store.library { store.trash = await library.listTrash() }
@@ -374,14 +372,16 @@ import Speech
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to start recording.") }
       return await once(action, params) { [self] () -> ControlResult in await startRecording() }
     case "record_stop":
-      guard recorder.isRecording || recorder.isBusy else { return .error("not_recording", "Nothing is recording.") }
-      if let error = Self.recordingStopError(recordingID: recorder.recordingID, requested: params["recording"], force: isTrue(params["force"])) { return error }
-      let wasRecording = recorder.isRecording
-      let previous = recorder.lastFile
-      await recorder.stop()
-      if let file = recorder.lastFile, file != previous { return .ok(["active": false, "file": file.path]) }
-      if !wasRecording && recorder.errorMessage == nil { return .ok(["active": false, "cancelled": true]) }
-      return .error("recording_failed", recorder.errorMessage ?? "The recording could not be finished.")
+      return await once(action, params) { [self] () -> ControlResult in
+        guard recorder.isRecording || recorder.isBusy else { return .error("not_recording", "Nothing is recording.") }
+        if let error = Self.recordingStopError(recordingID: recorder.recordingID, requested: params["recording"], force: isTrue(params["force"])) { return error }
+        let wasRecording = recorder.isRecording
+        let previous = recorder.lastFile
+        await recorder.stop()
+        if let file = recorder.lastFile, file != previous { return .ok(["active": false, "file": file.path]) }
+        if !wasRecording && recorder.errorMessage == nil { return .ok(["active": false, "cancelled": true]) }
+        return .error("recording_failed", recorder.errorMessage ?? "The recording could not be finished.")
+      }
     case "record_set":
       guard !params.isEmpty else { return .error("invalid_params", "Give at least one of quality, microphone or float audio. Example: \(command.example)") }
       guard !recorder.isRecording, !recorder.isBusy else { return .error("recording_active", "Recording settings cannot change while recording.") }

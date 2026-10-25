@@ -148,6 +148,8 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
+  private(set) var deletingIDs = Set<UUID>()
+  var deleteGate: (() async -> Void)?
   /// The library's own answer for each linked script; the views never ask the file system.
   @Published private(set) var linkStates: [UUID: LinkState] = [:]
 
@@ -411,6 +413,9 @@ private enum PresenterSaveError: LocalizedError {
       throw PendingEditsError(description: "Save the pending edits before moving scripts to Trash.")
     }
     try afterSaving()
+    deletingIDs.insert(id)
+    defer { deletingIDs.remove(id) }
+    await deleteGate?()
     try await library.delete(id)
     session.forgetPosition(for: id)
     scripts.removeAll { $0.metadata.id == id }
@@ -644,15 +649,16 @@ private enum PresenterSaveError: LocalizedError {
       return false
     }
   }
-  func rename(_ value: String, for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, title: value) } }
-  func setTags(_ tags: [String], for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, tags: tags) } }
-  private func updateMetadata(
-    _ id: UUID, _ change: @escaping @MainActor (MarkdownLibrary) async throws -> ScriptMetadata
-  ) {
-    withLibrary { [self] library in
-      let metadata = try await change(library)
-      if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
-    }
+  func rename(_ value: String, for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, title: value) }
+  }
+  func setTags(_ tags: [String], for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, tags: tags) }
+  }
+  func updateScriptMetadata(_ id: UUID, title: String? = nil, tags: [String]? = nil) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    let metadata = try await library.updateMetadata(id, title: title, tags: tags)
+    if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
   }
 
   func savePreset(named name: String) {
