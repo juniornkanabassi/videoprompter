@@ -12,6 +12,8 @@ import UIKit
   @Published var mirrored = false { didSet { UserDefaults.standard.set(mirrored, forKey: "cameraMirrored") } }
   @Published var guides = CameraGuides() { didSet { guideStore.set(guides, for: selectedID) } }
   @Published private(set) var notice: String?
+  /// The mode the camera is running in, such as "1920 × 1080, 50 fps", shown in Settings.
+  @Published private(set) var mode: String?
 
   struct Device: Identifiable, Hashable {
     let id: String
@@ -81,10 +83,15 @@ import UIKit
     guides = guideStore.guides(for: id)
     capture.use(device) { [weak self] message in
       Task { @MainActor in self?.notice = message }
+    } onMode: { [weak self] mode in
+      Task { @MainActor in self?.mode = mode }
     }
   }
 
-  private func stop() { capture.stop() }
+  private func stop() {
+    capture.stop()
+    mode = nil
+  }
 }
 
 /// The capture session lives on its own queue; nothing on the main thread waits for it.
@@ -92,25 +99,95 @@ final class CaptureBox: @unchecked Sendable {
   let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "VideoPrompter.camera")
 
-  func use(_ device: AVCaptureDevice, onError: @escaping @Sendable (String) -> Void) {
+  func use(
+    _ device: AVCaptureDevice,
+    onError: @escaping @Sendable (String) -> Void,
+    onMode: @escaping @Sendable (String?) -> Void
+  ) {
     queue.async { [session] in
       session.beginConfiguration()
       session.inputs.forEach { session.removeInput($0) }
+      var mode: String?
       do {
         let input = try AVCaptureDeviceInput(device: device)
         guard session.canAddInput(input) else { throw CocoaError(.featureUnsupported) }
         session.addInput(input)
-        if session.canSetSessionPreset(.high) { session.sessionPreset = .high }
+        if device.deviceType == .external, let choice = CaptureMode.best(for: device) {
+          // A capture adapter or USB camera offers many modes, and the session presets can pick
+          // a small or slow one. Choose the sharpest picture up to 1080p at full frame rate.
+          session.sessionPreset = .inputPriority
+          try device.lockForConfiguration()
+          device.activeFormat = choice.format
+          device.activeVideoMinFrameDuration = choice.frameDuration
+          device.activeVideoMaxFrameDuration = choice.frameDuration
+          device.unlockForConfiguration()
+          mode = choice.label
+        } else if session.canSetSessionPreset(.high) {
+          session.sessionPreset = .high
+        }
       } catch {
         onError("Could not open \(device.localizedName): \(error.localizedDescription)")
       }
       session.commitConfiguration()
       if !session.isRunning { session.startRunning() }
+      onMode(mode ?? Self.label(for: device))
     }
+  }
+
+  private static func label(for device: AVCaptureDevice) -> String? {
+    let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+    let duration = device.activeVideoMinFrameDuration
+    guard size.width > 0, duration.isValid, duration.seconds > 0 else { return nil }
+    return CaptureMode.label(width: size.width, height: size.height, rate: 1 / duration.seconds)
   }
 
   func stop() {
     queue.async { [session] in if session.isRunning { session.stopRunning() } }
+  }
+}
+
+/// Picks the mode for an external camera. Sony's FX3 and a7 IV in USB Streaming mode, the
+/// ATEM Mini's webcam output and most capture adapters are plain UVC devices, each with its own
+/// list of sizes and rates; the rule below suits all of them.
+struct CaptureMode {
+  let format: AVCaptureDevice.Format
+  let frameDuration: CMTime
+  let label: String
+
+  /// The largest picture no bigger than 1080p that runs at 25 fps or more, at the highest rate
+  /// it offers up to 60 fps. Anything sharper is wasted behind text and costs battery and heat.
+  /// When nothing reaches 25 fps (a USB 2 cable, say) the fastest mode wins over the largest.
+  static func best(for device: AVCaptureDevice) -> CaptureMode? {
+    let candidates: [(format: AVCaptureDevice.Format, width: Int32, height: Int32, range: AVFrameRateRange)] =
+      device.formats.compactMap { format in
+        let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+        guard size.width > 0, size.width <= 1920, size.height <= 1080 else { return nil }
+        let ranges = format.videoSupportedFrameRateRanges.filter { $0.minFrameRate <= 60 }
+        guard let range = ranges.max(by: { min($0.maxFrameRate, 60) < min($1.maxFrameRate, 60) }) else { return nil }
+        return (format, size.width, size.height, range)
+      }
+    func rate(_ range: AVFrameRateRange) -> Double { min(range.maxFrameRate, 60) }
+    let smooth = candidates.filter { rate($0.range) >= 24.9 }
+    let pick: (format: AVCaptureDevice.Format, width: Int32, height: Int32, range: AVFrameRateRange)?
+    if smooth.isEmpty {
+      pick = candidates.max { (rate($0.range), $0.width * $0.height) < (rate($1.range), $1.width * $1.height) }
+    } else {
+      pick = smooth.max { ($0.width * $0.height, rate($0.range)) < ($1.width * $1.height, rate($1.range)) }
+    }
+    guard let pick else { return nil }
+    let fps = rate(pick.range)
+    // Use the range's own duration when it is the top rate, so 29.97 and 59.94 stay exact.
+    let duration = pick.range.maxFrameRate <= 60
+      ? pick.range.minFrameDuration
+      : CMTime(value: 1, timescale: 60)
+    return CaptureMode(
+      format: pick.format, frameDuration: duration,
+      label: label(width: pick.width, height: pick.height, rate: fps))
+  }
+
+  static func label(width: Int32, height: Int32, rate: Double) -> String {
+    let fps = abs(rate - rate.rounded()) < 0.05 ? "\(Int(rate.rounded()))" : String(format: "%.2f", rate)
+    return "\(width) × \(height), \(fps) fps"
   }
 }
 

@@ -186,11 +186,12 @@ private struct CameraSettings: View {
           ForEach(CameraRotation.allCases) { Text("\($0.rawValue)°").tag($0) }
         }
       }
+      if camera.isOn, let mode = camera.mode { LabeledContent("Picture", value: mode) }
       if let notice = camera.notice { Text(notice).foregroundStyle(.secondary) }
     } header: {
       Text("Camera")
     } footer: {
-      Text("Under teleprompter glass the iPad's own cameras face away from you. Plug the studio camera into the iPad with a USB-C capture adapter to see its picture here.")
+      Text("Under teleprompter glass the iPad's own cameras face away from you. Plug in the ATEM Mini's USB-C webcam output, a Sony camera set to USB Streaming, any UVC webcam or an HDMI to USB-C capture adapter to see the studio picture here.")
     }
   }
 }
