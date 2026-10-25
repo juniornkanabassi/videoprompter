@@ -33,7 +33,10 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   var speed = 120.0
   var audioDeviceUID: String?
   var inputGain = 1.0
-  var speechLanguage = "Mixed"
+  /// "Automatic" for new settings: one recogniser in the script's language. On 25 October the
+  /// French half of "Mixed" heard English speech as noise and once sent Voice 26 words ahead.
+  /// Saved settings keep their choice, and those from before this setting decode as "Mixed".
+  var speechLanguage = "Automatic"
   var fontWeight = "Regular"
   var textColorHex = "#FFFFFF"
   var backgroundColorHex = "#000000"

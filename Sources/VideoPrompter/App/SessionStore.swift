@@ -691,9 +691,15 @@ final class SessionStore: ObservableObject {
     if settings.speechLanguage == "Automatic" {
       let language = NLLanguageRecognizer.dominantLanguage(for: document.markdown)
       guard let language else { throw SpeechProvider.Error.unavailable }
-      guard let supported = await DictationTranscriber.supportedLocale(
-        equivalentTo: Locale(identifier: language.rawValue))
-      else { throw SpeechProvider.Error.unavailable }
+      // With the user's region first: asked for plain "en", the recogniser answers en_GB, en_AU,
+      // en_NZ or en_SG from one call to the next, while "en-GB" is always en_GB.
+      let regional = Locale.current.region.map { Locale(identifier: "\(language.rawValue)-\($0.identifier)") }
+      var supported: Locale?
+      if let regional { supported = await DictationTranscriber.supportedLocale(equivalentTo: regional) }
+      if supported == nil {
+        supported = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: language.rawValue))
+      }
+      guard let supported else { throw SpeechProvider.Error.unavailable }
       return [supported]
     }
     switch settings.speechLanguage {

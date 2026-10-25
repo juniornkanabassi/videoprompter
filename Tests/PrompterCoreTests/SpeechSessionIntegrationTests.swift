@@ -292,8 +292,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       audio.length, AVAudioFramePosition((startOffset * audio.processingFormat.sampleRate).rounded()))
     audio.framePosition = startFrame
     let actualStartOffset = Double(startFrame) / audio.processingFormat.sampleRate
+    // VIDEOPROMPTER_SPEECH_REPLAY_LOCALES="en-GB" compares one recogniser with the Mixed pair.
+    let locales = environment["VIDEOPROMPTER_SPEECH_REPLAY_LOCALES"].map {
+      $0.split(separator: ",").map { Locale(identifier: String($0)) }
+    } ?? [Locale(identifier: "en-GB"), Locale(identifier: "fr-FR")]
     let format = try await provider.prepare(
-      naturalFormat: audio.processingFormat,
+      locales: locales, naturalFormat: audio.processingFormat,
       contextualStrings: engine == .dictation ? SpeechProvider.contextualPhrases(from: script) : [], engine: engine)
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let monitor = Task { @MainActor in

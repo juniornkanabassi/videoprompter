@@ -178,6 +178,10 @@ final class SessionStoreTests: XCTestCase {
     session.pause()
   }
 
+  func testNewSettingsListenInTheScriptsLanguage() {
+    XCTAssertEqual(PrompterSettings().speechLanguage, "Automatic")
+  }
+
   func testOldSettingsDecodeWithMixedLanguageDefault() throws {
     let value = try JSONDecoder().decode(PrompterSettings.self, from: Data(#"{"mode":"Voice","speed":120}"#.utf8))
     XCTAssertEqual(value.speechLanguage, "Mixed")
