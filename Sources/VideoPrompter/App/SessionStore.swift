@@ -629,7 +629,7 @@ final class SessionStore: ObservableObject {
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
-        self.state = .uncertain("Preparing on-device English and French speech models")
+        self.state = .uncertain("Preparing on-device speech recognition")
         let format = try await self.speechProvider.prepare(
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
@@ -696,8 +696,10 @@ final class SessionStore: ObservableObject {
       let regional = Locale.current.region.map { Locale(identifier: "\(language.rawValue)-\($0.identifier)") }
       var supported: Locale?
       if let regional { supported = await DictationTranscriber.supportedLocale(equivalentTo: regional) }
-      if supported == nil {
-        supported = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: language.rawValue))
+      // Then the main variant, and only then whatever the recogniser offers for the bare language.
+      let main = ["en": "en-GB", "fr": "fr-FR", "es": "es-ES", "pt": "pt-PT", "de": "de-DE"][language.rawValue]
+      for fallback in [main, language.rawValue].compactMap({ $0 }) where supported == nil {
+        supported = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: fallback))
       }
       guard let supported else { throw SpeechProvider.Error.unavailable }
       return [supported]

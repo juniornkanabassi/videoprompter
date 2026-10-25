@@ -177,9 +177,11 @@ public struct PhraseMatcher: Sendable {
         // Nor do words he has only just read: those are the same words said again, not a skip. On
         // 25 October "Liverpool are a bigger club than", heard while "Liverpool are bigger than
         // Barça" was being read, was credited to "PSG were a bigger club than Arsenal" 26 words on.
-        if start > current + 8, current >= 0 {
+        // The same holds for a skip inside the phrase. Distinct words, so a name said twice does
+        // not count as two.
+        if start > current + 8 || landing != nil, current >= 0 {
           let recent = Set(target[max(0, current - 10)...current])
-          let repeated = evidence.filter { $0.count > 2 && !common.contains($0) && recent.contains($0) }.count
+          let repeated = Set(evidence.filter { $0.count > 2 && !common.contains($0) }).intersection(recent).count
           if repeated >= 2 { continue }
         }
         if let landing, landing.informative < 3 { continue }

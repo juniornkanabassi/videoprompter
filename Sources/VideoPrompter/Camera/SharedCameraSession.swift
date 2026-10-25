@@ -93,6 +93,15 @@ struct CameraHolders {
       return format.frameDurations.flatMap { [$0.lowerBound, $0.upperBound] }
         .min { abs($0.seconds - mean) < abs($1.seconds - mean) }
     }
+    /// Whether a DeckLink's delivered picture is a new signal: neither the size `pin` read as the
+    /// signal nor the pinned format. The pinned format arriving is the preview working, so a re-pin
+    /// it causes cannot cause another.
+    static func isNewSignal(
+      delivered: CMVideoDimensions, signal: CMVideoDimensions, pinned: CMVideoDimensions
+    ) -> Bool {
+      func same(_ a: CMVideoDimensions, _ b: CMVideoDimensions) -> Bool { a.width == b.width && a.height == b.height }
+      return !same(delivered, signal) && !same(delivered, pinned)
+    }
     static func frameDuration(_ signal: CMTime, in format: VideoFormat) -> CMTime {
       guard signal.isNumeric, signal > .zero,
         let range = format.frameDurations.first(where: { $0.contains(signal) })
@@ -356,11 +365,11 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// other cameras deliver sizes that differ from their active format for their own reasons.
   func follow(delivered: CMVideoDimensions, subType: FourCharCode, in session: AVCaptureSession) {
     guard let current, let signalSize, current.device.modelID == "DeckLink",
-      delivered.width != signalSize.width || delivered.height != signalSize.height,
-      current.formats.indices.contains(current.choice.wanted.format)
+      current.formats.indices.contains(current.choice.wanted.format),
+      SharedCameraSession.FormatChoice.isNewSignal(
+        delivered: delivered, signal: signalSize,
+        pinned: CMVideoFormatDescriptionGetDimensions(current.formats[current.choice.wanted.format].formatDescription))
     else { return }
-    let pinned = CMVideoFormatDescriptionGetDimensions(current.formats[current.choice.wanted.format].formatDescription)
-    guard delivered.width != pinned.width || delivered.height != pinned.height else { return }
     let sameSize = current.device.formats.filter {
       let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
       return d.width == delivered.width && d.height == delivered.height

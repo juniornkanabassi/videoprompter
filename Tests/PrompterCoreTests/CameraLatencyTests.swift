@@ -48,6 +48,17 @@ final class CameraLatencyTests: XCTestCase {
     XCTAssertEqual(Choice.measuredDuration((0..<8).map { Double($0) / 30 }, in: range), time(1, 30))
   }
 
+  /// 25 October: a DeckLink that had streamed nothing reported its 720x486 default, and that was
+  /// pinned though the card then delivered 4K. The 4K picture is a new signal; the 1080p the re-pin
+  /// then delivers is not, so it cannot loop; a signal that shrinks is new too.
+  func testOnlyADifferentSignalPinsAgain() {
+    func d(_ w: Int32, _ h: Int32) -> CMVideoDimensions { CMVideoDimensions(width: w, height: h) }
+    XCTAssertTrue(Choice.isNewSignal(delivered: d(3840, 2160), signal: d(720, 486), pinned: d(720, 486)))
+    XCTAssertFalse(Choice.isNewSignal(delivered: d(1920, 1080), signal: d(3840, 2160), pinned: d(1920, 1080)))
+    XCTAssertFalse(Choice.isNewSignal(delivered: d(3840, 2160), signal: d(3840, 2160), pinned: d(1920, 1080)))
+    XCTAssertTrue(Choice.isNewSignal(delivered: d(720, 486), signal: d(3840, 2160), pinned: d(1920, 1080)))
+  }
+
   func testNativeFormatOverrideKeepsDetectedDimensionsAndCoding() throws {
     let choice = try XCTUnwrap(Choice(in: deckLink, signal: uhd, signalDuration: ntsc30, useNativeFormat: true))
     XCTAssertEqual(choice.wanted.format, 5)

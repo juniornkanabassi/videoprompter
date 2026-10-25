@@ -869,6 +869,12 @@ struct ScriptTextView: NSViewRepresentable {
           clip.animator().setBoundsOrigin(destination)
         }
       } else {
+        // A zero-length animator move is what replaces an animator move in flight; the layer's
+        // own animations go too, and the plain assignment leaves the origin exact.
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0
+          clip.animator().setBoundsOrigin(destination)
+        }
         clip.layer?.removeAllAnimations()
         clip.setBoundsOrigin(destination)
       }
