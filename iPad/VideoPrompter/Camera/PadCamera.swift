@@ -8,7 +8,7 @@ import UIKit
 @MainActor final class PadCamera: ObservableObject {
   @Published var isOn = false { didSet { isOn ? start() : stop() } }
   @Published private(set) var devices: [Device] = []
-  @Published var selectedID: String? { didSet { if isOn, selectedID != oldValue { configure() } } }
+  @Published var selectedID: String? { didSet { if isOn, selectedID != oldValue { start() } } }
   @Published var mirrored = false { didSet { UserDefaults.standard.set(mirrored, forKey: "cameraMirrored") } }
   @Published var guides = CameraGuides() { didSet { guideStore.set(guides, for: selectedID) } }
   @Published private(set) var notice: String?
@@ -19,9 +19,14 @@ import UIKit
     let id: String
     let name: String
     let isExternal: Bool
+    var isMac: Bool { id == PadCamera.macLinkID }
   }
 
+  /// The camera list's entry for a Mac sending its camera over the Mac link.
+  static let macLinkID = "mac-link"
   nonisolated let capture = CaptureBox()
+  let link = MacLink()
+  var isShowingMac: Bool { selectedID == Self.macLinkID }
   private let guideStore = CameraGuideStore()
   private var tokens: [NSObjectProtocol] = []
 
@@ -33,6 +38,8 @@ import UIKit
         Task { @MainActor in self?.devicesChanged() }
       })
     }
+    link.onChange = { [weak self] in self?.linkChanged() }
+    link.start()
   }
 
   static func discover() -> [AVCaptureDevice] {
@@ -43,9 +50,11 @@ import UIKit
   }
 
   func refreshDevices() {
-    devices = Self.discover().map {
+    var found = Self.discover().map {
       Device(id: $0.uniqueID, name: $0.localizedName, isExternal: $0.deviceType == .external)
     }.sorted { $0.isExternal && !$1.isExternal }
+    if let mac = link.macName { found.insert(Device(id: Self.macLinkID, name: mac, isExternal: true), at: 0) }
+    devices = found
     if selectedID.map({ id in devices.contains { $0.id == id } }) != true {
       selectedID = devices.first?.id
     }
@@ -58,10 +67,24 @@ import UIKit
     let hadExternal = devices.contains { $0.isExternal }
     refreshDevices()
     if !hadExternal, let external = devices.first(where: \.isExternal) { selectedID = external.id }
-    if isOn, selectedID != previous { configure() }
+    if isOn, selectedID != previous { start() }
+  }
+
+  /// A Mac that starts sending takes over the picture, as plugging in a camera does; when it
+  /// stops, the picture falls back to whatever camera is left.
+  private func linkChanged() {
+    refreshDevices()
+    if link.macName != nil, selectedID != Self.macLinkID {
+      selectedID = Self.macLinkID
+      if !isOn { isOn = true }
+    }
+    if isShowingMac {
+      mode = link.pictureSize.map { "\(Int($0.width)) × \(Int($0.height)) from the Mac" }
+    }
   }
 
   private func start() {
+    if isShowingMac { return configure() }
     Task {
       var allowed = AVCaptureDevice.authorizationStatus(for: .video) == .authorized
       if !allowed { allowed = await AVCaptureDevice.requestAccess(for: .video) }
@@ -75,6 +98,13 @@ import UIKit
   }
 
   private func configure() {
+    if isShowingMac {
+      capture.stop()
+      notice = nil
+      guides = guideStore.guides(for: Self.macLinkID)
+      mode = link.pictureSize.map { "\(Int($0.width)) × \(Int($0.height)) from the Mac" }
+      return
+    }
     guard let id = selectedID, let device = Self.discover().first(where: { $0.uniqueID == id }) else {
       notice = "No camera found. Plug in a USB-C camera or capture adapter."
       return

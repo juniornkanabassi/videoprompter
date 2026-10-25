@@ -65,7 +65,14 @@ struct PresenterScreen: View {
   @ViewBuilder private var background: some View {
     let colour = Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex))
     if camera.isOn {
-      CameraPreview(camera: camera).ignoresSafeArea()
+      Group {
+        if camera.isShowingMac {
+          LinkPreview(camera: camera, link: camera.link)
+        } else {
+          CameraPreview(camera: camera)
+        }
+      }
+      .ignoresSafeArea()
       colour.opacity(settings.videoDimming).ignoresSafeArea()
     } else {
       // Black underneath: a teleprompter's glass shows anything lighter as a grey haze.

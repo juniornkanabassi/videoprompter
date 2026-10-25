@@ -700,6 +700,7 @@ private enum PresenterSaveError: LocalizedError {
         SidebarCommands()
         InspectorCommands()
         ICloudCommands(store: store)
+        IPadCameraCommands(sender: .shared)
         CommandGroup(after: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)

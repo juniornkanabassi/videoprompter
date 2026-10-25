@@ -170,7 +170,8 @@ private struct CameraSettings: View {
       Toggle("Show camera behind the script", isOn: $camera.isOn)
       Picker("Camera", selection: $camera.selectedID) {
         ForEach(camera.devices) { device in
-          Text(device.isExternal ? "\(device.name) (USB-C)" : device.name).tag(Optional(device.id))
+          Text(device.isMac ? "\(device.name) (Mac link)" : device.isExternal ? "\(device.name) (USB-C)" : device.name)
+            .tag(Optional(device.id))
         }
       }
       Toggle("Mirror camera", isOn: $camera.mirrored)
@@ -192,6 +193,21 @@ private struct CameraSettings: View {
       Text("Camera")
     } footer: {
       Text("Under teleprompter glass the iPad's own cameras face away from you. Plug in the ATEM Mini's USB-C webcam output, a Sony camera set to USB Streaming, any UVC webcam or an HDMI to USB-C capture adapter to see the studio picture here.")
+    }
+    MacLinkSettings(link: camera.link)
+  }
+}
+
+private struct MacLinkSettings: View {
+  @ObservedObject var link: MacLink
+  var body: some View {
+    Section {
+      LabeledContent("Mac", value: link.macName ?? "Not connected")
+      Toggle("Allow a Mac on the same Wi-Fi", isOn: $link.allowsWiFi)
+    } header: {
+      Text("Camera from a Mac")
+    } footer: {
+      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up; Wi-Fi works too but adds a little delay.")
     }
   }
 }

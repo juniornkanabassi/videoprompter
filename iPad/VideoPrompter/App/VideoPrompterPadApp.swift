@@ -30,6 +30,7 @@ import SwiftUI
       case .active:
         store.folder.refresh()
         store.folder.startWatching()
+        store.camera.link.start()
       case .background:
         store.folder.stopWatching()
         // iPadOS stops the microphone in the background; pausing keeps the place cleanly.

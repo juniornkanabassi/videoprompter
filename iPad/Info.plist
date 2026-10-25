@@ -30,6 +30,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Video Prompter shows a camera picture behind your script so you can frame yourself while reading.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Video Prompter receives the camera picture a Mac sends to it over Wi-Fi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vpcamera._tcp</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Video Prompter listens to your voice so the script follows you as you read.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
