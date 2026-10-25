@@ -732,7 +732,8 @@ struct ScriptTextView: NSViewRepresentable {
     private var textColour = NSColor.white
     private var lastAligned: Int?
     private var lastGuideFraction: Double?
-    private var lastAlignmentDestination: NSPoint?
+    /// Where the last alignment sends the scroll, eased or not. Internal for the alignment test.
+    private(set) var lastAlignmentDestination: NSPoint?
     private var lastReadTokenIndex: Int?
     private var lastReadConfirmedTokenIndex: Int?
     var updateGeneration = 0
