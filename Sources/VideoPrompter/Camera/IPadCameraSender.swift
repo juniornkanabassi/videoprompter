@@ -138,16 +138,15 @@ import VideoToolbox
   private static func askForCode(_ name: String) -> String? {
     let alert = NSAlert()
     alert.messageText = "Pair with “\(name)” over Wi-Fi"
-    alert.informativeText = "Enter the code shown on the iPad in Settings › Camera from a Mac. Only pair with your own iPad; the picture is encrypted with this code."
-    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 160, height: 24))
-    field.placeholderString = "6-digit code"
+    alert.informativeText = "Type the pairing key shown on the iPad in Settings › Camera from a Mac. Only pair with your own iPad; the picture is encrypted with this key."
+    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
+    field.placeholderString = "XXXX-XXXX-XXXX-XXXX"
     alert.accessoryView = field
     alert.window.initialFirstResponder = field
     alert.addButton(withTitle: "Pair")
     alert.addButton(withTitle: "Not Now")
     guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    let code = field.stringValue.filter(\.isNumber)
-    return code.count == 6 ? code : nil
+    return CameraLinkSecurity.normalised(field.stringValue)
   }
 
   private static func serviceName(_ endpoint: NWEndpoint) -> String? {
@@ -243,7 +242,7 @@ struct IPadCameraCommands: Commands {
       Toggle("Send Camera to iPad", isOn: $sender.isOn)
         .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
       Toggle("Also Send over Wi-Fi", isOn: $sender.usesWiFi)
-        .help("Also looks for your iPad on the same Wi-Fi, paired with the code its Settings show. The picture is encrypted with that code.")
+        .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The picture is encrypted with that key.")
       if sender.isOn { Text(sender.status) }
     }
   }

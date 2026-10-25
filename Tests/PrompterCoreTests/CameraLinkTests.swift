@@ -50,3 +50,21 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertThrowsError(try reader.append(bytes))
   }
 }
+
+@testable import VideoPrompter
+
+final class CameraLinkSecurityTests: XCTestCase {
+  func testPairingKeysAreSixteenCharactersOfCrockfordBase32() {
+    let key = CameraLinkSecurity.newCode()
+    XCTAssertEqual(key.count, 19)
+    XCTAssertEqual(key.split(separator: "-").map(\.count), [4, 4, 4, 4])
+    XCTAssertNil(key.first { "ILOU".contains($0) })
+    XCTAssertNotEqual(CameraLinkSecurity.newCode(), key)
+  }
+
+  func testTypedKeysAreReadForgivingly() {
+    XCTAssertEqual(CameraLinkSecurity.normalised("k7qf 2mzx p9rt w3hd"), "K7QF-2MZX-P9RT-W3HD")
+    XCTAssertEqual(CameraLinkSecurity.normalised("O1IL-AAAA-BBBB-CCCC"), "0111-AAAA-BBBB-CCCC")
+    XCTAssertNil(CameraLinkSecurity.normalised("123456"))
+  }
+}

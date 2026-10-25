@@ -21,19 +21,20 @@ import UIKit
       restartWiFi()
     }
   }
-  /// The code a Mac needs to send over Wi-Fi, shown in Settings. It keys the TLS that the Wi-Fi
-  /// link runs over, so only a Mac given the code can connect and nothing else can read the
-  /// picture. A new code unpairs every Mac.
+  /// The key a Mac needs to send over Wi-Fi, shown in Settings. It keys the TLS that the Wi-Fi
+  /// link runs over, so only a Mac given the key can connect and nothing else can read the
+  /// picture. A new key unpairs every Mac. Stored under a new name, so a six-digit code from an
+  /// earlier build is replaced.
   @Published private(set) var pairingCode: String = {
-    if let code = UserDefaults.standard.string(forKey: "macLinkCode") { return code }
+    if let code = UserDefaults.standard.string(forKey: "macLinkKey") { return code }
     let code = CameraLinkSecurity.newCode()
-    UserDefaults.standard.set(code, forKey: "macLinkCode")
+    UserDefaults.standard.set(code, forKey: "macLinkKey")
     return code
   }()
 
   func newPairingCode() {
     pairingCode = CameraLinkSecurity.newCode()
-    UserDefaults.standard.set(pairingCode, forKey: "macLinkCode")
+    UserDefaults.standard.set(pairingCode, forKey: "macLinkKey")
     if allowsWiFi {
       wifi?.cancel()
       wifi = nil
