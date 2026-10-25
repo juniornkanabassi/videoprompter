@@ -167,6 +167,7 @@ private enum PresenterSaveError: LocalizedError {
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
   private var initialLoad: Task<Void, Never>?
+  private var welcomeTask: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
   nonisolated(unsafe) private var activationObserver: NSObjectProtocol?
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
@@ -180,7 +181,9 @@ private enum PresenterSaveError: LocalizedError {
     // Keep the legacy suite prefix so the public rename preserves isolated settings.
     return UserDefaults(suiteName: "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
   }
-  init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
+  /// `offersWelcomeScript` defaults to off for `--data-directory` launches (tests and the built-app
+  /// checker), so their libraries start empty.
+  init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil, offersWelcomeScript: Bool? = nil) {
     _ = AvailableFonts.presenter
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
     let isolatedDefaults = defaults ?? Self.preferences(arguments: arguments)
@@ -228,6 +231,9 @@ private enum PresenterSaveError: LocalizedError {
       libraryAvailable = true
     } catch { errorMessage = "The script library could not be opened safely. \(error)" }
     initialLoad = Task { await reload() }
+    if offersWelcomeScript ?? !arguments.contains("--data-directory") {
+      welcomeTask = Task { [weak self] in await self?.addWelcomeScriptIfNew() }
+    }
     externalWatcher = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
@@ -302,6 +308,27 @@ private enum PresenterSaveError: LocalizedError {
     }
   }
   func waitForInitialLoad() async { await initialLoad?.value }
+  func waitForWelcomeScript() async { await welcomeTask?.value }
+  /// A new library starts with the welcome script, once. A library that already has scripts, in it
+  /// or in its Trash, is only marked as offered, so updating never adds it.
+  private func addWelcomeScriptIfNew() async {
+    await waitForInitialLoad()
+    guard libraryAvailable, !defaults.bool(forKey: WelcomeScript.offeredKey) else { return }
+    defaults.set(true, forKey: WelcomeScript.offeredKey)
+    guard scripts.isEmpty, trash.isEmpty else { return }
+    do { _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown) }
+    catch { errorMessage = "The welcome script could not be added. \(error)" }
+  }
+  /// Help > Welcome Script: selects it in the whole library, or adds a fresh copy when it has gone.
+  func showWelcomeScript() {
+    selectedFolderID = nil
+    search = ""
+    if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
+      selectedID = existing.id
+    } else {
+      create(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+    }
+  }
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
     guard let library else { return }
@@ -783,6 +810,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         SidebarCommands()
         InspectorCommands()
+        CommandGroup(after: .help) { Button("Welcome Script") { store.showWelcomeScript() } }
         CommandGroup(after: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
