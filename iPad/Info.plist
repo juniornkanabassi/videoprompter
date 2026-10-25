@@ -30,6 +30,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Video Prompter shows a camera picture behind your script so you can frame yourself while reading.</string>
+	<key>GoogleClientID</key>
+	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Video Prompter receives the camera picture a Mac sends to it over Wi-Fi.</string>
 	<key>NSBonjourServices</key>

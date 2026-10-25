@@ -10,6 +10,7 @@ struct LibraryScreen: View {
   @State private var importing = false
   @State private var choosingFolder = false
   @State private var showingSettings = false
+  @State private var showingGoogle = false
   @AppStorage("askedForICloudFolder") private var askedForICloudFolder = false
 
   private var filtered: [FolderScript] {
@@ -69,6 +70,7 @@ struct LibraryScreen: View {
           Menu {
             Button("New Script", systemImage: "square.and.pencil") { store.newScript() }
             Button("Import from Files…", systemImage: "square.and.arrow.down") { importing = true }
+            Button("From Google Docs…", systemImage: "doc.richtext") { showingGoogle = true }
           } label: { Label("Add", systemImage: "plus") }
           Button { showingSettings = true } label: { Label("Settings", systemImage: "gearshape") }
         }
@@ -90,6 +92,9 @@ struct LibraryScreen: View {
     }
     .sheet(isPresented: $showingSettings) {
       NavigationStack { SettingsScreen() }.environmentObject(store)
+    }
+    .sheet(isPresented: $showingGoogle) {
+      NavigationStack { GoogleDocsSheet(google: store.google) }.environmentObject(store)
     }
   }
 
@@ -133,6 +138,9 @@ private struct ScriptDetail: View {
   @State private var editing = false
   @State private var renaming = false
   @State private var newTitle = ""
+  @State private var updating = false
+  @State private var confirmingOverwrite = false
+  @State private var updateNote: String?
 
   var body: some View {
     ScrollView {
@@ -168,6 +176,33 @@ private struct ScriptDetail: View {
     .toolbar {
       Button("Edit", systemImage: "pencil") { editing = true }.disabled(record == nil)
       Button("Rename", systemImage: "character.cursor.ibeam") { newTitle = script.title; renaming = true }
+      if store.isFromGoogle(script) {
+        Button("Update from Google Docs", systemImage: "arrow.triangle.2.circlepath") {
+          Task { await updateFromGoogle(overwrite: false) }
+        }
+        .disabled(updating)
+      }
+    }
+    .confirmationDialog(
+      "This script was edited since it came from Google Docs", isPresented: $confirmingOverwrite, titleVisibility: .visible
+    ) {
+      Button("Replace with the Google Doc", role: .destructive) { Task { await updateFromGoogle(overwrite: true) } }
+      Button("Keep This Version", role: .cancel) {}
+    } message: {
+      Text("Updating replaces those edits with the document as it is in Google Docs now.")
+    }
+    .overlay(alignment: .top) {
+      if let updateNote {
+        Text(updateNote)
+          .font(.callout)
+          .padding(.horizontal, 14).padding(.vertical, 8)
+          .background(.thinMaterial, in: Capsule())
+          .padding(.top, 8)
+          .task {
+            try? await Task.sleep(for: .seconds(2.5))
+            self.updateNote = nil
+          }
+      }
     }
     .task(id: script) { record = script.isDownloaded ? store.record(for: script) : nil }
     .sheet(isPresented: $editing, onDismiss: { record = store.record(for: script) }) {
@@ -179,6 +214,21 @@ private struct ScriptDetail: View {
         do { try store.folder.rename(script, to: newTitle) } catch { store.errorMessage = error.localizedDescription }
       }
       Button("Cancel", role: .cancel) {}
+    }
+  }
+}
+
+extension ScriptDetail {
+  fileprivate func updateFromGoogle(overwrite: Bool) async {
+    updating = true
+    defer { updating = false }
+    switch await store.refreshFromGoogle(script, overwrite: overwrite) {
+    case .hasLocalEdits: confirmingOverwrite = true
+    case .updated:
+      record = store.record(for: store.folder.script(script.id) ?? script)
+      updateNote = "Updated from Google Docs"
+    case .unchanged: updateNote = "Already up to date"
+    case nil: break
     }
   }
 }
