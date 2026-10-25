@@ -70,6 +70,10 @@ if (( ! DRY )); then
     TAGGED=1
   fi
   gh auth status >/dev/null 2>&1 || die "gh is not signed in"
+  # Sparkle and website visitors download anonymously, so a release on a private repository would publish an appcast
+  # whose every download fails. Refuse until Junior has made the repository public.
+  VISIBILITY=$(gh repo view $REPO --json visibility --jq .visibility 2>/dev/null) || die "could not read $REPO's visibility"
+  [[ $VISIBILITY == PUBLIC ]] || die "$REPO is ${VISIBILITY:l}: its release downloads would fail for everyone; make it public first"
   # The release is made from the pushed tag, so a tag already on origin must be this HEAD (peeled, for annotated tags).
   RTAG=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" "refs/tags/v$SRC_VERSION^{}" | sort -k2 | tail -1 | cut -f1)
   [[ -z $RTAG || $RTAG == $HEAD ]] || die "tag v$SRC_VERSION on origin points at another commit ($RTAG)"
