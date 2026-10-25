@@ -151,6 +151,8 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
+  private(set) var deletingIDs = Set<UUID>()
+  var deleteGate: (() async -> Void)?
   /// The library's own answer for each linked script; the views never ask the file system.
   @Published private(set) var linkStates: [UUID: LinkState] = [:]
 
@@ -168,6 +170,7 @@ private enum PresenterSaveError: LocalizedError {
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
   private var initialLoad: Task<Void, Never>?
+  private var welcomeTask: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
   nonisolated(unsafe) private var activationObserver: NSObjectProtocol?
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
@@ -181,7 +184,9 @@ private enum PresenterSaveError: LocalizedError {
     // Keep the legacy suite prefix so the public rename preserves isolated settings.
     return UserDefaults(suiteName: "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))")!
   }
-  init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil) {
+  /// `offersWelcomeScript` defaults to off for `--data-directory` launches (tests and the built-app
+  /// checker), so their libraries start empty.
+  init(arguments: [String] = CommandLine.arguments, defaults: UserDefaults? = nil, offersWelcomeScript: Bool? = nil) {
     _ = AvailableFonts.presenter
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
     let isolatedDefaults = defaults ?? Self.preferences(arguments: arguments)
@@ -229,6 +234,9 @@ private enum PresenterSaveError: LocalizedError {
       libraryAvailable = true
     } catch { errorMessage = "The script library could not be opened safely. \(error)" }
     initialLoad = Task { await reload() }
+    if offersWelcomeScript ?? !arguments.contains("--data-directory") {
+      welcomeTask = Task { [weak self] in await self?.addWelcomeScriptIfNew() }
+    }
     externalWatcher = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
@@ -303,19 +311,64 @@ private enum PresenterSaveError: LocalizedError {
     }
   }
   func waitForInitialLoad() async { await initialLoad?.value }
+  func waitForWelcomeScript() async { await welcomeTask?.value }
+  /// A new library starts with the welcome script, once. A library that already has scripts, in it
+  /// or in its Trash, is only marked as offered, so updating never adds it. The library's index decides,
+  /// not `scripts`, which leaves out a script whose file could not be read. A failed add is not marked,
+  /// so it is tried again next launch.
+  private func addWelcomeScriptIfNew() async {
+    await waitForInitialLoad()
+    guard let library, libraryAvailable, !defaults.bool(forKey: WelcomeScript.offeredKey) else { return }
+    guard await library.listScripts().isEmpty, await library.listTrash().isEmpty else {
+      defaults.set(true, forKey: WelcomeScript.offeredKey)
+      return
+    }
+    do {
+      _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+      defaults.set(true, forKey: WelcomeScript.offeredKey)
+    } catch {
+      errorMessage = "The welcome script could not be added. \(error)"
+    }
+  }
+  /// Help > Welcome Script: selects it in the whole library, or adds a fresh copy when it has gone.
+  /// While the first-launch add is still running it waits for that, so the script is never added twice.
+  func showWelcomeScript() {
+    guard let welcomeTask else { return selectWelcomeScript() }
+    Task { [weak self] in
+      await welcomeTask.value
+      self?.selectWelcomeScript()
+    }
+  }
+  private func selectWelcomeScript() {
+    selectedFolderID = nil
+    search = ""
+    if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
+      selectedID = existing.id
+    } else {
+      create(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+    }
+  }
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
     guard let library else { return }
     Task { do { try await work(library) } catch { errorMessage = String(describing: error) } }
   }
   func createFolder(named name: String) {
-    withLibrary { [self] library in folders.append(try await library.createFolder(name: name)) }
+    withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
   func renameFolder(_ id: UUID, name: String) {
-    withLibrary { [self] library in
-      try await library.renameFolder(id, name: name)
-      if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
-    }
+    withLibrary { [self] _ in try await renameLibraryFolder(id, name: name) }
+  }
+  @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    let folder = try await library.createFolder(name: name)
+    folders.append(folder)
+    return folder
+  }
+  func renameLibraryFolder(_ id: UUID, name: String) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    try await library.renameFolder(id, name: name)
+    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
   }
   func deleteFolder(_ id: UUID) {
     withLibrary { [self] library in
@@ -342,11 +395,13 @@ private enum PresenterSaveError: LocalizedError {
   }
 
   func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
-    withLibrary { [self] library in
-      try await library.moveScripts(ids, to: folderID)
-      for i in scripts.indices where ids.contains(scripts[i].id) { scripts[i].metadata.folderID = folderID }
-      if let selectedID, !visible.contains(where: { $0.id == selectedID }) { self.selectedID = visible.first?.id }
-    }
+    withLibrary { [self] _ in try await moveScripts(ids, to: folderID) }
+  }
+  func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    try await library.moveScripts(ids, to: folderID)
+    for i in scripts.indices where ids.contains(scripts[i].id) { scripts[i].metadata.folderID = folderID }
+    if let selectedID, !visible.contains(where: { $0.id == selectedID }) { self.selectedID = visible.first?.id }
   }
   func selectFolder(_ id: UUID?) {
     selectedFolderID = id
@@ -376,39 +431,51 @@ private enum PresenterSaveError: LocalizedError {
     guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
     create(title: "Pasted Script", markdown: markdown)
   }
+  struct PendingEditsError: Error, CustomStringConvertible {
+    let description: String
+  }
   func duplicate() {
     guard let selected else { return }
-    withLibrary { [self] library in
-      guard await flushPendingSaves() else {
-        errorMessage = "Save the pending edits before duplicating scripts."
-        return
-      }
-      let item = try await library.duplicate(selected.metadata.id)
-      scripts.insert(item, at: 0)
-      selectedID = item.metadata.id
+    withLibrary { [self] _ in _ = try await duplicateScript(selected.id) }
+  }
+  @discardableResult func duplicateScript(_ id: UUID) async throws -> ScriptRecord {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    guard await flushPendingSaves() else {
+      throw PendingEditsError(description: "Save the pending edits before duplicating scripts.")
     }
+    let item = try await library.duplicate(id)
+    scripts.insert(item, at: 0)
+    selectedID = item.id
+    return item
   }
   func delete(_ ids: Set<UUID>) {
     for id in ids {
-      withLibrary { [self] library in
-        guard await flushPendingSaves() else {
-          errorMessage = "Save the pending edits before moving scripts to Trash."
-          return
-        }
-        try await library.delete(id)
-        session.forgetPosition(for: id)
-        scripts.removeAll { $0.metadata.id == id }
-        trash = await library.listTrash()
-        if selectedID == id { selectedID = visible.first?.id }
-        if session.activeScriptID == id { session.stop() }
-      }
+      withLibrary { [self] _ in try await deleteScript(id) }
     }
   }
-  func restore(_ id: UUID) {
-    withLibrary { [self] library in
-      _ = try await library.restore(id)
-      await reload()
+  func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    guard await flushPendingSaves() else {
+      throw PendingEditsError(description: "Save the pending edits before moving scripts to Trash.")
     }
+    try afterSaving()
+    deletingIDs.insert(id)
+    defer { deletingIDs.remove(id) }
+    await deleteGate?()
+    try await library.delete(id)
+    session.forgetPosition(for: id)
+    scripts.removeAll { $0.metadata.id == id }
+    trash = await library.listTrash()
+    if selectedID == id { selectedID = visible.first?.id }
+    if session.activeScriptID == id { session.stop() }
+  }
+  func restore(_ id: UUID) {
+    withLibrary { [self] _ in try await restoreScript(id) }
+  }
+  func restoreScript(_ id: UUID) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    _ = try await library.restore(id)
+    await reload()
   }
   func exportMarkdown(_ script: ScriptRecord) {
     let panel = NSSavePanel()
@@ -628,15 +695,16 @@ private enum PresenterSaveError: LocalizedError {
       return false
     }
   }
-  func rename(_ value: String, for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, title: value) } }
-  func setTags(_ tags: [String], for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, tags: tags) } }
-  private func updateMetadata(
-    _ id: UUID, _ change: @escaping @MainActor (MarkdownLibrary) async throws -> ScriptMetadata
-  ) {
-    withLibrary { [self] library in
-      let metadata = try await change(library)
-      if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
-    }
+  func rename(_ value: String, for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, title: value) }
+  }
+  func setTags(_ tags: [String], for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, tags: tags) }
+  }
+  func updateScriptMetadata(_ id: UUID, title: String? = nil, tags: [String]? = nil) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    let metadata = try await library.updateMetadata(id, title: title, tags: tags)
+    if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
   }
 
   func savePreset(named name: String) {
@@ -740,6 +808,7 @@ private enum PresenterSaveError: LocalizedError {
 @main struct VideoPrompterApp: App {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+  init() { Updates.shared.start() }
   var body: some Scene {
     WindowGroup("Video Prompter", id: "library") {
       LibraryView(store: store)
@@ -760,6 +829,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         SidebarCommands()
         InspectorCommands()
+        CommandGroup(after: .help) { Button("Welcome Script") { store.showWelcomeScript() } }
         CommandGroup(after: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
@@ -801,6 +871,7 @@ private enum PresenterSaveError: LocalizedError {
             .keyboardShortcut("f", modifiers: [.command, .control])
         }
         CameraCommands()
+        UpdateCommands()
       }
     Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)

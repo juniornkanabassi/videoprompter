@@ -86,7 +86,7 @@ import SwiftUI
       if activate { panel?.makeKeyAndOrderFront(nil) } else { panel?.orderFrontRegardless() }
       return
     }
-    guard let script = store.selected else { return }
+    guard let script = store.selected, !store.deletingIDs.contains(script.id) else { return }
     closesAfterFullScreen = false
     let panel = self.panel ?? makePanel()
     self.panel = panel
