@@ -26,5 +26,13 @@
 	<string>Video Prompter uses your selected microphone for voice tracking.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>Video Prompter uses on-device speech recognition to follow your script.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://juniornkanabassi.com/apps/videoprompter/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>7coaQ3dXjyB/fEwh8kst1OOCgq/EwgOHwYPJZLVAAeM=</string>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
 </dict>
 </plist>
