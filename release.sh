@@ -173,7 +173,9 @@ print "Signature verified against the app's SUPublicEDKey ($BYTES bytes)"
 
 step "3. Appcast (prepared privately; the website copy changes only after the asset is verified)"
 URL="https://github.com/$REPO/releases/download/v$VERSION/VideoPrompter_$VERSION.zip"   # the appcast enclosure
-DMG_URL="https://github.com/$REPO/releases/latest/download/VideoPrompter.dmg"   # as lib/apps.json already has it
+# Versioned, because the website checks each stored release against its own bytes and sha256; the README keeps the
+# latest/download alias, which works because every release names the disk image VideoPrompter.dmg.
+DMG_URL="https://github.com/$REPO/releases/download/v$VERSION/VideoPrompter.dmg"
 APPCAST="$WEBSITE/public/apps/videoprompter/appcast.xml"
 digest() { [[ -f $1 ]] && shasum -a 256 "$1" | cut -d' ' -f1 || print none; }
 SEEN=$(digest "$APPCAST")
@@ -290,9 +292,10 @@ else
   [[ $(git -C "$ROOT" rev-parse HEAD) == $HEAD && -z $(git -C "$ROOT" status --porcelain) ]] \
     || die "the checkout changed since step 1 (HEAD was $HEAD); nothing uploaded"
   if (( EXISTS )); then
-    # A draft or prerelease is not what /releases/latest serves, so the appcast and website must not point at it.
-    [[ $(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
-      || die "v$VERSION on $REPO is a draft or prerelease; publish it as a full release first, then rerun with --resume --zip ${(q)SRC_ZIP}"
+    # A prerelease is not what /releases/latest serves, so the appcast and website must not point at it. A draft is
+    # what an interrupted gh release create leaves: it is finished below once its assets check out.
+    STATE=$(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
+    [[ $STATE == *" false" ]] || die "v$VERSION on $REPO is a prerelease; make it a full release first, then rerun with --resume --zip ${(q)SRC_ZIP}"
     HAVE=$(gh release view "v$VERSION" --repo $REPO --json assets --jq '.assets[].name')
     missing=()
     for name in $NAMES; do   # every asset already there is checked first; only then is a missing one uploaded
@@ -306,6 +309,11 @@ else
       fi
     done
     for name in $missing; do gh release upload "v$VERSION" "$WORK/$name" --repo $REPO || die "gh release upload $name failed"; done
+    if [[ $STATE == "true "* ]]; then
+      gh release edit "v$VERSION" --repo $REPO --draft=false --verify-tag || die "could not publish the draft v$VERSION"
+    fi
+    [[ $(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
+      || die "v$VERSION on $REPO is still a draft or prerelease"
   else
     if (( ! TAGGED )); then
       git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" "$HEAD" || die "git tag failed"
