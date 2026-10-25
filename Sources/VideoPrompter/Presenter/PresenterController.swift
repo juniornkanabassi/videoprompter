@@ -987,16 +987,37 @@ struct ScriptTextView: NSViewRepresentable {
       manager.ensureLayout(for: container)
       let guide = scroll.contentView.bounds.origin.y
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
-      guard let nearest = mappings.min(by: { left, right in
-        let leftGlyph = manager.glyphRange(forCharacterRange: left.0, actualCharacterRange: nil)
-        let rightGlyph = manager.glyphRange(forCharacterRange: right.0, actualCharacterRange: nil)
-        return abs(manager.boundingRect(forGlyphRange: leftGlyph, in: container).midY - guide)
-          < abs(manager.boundingRect(forGlyphRange: rightGlyph, in: container).midY - guide)
-      }) else { return }
+      guard let nearest = Self.nearestMapping(count: mappings.count, to: guide, midY: { slot in
+        let glyph = manager.glyphRange(forCharacterRange: self.mappings[slot].0, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyph, in: container).midY
+      }).map({ mappings[$0] }) else { return }
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
       if manualPosition != nil { pendingUserSeeks += 1 }
       (onUserScroll ?? onSeek)(nearest.1)
+    }
+    /// The slot whose word sits nearest `guide`, the first of equals as `min(by:)` gave. Text runs
+    /// down the page, so `midY` only grows with the slot and a binary search needs a handful of
+    /// measurements. Scanning every word measured the whole script twice per trackpad event,
+    /// 60 to 120 times a second, and a long script lagged behind the fingers.
+    static func nearestMapping(count: Int, to guide: CGFloat, midY: (Int) -> CGFloat) -> Int? {
+      guard count > 0 else { return nil }
+      var low = 0
+      var high = count
+      while low < high {
+        let middle = low + (high - low) / 2
+        if midY(middle) < guide { low = middle + 1 } else { high = middle }
+      }
+      // `low` is the first word at or below the guide; the last one above it may be nearer.
+      var best = min(low, count - 1)
+      var distance = abs(midY(best) - guide)
+      if low > 0, abs(midY(low - 1) - guide) <= distance {
+        best = low - 1
+        distance = abs(midY(best) - guide)
+      }
+      // Words on one line share a distance: walk back to the line's first, as the scan chose.
+      while best > 0, abs(midY(best - 1) - guide) <= distance { best -= 1 }
+      return best
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)

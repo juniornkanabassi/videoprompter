@@ -18,6 +18,23 @@ final class PresenterControllerTests: XCTestCase {
     }
   }
 
+  func testHandScrollNearestWordMatchesTheFullScanWithFewMeasurements() {
+    // Five words a line, 30 pt a line: the scan this replaced picked the first word of the line
+    // nearest the guide, and measured every word to find it.
+    let lines = (0..<2_000).map { CGFloat($0 / 5) * 30 + 15 }
+    for guide: CGFloat in [-50, 0, 15, 29, 30, 44.9, 45, 1_000, 11_999, 50_000] {
+      let expected = lines.indices.min { abs(lines[$0] - guide) < abs(lines[$1] - guide) }
+      var measured = 0
+      let found = ScriptTextView.Coordinator.nearestMapping(count: lines.count, to: guide) {
+        measured += 1
+        return lines[$0]
+      }
+      XCTAssertEqual(found, expected, "guide \(guide)")
+      XCTAssertLessThan(measured, 40, "guide \(guide)")
+    }
+    XCTAssertNil(ScriptTextView.Coordinator.nearestMapping(count: 0, to: 10) { _ in 0 })
+  }
+
   func testReadStateAndAlignmentPreserveSparseAndEmptyMappings() throws {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let view = NSTextView(frame: scroll.bounds)

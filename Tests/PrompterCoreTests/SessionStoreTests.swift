@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import XCTest
 
 @testable import VideoPrompter
@@ -23,6 +24,24 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(
       session.audioPeakDBFS, AudioCapture.decibels(fullScalePeak: 0.9), accuracy: 0.001,
       "The loudest buffer since the last publish must survive the throttle.")
+  }
+
+  func testMeterChangesDoNotRepublishTheSession() {
+    // The presenter observes the session; the level moving must wake only the meters.
+    let session = SessionStore()
+    var sessionChanges = 0
+    var meterChanges = 0
+    let sessionWatch = session.objectWillChange.sink { sessionChanges += 1 }
+    let meterWatch = session.meter.objectWillChange.sink { meterChanges += 1 }
+    session.publishMeter(peak: 0.5, clipping: false)
+    XCTAssertEqual(sessionChanges, 0)
+    XCTAssertGreaterThan(meterChanges, 0)
+    XCTAssertEqual(session.audioPeakDBFS, AudioCapture.decibels(fullScalePeak: 0.5), accuracy: 0.001)
+    meterChanges = 0
+    session.meter.reset()
+    session.meter.reset()
+    XCTAssertEqual(meterChanges, 1, "A reset of a silent meter must not publish again.")
+    withExtendedLifetime((sessionWatch, meterWatch)) {}
   }
 
   func testReadingPositionsSurviveRelaunchAndRemapEditsPerScript() {
