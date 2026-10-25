@@ -794,6 +794,10 @@ private enum PresenterSaveError: LocalizedError {
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
           Divider()
           PresenterVideoItems()
+          Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
+            .keyboardShortcut("m", modifiers: [.command, .option])
+            .help("Pin the selected passage over the camera picture, as a reference monitor")
+            .disabled(store.selected == nil)
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
             .keyboardShortcut("f", modifiers: [.command, .control])
         }

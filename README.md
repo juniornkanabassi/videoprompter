@@ -69,6 +69,12 @@ Recording is in the **Camera** toolbar. It uses the preview format you have pinn
 
 Normally the presenter window is hidden from screen capture. Specific recording and screen-sharing apps have not yet been tested to confirm this.
 
+### Camera and reference monitor
+
+The **View** menu in the presenter bar switches between Script only, Script and camera, and Camera only. **Camera Settings…** in the same menu holds the camera choice, rotation, mirroring and framing guides.
+
+To use the presenter as a reference monitor, drag across a passage in the presenter or the library editor, then choose **Monitor Selection with Camera** from the View menu or the Prompter menu (⌥⌘M). The camera fills the presenter with that passage pinned across the bottom. Press **Back to script** or Esc to return to the full script. A single click in the presenter still moves the reading position.
+
 ### Scripts and Markdown files
 
 Scripts are stored as Markdown. When you import a Markdown file, it stays **linked both ways** with the original: edits in Video Prompter change the original file, and changes to the original appear in Video Prompter. Other formats are converted on import and are not linked.

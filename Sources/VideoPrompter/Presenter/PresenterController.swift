@@ -63,6 +63,18 @@ import SwiftUI
   }
   /// The presenter capsule's video button.
   func toggleVideo() { camera.presentsWithVideo.toggle() }
+
+  /// Pins the selected passage over the full camera picture. From the library editor this opens
+  /// the presenter first; reading pauses, since the script itself is out of view.
+  func monitorSelection(store: AppStore, text: String? = ReferenceMonitor.focusedSelection()) {
+    guard let text, !isEditing else { return }
+    if panel?.isVisible != true { present(store: store) }
+    guard panel?.isVisible == true else { return }
+    activeSession?.pause()
+    ReferenceMonitor.shared.begin(text, camera: camera)
+    panel?.orderFrontRegardless()
+  }
+  func endMonitor() { ReferenceMonitor.shared.end(camera: camera) }
   func toggleFullScreen() {
     guard let panel, panel.isVisible else { return }
     panel.toggleFullScreen(nil)
@@ -132,6 +144,7 @@ import SwiftUI
     draft.requestClose()
   }
   func closeNow() {
+    endMonitor()
     activeSession?.pause()
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
     panel?.orderOut(nil)
@@ -380,6 +393,7 @@ private struct PresenterView: View {
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
   @ObservedObject private var camera = CameraModel.shared
+  @ObservedObject private var monitor = ReferenceMonitor.shared
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
@@ -443,10 +457,18 @@ private struct PresenterView: View {
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
         }
+        if let passage = monitor.passage, !showsScript {
+          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
+            PresenterController.shared.endMonitor()
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          .padding(.bottom, 8)
+        }
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
+    .onChange(of: camera.displayMode) { _, mode in monitor.displayModeDidChange(mode) }
     .safeAreaInset(edge: .top, spacing: 0) {
       ZStack {
         RoundedRectangle(cornerRadius: 2).frame(width: 24, height: 4)
@@ -499,6 +521,9 @@ private struct PresenterView: View {
               }
             }.pickerStyle(.inline)
             Divider()
+            Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
+              .disabled(draft.isEditing)
+              .help("Drag across a passage first; it is pinned over the camera picture")
             Button("Camera Settings…") { showsCameraSettings = true }
               .disabled(!camera.presentsWithVideo)
           } label: {
@@ -1221,7 +1246,10 @@ private final class TrackingTextView: NSTextView {
       let character = manager.characterIndexForGlyph(at: glyph)
       if character != NSNotFound {
         setSelectedRange(NSRange(location: 0, length: 0))
-        onCharacterClick?(character)
+        // AppKit's own tracking runs until the button comes up: a drag leaves a selection for
+        // the reference monitor, and a plain click still moves the reading position.
+        super.mouseDown(with: event)
+        if selectedRange().length == 0 { onCharacterClick?(character) }
         return
       }
     }
