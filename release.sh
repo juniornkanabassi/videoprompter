@@ -4,10 +4,10 @@
 #
 # Usage: zsh release.sh --website <website checkout> --notes <notes.md> [--zip <zip>] [--dmg <dmg>] [--resume] [--dry-run [--out <dir>]]
 #   1. build.sh (sign, notarise, staple), unless --zip names a zip it already made, then checks/package-dmg.sh on the
-#      zipped app, unless --dmg names a disk image (default: the zip's path ending .dmg, made if missing). The zipped app
-#      must be a notarised build of this clean HEAD (VPSourceCommit) with the source's bundle id, version, build and
-#      SUPublicEDKey. The disk image must be stapled and accepted by Gatekeeper, and the app inside it (mounted
-#      read-only) must have the zipped app's version, build, commit and CDHash.
+#      zipped app, unless --dmg names a disk image (default: "Video Prompter <version>.dmg" beside the zip, made if
+#      missing). The zipped app must be a notarised build of this clean HEAD (VPSourceCommit) with the source's bundle id, version, build and SUPublicEDKey. The disk
+#      image must be stapled and accepted by Gatekeeper, and the app inside it (mounted read-only) must have the zipped
+#      app's version, build, commit and CDHash.
 #   2. sign_update the zip with the EdDSA key in the login keychain (account $VIDEOPROMPTER_SPARKLE_ACCOUNT, default
 #      videoprompter), then check that signature against the SUPublicEDKey inside the zipped app
 #   3. prepare the appcast privately from <website>/public/apps/videoprompter/appcast.xml (new if missing), read as XML:
@@ -24,8 +24,9 @@
 #   7. report the tag (made and pushed in step 5, so the release and the source point at the same commit)
 # Releases up to 2.0.2 were published on juniornkanabassi/videoprompter-releases, which stays online (archived) so old
 # appcast items and links keep working.
-# --resume --zip <the zip it published>: finish a release a failed run left behind (never rebuilds): an existing release and tag are reused only when they match
-#   (each asset, if present, must be this file byte for byte; the tag must be on HEAD); a missing asset is uploaded.
+# --resume --zip <the zip it published>: finish a release a failed run left behind (never rebuilds): an existing
+#   release and tag are reused only when they match (each asset, if present, must be this file byte for byte; the tag
+#   must be on HEAD); a missing asset is uploaded and a draft is published.
 # --dry-run: everything except the upload and the tag, into --out or a new /private/tmp/videoprompter-release-dry.XXXXXX;
 #   identity mismatches are listed as "a real run would refuse" instead of stopping.
 # Every step stops the script on failure. It never commits to or pushes the website: the website session does that.
@@ -35,8 +36,12 @@ source "$ROOT/env.sh"
 git() { "$GIT" "$@"; }
 REPO=juniornkanabassi/videoprompter
 ACCOUNT="${VIDEOPROMPTER_SPARKLE_ACCOUNT:-videoprompter}"
-BUILD_ROOT="${VIDEOPROMPTER_BUILD_ROOT:-/private/tmp/VideoPrompter-release-cache}"
+BUILD_ROOT="${VIDEOPROMPTER_BUILD_ROOT:-/private/tmp/VideoPrompter-release-cache}"  # build.sh's default
+[[ $BUILD_ROOT == /* ]] || BUILD_ROOT="$ROOT/$BUILD_ROOT"
+export VIDEOPROMPTER_BUILD_ROOT="$BUILD_ROOT"
 SIGN_UPDATE="$BUILD_ROOT/artifacts/sparkle/Sparkle/bin/sign_update"
+# Every gh call names github.com, so GH_HOST cannot point publication at another host.
+GHREPO="github.com/$REPO"
 DRY=0 RESUME=0 WEBSITE="" NOTES="" ZIP="" DMG="" OUT=""
 die() { print -u2 "release.sh: $*"; exit 1; }
 while (( $# )); do case $1 in
@@ -47,42 +52,66 @@ while (( $# )); do case $1 in
   --zip) ZIP=${2:-}; shift 2;;
   --dmg) DMG=${2:-}; shift 2;;
   --out) OUT=${2:-}; shift 2;;
-  -h|--help) sed -n 2,28p "$0"; exit 0;;
+  -h|--help) sed -n 2,32p "$0"; exit 0;;
   *) die "unknown argument $1 (see --help)";; esac; done
 [[ -n $WEBSITE && -f $WEBSITE/lib/apps.json ]] || die "--website must be the website checkout (no lib/apps.json in '$WEBSITE')"
 [[ -n $NOTES && -s $NOTES ]] || die "--notes must name a non-empty Markdown file"
-! grep -q ']]>' "$NOTES" || die "the notes may not contain ]]>"
+! grep -q -e ']]>' -e '<item' -e '</item>' "$NOTES" || die "the notes may not contain ]]>, <item or </item>"
 # A resumed run must reuse the zip already uploaded: rebuilding would replace it with different bytes.
 (( ! RESUME )) || [[ -n $ZIP ]] || die "--resume needs --zip naming the zip the first run published"
 (( DRY )) || [[ -z $OUT ]] || die "--out is for --dry-run only"
 src() { /usr/libexec/PlistBuddy -c "Print $1" "$ROOT/Resources/Info.plist"; }
 SRC_VERSION=$(src CFBundleShortVersionString)
 HEAD=$(git -C "$ROOT" rev-parse HEAD)
-CLEAN=$([[ -z $(git -C "$ROOT" status --porcelain) ]] && print 1 || print 0)
+STATUS=$(git -C "$ROOT" status --porcelain --untracked-files=all) || die "git status failed"
+CLEAN=$([[ -z $STATUS ]] && print 1 || print 0)
 step() { print "\n== $*"; }
 
+# Sparkle compares build numbers and the feed serves only full releases, so prereleases are never published here.
+[[ $SRC_VERSION =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]] || die "version '$SRC_VERSION' is not a release number (x.y or x.y.z); prereleases are not published"
 EXISTS=0 TAGGED=0
-if (( ! DRY )); then
-  (( CLEAN )) || die "the source has uncommitted changes; commit them first"
-  if git -C "$ROOT" rev-parse -q --verify "refs/tags/v$SRC_VERSION" >/dev/null; then
-    (( RESUME )) && [[ $(git -C "$ROOT" rev-parse "v$SRC_VERSION^{commit}") == $HEAD ]] \
-      || die "tag v$SRC_VERSION already exists$( (( RESUME )) && print " on another commit" || print "; --resume finishes that release")"
-    TAGGED=1
-  fi
-  gh auth status >/dev/null 2>&1 || die "gh is not signed in"
+preflight=()   # read-only checks: a real run stops on any of them, a dry run lists them
+(( CLEAN )) || preflight+=("the source has uncommitted changes; commit them first")
+# The tag is pushed to origin and the release is made on $REPO, so they must be the same repository.
+ORIGIN=$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)
+[[ ${${ORIGIN%.git}:l} == (https://github.com/|git@github.com:)${REPO:l} ]] || preflight+=("origin is '$ORIGIN', not $REPO")
+for url in ${(f)"$(git -C "$ROOT" remote get-url --push --all origin 2>/dev/null)"}; do
+  [[ ${${url%.git}:l} == (https://github.com/|git@github.com:)${REPO:l} ]] || preflight+=("origin pushes to '$url', not $REPO")
+done
+if git -C "$ROOT" rev-parse -q --verify "refs/tags/v$SRC_VERSION" >/dev/null; then
+  if (( RESUME )) && [[ $(git -C "$ROOT" rev-parse "v$SRC_VERSION^{commit}") == $HEAD ]]; then TAGGED=1
+  else preflight+=("tag v$SRC_VERSION already exists$( (( RESUME )) && print " on another commit" || print "; --resume finishes that release")"); fi
+fi
+if gh auth status --hostname github.com >/dev/null 2>&1; then
   # Sparkle and website visitors download anonymously, so a release on a private repository would publish an appcast
   # whose every download fails. Refuse until Junior has made the repository public.
-  VISIBILITY=$(gh repo view $REPO --json visibility --jq .visibility 2>/dev/null) || die "could not read $REPO's visibility"
-  [[ $VISIBILITY == PUBLIC ]] || die "$REPO is ${VISIBILITY:l}: its release downloads would fail for everyone; make it public first"
+  VISIBILITY=$(gh repo view $GHREPO --json visibility --jq .visibility 2>/dev/null) || VISIBILITY=UNREADABLE
+  [[ $VISIBILITY == PUBLIC ]] || preflight+=("$REPO is ${VISIBILITY:l}: its release downloads would fail for everyone; make it public first")
   # The release is made from the pushed tag, so a tag already on origin must be this HEAD (peeled, for annotated tags).
   RTAG=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" "refs/tags/v$SRC_VERSION^{}" | sort -k2 | tail -1 | cut -f1)
-  [[ -z $RTAG || $RTAG == $HEAD ]] || die "tag v$SRC_VERSION on origin points at another commit ($RTAG)"
-  if gh release view "v$SRC_VERSION" --repo $REPO >/dev/null 2>&1; then
-    (( RESUME )) || die "release v$SRC_VERSION already exists on $REPO; --resume finishes it if it holds this zip"
+  [[ -z $RTAG || $RTAG == $HEAD ]] || preflight+=("tag v$SRC_VERSION on origin points at another commit ($RTAG)")
+  ROBJ=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" | cut -f1)
+  LOBJ=$(git -C "$ROOT" rev-parse -q --verify "refs/tags/v$SRC_VERSION" || true)
+  [[ -z $ROBJ || -z $LOBJ || $ROBJ == $LOBJ ]] || preflight+=("the local tag v$SRC_VERSION is not the tag on origin; delete the local one")
+  # A tag already on origin at HEAD is adopted as it is: a new annotated tag object could never replace it.
+  if [[ $RTAG == $HEAD && -z $LOBJ ]] && (( ! DRY )); then
+    git -C "$ROOT" fetch -q origin "refs/tags/v$SRC_VERSION:refs/tags/v$SRC_VERSION" || die "could not fetch tag v$SRC_VERSION"
+    TAGGED=1
+  fi
+  if gh release view "v$SRC_VERSION" --repo $GHREPO >/dev/null 2>&1; then
+    (( RESUME )) || preflight+=("release v$SRC_VERSION already exists on $REPO; --resume finishes it if it holds this zip")
     EXISTS=1
   fi
 else
+  preflight+=("gh is not signed in to github.com")
+fi
+if (( ${#preflight} )); then
+  (( DRY )) || die "refusing: ${(j:; :)preflight}"
+  for p in $preflight; do print "dry run: a real run would refuse: $p"; done
+fi
+if (( DRY )); then
   [[ -n $OUT ]] || OUT=$(mktemp -d /private/tmp/videoprompter-release-dry.XXXXXX)
+  OUT=${OUT:A}   # from the caller's folder, before build.sh changes into the repository
   mkdir -p "$OUT"
 fi
 WORK=$(mktemp -d /private/tmp/videoprompter-release.XXXXXX)
@@ -98,27 +127,38 @@ trap 'detach && rm -rf "$WORK"' EXIT
 step "1. Build"
 if [[ -z $ZIP ]]; then
   (( ! DRY )) || export VIDEOPROMPTER_OUTPUT_ROOT="$OUT/Outputs"
-  zsh "$ROOT/build.sh" || die "build.sh failed (if its zip already exists, pass that zip with --zip)"
+  # Its own scratch folder: a build elsewhere sharing the cache could replace the executable before it is packaged.
+  VIDEOPROMPTER_BUILD_ROOT="$WORK/build" zsh "$ROOT/build.sh" || die "build.sh failed (if its zip already exists, pass that zip with --zip)"
   ZIP="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}/Video Prompter $SRC_VERSION.zip"
 fi
 [[ -f $ZIP ]] || die "no zip at $ZIP"
-# After the build, which resolves Sparkle into the cache; a --zip run needs a cache that has been built once.
-[[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE (run build.sh once with this VIDEOPROMPTER_BUILD_ROOT)"
+# The pinned Sparkle's tools, resolved (not built) into the persistent cache when missing.
+[[ -x $SIGN_UPDATE ]] || "$SWIFT" package resolve --package-path "$ROOT" --scratch-path "$BUILD_ROOT" >/dev/null || die "could not resolve Sparkle into $BUILD_ROOT"
+[[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE"
 # Everything from here reads private copies, so a build that replaces the zip or disk image mid-run cannot change
 # what is checked, signed and published.
 SRC_ZIP=$ZIP ZIP="$WORK/input.zip"
 /bin/cp "$SRC_ZIP" "$ZIP" || die "could not copy $SRC_ZIP"
+# Sparkle installs the first matching bundle it finds in the zip, so the zip must hold this one app and nothing else.
+# (ditto's __MACOSX entries carry that app's own extended attributes)
+LISTING=("${(@f)$(/usr/bin/zipinfo -1 "$ZIP")}") || die "could not list $SRC_ZIP"
+OTHERS=(${${LISTING:#(__MACOSX/|)Video\ Prompter.app/*}:#__MACOSX/})
+(( ${#OTHERS} == 0 )) || die "$SRC_ZIP holds more than Video Prompter.app: ${OTHERS[1]}"
+[[ ${(j:\n:)LISTING} != *(/..|../)* ]] || die "$SRC_ZIP has a .. path"
 /usr/bin/ditto -x -k "$ZIP" "$WORK/app" || die "could not unpack $SRC_ZIP"
+[[ -d "$WORK/app/Video Prompter.app" && ! -L "$WORK/app/Video Prompter.app" ]] || die "$SRC_ZIP does not hold Video Prompter.app as a folder"
 APP="$WORK/app/Video Prompter.app"
 plist() { /usr/libexec/PlistBuddy -c "Print $1" "$APP/Contents/Info.plist" 2>/dev/null || true; }
 VERSION=$(plist CFBundleShortVersionString)
 BUILD=$(plist CFBundleVersion)
 KEY=$(plist SUPublicEDKey)
 COMMIT=$(plist VPSourceCommit)
+MIN_MACOS=$(plist LSMinimumSystemVersion)
 /usr/bin/codesign --verify --deep --strict "$APP" || die "the zipped app does not verify"
 if /usr/bin/xcrun stapler validate -q "$APP" 2>/dev/null; then SIGNING=notarised; else SIGNING=not-notarised; fi
-print "Video Prompter $VERSION (build $BUILD, commit ${COMMIT:-unknown}), $SIGNING: $SRC_ZIP"
+print "Video Prompter $VERSION (build $BUILD, commit ${COMMIT:-unknown}, macOS ${MIN_MACOS:-unknown}+), $SIGNING: $SRC_ZIP"
 [[ -n $KEY && $KEY != REPLACE_WITH_* ]] || die "SUPublicEDKey in the app is not set"
+[[ $MIN_MACOS =~ '^[0-9]+(\.[0-9]+)*$' ]] || die "LSMinimumSystemVersion in the app is '$MIN_MACOS', not a version"
 problems=()
 [[ $COMMIT == $HEAD ]] || problems+=("the zip was built from '${COMMIT:-an unknown commit}', not HEAD $HEAD")
 (( CLEAN )) || problems+=("the source has uncommitted changes")
@@ -140,15 +180,22 @@ MOUNTED=1
 DAPP="$MNT/Video Prompter.app"
 [[ -d $DAPP ]] || die "no Video Prompter.app inside $DMG"
 /usr/bin/codesign --verify --deep --strict "$DAPP" 2>/dev/null || problems+=("the app in the disk image does not verify")
-cdhash() { /usr/bin/codesign -dv --verbose=4 "$1" 2>&1 | sed -n 's/^CDHash=//p'; }
+cdhash() { /usr/bin/codesign -dv --verbose=4 --arch "$2" "$1" 2>&1 | sed -n 's/^CDHash=//p'; }
 dplist() { /usr/libexec/PlistBuddy -c "Print $1" "$DAPP/Contents/Info.plist" 2>/dev/null || true; }
 for k in CFBundleShortVersionString CFBundleVersion VPSourceCommit; do
   [[ $(dplist $k) == $(plist $k) ]] || problems+=("$k is '$(dplist $k)' in the disk image but '$(plist $k)' in the zip")
 done
-CDHASH=$(cdhash "$APP")
-[[ -n $CDHASH && $(cdhash "$DAPP") == $CDHASH ]] || problems+=("the app in the disk image has CDHash '$(cdhash "$DAPP")', the zipped app '$CDHASH'")
+ARCHS=$(/usr/bin/lipo -archs "$APP/Contents/MacOS/VideoPrompter") || die "could not read the app's architectures"
+[[ $(/usr/bin/lipo -archs "$DAPP/Contents/MacOS/VideoPrompter" 2>/dev/null) == $ARCHS ]] || problems+=("the app in the disk image is not built for '$ARCHS' like the zipped app")
+for arch in ${=ARCHS}; do
+  CDHASH=$(cdhash "$APP" $arch)
+  [[ -n $CDHASH && $(cdhash "$DAPP" $arch) == $CDHASH ]] || problems+=("the $arch code in the disk image has CDHash '$(cdhash "$DAPP" $arch)', the zipped app '$CDHASH'")
+done
+/usr/bin/diff -rq --no-dereference "$APP" "$DAPP" >/dev/null 2>&1 || problems+=("the app in the disk image differs from the zipped app")
 detach || die "the disk image is still mounted at $MNT"
-for k in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion SUPublicEDKey; do
+DEVELOPER_ID='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = M6L2VW4W5Z'
+/usr/bin/codesign --verify -R="$DEVELOPER_ID" "$APP" 2>/dev/null || problems+=("the zipped app is not signed with Junior's Developer ID (team M6L2VW4W5Z), so its updater would stay off")
+for k in CFBundleIdentifier CFBundleShortVersionString CFBundleVersion SUPublicEDKey SUFeedURL; do
   [[ $(plist $k) == $(src $k) ]] || problems+=("$k is '$(plist $k)' in the zip but '$(src $k)' in the source")
 done
 [[ $SIGNING == notarised ]] || problems+=("the zipped app is not notarised and stapled")
@@ -183,9 +230,9 @@ DMG_URL="https://github.com/$REPO/releases/download/v$VERSION/VideoPrompter.dmg"
 APPCAST="$WEBSITE/public/apps/videoprompter/appcast.xml"
 digest() { [[ -f $1 ]] && shasum -a 256 "$1" | cut -d' ' -f1 || print none; }
 SEEN=$(digest "$APPCAST")
-/usr/bin/python3 -I - "$APPCAST" "$WORK/appcast.xml" "$VERSION" "$BUILD" "$URL" "$BYTES" "$SIG" "$NOTES" "$RESUME" <<'PY' || die "could not prepare the appcast"
+/usr/bin/python3 -I - "$APPCAST" "$WORK/appcast.xml" "$VERSION" "$BUILD" "$URL" "$BYTES" "$SIG" "$NOTES" "$RESUME" "$MIN_MACOS" <<'PY' || die "could not prepare the appcast"
 import email.utils, html, os, re, sys, xml.etree.ElementTree as ET
-source, path, version, build, url, length, sig, notes, resume = sys.argv[1:]
+source, path, version, build, url, length, sig, notes, resume, min_macos = sys.argv[1:]
 SP = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
 notes = open(notes, encoding="utf-8").read().strip()
 e = lambda s: html.escape(s, quote=True)
@@ -206,6 +253,8 @@ def one(item, name):
     """A value Sparkle reads from any of the item's elements (it picks one by language) or from the enclosure's
     attribute; values that differ are ambiguous."""
     enclosure = item.find("enclosure")
+    if any(len(el) for el in item.findall(SP + name)):   # Sparkle reads all nested text; refuse rather than differ
+        sys.exit(f"an appcast item's {name} holds child elements: refusing to guess")
     values = [el.text or "" for el in item.findall(SP + name)] + ([] if enclosure is None else [enclosure.get(SP + name)])
     found = {v.strip() for v in values if v is not None}
     if len(found) > 1:
@@ -214,6 +263,11 @@ def one(item, name):
 
 def items(text):
     """Every item's build and version; anything this script cannot read for certain stops it."""
+    if any(uri != SP[1:-1] for uri in re.findall(r'xmlns:sparkle\s*=\s*["\']([^"\']*)', text)):
+        sys.exit("the appcast binds the sparkle prefix to another namespace, which Sparkle would still read: refusing to guess")
+    # New items are written with the sparkle prefix, so the rss element itself must bind it to Sparkle's namespace.
+    if not re.search(r'<rss\b[^>]*\bxmlns:sparkle\s*=\s*["\']' + re.escape(SP[1:-1]) + '["\']', text):
+        sys.exit("the appcast's rss element does not declare xmlns:sparkle")
     root = ET.fromstring(text.encode("utf-8"))
     channels = root.findall("channel")
     if root.tag != "rss" or len(channels) != 1 or len(root.findall(".//item")) != len(channels[0].findall("item")):
@@ -222,6 +276,8 @@ def items(text):
     for item in channels[0].findall("item"):
         if len(item.findall("enclosure")) != 1:
             sys.exit(f"an appcast item has {len(item.findall('enclosure'))} enclosures; only one download per item is supported")
+        if not (item.find("enclosure").get("url") or "").startswith("https://"):
+            sys.exit("an appcast item's enclosure has no https url, which makes Sparkle reject the whole feed")
         b = one(item, "version")
         if b is None or not b.isdigit():
             sys.exit(f"an appcast item's build number is {b!r}, not a whole number")
@@ -248,13 +304,16 @@ item = f"""    <item>
       <pubDate>{email.utils.formatdate(usegmt=True)}</pubDate>
       <sparkle:version>{e(build)}</sparkle:version>
       <sparkle:shortVersionString>{e(version)}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>{e(min_macos)}</sparkle:minimumSystemVersion>
       <description sparkle:format="markdown"><![CDATA[{notes}]]></description>
       <enclosure url="{e(url)}" length="{e(length)}" type="application/octet-stream" sparkle:edSignature="{e(sig)}"/>
     </item>
 """
 at = feed.find("<item")
-at = feed.rfind("\n", 0, at if at >= 0 else feed.index("</channel>")) + 1   # the start of that line
+at = at if at >= 0 else feed.index("</channel>")
+line = feed.rfind("\n", 0, at) + 1
+if not feed[line:at].strip():   # only indentation before it: insert at the start of that line
+    at = line
 feed = feed[:at] + item + feed[at:]
 if items(feed)[0] != (int(build), version):   # the whole feed still reads, with the new item first
     sys.exit("the new item did not read back as the first item")
@@ -263,6 +322,8 @@ print(f"{'Replaced' if resumed else 'Added'} the item for {version} (build {buil
 PY
 
 step "4. Release object for lib/apps.json (newest first in the app's releases)"
+ARCH=$ARCHS
+[[ $ARCH == "x86_64 arm64" || $ARCH == "arm64 x86_64" ]] && ARCH=universal
 release_object() { cat <<JSON
 {
   "version": "$VERSION",
@@ -271,8 +332,8 @@ release_object() { cat <<JSON
   "url": "$DMG_URL",
   "bytes": $DMG_BYTES,
   "sha256": "$DMG_SHA",
-  "minMacOS": "26.0",
-  "arch": "arm64",
+  "minMacOS": "$MIN_MACOS",
+  "arch": "$ARCH",
   "signing": "$SIGNING",
   "notes": []
 }
@@ -288,46 +349,62 @@ typeset -A WANT=("VideoPrompter_$VERSION.zip" $SHA "VideoPrompter.dmg" $DMG_SHA)
 step "5. GitHub release v$VERSION on $REPO"
 if (( DRY )); then
   print "dry run, not run: git tag -a v$VERSION -m 'Video Prompter $VERSION' $HEAD; git push origin refs/tags/v$VERSION"
-  print "dry run, not run: gh release create v$VERSION --verify-tag ${(q)NAMES} --repo $REPO --title 'Video Prompter $VERSION (build $BUILD)' --notes-file '$NOTES'"
+  print "dry run, not run: gh release create v$VERSION --verify-tag ${(q)NAMES} --repo $GHREPO --title 'Video Prompter $VERSION (build $BUILD)' --notes-file '$NOTES'"
   print "asset VideoPrompter_$VERSION.zip: $BYTES bytes, sha256 $SHA (Sparkle appcast enclosure)"
   print "asset VideoPrompter.dmg: $DMG_BYTES bytes, sha256 $DMG_SHA (website download)"
+  if (( EXISTS )); then
+    [[ $(gh release view "v$VERSION" --repo $GHREPO --json isPrerelease --jq .isPrerelease) == false ]] \
+      || print "dry run: a real run would refuse: v$VERSION on $REPO is a prerelease"
+    HAVE=$(gh release view "v$VERSION" --repo $GHREPO --json assets --jq '.assets[].name')
+    for name in $NAMES; do
+      print -r -- "$HAVE" | grep -qx "$name" || { print "dry run: $name would be uploaded"; continue; }
+      gh release download "v$VERSION" --repo $GHREPO --pattern "$name" --dir "$WORK/existing" || die "could not download the existing $name"
+      [[ $(shasum -a 256 "$WORK/existing/$name" | cut -d' ' -f1) == $WANT[$name] ]] \
+        || print "dry run: a real run would refuse: v$VERSION on $REPO already holds a different $name"
+    done
+  fi
 else
   # The tag goes on the commit checked in step 1; refuse if the checkout moved or changed since.
-  [[ $(git -C "$ROOT" rev-parse HEAD) == $HEAD && -z $(git -C "$ROOT" status --porcelain) ]] \
+  STATUS=$(git -C "$ROOT" status --porcelain --untracked-files=all) || die "git status failed"
+  [[ $(git -C "$ROOT" rev-parse HEAD) == $HEAD && -z $STATUS ]] \
     || die "the checkout changed since step 1 (HEAD was $HEAD); nothing uploaded"
+  # The release is made from the tag: make it on the checked commit if needed, push it, and read it back from origin
+  # before anything is uploaded or published.
+  if (( ! TAGGED )); then
+    git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" "$HEAD" || die "git tag failed"
+    TAGGED=1
+  fi
+  git -C "$ROOT" push origin "refs/tags/v$VERSION" || die "could not push tag v$VERSION (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+  RTAG=$(git -C "$ROOT" ls-remote origin "refs/tags/v$VERSION" "refs/tags/v$VERSION^{}" | sort -k2 | tail -1 | cut -f1)
+  [[ $RTAG == $HEAD ]] || die "tag v$VERSION on origin is '$RTAG', not $HEAD; nothing uploaded"
   if (( EXISTS )); then
     # A prerelease is not what /releases/latest serves, so the appcast and website must not point at it. A draft is
     # what an interrupted gh release create leaves: it is finished below once its assets check out.
-    STATE=$(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
+    STATE=$(gh release view "v$VERSION" --repo $GHREPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
     [[ $STATE == *" false" ]] || die "v$VERSION on $REPO is a prerelease; make it a full release first, then rerun with --resume --zip ${(q)SRC_ZIP}"
-    HAVE=$(gh release view "v$VERSION" --repo $REPO --json assets --jq '.assets[].name')
+    HAVE=$(gh release view "v$VERSION" --repo $GHREPO --json assets --jq '.assets[].name')
     missing=()
     for name in $NAMES; do   # every asset already there is checked first; only then is a missing one uploaded
       if print -r -- "$HAVE" | grep -qx "$name"; then
         print "v$VERSION already has $name; checking it is this file"
-        gh release download "v$VERSION" --repo $REPO --pattern "$name" --dir "$WORK/existing" || die "could not download the existing $name"
+        gh release download "v$VERSION" --repo $GHREPO --pattern "$name" --dir "$WORK/existing" || die "could not download the existing $name"
         [[ $(shasum -a 256 "$WORK/existing/$name" | cut -d' ' -f1) == $WANT[$name] ]] \
           || die "v$VERSION on $REPO already holds a different $name: refusing a conflicting release; nothing uploaded, the website appcast is unchanged"
       else
         missing+=($name)
       fi
     done
-    for name in $missing; do gh release upload "v$VERSION" "$WORK/$name" --repo $REPO || die "gh release upload $name failed"; done
+    for name in $missing; do gh release upload "v$VERSION" "$WORK/$name" --repo $GHREPO || die "gh release upload $name failed"; done
     if [[ $STATE == "true "* ]]; then
-      gh release edit "v$VERSION" --repo $REPO --draft=false --verify-tag || die "could not publish the draft v$VERSION"
+      gh release edit "v$VERSION" --repo $GHREPO --draft=false --verify-tag || die "could not publish the draft v$VERSION"
     fi
-    [[ $(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
+    [[ $(gh release view "v$VERSION" --repo $GHREPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
       || die "v$VERSION on $REPO is still a draft or prerelease"
   else
-    if (( ! TAGGED )); then
-      git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" "$HEAD" || die "git tag failed"
-      TAGGED=1
-    fi
-    git -C "$ROOT" push origin "refs/tags/v$VERSION" || die "could not push tag v$VERSION (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
-    gh release create "v$VERSION" --verify-tag "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $REPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+    gh release create "v$VERSION" --verify-tag "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $GHREPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
   fi
   for name in $NAMES; do
-    gh release download "v$VERSION" --repo $REPO --pattern "$name" --dir "$WORK/remote" || die "could not download $name back (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+    gh release download "v$VERSION" --repo $GHREPO --pattern "$name" --dir "$WORK/remote" || die "could not download $name back (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
     [[ $(shasum -a 256 "$WORK/remote/$name" | cut -d' ' -f1) == $WANT[$name] ]] \
       || die "v$VERSION on $REPO holds a different $name (sha256 differs): refusing a conflicting release; the website appcast is unchanged"
     print "Published and verified $name (sha256 $WANT[$name])"
@@ -353,9 +430,6 @@ step "7. Tag v$VERSION"
 if (( DRY )); then
   print "dry run: the tag is made and pushed in step 5"
   print "\nDry run done: appcast $APPCAST"
-elif (( TAGGED )); then
-  print "v$VERSION is on HEAD. The website session commits $APPCAST and the release object above."
 else
-  git -C "$ROOT" tag -a "v$VERSION" -m "Video Prompter $VERSION" "$HEAD" || die "git tag failed"
-  print "Tagged v$VERSION (not pushed). The website session commits $APPCAST and the release object above."
+  print "v$VERSION is on HEAD and origin. The website session commits $APPCAST and the release object above."
 fi
