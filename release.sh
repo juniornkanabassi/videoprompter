@@ -21,7 +21,7 @@
 #      are still updated by hand, as before.
 #   6. only then replace the website's appcast.xml (refused if it changed since step 3)
 #   7. tag this repository v<version> (pushing the tag is left to the lead)
-# --resume: finish a release a failed run left behind: an existing release and tag are reused only when they match
+# --resume --zip <the zip it published>: finish a release a failed run left behind (never rebuilds): an existing release and tag are reused only when they match
 #   (each asset, if present, must be this file byte for byte; the tag must be on HEAD); a missing asset is uploaded.
 # --dry-run: everything except the upload and the tag, into --out or a new /private/tmp/videoprompter-release-dry.XXXXXX;
 #   identity mismatches are listed as "a real run would refuse" instead of stopping.
@@ -49,7 +49,8 @@ while (( $# )); do case $1 in
 [[ -n $WEBSITE && -f $WEBSITE/lib/apps.json ]] || die "--website must be the website checkout (no lib/apps.json in '$WEBSITE')"
 [[ -n $NOTES && -s $NOTES ]] || die "--notes must name a non-empty Markdown file"
 ! grep -q ']]>' "$NOTES" || die "the notes may not contain ]]>"
-[[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE (resolve the packages into $BUILD_ROOT first)"
+# A resumed run must reuse the zip already uploaded: rebuilding would replace it with different bytes.
+(( ! RESUME )) || [[ -n $ZIP ]] || die "--resume needs --zip naming the zip the first run published"
 (( DRY )) || [[ -z $OUT ]] || die "--out is for --dry-run only"
 src() { /usr/libexec/PlistBuddy -c "Print $1" "$ROOT/Resources/Info.plist"; }
 SRC_VERSION=$(src CFBundleShortVersionString)
@@ -91,6 +92,8 @@ if [[ -z $ZIP ]]; then
   ZIP="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}/Video Prompter $SRC_VERSION.zip"
 fi
 [[ -f $ZIP ]] || die "no zip at $ZIP"
+# After the build, which resolves Sparkle into the cache; a --zip run needs a cache that has been built once.
+[[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE (run build.sh once with this VIDEOPROMPTER_BUILD_ROOT)"
 # Everything from here reads private copies, so a build that replaces the zip or disk image mid-run cannot change
 # what is checked, signed and published.
 SRC_ZIP=$ZIP ZIP="$WORK/input.zip"
@@ -116,6 +119,7 @@ if [[ -z $DMG ]]; then
   [[ -f $DMG ]] || zsh "$ROOT/checks/package-dmg.sh" "$APP" "${SRC_ZIP:h}" || die "checks/package-dmg.sh failed"
 fi
 [[ -f $DMG ]] || die "no disk image at $DMG"
+SRC_DMG=$DMG
 /bin/cp "$DMG" "$WORK/input.dmg" || die "could not copy $DMG"
 DMG="$WORK/input.dmg"
 /usr/bin/xcrun stapler validate -q "$DMG" 2>/dev/null || problems+=("the disk image is not notarised and stapled")
@@ -281,7 +285,7 @@ else
   if (( EXISTS )); then
     # A draft or prerelease is not what /releases/latest serves, so the appcast and website must not point at it.
     [[ $(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
-      || die "v$VERSION on $REPO is a draft or prerelease; publish it as a full release first, then rerun with --resume"
+      || die "v$VERSION on $REPO is a draft or prerelease; publish it as a full release first, then rerun with --resume --zip ${(q)SRC_ZIP}"
     HAVE=$(gh release view "v$VERSION" --repo $REPO --json assets --jq '.assets[].name')
     missing=()
     for name in $NAMES; do   # every asset already there is checked first; only then is a missing one uploaded
@@ -296,10 +300,10 @@ else
     done
     for name in $missing; do gh release upload "v$VERSION" "$WORK/$name" --repo $REPO || die "gh release upload $name failed"; done
   else
-    gh release create "v$VERSION" "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $REPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume)"
+    gh release create "v$VERSION" "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $REPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
   fi
   for name in $NAMES; do
-    gh release download "v$VERSION" --repo $REPO --pattern "$name" --dir "$WORK/remote" || die "could not download $name back (rerun with --resume)"
+    gh release download "v$VERSION" --repo $REPO --pattern "$name" --dir "$WORK/remote" || die "could not download $name back (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
     [[ $(shasum -a 256 "$WORK/remote/$name" | cut -d' ' -f1) == $WANT[$name] ]] \
       || die "v$VERSION on $REPO holds a different $name (sha256 differs): refusing a conflicting release; the website appcast is unchanged"
     print "Published and verified $name (sha256 $WANT[$name])"
@@ -315,7 +319,7 @@ if (( DRY )); then
   APPCAST="$OUT/appcast.xml"
   /bin/cp "$WORK/appcast.xml" "$APPCAST"
 else
-  [[ $(digest "$APPCAST") == $SEEN ]] || die "$APPCAST changed while this ran; rerun with --resume"
+  [[ $(digest "$APPCAST") == $SEEN ]] || die "$APPCAST changed while this ran; rerun with --resume --zip ${(q)SRC_ZIP}"
   mkdir -p "${APPCAST:h}"
   /bin/cp "$WORK/appcast.xml" "$APPCAST.tmp.$$" && /bin/mv -f "$APPCAST.tmp.$$" "$APPCAST" || die "could not write $APPCAST"
 fi
