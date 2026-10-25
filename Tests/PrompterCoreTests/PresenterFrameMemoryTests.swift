@@ -33,6 +33,27 @@ final class PresenterFrameMemoryTests: XCTestCase {
     XCTAssertNil(PresenterFrameMemory.restored(from: nil, screens: [main, prompter]))
   }
 
+  func testRearrangedDisplaysKeepThePositionOnTheDisplay() {
+    let store = defaults()
+    PresenterFrameMemory.save(NSRect(x: 2600, y: 656, width: 760, height: 520), on: prompter, to: store)
+    let moved = PresenterFrameMemory.Screen(id: 7, name: prompter.name, frame: NSRect(x: -1920, y: 0, width: 1920, height: 1080), visibleFrame: NSRect(x: -1920, y: 0, width: 1920, height: 1080))
+    XCTAssertEqual(PresenterFrameMemory.restored(from: store, screens: [main, moved]), NSRect(x: -1624, y: 440, width: 760, height: 520))
+  }
+
+  func testAbsentDisplayIsReportedSoAForcedMoveIsNotSaved() {
+    let store = defaults()
+    XCTAssertFalse(PresenterFrameMemory.savedDisplayIsAbsent(in: store, screens: [main]))
+    PresenterFrameMemory.save(NSRect(x: 2600, y: 656, width: 760, height: 520), on: prompter, to: store)
+    XCTAssertTrue(PresenterFrameMemory.savedDisplayIsAbsent(in: store, screens: [main]))
+    XCTAssertFalse(PresenterFrameMemory.savedDisplayIsAbsent(in: store, screens: [main, prompter]))
+  }
+
+  func testACorruptDisplayNumberDoesNotCrash() {
+    let store = defaults()
+    store.set(["offset": NSStringFromRect(NSRect(x: 0, y: 0, width: 760, height: 520)), "display": -5, "name": "Gone"], forKey: PresenterFrameMemory.key)
+    XCTAssertNil(PresenterFrameMemory.restored(from: store, screens: [main, prompter]))
+  }
+
   func testAFrameOverTheTopIsMovedInsideTheVisibleArea() {
     let clamped = PresenterFrameMemory.clamp(NSRect(x: 2400, y: 400, width: 1400, height: 1050), into: prompter.visibleFrame)
     XCTAssertEqual(clamped.maxY, prompter.visibleFrame.maxY)

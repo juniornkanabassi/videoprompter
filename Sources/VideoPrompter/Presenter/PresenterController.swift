@@ -52,6 +52,10 @@ import SwiftUI
   private func rememberFrame(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
       !window.styleMask.contains(.fullScreen), let screen = window.screen else { return }
+    // A display that drops out pushes the panel onto another one. That move is not a choice, so
+    // it never replaces the memory of the absent display; a drag (a button held) still does.
+    let screens = NSScreen.screens.map(PresenterFrameMemory.Screen.init)
+    if NSEvent.pressedMouseButtons == 0, PresenterFrameMemory.savedDisplayIsAbsent(in: frameDefaults, screens: screens) { return }
     PresenterFrameMemory.save(window.frame, on: .init(screen), to: frameDefaults)
   }
   func windowDidExitFullScreen(_ notification: Notification) {
@@ -324,20 +328,31 @@ enum PresenterFrameMemory {
     return AppStore.preferences()
   }
 
+  /// Kept relative to the display's origin, so rearranging displays in System Settings moves the
+  /// presenter with its display.
   static func save(_ frame: NSRect, on screen: Screen, to defaults: UserDefaults?) {
-    defaults?.set(["frame": NSStringFromRect(frame), "display": Int(screen.id), "name": screen.name], forKey: key)
+    let offset = frame.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+    defaults?.set(["offset": NSStringFromRect(offset), "display": Int(screen.id), "name": screen.name], forKey: key)
+  }
+
+  static func savedDisplayIsAbsent(in defaults: UserDefaults?, screens: [Screen]) -> Bool {
+    guard let saved = defaults?.dictionary(forKey: key) else { return false }
+    return display(for: saved, in: screens) == nil
+  }
+
+  private static func display(for saved: [String: Any], in screens: [Screen]) -> Screen? {
+    let id = (saved["display"] as? Int).flatMap { UInt32(exactly: $0) }
+    return screens.first(where: { $0.id == id }) ?? screens.first(where: { $0.name == saved["name"] as? String })
   }
 
   /// The saved frame, moved fully inside its display's visible area, or nil when that display is
   /// gone. The display is found by its ID, else by name, since IDs can change after a reconnect.
   static func restored(from defaults: UserDefaults?, screens: [Screen]) -> NSRect? {
-    guard let saved = defaults?.dictionary(forKey: key), let text = saved["frame"] as? String else { return nil }
-    let frame = NSRectFromString(text)
-    guard frame.width >= 100, frame.height >= 100 else { return nil }
-    let id = (saved["display"] as? Int).map(UInt32.init)
-    guard let screen = screens.first(where: { $0.id == id }) ?? screens.first(where: { $0.name == saved["name"] as? String })
-    else { return nil }
-    return clamp(frame, into: screen.visibleFrame)
+    guard let saved = defaults?.dictionary(forKey: key), let text = saved["offset"] as? String,
+      let screen = display(for: saved, in: screens) else { return nil }
+    let offset = NSRectFromString(text)
+    guard offset.width >= 100, offset.height >= 100 else { return nil }
+    return clamp(offset.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY), into: screen.visibleFrame)
   }
 
   static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
