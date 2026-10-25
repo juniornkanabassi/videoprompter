@@ -133,9 +133,12 @@ if [[ -z $ZIP ]]; then
   ZIP="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}/Video Prompter $SRC_VERSION.zip"
 fi
 [[ -f $ZIP ]] || die "no zip at $ZIP"
-# The pinned Sparkle's tools, resolved (not built) into the persistent cache when missing.
+# The pinned Sparkle's tools, resolved (not built) into the persistent cache when missing. That cache is in
+# /private/tmp, so it, and the tool run from it, must be this user's own and not symlinks, as build.sh requires.
+mkdir -p "$BUILD_ROOT"
+[[ ! -L $BUILD_ROOT && -O $BUILD_ROOT && -z $(find "$BUILD_ROOT" -maxdepth 0 -perm -o+w) ]] || die "unsafe build cache $BUILD_ROOT"
 [[ -x $SIGN_UPDATE ]] || "$SWIFT" package resolve --package-path "$ROOT" --scratch-path "$BUILD_ROOT" >/dev/null || die "could not resolve Sparkle into $BUILD_ROOT"
-[[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE"
+[[ -x $SIGN_UPDATE && -O $SIGN_UPDATE && ! -L $SIGN_UPDATE ]] || die "no sign_update of this user's at $SIGN_UPDATE"
 # Everything from here reads private copies, so a build that replaces the zip or disk image mid-run cannot change
 # what is checked, signed and published.
 SRC_ZIP=$ZIP ZIP="$WORK/input.zip"
