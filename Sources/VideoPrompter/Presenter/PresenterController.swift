@@ -244,6 +244,11 @@ import SwiftUI
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
+    // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
+    // rather than at the main screen's corner. Tests and agent screens place it themselves.
+    if NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") {
+      value.setFrameAutosaveName("Video Prompter Presenter")
+    }
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
