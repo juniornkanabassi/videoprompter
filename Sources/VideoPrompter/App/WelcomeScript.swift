@@ -38,7 +38,9 @@ enum WelcomeScript {
 
     ## Camera and recording
 
-    Video Prompter can show your camera behind the script, so you can check your framing while you read. Turn the camera on from the presenter's controls and allow camera access when macOS asks. Framing guides help you line up your shot.
+    Video Prompter can show your camera behind the script, so you can check your framing while you read. Open the **View** menu on the presenter bar, choose **Script and camera**, and allow camera access when macOS asks. **Camera Settings** in the same menu has the framing guides that help you line up your shot.
+
+    You can also use the presenter as a reference monitor. Drag across a few lines, then choose **Monitor Selection with Camera** from the View menu. The camera fills the window with those lines at the bottom, and Escape brings the script back. With no script selected, **Present** shows just the camera.
 
     To record, open the Camera window from the Window menu and press **Record**. Recordings are saved in the Video Prompter folder inside Movies.
 
