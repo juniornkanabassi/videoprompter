@@ -310,17 +310,33 @@ private enum PresenterSaveError: LocalizedError {
   func waitForInitialLoad() async { await initialLoad?.value }
   func waitForWelcomeScript() async { await welcomeTask?.value }
   /// A new library starts with the welcome script, once. A library that already has scripts, in it
-  /// or in its Trash, is only marked as offered, so updating never adds it.
+  /// or in its Trash, is only marked as offered, so updating never adds it. The library's index decides,
+  /// not `scripts`, which leaves out a script whose file could not be read. A failed add is not marked,
+  /// so it is tried again next launch.
   private func addWelcomeScriptIfNew() async {
     await waitForInitialLoad()
-    guard libraryAvailable, !defaults.bool(forKey: WelcomeScript.offeredKey) else { return }
-    defaults.set(true, forKey: WelcomeScript.offeredKey)
-    guard scripts.isEmpty, trash.isEmpty else { return }
-    do { _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown) }
-    catch { errorMessage = "The welcome script could not be added. \(error)" }
+    guard let library, libraryAvailable, !defaults.bool(forKey: WelcomeScript.offeredKey) else { return }
+    guard await library.listScripts().isEmpty, await library.listTrash().isEmpty else {
+      defaults.set(true, forKey: WelcomeScript.offeredKey)
+      return
+    }
+    do {
+      _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+      defaults.set(true, forKey: WelcomeScript.offeredKey)
+    } catch {
+      errorMessage = "The welcome script could not be added. \(error)"
+    }
   }
   /// Help > Welcome Script: selects it in the whole library, or adds a fresh copy when it has gone.
+  /// While the first-launch add is still running it waits for that, so the script is never added twice.
   func showWelcomeScript() {
+    guard let welcomeTask else { return selectWelcomeScript() }
+    Task { [weak self] in
+      await welcomeTask.value
+      self?.selectWelcomeScript()
+    }
+  }
+  private func selectWelcomeScript() {
     selectedFolderID = nil
     search = ""
     if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {

@@ -945,6 +945,18 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(again.selected?.metadata.title, WelcomeScript.title, "Help > Welcome Script brings it back")
   }
 
+  func testHelpWelcomeScriptDuringTheFirstLaunchAddDoesNotAddASecondCopy() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    store.showWelcomeScript()
+    await store.waitForWelcomeScript()
+    try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+  }
+
   func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }

@@ -32,7 +32,7 @@ enum WelcomeScript {
 
     ## Making it comfortable
 
-    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In Settings you can change the text size, the font and the colours, and **More** shows extra options such as line spacing and the width of the text column.
+    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In Settings you can change the text size and the font, and **More** shows extra options such as the colours, line spacing and the width of the text column.
 
     If you read through teleprompter glass, turn on mirroring in Settings so the words read the right way round. For a large screen, choose **Presenter Full Screen** from the Prompter menu.
 
