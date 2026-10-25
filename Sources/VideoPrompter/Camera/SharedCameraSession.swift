@@ -80,6 +80,19 @@ struct CameraHolders {
     /// The signal's own duration when the format lists it, else the format's default: setting
     /// a duration the format does not list throws. A listed single rate gives the device's own
     /// value, so 2002/60000 goes in as the 1001/30000 the card offers.
+    /// The listed duration nearest the mean gap between delivered frames' presentation times
+    /// (seconds), counting only gaps near the median so a missed frame does not count; nil with
+    /// too few frames to tell. After a re-pin the rate `pin` used is the one it wrote itself, so
+    /// the frames are the only trustworthy measure of the signal's own rate.
+    static func measuredDuration(_ times: [Double], in format: VideoFormat) -> CMTime? {
+      let gaps = zip(times.dropFirst(), times).map { $0 - $1 }.filter { $0 > 0 }.sorted()
+      guard gaps.count >= 3 else { return nil }
+      let median = gaps[gaps.count / 2]
+      let near = gaps.filter { abs($0 - median) < median * 0.25 }
+      let mean = near.reduce(0, +) / Double(near.count)
+      return format.frameDurations.flatMap { [$0.lowerBound, $0.upperBound] }
+        .min { abs($0.seconds - mean) < abs($1.seconds - mean) }
+    }
     static func frameDuration(_ signal: CMTime, in format: VideoFormat) -> CMTime {
       guard signal.isNumeric, signal > .zero,
         let range = format.frameDurations.first(where: { $0.contains(signal) })
@@ -281,6 +294,9 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     var toHost = 0.0
     var samples: [CameraLatency.Sample] = []
     var refreshes: [Double] = []
+    /// Presentation times of the first frames after a re-pin, while the rate is measured.
+    var rateTimes: [Double] = []
+    var measuresRate = false
   }
   private let shared = Mutex(Shared())
   private let sessionQueue: DispatchQueue
@@ -292,6 +308,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   private var generation = 0
   /// The signal's size as `pin` read it, so `follow` can tell a different delivered picture.
   private var signalSize: CMVideoDimensions?
+  /// Set by `follow`: the next `watch` measures the signal's rate from the frames themselves.
+  private var measuresRate = false
 
   init(sessionQueue: DispatchQueue) {
     self.sessionQueue = sessionQueue
@@ -351,6 +369,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
           delivered.width, delivered.height, signalSize.width, signalSize.height)
     // The pinned rate came from the same card, so it is the signal's rate unless the new format lacks it.
     pin((device: current.device, format: format, duration: current.device.activeVideoMinFrameDuration), in: session)
+    // That duration is the one pin wrote for the default mode, not the signal's: measure it.
+    measuresRate = true
     if session.isRunning { watch(session) }
   }
 
@@ -378,7 +398,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// first frame or latency is logged; after `watchdog` seconds with no frame, the device goes
   /// back to the format's default rate for the rest of the run.
   func watch(_ session: AVCaptureSession) {
-    guard let current, current.choice.wanted != current.choice.fallback || Self.logsLatency else {
+    guard let current, current.choice.wanted != current.choice.fallback || Self.logsLatency || measuresRate else {
       detach(from: session)
       return
     }
@@ -386,9 +406,13 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let generation = self.generation
     let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
     let toHost = session.synchronizationClock.map { host - CMClockGetTime($0).seconds } ?? 0
+    let measuresRate = self.measuresRate
+    self.measuresRate = false
     shared.withLock {
       $0.frames = 0
       $0.toHost = toHost
+      $0.rateTimes = []
+      $0.measuresRate = measuresRate
       if Self.logsLatency {
         $0.logStart = host
         $0.logUntil = host + Self.logWindow
@@ -406,12 +430,28 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     }
     sessionQueue.asyncAfter(deadline: .now() + Self.watchdog) { [self] in
       guard generation == self.generation else { return }
-      let sawFrame = shared.withLock { $0.frames > 0 }
+      let (sawFrame, rateTimes) = shared.withLock {
+        defer { $0.measuresRate = false }
+        return ($0.frames > 0, $0.rateTimes)
+      }
       if session.isRunning, current.choice.revert(sawFrame: sawFrame) != nil {
         failed.insert(current.device.uniqueID)
         self.current?.choice = current.choice.settled
         holdingFormat(session, force: true)
         NSLog("Video Prompter camera: no frame in %.1f s, back to the format's default rate", Self.watchdog)
+      } else if measuresRate, session.isRunning, current.formats.indices.contains(current.choice.wanted.format),
+        let measured = SharedCameraSession.FormatChoice.measuredDuration(
+          rateTimes, in: Self.row(current.formats[current.choice.wanted.format]))
+      {
+        let pinned = current.choice.wanted.frameDuration.isValid
+          ? current.choice.wanted.frameDuration : current.device.activeVideoMinFrameDuration
+        if abs(measured.seconds - pinned.seconds) > pinned.seconds * 0.05 {
+          let format = current.choice.wanted.format
+          self.current?.choice = .init(wanted: .init(format: format, frameDuration: measured), fallback: current.choice.fallback)
+          holdingFormat(session)
+          NSLog("Video Prompter camera: frames arrive every %.2f ms, not %.2f ms; pinning that rate",
+                measured.seconds * 1000, pinned.seconds * 1000)
+        }
       }
       if !Self.logsLatency { detach(from: session) }
     }
@@ -457,6 +497,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     let presented = sampleBuffer.presentationTimeStamp.seconds
     shared.withLock {
       $0.frames += 1
+      if $0.measuresRate, $0.rateTimes.count < 12 { $0.rateTimes.append(presented) }
       if delivered < $0.logUntil {
         $0.samples.append(.init(capture: presented + $0.toHost, delivered: delivered))
       }
