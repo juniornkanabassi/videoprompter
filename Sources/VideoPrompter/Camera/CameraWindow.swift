@@ -60,6 +60,8 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     }
   }
   private var showingTemporarily = false
+  /// True while `showTemporarily` assigns, which is when `$displayMode` subscribers hear of it.
+  var isShowingTemporarily: Bool { showingTemporarily }
   /// Camera only forced by the reference monitor or a presenter with no script. It is not saved,
   /// so a quit or a close leaves the person's own choice for next time.
   func showTemporarily(_ mode: PresenterDisplayMode) {

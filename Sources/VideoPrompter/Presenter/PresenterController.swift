@@ -57,7 +57,8 @@ import SwiftUI
   /// Video turned on in a windowed presenter fits the window to the camera once. Opening with video
   /// already on, a closed or minimised presenter, full screen and video off all leave it alone.
   func videoDidChange(_ on: Bool) {
-    guard on, isWindowedOnScreen else { return }
+    // A temporary view (the monitor, a camera-only start) leaves the window's shape alone.
+    guard on, isWindowedOnScreen, !camera.isShowingTemporarily else { return }
     // The new preview selects the camera, and so learns its size, in this same update.
     DispatchQueue.main.async { self.matchCameraSize() }
   }
@@ -81,8 +82,11 @@ import SwiftUI
   }
   /// The Prompter menu's Start or Pause. Nothing starts while the script is out of sight.
   func toggleReading(store: AppStore) {
-    guard !isShowingWithoutScript, !ReferenceMonitor.shared.isActive else { return }
-    store.session.toggle()
+    if store.session.isActivelyRunning { store.session.pause() } else if canStartReading { store.session.play() }
+  }
+  /// The script is on screen to be read: the same test that enables the bar's Start button.
+  var canStartReading: Bool {
+    !isShowingWithoutScript && !ReferenceMonitor.shared.isActive && (camera.displayMode != .videoOnly || isEditing)
   }
   func endMonitor() { ReferenceMonitor.shared.end(camera: camera) }
   func toggleFullScreen() {
@@ -129,8 +133,9 @@ import SwiftUI
     closesAfterFullScreen = false
     endMonitor()
     if let panel, panel.isVisible, panel.contentView is NSHostingView<PresenterView> {
-      // A script already showing: this is the person choosing Camera only, which is saved.
-      if isShowingWithoutScript { camera.showTemporarily(.videoOnly) } else { camera.displayMode = .videoOnly }
+      // Temporary, like the rest of camera-only: presenting a script brings it back over the camera.
+      camera.showTemporarily(.videoOnly)
+      cameraOnlyForWantOfScript = true
       activeSession?.pause()
       panel.makeKeyAndOrderFront(nil)
       return
@@ -1333,8 +1338,8 @@ private final class TrackingTextView: NSTextView {
       guard glyph < manager.numberOfGlyphs else { super.mouseDown(with: event); return }
       let character = manager.characterIndexForGlyph(at: glyph)
       if character != NSNotFound {
-        // Control-click is the context menu, not a seek.
-        guard !event.modifierFlags.contains(.control) else { super.mouseDown(with: event); return }
+        // Control-click is the context menu and shift-click extends a selection: neither seeks.
+        guard event.modifierFlags.isDisjoint(with: [.control, .shift]) else { super.mouseDown(with: event); return }
         setSelectedRange(NSRange(location: 0, length: 0))
         // AppKit's own tracking runs until the button comes up: a drag leaves a selection for
         // the reference monitor, and a plain click still moves the reading position. A click
