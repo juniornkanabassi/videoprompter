@@ -136,6 +136,8 @@ try:
     assert status['running'] and status['selected']['id'] == imported['id']
     assert status['script']['id'] == imported['id'] and status['presenter'] == 'visible'
     assert status['mode'] == 'manual' and status['zoom'] == 150 and status['position']['word'] == 1
+    assert command(['settings', 'set', '--speed', '150'])['speed'] == 150 and command(['status'])['speed'] == 150
+    assert command(['settings', 'set', '--speed', '301'], 2)['code'] == 'usage'
     assert stat.S_IMODE((data / 'control.sock').stat().st_mode) == 0o600
     assert stat.S_IMODE(data.stat().st_mode) == 0o700
     assert raw(b'not JSON\n')['error']['code'] == 'bad_request'
@@ -147,7 +149,8 @@ try:
         except ConnectionResetError: pass
     assert command(['status'])['running']
     manifest = json.loads(subprocess.check_output([str(cli), 'mcp-manifest'], text=True))
-    assert len(manifest['tools']) == 10
+    tool_count = len(manifest['tools'])
+    assert tool_count == 40, tool_count
     requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18'}},
                 {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
                 {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
@@ -158,7 +161,7 @@ try:
     assert mcp.returncode == 0, mcp.stderr
     messages = [json.loads(line) for line in mcp.stdout.splitlines()]
     assert [m['id'] for m in messages] == [1, 2, 3, 4, 5]
-    assert len(messages[1]['result']['tools']) == 10
+    assert len(messages[1]['result']['tools']) == tool_count
     assert messages[2]['result']['isError'] is False and messages[3]['result']['isError'] is True
     time.sleep(1)
     visible = gui(pid)
@@ -198,7 +201,7 @@ try:
     assert len(json.loads(large_reply['result']['content'][0]['text'])['result']['scripts']) == 201
     report = {'ok': True, 'bundle': str(supplied), 'checkedCopy': str(app), 'data': str(data), 'pid': pid, 'commands': replies, 'mcp': messages, 'gui': visible, 'frontmostUnchanged': True}
     (root / 'evidence.json').write_text(json.dumps(report, indent=2))
-    print(json.dumps({'ok': True, 'commands': len(replies), 'tools': 10, 'guiRows': len(rows), 'evidence': str(root / 'evidence.json')}))
+    print(json.dumps({'ok': True, 'commands': len(replies), 'tools': tool_count, 'guiRows': len(rows), 'evidence': str(root / 'evidence.json')}))
 finally:
     if pid is None:
         processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)

@@ -148,6 +148,8 @@ private enum PresenterSaveError: LocalizedError {
   @Published private(set) var hasFailedSaves = false
   @Published private(set) var libraryAvailable = false
   @Published private(set) var unavailableScriptIDs = Set<UUID>()
+  private(set) var deletingIDs = Set<UUID>()
+  var deleteGate: (() async -> Void)?
   /// The library's own answer for each linked script; the views never ask the file system.
   @Published private(set) var linkStates: [UUID: LinkState] = [:]
 
@@ -306,13 +308,21 @@ private enum PresenterSaveError: LocalizedError {
     Task { do { try await work(library) } catch { errorMessage = String(describing: error) } }
   }
   func createFolder(named name: String) {
-    withLibrary { [self] library in folders.append(try await library.createFolder(name: name)) }
+    withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
   func renameFolder(_ id: UUID, name: String) {
-    withLibrary { [self] library in
-      try await library.renameFolder(id, name: name)
-      if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
-    }
+    withLibrary { [self] _ in try await renameLibraryFolder(id, name: name) }
+  }
+  @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    let folder = try await library.createFolder(name: name)
+    folders.append(folder)
+    return folder
+  }
+  func renameLibraryFolder(_ id: UUID, name: String) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    try await library.renameFolder(id, name: name)
+    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
   }
   func deleteFolder(_ id: UUID) {
     withLibrary { [self] library in
@@ -339,11 +349,13 @@ private enum PresenterSaveError: LocalizedError {
   }
 
   func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
-    withLibrary { [self] library in
-      try await library.moveScripts(ids, to: folderID)
-      for i in scripts.indices where ids.contains(scripts[i].id) { scripts[i].metadata.folderID = folderID }
-      if let selectedID, !visible.contains(where: { $0.id == selectedID }) { self.selectedID = visible.first?.id }
-    }
+    withLibrary { [self] _ in try await moveScripts(ids, to: folderID) }
+  }
+  func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    try await library.moveScripts(ids, to: folderID)
+    for i in scripts.indices where ids.contains(scripts[i].id) { scripts[i].metadata.folderID = folderID }
+    if let selectedID, !visible.contains(where: { $0.id == selectedID }) { self.selectedID = visible.first?.id }
   }
   func selectFolder(_ id: UUID?) {
     selectedFolderID = id
@@ -373,39 +385,51 @@ private enum PresenterSaveError: LocalizedError {
     guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
     create(title: "Pasted Script", markdown: markdown)
   }
+  struct PendingEditsError: Error, CustomStringConvertible {
+    let description: String
+  }
   func duplicate() {
     guard let selected else { return }
-    withLibrary { [self] library in
-      guard await flushPendingSaves() else {
-        errorMessage = "Save the pending edits before duplicating scripts."
-        return
-      }
-      let item = try await library.duplicate(selected.metadata.id)
-      scripts.insert(item, at: 0)
-      selectedID = item.metadata.id
+    withLibrary { [self] _ in _ = try await duplicateScript(selected.id) }
+  }
+  @discardableResult func duplicateScript(_ id: UUID) async throws -> ScriptRecord {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    guard await flushPendingSaves() else {
+      throw PendingEditsError(description: "Save the pending edits before duplicating scripts.")
     }
+    let item = try await library.duplicate(id)
+    scripts.insert(item, at: 0)
+    selectedID = item.id
+    return item
   }
   func delete(_ ids: Set<UUID>) {
     for id in ids {
-      withLibrary { [self] library in
-        guard await flushPendingSaves() else {
-          errorMessage = "Save the pending edits before moving scripts to Trash."
-          return
-        }
-        try await library.delete(id)
-        session.forgetPosition(for: id)
-        scripts.removeAll { $0.metadata.id == id }
-        trash = await library.listTrash()
-        if selectedID == id { selectedID = visible.first?.id }
-        if session.activeScriptID == id { session.stop() }
-      }
+      withLibrary { [self] _ in try await deleteScript(id) }
     }
   }
-  func restore(_ id: UUID) {
-    withLibrary { [self] library in
-      _ = try await library.restore(id)
-      await reload()
+  func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    guard await flushPendingSaves() else {
+      throw PendingEditsError(description: "Save the pending edits before moving scripts to Trash.")
     }
+    try afterSaving()
+    deletingIDs.insert(id)
+    defer { deletingIDs.remove(id) }
+    await deleteGate?()
+    try await library.delete(id)
+    session.forgetPosition(for: id)
+    scripts.removeAll { $0.metadata.id == id }
+    trash = await library.listTrash()
+    if selectedID == id { selectedID = visible.first?.id }
+    if session.activeScriptID == id { session.stop() }
+  }
+  func restore(_ id: UUID) {
+    withLibrary { [self] _ in try await restoreScript(id) }
+  }
+  func restoreScript(_ id: UUID) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    _ = try await library.restore(id)
+    await reload()
   }
   func exportMarkdown(_ script: ScriptRecord) {
     let panel = NSSavePanel()
@@ -625,15 +649,16 @@ private enum PresenterSaveError: LocalizedError {
       return false
     }
   }
-  func rename(_ value: String, for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, title: value) } }
-  func setTags(_ tags: [String], for id: UUID) { updateMetadata(id) { try await $0.updateMetadata(id, tags: tags) } }
-  private func updateMetadata(
-    _ id: UUID, _ change: @escaping @MainActor (MarkdownLibrary) async throws -> ScriptMetadata
-  ) {
-    withLibrary { [self] library in
-      let metadata = try await change(library)
-      if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
-    }
+  func rename(_ value: String, for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, title: value) }
+  }
+  func setTags(_ tags: [String], for id: UUID) {
+    withLibrary { [self] _ in try await updateScriptMetadata(id, tags: tags) }
+  }
+  func updateScriptMetadata(_ id: UUID, title: String? = nil, tags: [String]? = nil) async throws {
+    guard let library else { throw CocoaError(.fileNoSuchFile) }
+    let metadata = try await library.updateMetadata(id, title: title, tags: tags)
+    if let i = scripts.firstIndex(where: { $0.metadata.id == id }) { scripts[i].metadata = metadata }
   }
 
   func savePreset(named name: String) {
