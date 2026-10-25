@@ -527,7 +527,8 @@ private struct PresenterView: View {
             Button("Camera Settings…") { showsCameraSettings = true }
               .disabled(!camera.presentsWithVideo)
           } label: {
-            Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.iconOnly)
+            // An icon-only Label drops a button-style Menu from the accessibility tree; a Text image keeps it.
+            Text(Image(systemName: camera.displayMode.systemImage))
           }
           .menuStyle(.button).menuIndicator(.hidden).fixedSize()
           .accessibilityLabel("Presenter view")
