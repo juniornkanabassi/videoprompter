@@ -723,6 +723,21 @@ struct ScriptTextView: NSViewRepresentable {
     var mappings: [(NSRange, Int)] = []
     /// The system's Reduce Motion; tests that only check where the text lands set it to skip the easing.
     static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// Moves the script: eased over 0.60 s, or at once, which also stops an easing in flight. Tests
+    /// swap it to see what was asked for, since an eased scroll does not advance while the screen
+    /// is locked.
+    static var moveClip: (NSClipView, NSPoint, _ eased: Bool) -> Void = { clip, destination, eased in
+      if eased {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0.60
+          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+          clip.animator().setBoundsOrigin(destination)
+        }
+      } else {
+        clip.layer?.removeAllAnimations()
+        clip.setBoundsOrigin(destination)
+      }
+    }
     private var renderedDocument: PrompterDocument?
     private var renderedStyle = ""
     var tokenIndex = 0
@@ -734,8 +749,7 @@ struct ScriptTextView: NSViewRepresentable {
     private var textColour = NSColor.white
     private var lastAligned: Int?
     private var lastGuideFraction: Double?
-    /// Where the last alignment sends the scroll, eased or not. Internal for the alignment test.
-    private(set) var lastAlignmentDestination: NSPoint?
+    private var lastAlignmentDestination: NSPoint?
     private var lastReadTokenIndex: Int?
     private var lastReadConfirmedTokenIndex: Int?
     var updateGeneration = 0
@@ -750,8 +764,6 @@ struct ScriptTextView: NSViewRepresentable {
     /// Seek revisions the hand scroll itself caused, which must not lift the suppression.
     private var pendingUserSeeks = 0
     var snapNextAlignment = false
-    /// Eased alignments started, so a test can tell a restarted animation from one still running.
-    private(set) var alignmentAnimationCount = 0
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
     /// Every mapping's rendered midY, measured on the gesture's first scroll event. Only geometry
@@ -1168,17 +1180,7 @@ struct ScriptTextView: NSViewRepresentable {
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
       } ?? false
-      if animate && !isSameDestination {
-        alignmentAnimationCount += 1
-        NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.60
-          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-          scroll.contentView.animator().setBoundsOrigin(destination)
-        }
-      } else if !animate {
-        scroll.contentView.layer?.removeAllAnimations()
-        scroll.contentView.setBoundsOrigin(destination)
-      }
+      if !animate || !isSameDestination { Self.moveClip(scroll.contentView, destination, animate) }
       if !animate || !isSameDestination { scroll.reflectScrolledClipView(scroll.contentView) }
       lastAligned = tokenIndex
       lastGuideFraction = guideFraction
