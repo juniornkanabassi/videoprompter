@@ -68,7 +68,8 @@ CLEAN=$([[ -z $STATUS ]] && print 1 || print 0)
 step() { print "\n== $*"; }
 
 # Sparkle compares build numbers and the feed serves only full releases, so prereleases are never published here.
-[[ $SRC_VERSION =~ '^[0-9]+\.[0-9]+(\.[0-9]+)?$' ]] || die "version '$SRC_VERSION' is not a release number (x.y or x.y.z); prereleases are not published"
+# x.y.z exactly, as checks/package-dmg.sh requires.
+[[ $SRC_VERSION =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || die "version '$SRC_VERSION' is not a release number (x.y.z); prereleases are not published"
 EXISTS=0 TAGGED=0
 preflight=()   # read-only checks: a real run stops on any of them, a dry run lists them
 (( CLEAN )) || preflight+=("the source has uncommitted changes; commit them first")
