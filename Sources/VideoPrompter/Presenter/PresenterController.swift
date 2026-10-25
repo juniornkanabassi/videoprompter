@@ -86,7 +86,8 @@ import SwiftUI
   }
   /// The script is on screen to be read: the same test that enables the bar's Start button.
   var canStartReading: Bool {
-    !isShowingWithoutScript && !ReferenceMonitor.shared.isActive && (camera.displayMode != .videoOnly || isEditing)
+    panel?.isVisible == true && panel?.isMiniaturized == false && !isEditing
+      && !isShowingWithoutScript && !ReferenceMonitor.shared.isActive && camera.displayMode != .videoOnly
   }
   func endMonitor() { ReferenceMonitor.shared.end(camera: camera) }
   func toggleFullScreen() {
