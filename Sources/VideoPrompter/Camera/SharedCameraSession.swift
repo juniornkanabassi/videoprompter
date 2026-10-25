@@ -118,10 +118,14 @@ struct CameraHolders {
   private func refreshDeliveredSize() {
     let session = self.session
     let uid = attachedUID
+    let probe = self.probe
     queue.async {
       let port = session.inputs.compactMap { $0 as? AVCaptureDeviceInput }
         .flatMap(\.ports).first { $0.mediaType == .video }
       guard let description = port?.formatDescription else { return }
+      probe.follow(
+        delivered: CMVideoFormatDescriptionGetDimensions(description),
+        subType: description.mediaSubType.rawValue, in: session)
       let size = CMVideoFormatDescriptionGetPresentationDimensions(
         description, usePixelAspectRatio: true, useCleanAperture: false)
       Task { @MainActor in
@@ -286,6 +290,8 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// Devices whose pinned rate showed nothing: they keep the format's default rate for this run.
   private var failed = Set<String>()
   private var generation = 0
+  /// The signal's size as `pin` read it, so `follow` can tell a different delivered picture.
+  private var signalSize: CMVideoDimensions?
 
   init(sessionQueue: DispatchQueue) {
     self.sessionQueue = sessionQueue
@@ -307,6 +313,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   ) {
     generation += 1
     current = nil
+    signalSize = nil
     guard let device = signal?.device else { return }
     let formats = device.formats
     guard let signal,
@@ -316,7 +323,34 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     else { return }
     if failed.contains(device.uniqueID) { choice = choice.settled }
     current = (device, formats, choice)
+    signalSize = CMVideoFormatDescriptionGetDimensions(signal.format.formatDescription)
     holdingFormat(session)
+  }
+
+  /// Session queue only, whenever the input port's format changes. A DeckLink that has streamed
+  /// nothing yet reports its 720x486 default as the mode it detected, and `pin` held that: on
+  /// 25 October Cam B's 4K signal showed in standard definition for the whole session. When the
+  /// port then delivers a larger picture than the pinned format, the delivered size is the real
+  /// signal, so pin again from it. A delivered size `pin` already saw, or one no larger than the
+  /// pinned format (the normal 4K signal shown at 1080p), changes nothing, so this cannot loop.
+  func follow(delivered: CMVideoDimensions, subType: FourCharCode, in session: AVCaptureSession) {
+    guard let current, let signalSize,
+      delivered.width != signalSize.width || delivered.height != signalSize.height,
+      current.formats.indices.contains(current.choice.wanted.format)
+    else { return }
+    let pinned = CMVideoFormatDescriptionGetDimensions(current.formats[current.choice.wanted.format].formatDescription)
+    guard Int64(delivered.width) * Int64(delivered.height) > Int64(pinned.width) * Int64(pinned.height) else { return }
+    let sameSize = current.device.formats.filter {
+      let d = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
+      return d.width == delivered.width && d.height == delivered.height
+    }
+    guard let format = sameSize.first(where: { $0.formatDescription.mediaSubType.rawValue == subType }) ?? sameSize.first
+    else { return }
+    NSLog("Video Prompter camera: the signal is %dx%d, not the %dx%d first reported; choosing the format again",
+          delivered.width, delivered.height, signalSize.width, signalSize.height)
+    // The pinned rate came from the same card, so it is the signal's rate unless the new format lacks it.
+    pin((device: current.device, format: format, duration: current.device.activeVideoMinFrameDuration), in: session)
+    if session.isRunning { watch(session) }
   }
 
   /// Session queue only: start with the format held, then check it.
