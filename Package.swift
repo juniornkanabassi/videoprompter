@@ -13,8 +13,9 @@ let package = Package(
         .target(name: "PrompterCore", path: "Sources/PrompterCore"),
         .executableTarget(name: "VideoPrompter", dependencies: ["PrompterCore", .product(name: "Sparkle", package: "Sparkle")],
                           path: "Sources/VideoPrompter",
-                          // build.sh embeds Sparkle.framework in Contents/Frameworks.
-                          linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"])]),
+                          // build.sh embeds Sparkle.framework in Contents/Frameworks; a bare SwiftPM binary finds it beside itself.
+                          linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
+                                                                    "-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]),
         .executableTarget(name: "VideoPrompterCLI", dependencies: ["PrompterCore"], path: "Sources/VideoPrompterCLI"),
         .testTarget(name: "PrompterCoreTests", dependencies: ["PrompterCore", "VideoPrompter"], path: "Tests/PrompterCoreTests", resources: [.copy("Fixtures")])
     ]

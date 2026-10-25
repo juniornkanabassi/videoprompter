@@ -279,6 +279,9 @@ else
   [[ $(git -C "$ROOT" rev-parse HEAD) == $HEAD && -z $(git -C "$ROOT" status --porcelain) ]] \
     || die "the checkout changed since step 1 (HEAD was $HEAD); nothing uploaded"
   if (( EXISTS )); then
+    # A draft or prerelease is not what /releases/latest serves, so the appcast and website must not point at it.
+    [[ $(gh release view "v$VERSION" --repo $REPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
+      || die "v$VERSION on $REPO is a draft or prerelease; publish it as a full release first, then rerun with --resume"
     HAVE=$(gh release view "v$VERSION" --repo $REPO --json assets --jq '.assets[].name')
     missing=()
     for name in $NAMES; do   # every asset already there is checked first; only then is a missing one uploaded
