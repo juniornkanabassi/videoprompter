@@ -862,6 +862,9 @@ final class PresenterControllerTests: XCTestCase {
     NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
     NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
     let handY = y()
+    XCTAssertNotNil(coordinator.liveScrollMidYs, "the gesture measured the words")
+    coordinator.snapToGuide()  // what updateNSView does for the hand's own seek
+    XCTAssertNotNil(coordinator.liveScrollMidYs, "a seek must not make the next scroll event measure again")
     coordinator.isActivelyRunning = false  // what updateNSView reports after the pause
     XCTAssertTrue(coordinator.isHandScrolled)
     XCTAssertTrue(coordinator.noteSeekRevision(session.seekRevision), "the hand's own seek")
@@ -880,6 +883,7 @@ final class PresenterControllerTests: XCTestCase {
 
     // Play lifts the suppression too.
     NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    XCTAssertNil(coordinator.liveScrollMidYs, "a new gesture measures afresh")
     NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
     rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
     let secondHandY = y()

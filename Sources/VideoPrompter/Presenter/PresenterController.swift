@@ -669,6 +669,7 @@ struct ScriptTextView: NSViewRepresentable {
     text.onCharacterClick = { context.coordinator.seek($0) }
     text.onLayout = { [weak scroll] in
       guard let scroll else { return }
+      context.coordinator.dropScrollGeometry()
       context.coordinator.invalidateAlignment()
       context.coordinator.alignToCurrent(in: scroll)
     }
@@ -748,8 +749,10 @@ struct ScriptTextView: NSViewRepresentable {
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
-    /// Every mapping's rendered midY, measured on the gesture's first scroll event.
-    private var liveScrollMidYs: [CGFloat]?
+    /// Every mapping's rendered midY, measured on the gesture's first scroll event. Only geometry
+    /// clears it (a new gesture, a render, a resize): each hand-scroll seek re-aligns, and clearing
+    /// it there too would measure the whole script again on every event.
+    private(set) var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
     /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
@@ -804,6 +807,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self, weak scroll] _ in
           MainActor.assumeIsolated {
             guard let self, let scroll else { return }
+            self.dropScrollGeometry()
             self.snapToGuide()
             self.alignToCurrent(in: scroll)
           }
@@ -811,7 +815,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
             self?.isLiveScrolling = true
-            self?.liveScrollMidYs = nil
+            self?.dropScrollGeometry()
             if self?.manualPosition != nil { self?.isHandScrolled = true }
           }
         },
@@ -893,6 +897,7 @@ struct ScriptTextView: NSViewRepresentable {
         }
       }
       mappings = []
+      dropScrollGeometry()
       let plain = attributed.string as NSString
       let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
@@ -992,7 +997,7 @@ struct ScriptTextView: NSViewRepresentable {
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
       // Each word is measured once per gesture, not twice per trackpad event (60 to 120 a second,
       // and a long script lagged behind the fingers). Layout holds still while the hand scrolls;
-      // anything that moves it invalidates the alignment, which drops these.
+      // a render, resize or reflow drops these.
       let midYs = liveScrollMidYs ?? mappings.map { range in
         let glyph = manager.glyphRange(forCharacterRange: range.0, actualCharacterRange: nil)
         return manager.boundingRect(forGlyphRange: glyph, in: container).midY
@@ -1019,14 +1024,15 @@ struct ScriptTextView: NSViewRepresentable {
     func setSideInset(_ inset: CGFloat) {
       guard let textView, abs(textView.textContainerInset.width - inset) > 0.5 else { return }
       textView.textContainerInset.width = inset
+      dropScrollGeometry()
       snapToGuide()
     }
     func invalidateAlignment() {
-      liveScrollMidYs = nil
       lastAligned = nil
       lastGuideFraction = nil
       lastAlignmentDestination = nil
     }
+    func dropScrollGeometry() { liveScrollMidYs = nil }
     /// Re-align on the next update without easing.
     func snapToGuide() {
       invalidateAlignment()
