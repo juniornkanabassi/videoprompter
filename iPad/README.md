@@ -19,6 +19,24 @@ A change to the voice tracking or the reading session therefore reaches both app
 
 Edits on either side reach the other a few seconds after iCloud syncs. If both sides change the same script, the Mac keeps its version in the library's Conflicts folder and the iPad saves its version as a copy beside the file. Presets travel through `Video Prompter presets.json` in the same folder; mirroring and the microphone stay per device.
 
+## Cameras behind the script
+
+Under teleprompter glass the iPad's own cameras face away from you, so the picture comes in another way. Turn it on in Settings › Camera or with the camera button while presenting.
+
+Straight into the iPad, anything that shows up as a USB webcam (UVC) works: the ATEM Mini's USB-C webcam output (the programme feed), a Sony FX3 or a7 IV set to USB Streaming, an HDMI to USB-C capture adapter, or an ordinary webcam. The iPad picks the sharpest mode up to 1080p at 25 fps or more and switches to the camera when it is plugged in. This has the least delay.
+
+Through a Mac, connect the iPad to the Mac with a USB-C cable and choose File › Send Camera to iPad in the Mac app. The Mac sends the camera its Camera window shows (a DeckLink or ATEM feed included) as hardware H.264 at up to 1080p, through usbmuxd, the same channel Finder uses, so no network or pairing is needed beyond "Trust This Computer". With Settings › Camera from a Mac › Allow a Mac on the same Wi-Fi turned on, the Mac also finds the iPad over Wi-Fi with Bonjour.
+
+Rotation, mirroring and the framing guides apply to either source and are remembered per camera.
+
+## Scripts from Google Docs
+
+Add › From Google Docs copies a document in as Markdown. The doc stays the master: Update from Google Docs on the script fetches it again, and asks first if the script was edited since.
+
+A pasted link works with no setup for documents shared with "Anyone with the link".
+
+Signing in with Google lists and searches the account's documents, shared drives included, and opens documents shared only with the account (a Workspace domain's, say). It needs an OAuth client: in Google Cloud Console create a project, enable the Google Drive API, set up the consent screen with the `drive.readonly` scope, and create an OAuth client of type iOS for bundle ID `com.juniornkanabassi.VideoPrompter`. Put its client ID in `Info.plist` under `GoogleClientID`. Until the app is verified by Google, sign-in works for up to 100 listed test users and ends after seven days.
+
 ## Build
 
 Open `iPad/VideoPrompter.xcodeproj` in Xcode 26, and run on the iPad (the project signs automatically with team M6L2VW4W5Z). From the command line:
