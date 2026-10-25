@@ -362,6 +362,27 @@ import XCTest
     XCTAssertFalse(store.scripts.contains { $0.id == second.id })
   }
 
+  func testCameraGuidesRetryNeverChangesACameraSelectedSince() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    camera.selectedUID = "camera-a"
+    let guides = ["thirds": "on", "requestId": "guides1"]
+    let first = await actions.handle("camera_guides", guides)
+    XCTAssertEqual(first.body["ok"] as? Bool, true)
+    XCTAssertTrue(camera.guides.thirds)
+    camera.selectedUID = "camera-b"
+    let before = camera.guides
+    let retry = await actions.handle("camera_guides", guides)
+    XCTAssertEqual((retry.body["result"] as? [String: Any])?["repeated"] as? Bool, true)
+    XCTAssertEqual(camera.guides, before)
+    let empty = await actions.handle("camera_guides", ["requestId": "guides2"])
+    XCTAssertEqual(empty.body["ok"] as? Bool, false)
+  }
+
   func testRenameRetryNeverRenamesAScriptThatTookTheOldName() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }

@@ -130,7 +130,7 @@ public enum ControlProtocol {
     .init(action: "camera_set", words: ["camera", "set"], summary: "Show or hide the camera behind the script, mirror or rotate it. Give at least one.", example: "videoprompter camera set on --rotation auto", params: [
       .init("view", "choice", positional: true, choices: ["off", "on", "only"], help: "off: script only; on: script over the camera; only: camera alone"),
       .init("mirror", "choice", choices: onOff, help: "Mirror the camera picture"),
-      .init("rotation", "choice", choices: ["0", "90", "180", "270", "auto"], help: "Camera rotation in degrees, or auto")]),
+      .init("rotation", "choice", choices: ["0", "90", "180", "270", "auto"], help: "Camera rotation in degrees, or auto"), requestID]),
     .init(action: "camera_guides", words: ["camera", "guides"], summary: "Set framing guides for the selected camera. Give at least one.", example: "videoprompter camera guides --thirds on --marker 9:16", params: [
       .init("thirds", "choice", choices: onOff, help: "Rule of thirds"),
       .init("centreCross", "choice", choices: onOff, help: "Centre cross"),
@@ -138,7 +138,7 @@ public enum ControlProtocol {
       .init("marker", help: "Frame marker shape such as 9:16, 16:9, 4:5, 1:1, 4:3 or any W:H, or off"),
       .init("colour", help: "Guide colour as #RRGGBB"),
       .init("visibility", "integer", range: 0...100, help: "Guide opacity percentage; 0 hides them"),
-      .init("shade", "integer", range: 0...100, help: "Darkening outside the frame marker, as a percentage")]),
+      .init("shade", "integer", range: 0...100, help: "Darkening outside the frame marker, as a percentage"), requestID]),
     .init(action: "microphone_list", words: ["microphone", "list"], summary: "List microphones for Voice and for recording.", example: "videoprompter microphone list", params: []),
     .init(action: "record_start", words: ["record", "start"], summary: "Start recording the shown camera and microphone; returns a recording id and needs --yes.", example: "videoprompter record start --yes --request-id take1", params: [confirm, requestID]),
     .init(action: "record_stop", words: ["record", "stop"], summary: "Stop recording with its recording id or --force, and report the saved file.", example: "videoprompter record stop --recording <id>", params: [.init("recording", help: "Recording id returned by record start"), .init("force", "boolean", help: "Stop any active recording"), requestID]),

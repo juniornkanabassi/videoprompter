@@ -350,23 +350,26 @@ import Speech
       camera.selectedUID = device.uid
       return .ok(cameraState)
     case "camera_set":
-      if let error = Self.cameraChangeError(recording: recorder.isRecording, busy: recorder.isBusy) { return error }
-      guard !params.isEmpty else { return .error("invalid_params", "Give at least one of view, mirror or rotation. Example: \(command.example)") }
-      if let view = params["view"], view != "off" {
-        switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: break
-        case .notDetermined: return .error("permission_required", "macOS has not asked for camera access yet. Show the camera once in Video Prompter so a person can answer the prompt.")
-        default: return .error("camera_denied", "Camera access is off. Allow Video Prompter in System Settings > Privacy & Security > Camera.")
+      // Rotation and guides are saved per camera: a retry must not apply them to a camera selected since.
+      return await once(action, params) { [self] () -> ControlResult in
+        if let error = Self.cameraChangeError(recording: recorder.isRecording, busy: recorder.isBusy) { return error }
+        guard params.keys.contains(where: { $0 != "requestId" }) else { return .error("invalid_params", "Give at least one of view, mirror or rotation. Example: \(command.example)") }
+        if let view = params["view"], view != "off" {
+          switch AVCaptureDevice.authorizationStatus(for: .video) {
+          case .authorized: break
+          case .notDetermined: return .error("permission_required", "macOS has not asked for camera access yet. Show the camera once in Video Prompter so a person can answer the prompt.")
+          default: return .error("camera_denied", "Camera access is off. Allow Video Prompter in System Settings > Privacy & Security > Camera.")
+          }
         }
+        if let mirror = params["mirror"] { camera.mirrored = mirror == "on" }
+        if let rotation = params["rotation"] {
+          if rotation == "auto" { camera.guides.automaticRotation = true }
+          else if let degrees = Int(rotation), let value = CameraRotation(rawValue: degrees) { camera.setRotation(value) }
+        }
+        if let view = params["view"] { camera.displayMode = view == "on" ? .prompterWithVideo : view == "only" ? .videoOnly : .prompterOnly }
+        return .ok(cameraState)
       }
-      if let mirror = params["mirror"] { camera.mirrored = mirror == "on" }
-      if let rotation = params["rotation"] {
-        if rotation == "auto" { camera.guides.automaticRotation = true }
-        else if let degrees = Int(rotation), let value = CameraRotation(rawValue: degrees) { camera.setRotation(value) }
-      }
-      if let view = params["view"] { camera.displayMode = view == "on" ? .prompterWithVideo : view == "only" ? .videoOnly : .prompterOnly }
-      return .ok(cameraState)
-    case "camera_guides": return setGuides(params, example: command.example)
+    case "camera_guides": return await once(action, params) { [self] in setGuides(params, example: command.example) }
     case "microphone_list":
       let voice = AudioCapture.inputDevices()
       let recording = CameraRecorder.microphones()
@@ -590,7 +593,7 @@ import Speech
     }
   }
   private func setGuides(_ params: [String: String], example: String) -> ControlResult {
-    guard !params.isEmpty else { return .error("invalid_params", "Give at least one guide setting. Example: \(example)") }
+    guard params.keys.contains(where: { $0 != "requestId" }) else { return .error("invalid_params", "Give at least one guide setting. Example: \(example)") }
     var g = camera.guides
     if let value = params["thirds"] { g.thirds = value == "on" }
     if let value = params["centreCross"] { g.axes = value == "on" }
