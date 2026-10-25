@@ -336,6 +336,7 @@ private enum PresenterSaveError: LocalizedError {
         }
         try await library.delete(id)
         session.forgetPosition(for: id)
+        MacGoogleDocs.links[id] = nil
         scripts.removeAll { $0.metadata.id == id }
         trash = await library.listTrash()
         if selectedID == id { selectedID = visible.first?.id }
@@ -697,8 +698,12 @@ private enum PresenterSaveError: LocalizedError {
             NSApp.sendAction(#selector(NSTextView.performFindPanelAction(_:)), to: responder, from: item)
           }.keyboardShortcut("f", modifiers: .command)
         }
-        SidebarCommands()
-        InspectorCommands()
+        // Grouped to stay within the commands builder's ten items.
+        Group {
+          SidebarCommands()
+          InspectorCommands()
+          PrivacyCommands()
+        }
         ICloudCommands(store: store)
         IPadCameraCommands(sender: .shared)
         CommandGroup(after: .newItem) { FileItems(store: store) }

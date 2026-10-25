@@ -177,6 +177,8 @@ import UIKit
   private var googleLinks: GoogleDocLinks { GoogleDocLinks(defaults: defaults) }
 
   func isFromGoogle(_ script: FolderScript) -> Bool { googleLinks[script.id] != nil }
+  /// A deleted script keeps no record of where it came from.
+  func forgetGoogleLink(_ script: FolderScript) { googleLinks[script.id] = nil }
 
   /// Imports a Google Doc as a new script and selects it. Returns why it failed, or nil.
   func importGoogleDoc(_ document: String) async -> String? {

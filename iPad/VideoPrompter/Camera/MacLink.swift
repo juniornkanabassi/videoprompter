@@ -61,19 +61,21 @@ import UIKit
     if !allowsWiFi {
       wifi?.cancel()
       wifi = nil
+      // Turning Wi-Fi off also ends a Mac already sending over it; USB-C carries on.
+      receiver.dropWiFi()
     } else if wifi == nil || wifi?.state == .cancelled {
       let parameters = NWParameters.tcp
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
       listener.service = NWListener.Service(name: UIDevice.current.name, type: CameraLink.bonjourType)
-      configure(listener)
+      configure(listener, wifi: true)
       wifi = listener
     }
   }
 
-  private func configure(_ listener: NWListener) {
+  private func configure(_ listener: NWListener, wifi: Bool = false) {
     let receiver = self.receiver
-    listener.newConnectionHandler = { connection in receiver.accept(connection) }
+    listener.newConnectionHandler = { connection in receiver.accept(connection, overWiFi: wifi) }
     listener.stateUpdateHandler = { [weak self, weak listener] state in
       guard case .failed = state else { return }
       listener?.cancel()
@@ -117,6 +119,7 @@ final class LinkReceiver: @unchecked Sendable {
   var onEvent: (@Sendable (Event) -> Void)?
   private let renderer: AVSampleBufferVideoRenderer
   private var connection: NWConnection?
+  private var connectionIsWiFi = false
   private var reader = CameraLink.Reader()
   private var format: CMVideoFormatDescription?
   /// After a connection or a decoder failure, frames wait for the next key frame.
@@ -126,9 +129,10 @@ final class LinkReceiver: @unchecked Sendable {
     self.renderer = renderer
   }
 
-  func accept(_ new: NWConnection) {
+  func accept(_ new: NWConnection, overWiFi: Bool) {
     connection?.cancel()
     connection = new
+    connectionIsWiFi = overWiFi
     reader = CameraLink.Reader()
     format = nil
     needsKeyFrame = true
@@ -143,6 +147,10 @@ final class LinkReceiver: @unchecked Sendable {
     }
     new.start(queue: queue)
     receive(on: new)
+  }
+
+  func dropWiFi() {
+    queue.async { [self] in if connectionIsWiFi { connection?.cancel() } }
   }
 
   private func receive(on connection: NWConnection) {

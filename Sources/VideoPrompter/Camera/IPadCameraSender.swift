@@ -1,5 +1,6 @@
 #if os(macOS)
 @preconcurrency import AVFoundation
+import AppKit
 import Darwin
 import Network
 import PrompterCore
@@ -21,6 +22,20 @@ import VideoToolbox
   @Published var isOn = false { didSet { if isOn != oldValue { isOn ? start() : stop() } } }
   /// What the menu shows under the toggle.
   @Published private(set) var status = "Off"
+  /// Off by default: USB-C needs no trust decision, while Wi-Fi is unencrypted and anything on
+  /// the network can advertise itself as an iPad.
+  @Published var usesWiFi = UserDefaults.standard.bool(forKey: "sendCameraOverWiFi") {
+    didSet {
+      UserDefaults.standard.set(usesWiFi, forKey: "sendCameraOverWiFi")
+      if isOn { usesWiFi ? startBrowsing() : stopBrowsing() }
+    }
+  }
+  /// iPads the user has agreed to send to over Wi-Fi, by their Bonjour name.
+  private var trustedNames = Set(UserDefaults.standard.stringArray(forKey: "sendCameraTrustedIPads") ?? []) {
+    didSet { UserDefaults.standard.set(Array(trustedNames), forKey: "sendCameraTrustedIPads") }
+  }
+  /// Asked about and refused in this run, so the question is not repeated.
+  private var declinedNames = Set<String>()
 
   private let output = AVCaptureVideoDataOutput()
   private let encoder = LinkEncoder()
@@ -58,6 +73,11 @@ import VideoToolbox
     }
     mux.start()
     self.mux = mux
+    if usesWiFi { startBrowsing() }
+  }
+
+  private func startBrowsing() {
+    guard browser == nil else { return }
     let browser = NWBrowser(for: .bonjour(type: CameraLink.bonjourType, domain: nil), using: .tcp)
     browser.browseResultsChangedHandler = { [weak self] results, _ in
       let endpoints = results.map(\.endpoint)
@@ -67,14 +87,20 @@ import VideoToolbox
     self.browser = browser
   }
 
+  private func stopBrowsing() {
+    browser?.cancel()
+    browser = nil
+    wifiTargets = []
+    if pipe?.name == "Wi-Fi" { pipe?.close() }
+  }
+
   private func stop() {
     retry?.cancel()
     mux?.stop()
     mux = nil
-    browser?.cancel()
-    browser = nil
+    stopBrowsing()
     usbDevices = []
-    wifiTargets = []
+    declinedNames = []
     pipe?.send(CameraLink.Message.goodbye.encoded())
     pipe?.close()
     pipe = nil
@@ -95,9 +121,24 @@ import VideoToolbox
     connectIfNeeded()
   }
 
+  /// Only iPads the user has named as theirs are sent to. A new one is asked about once, with
+  /// the warning that Wi-Fi carries the picture unencrypted.
   private func wifiChanged(_ endpoints: [NWEndpoint]) {
-    wifiTargets = endpoints
+    for name in endpoints.compactMap(Self.serviceName) where !trustedNames.contains(name) && !declinedNames.contains(name) {
+      let alert = NSAlert()
+      alert.messageText = "Send this Mac's camera to “\(name)” over Wi-Fi?"
+      alert.informativeText = "Only say yes if this is your iPad. On Wi-Fi the picture is not encrypted, so use it on a network you trust; a USB-C cable needs no question."
+      alert.addButton(withTitle: "Send to This iPad")
+      alert.addButton(withTitle: "Not Now")
+      if alert.runModal() == .alertFirstButtonReturn { trustedNames.insert(name) } else { declinedNames.insert(name) }
+    }
+    wifiTargets = endpoints.filter { Self.serviceName($0).map(trustedNames.contains) ?? false }
     connectIfNeeded()
+  }
+
+  private static func serviceName(_ endpoint: NWEndpoint) -> String? {
+    if case .service(let name, _, _, _) = endpoint { return name }
+    return nil
   }
 
   /// Tries each USB-C device, then each iPad on Wi-Fi, until one answers. An iPhone, or an iPad
@@ -176,7 +217,9 @@ struct IPadCameraCommands: Commands {
   var body: some Commands {
     CommandGroup(after: .importExport) {
       Toggle("Send Camera to iPad", isOn: $sender.isOn)
-        .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C or on the same Wi-Fi")
+        .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
+      Toggle("Also Send over Wi-Fi", isOn: $sender.usesWiFi)
+        .help("Also looks for your iPad on the same Wi-Fi. The picture is not encrypted on Wi-Fi.")
       if sender.isOn { Text(sender.status) }
     }
   }

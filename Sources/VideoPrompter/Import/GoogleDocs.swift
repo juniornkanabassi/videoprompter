@@ -199,7 +199,17 @@ enum GoogleDocsError: LocalizedError {
     isSignedIn = true
   }
 
+  /// Forgets the token here and asks Google to revoke it, so the app's access ends at Google
+  /// too. The revoke is best effort: offline, the token stays valid at Google until it expires
+  /// or is removed at myaccount.google.com/permissions.
   func signOut() {
+    if let refresh = Keychain.read(Self.keychainAccount) {
+      var request = URLRequest(url: URL(string: "https://oauth2.googleapis.com/revoke")!)
+      request.httpMethod = "POST"
+      request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+      request.httpBody = Data("token=\(refresh)".utf8)
+      Task.detached { _ = try? await URLSession.shared.data(for: request) }
+    }
     Keychain.delete(Self.keychainAccount)
     access = nil
     isSignedIn = false

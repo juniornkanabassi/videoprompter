@@ -25,7 +25,7 @@ Under teleprompter glass the iPad's own cameras face away from you, so the pictu
 
 Straight into the iPad, anything that shows up as a USB webcam (UVC) works: the ATEM Mini's USB-C webcam output (the programme feed), a Sony FX3 or a7 IV set to USB Streaming, an HDMI to USB-C capture adapter, or an ordinary webcam. The iPad picks the sharpest mode up to 1080p at 25 fps or more and switches to the camera when it is plugged in. This has the least delay.
 
-Through a Mac, connect the iPad to the Mac with a USB-C cable and choose File › Send Camera to iPad in the Mac app. The Mac sends the camera its Camera window shows (a DeckLink or ATEM feed included) as hardware H.264 at up to 1080p, through usbmuxd, the same channel Finder uses, so no network or pairing is needed beyond "Trust This Computer". With Settings › Camera from a Mac › Allow a Mac on the same Wi-Fi turned on, the Mac also finds the iPad over Wi-Fi with Bonjour.
+Through a Mac, connect the iPad to the Mac with a USB-C cable and choose File › Send Camera to iPad in the Mac app. The Mac sends the camera its Camera window shows (a DeckLink or ATEM feed included) as hardware H.264 at up to 1080p, through usbmuxd, the same channel Finder uses, so no network or pairing is needed beyond "Trust This Computer". With Settings › Camera from a Mac › Allow a Mac on the same Wi-Fi turned on here, and File › Also Send over Wi-Fi on the Mac, the Mac also finds the iPad over Wi-Fi with Bonjour. It asks once before sending to each iPad, because the Wi-Fi picture is not encrypted. Turning either option off ends a Wi-Fi connection at once.
 
 Rotation, mirroring and the framing guides apply to either source and are remembered per camera.
 

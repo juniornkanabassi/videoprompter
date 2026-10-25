@@ -105,8 +105,27 @@ extension AppStore {
     set {
       objectWillChange.send()
       UserDefaults.standard.set(newValue, forKey: ICloudScripts.enabledKey)
-      if newValue { Task { await syncICloudScripts() } }
+      Task { newValue ? await syncICloudScripts() : await unlinkICloudScripts() }
     }
+  }
+
+  /// Turning the setting off stops the sharing, not just the copying of new scripts: every
+  /// script linked into the iCloud folder goes back to its library copy, so nothing more is
+  /// written there or read from there. The files already in iCloud Drive stay where they are.
+  func unlinkICloudScripts() async {
+    guard let library else { return }
+    let states = await library.linkStates()
+    for (id, state) in states {
+      let inside: Bool
+      switch state {
+      case .resolved(let url), .staleBookmark(let url): inside = ICloudScripts.isInside(url)
+      case .missing(let path): inside = ICloudScripts.isInside(path: path)
+      default: inside = false
+      }
+      guard inside, let metadata = try? await library.unlink(id) else { continue }
+      if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
+    }
+    await refreshLinkStates()
   }
 
   /// One pass of the iCloud folder sync. Runs on the library's two-second poll while it is on.

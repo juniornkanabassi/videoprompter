@@ -1,5 +1,10 @@
 import SwiftUI
 
+/// The privacy policy both apps link to, from Settings or the Help menu and from Google sign-in.
+enum PrivacyPolicy {
+  static let url = URL(string: "https://juniornkanabassi.com/privacy/video-prompter/")!
+}
+
 /// Import from Google Docs, on the Mac and the iPad. A pasted link always works for a document
 /// shared with "Anyone with the link"; signing in with Google adds the account's own documents,
 /// searchable, newest first. `importDocument` brings one in and returns why it failed, or nil.
@@ -81,7 +86,10 @@ struct GoogleDocsSheet: View {
               Label("Sign in with Google", systemImage: "person.crop.circle")
             }
           } footer: {
-            Text("Video Prompter asks to read your Google Drive. It only ever reads, and only the documents you choose are copied to this iPad.")
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Video Prompter asks Google for read-only access to your Drive, to list your documents and copy the ones you choose into the app. It never changes your Drive, and nothing goes anywhere but this device. Signing out here also revokes the access at Google.")
+              Link("Privacy Policy", destination: PrivacyPolicy.url)
+            }
           }
         }
       }

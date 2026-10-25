@@ -61,3 +61,12 @@ struct GoogleDocsWindow: View {
     }
   }
 }
+
+/// Help › Video Prompter Privacy Policy.
+struct PrivacyCommands: Commands {
+  var body: some Commands {
+    CommandGroup(after: .help) {
+      Link("Video Prompter Privacy Policy", destination: PrivacyPolicy.url)
+    }
+  }
+}

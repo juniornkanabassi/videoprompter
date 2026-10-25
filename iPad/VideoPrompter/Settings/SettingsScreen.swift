@@ -24,6 +24,10 @@ struct SettingsScreen: View {
       camera
       presets
       scriptsFolder
+      Section("About") {
+        LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+        Link("Privacy Policy", destination: PrivacyPolicy.url)
+      }
     }
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
@@ -207,7 +211,7 @@ private struct MacLinkSettings: View {
     } header: {
       Text("Camera from a Mac")
     } footer: {
-      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up; Wi-Fi works too but adds a little delay.")
+      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up. For Wi-Fi, turn on the option here and File › Also Send over Wi-Fi on the Mac; the picture is not encrypted on Wi-Fi, so use it only on a network you trust.")
     }
   }
 }

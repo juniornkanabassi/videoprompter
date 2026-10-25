@@ -105,6 +105,7 @@ struct LibraryScreen: View {
   private func delete(_ script: FolderScript) {
     do {
       try folder.delete(script)
+      store.forgetGoogleLink(script)
       if store.selectedID == script.id { store.selectedID = nil }
     } catch { store.errorMessage = error.localizedDescription }
   }
