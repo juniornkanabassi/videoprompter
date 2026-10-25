@@ -52,7 +52,15 @@ for xpc in "$SPARKLE"/Versions/B/XPCServices/*.xpc(N); do
   /usr/bin/codesign "${SIGN_FLAGS[@]}" --preserve-metadata=entitlements "$xpc"
 done
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
-/usr/bin/codesign "${SIGN_FLAGS[@]}" --entitlements "$ROOT/Resources/Entitlements.plist" "$APP"
+# Hardened runtime only loads Sparkle when it shares the app's Team ID. A local identity (ReadAlong Dev or ad hoc) has
+# none, so only those builds turn library validation off; Developer ID builds keep it.
+ENTITLEMENTS="$ROOT/Resources/Entitlements.plist"
+if (( ! DEVELOPER_ID_AVAILABLE )); then
+  ENTITLEMENTS="$WORK/Entitlements.plist"
+  cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"
+  /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ENTITLEMENTS"
+fi
+/usr/bin/codesign "${SIGN_FLAGS[@]}" --entitlements "$ENTITLEMENTS" "$APP"
 /usr/bin/codesign --verify --deep --strict "$APP"
 # Developer ID builds are notarised and stapled before they are archived, so the archive and every
 # DMG made from it open on another Mac without a Gatekeeper warning. The ticket is stapled to the

@@ -22,6 +22,12 @@ subprocess.run(['ditto', str(supplied), str(app)], check=True, timeout=120)
 subprocess.run(['/usr/libexec/PlistBuddy', '-c', 'Set :CFBundleIdentifier '+CHECK_ID, str(app / 'Contents/Info.plist')], check=True)
 # Keep the shipped entitlements and hardened-runtime flags; only the identity changes.
 subprocess.run(['codesign', '--force', '--deep', '--sign', '-', '--preserve-metadata=entitlements,flags', str(app)], check=True, timeout=120)
+# An ad hoc signature has no Team ID, so hardened runtime would refuse the embedded Sparkle.framework: the copy alone
+# turns library validation off, on top of the shipped entitlements.
+entitlements = plistlib.loads(subprocess.run(['codesign', '-d', '--entitlements', '-', '--xml', str(supplied)], capture_output=True, check=True, timeout=60).stdout or plistlib.dumps({}))
+entitlements['com.apple.security.cs.disable-library-validation'] = True
+(root / 'check.entitlements').write_bytes(plistlib.dumps(entitlements))
+subprocess.run(['codesign', '--force', '--sign', '-', '--preserve-metadata=flags', '--entitlements', str(root / 'check.entitlements'), str(app)], check=True, timeout=120)
 def bundle_id(bundle): return plistlib.loads((bundle / 'Contents/Info.plist').read_bytes())['CFBundleIdentifier']
 assert bundle_id(supplied) == 'com.juniornkanabassi.VidPrompt' and bundle_id(app) == CHECK_ID, (bundle_id(supplied), bundle_id(app))
 cli = app / 'Contents/Helpers/videoprompter'
