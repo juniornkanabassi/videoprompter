@@ -57,7 +57,7 @@ private struct ReadingSurface: View {
   }
 
   /// One SwiftUI update plus the deferred read-state/alignment pass. These tests run with Reduce
-  /// Motion, so a running session's scroll lands at once instead of easing for 0.6 s;
+  /// Motion, so a running session's scroll lands at once instead of easing;
   /// `animations` marks the places that would otherwise have waited for it.
   func settle(animations: Bool = false) async {
     host.layoutSubtreeIfNeeded()

@@ -723,14 +723,18 @@ struct ScriptTextView: NSViewRepresentable {
     var mappings: [(NSRange, Int)] = []
     /// The system's Reduce Motion; tests that only check where the text lands set it to skip the easing.
     static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    /// Moves the script: eased over 0.60 s, or at once, which also stops an easing in flight. Tests
-    /// swap it to see what was asked for, since an eased scroll does not advance while the screen
-    /// is locked.
+    /// How long an eased move takes. Ease-out, so the line starts moving at full speed the moment
+    /// the reader reaches it, and a new target picks up from wherever the last move had got to:
+    /// the 0.60 s ease-in-out this replaced started every line from rest and put the line on the
+    /// guide over a second after the reader got there at a fast pace.
+    static let easedMoveSeconds = 0.20
+    /// Moves the script: eased, or at once, which also stops an easing in flight. Tests swap it to
+    /// see what was asked for, since an eased scroll does not advance while the screen is locked.
     static var moveClip: (NSClipView, NSPoint, _ eased: Bool) -> Void = { clip, destination, eased in
       if eased {
         NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.60
-          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+          context.duration = easedMoveSeconds
+          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
           clip.animator().setBoundsOrigin(destination)
         }
       } else {
