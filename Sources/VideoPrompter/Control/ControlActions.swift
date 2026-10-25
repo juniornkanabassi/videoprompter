@@ -211,26 +211,28 @@ import Speech
         catch { return .error("library_failed", "The script could not be duplicated.") }
       }
     case "script_export":
-      guard store.libraryAvailable else { return unavailable }
-      let (record, error) = lookup(params["script"]!)
-      if let error { return error }
-      guard let record else { return unavailable }
-      let path = params["path"]!
-      guard path.hasPrefix("/") else { return .error("invalid_params", "Export to an absolute path.") }
-      let url = URL(fileURLWithPath: path)
-      var isDirectory: ObjCBool = false
-      guard FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path, isDirectory: &isDirectory), isDirectory.boolValue else {
-        return .error("invalid_params", "The destination folder does not exist.")
+      return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable else { return unavailable }
+        let (record, error) = lookup(params["script"]!)
+        if let error { return error }
+        guard let record else { return unavailable }
+        let path = params["path"]!
+        guard path.hasPrefix("/") else { return .error("invalid_params", "Export to an absolute path.") }
+        let url = URL(fileURLWithPath: path)
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path, isDirectory: &isDirectory), isDirectory.boolValue else {
+          return .error("invalid_params", "The destination folder does not exist.")
+        }
+        if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) {
+          guard isTrue(params["replace"]) else { return .error("file_exists", "A file already exists there. Pass --replace to overwrite it.") }
+          guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --replace --yes to overwrite an existing file.") }
+          guard attributes[.type] as? FileAttributeType == .typeRegular else { return .error("invalid_params", "Only a regular file can be replaced.") }
+        }
+        do { try record.markdown.write(to: url, atomically: true, encoding: .utf8) }
+        catch { return .error("export_failed", "Could not export the script. \(error.localizedDescription)") }
+        var value: [String: Any] = identity(record); value["path"] = url.path
+        return .ok(value)
       }
-      if let attributes = try? FileManager.default.attributesOfItem(atPath: url.path) {
-        guard isTrue(params["replace"]) else { return .error("file_exists", "A file already exists there. Pass --replace to overwrite it.") }
-        guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --replace --yes to overwrite an existing file.") }
-        guard attributes[.type] as? FileAttributeType == .typeRegular else { return .error("invalid_params", "Only a regular file can be replaced.") }
-      }
-      do { try record.markdown.write(to: url, atomically: true, encoding: .utf8) }
-      catch { return .error("export_failed", "Could not export the script. \(error.localizedDescription)") }
-      var value: [String: Any] = identity(record); value["path"] = url.path
-      return .ok(value)
     case "script_delete":
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to move this script to Recently Deleted.") }
       return await once(action, params) { [self] () -> ControlResult in
@@ -257,16 +259,18 @@ import Speech
         ["id": entry.id.uuidString, "title": entry.metadata.title, "deleted": ISO8601DateFormatter().string(from: entry.deletedAt)]
       }])
     case "script_restore":
-      guard store.libraryAvailable, let library = store.library else { return unavailable }
-      store.trash = await library.listTrash()
-      let (entry, error) = choose(params["script"]!, in: store.trash, id: { $0.id.uuidString }, title: { $0.metadata.title }, kind: "script", list: "script trash")
-      if let error { return error }
-      guard let entry else { return unavailable }
-      do { try await store.restoreScript(entry.id) }
-      catch PrompterCoreError.destinationExists { return .error("library_failed", "A script file with the same name is already in the library. Nothing was changed.") }
-      catch { return .error("library_failed", "The script could not be restored. Nothing was changed.") }
-      guard let restored = store.scripts.first(where: { $0.id == entry.id }) else { return .ok(["id": entry.id.uuidString, "title": entry.metadata.title]) }
-      return .ok(details(restored))
+      return await once(action, params) { [self] () -> ControlResult in
+        guard store.libraryAvailable, let library = store.library else { return unavailable }
+        store.trash = await library.listTrash()
+        let (entry, error) = choose(params["script"]!, in: store.trash, id: { $0.id.uuidString }, title: { $0.metadata.title }, kind: "script", list: "script trash")
+        if let error { return error }
+        guard let entry else { return unavailable }
+        do { try await store.restoreScript(entry.id) }
+        catch PrompterCoreError.destinationExists { return .error("library_failed", "A script file with the same name is already in the library. Nothing was changed.") }
+        catch { return .error("library_failed", "The script could not be restored. Nothing was changed.") }
+        guard let restored = store.scripts.first(where: { $0.id == entry.id }) else { return .ok(["id": entry.id.uuidString, "title": entry.metadata.title]) }
+        return .ok(details(restored))
+      }
     case "folder_list":
       guard store.libraryAvailable else { return unavailable }
       return .ok(["folders": store.folders.map { folder -> [String: Any] in

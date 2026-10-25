@@ -334,6 +334,34 @@ import XCTest
     XCTAssertEqual(store.scripts.map(\.id), [replacement.id])
   }
 
+  func testExportAndRestoreRetriesReplayInsteadOfActingAgain() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let first = try await store.createScript(title: "Intro", markdown: "one")
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let file = root.appendingPathComponent("export.md")
+    let export = ["script": "Intro", "path": file.path, "requestId": "export1"]
+    let exported = await actions.handle("script_export", export)
+    XCTAssertEqual(exported.body["ok"] as? Bool, true)
+    try "edited since".write(to: file, atomically: true, encoding: .utf8)
+    let exportRetry = await actions.handle("script_export", export)
+    XCTAssertEqual((exportRetry.body["result"] as? [String: Any])?["repeated"] as? Bool, true)
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "edited since")
+
+    try await store.deleteScript(first.id)
+    let restore = ["script": "Intro", "requestId": "restore1"]
+    let restored = await actions.handle("script_restore", restore)
+    XCTAssertEqual(restored.body["ok"] as? Bool, true)
+    let second = try await store.createScript(title: "Intro", markdown: "two")
+    try await store.deleteScript(second.id)
+    let restoreRetry = await actions.handle("script_restore", restore)
+    XCTAssertEqual((restoreRetry.body["result"] as? [String: Any])?["id"] as? String, first.id.uuidString)
+    XCTAssertFalse(store.scripts.contains { $0.id == second.id })
+  }
+
   func testRenameRetryNeverRenamesAScriptThatTookTheOldName() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
