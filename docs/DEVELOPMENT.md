@@ -2,7 +2,7 @@
 
 This is the technical reference for building Video Prompter from source, checking a build and controlling the app from scripts and AI tools. The public overview is in the [README](../README.md).
 
-Video Prompter is a native Swift app for macOS 26. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. The source has no external package dependencies.
+Video Prompter is a native Swift app for macOS 26. Markdown scripts are the source of truth, with a library/editor and a separate floating presenter. The only package dependency is Sparkle 2.10.0, for updates.
 
 ## Build and test
 

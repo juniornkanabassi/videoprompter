@@ -6,7 +6,7 @@ I record in English and French in the same take, so I built a prompter that foll
 
 [Download Video Prompter](https://github.com/juniornkanabassi/videoprompter/releases/latest/download/VideoPrompter.dmg) · [Release notes](https://github.com/juniornkanabassi/videoprompter/releases/latest) · [App page](https://juniornkanabassi.com/apps/videoprompter/)
 
-The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Releases up to 2.0.2 are also kept on the archived [videoprompter-releases](https://github.com/juniornkanabassi/videoprompter-releases/releases) repository.
+The current release is 2.0.2 (build 41). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Older releases, including 1.2.2, stay on the [videoprompter-releases](https://github.com/juniornkanabassi/videoprompter-releases/releases) repository.
 
 ## Watch the quick-start guide
 
@@ -52,7 +52,7 @@ While the camera is on, the presenter bar has a camera switcher and Framing guid
 
 ## Privacy
 
-Voice tracking runs on your Mac. There is no hidden fallback to cloud transcription. Your scripts and settings are kept in your user account in `~/Library/Application Support/Video Prompter`, and recordings go to `~/Movies/Video Prompter` by default. The disk image also has a short install note. It contains only the app, never your data. The command line and MCP control only work for your own user account on the same Mac.
+Voice tracking runs on your Mac. There is no hidden fallback to cloud transcription. Your scripts and settings are kept in your user account in `~/Library/Application Support/Video Prompter`, and recordings go to `~/Movies/Video Prompter` by default. The disk image also has a short install note. It contains only the app, never your data. It checks juniornkanabassi.com for updates and downloads them from GitHub, and the first time you use Voice macOS may download Apple's speech files. The command line and MCP control only work for your own user account on the same Mac.
 
 ## Command line and AI assistants
 
@@ -102,7 +102,7 @@ Quit VidPrompt before opening Video Prompter. Once you have checked your scripts
 
 ## Building from source
 
-You need macOS 26 or later and full Xcode with Swift 6.2 or later; the Command Line Tools alone cannot build the SwiftUI app. The project has no external package dependencies.
+You need macOS 26 or later and full Xcode with Swift 6.2 or later; the Command Line Tools alone cannot build the SwiftUI app. The only dependency is Sparkle 2.10.0, which handles updates; SwiftPM fetches it.
 
 ```sh
 source env.sh
