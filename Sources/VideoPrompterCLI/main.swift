@@ -49,15 +49,16 @@ func connectSocket(_ path: String) -> Int32? {
   guard connected == 0, getpeereid(fd, &uid, &gid) == 0, uid == getuid() else { Darwin.close(fd); return nil }
   return fd
 }
-/// Whether a copy of the app is running already, from any install: a process whose executable is
-/// `…/Contents/MacOS/<name>`. Reading the process table costs well under a millisecond.
-func appRunning(executable name: String) -> Bool {
+/// Whether a copy of the app is running already: a process whose executable is `exact` when given (this helper's
+/// own app, so a test copy elsewhere never counts), else any `…/Contents/MacOS/<name>`. Costs well under a millisecond.
+func appRunning(executable name: String, exact: String? = nil) -> Bool {
   var pids = [pid_t](repeating: 0, count: 4096)
   let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
   var path = [CChar](repeating: 0, count: 4096)  // PROC_PIDPATHINFO_MAXSIZE
   for pid in pids.prefix(max(0, count)) where pid > 0 && pid != getpid() {
     guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { continue }
-    if String(cString: path).hasSuffix("/Contents/MacOS/" + name) { return true }
+    let running = String(cString: path)
+    if exact.map({ running == $0 || running == "/private" + $0 }) ?? running.hasSuffix("/Contents/MacOS/" + name) { return true }
   }
   return false
 }
@@ -94,7 +95,7 @@ var fd = connectSocket(path)
 if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["running": false, "app": bundleID, "socket": path]], json: invocation.json); exit(0) }
 // A copy that is still starting (two MCP calls at once) or briefly refusing connections must not be opened again:
 // macOS would send it a reopen, which shows the window. Wait for its socket instead.
-if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter")) {
+if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   var launch = ["-g"]
   if let custom = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"] { launch += ["-a", custom] }
