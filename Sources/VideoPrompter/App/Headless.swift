@@ -54,6 +54,8 @@ import SwiftUI
     activeObserver = nil
     NSApp.setActivationPolicy(.regular)
     Updates.shared.resume()
+    // The library's views read `active` for alerts kept back while headless; have them look again.
+    AppStore.shared.objectWillChange.send()
     guard let window = mainWindow else { return }
     window.alphaValue = 1; window.ignoresMouseEvents = false
     if !NSApp.windows.contains(where: \.isVisible) { window.makeKeyAndOrderFront(nil); windowHidden = false }

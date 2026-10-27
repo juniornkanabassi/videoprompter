@@ -97,8 +97,10 @@ if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["ru
 // macOS would send it a reopen, which shows the window. Wait for its socket instead. The lock makes CLIs that find
 // the app closed at the same moment decide one at a time; it is held until this process exits.
 if fd == nil {
+  // A first launch has no data folder yet; make it (as the app would) so the lock always exists.
+  try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
   let lock = Darwin.open(root.appendingPathComponent("cli-launch.lock").path, O_CREAT | O_RDWR, 0o600)
-  if lock >= 0 { flock(lock, LOCK_EX) }
+  guard lock >= 0, flock(lock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
 if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
