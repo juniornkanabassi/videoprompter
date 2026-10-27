@@ -94,7 +94,13 @@ if invocation.params["text"] == "-" {
 var fd = connectSocket(path)
 if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["running": false, "app": bundleID, "socket": path]], json: invocation.json); exit(0) }
 // A copy that is still starting (two MCP calls at once) or briefly refusing connections must not be opened again:
-// macOS would send it a reopen, which shows the window. Wait for its socket instead.
+// macOS would send it a reopen, which shows the window. Wait for its socket instead. The lock makes CLIs that find
+// the app closed at the same moment decide one at a time; it is held until this process exits.
+if fd == nil {
+  let lock = Darwin.open(root.appendingPathComponent("cli-launch.lock").path, O_CREAT | O_RDWR, 0o600)
+  if lock >= 0 { flock(lock, LOCK_EX) }
+  fd = connectSocket(path)
+}
 if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   var launch = ["-g"]
