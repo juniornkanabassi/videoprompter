@@ -959,10 +959,12 @@ private struct FileItems: View {
   }
 }
 
-/// The `Window` scene already lists itself under Window; this adds the shortcut.
+/// The `Window` scene already lists itself under Window; this adds the shortcut. It also hands the headless copy a way
+/// to open the library window, which a headless launch never makes: commands are built even with no window open.
 private struct CameraCommands: Commands {
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
+    let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
       Button("Camera") { openWindow(id: "camera") }.keyboardShortcut("c", modifiers: [.command, .shift])
     }
@@ -985,8 +987,14 @@ private struct CameraCommands: Commands {
   /// A Dock click, Spotlight or Finder launch while a headless copy runs: show the library instead of nothing.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     guard Headless.shared.active || Headless.shared.windowHidden else { return true }
-    // With no library window yet, SwiftUI's own reopen handling opens one once the app is ordinary again.
-    guard Headless.shared.mainWindow != nil else { Headless.shared.promote(); return true }
+    // A headless launch makes no library window; open one here rather than leave it to SwiftUI's reopen handling,
+    // which runs before the scene stops being suppressed.
+    guard Headless.shared.mainWindow != nil else {
+      Headless.shared.promote()
+      guard let openLibrary = Headless.shared.openLibrary else { return true }
+      openLibrary()
+      return false
+    }
     Headless.shared.reveal()
     return false
   }

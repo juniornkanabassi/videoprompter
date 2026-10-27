@@ -20,6 +20,8 @@ import SwiftUI
   }()
   /// The library window, kept transparent and off screen while headless so revealing it is instant.
   weak var mainWindow: NSWindow?
+  /// Opens a library window; the app's commands set it, since a headless launch never makes one.
+  var openLibrary: (@MainActor () -> Void)?
   /// Whether quitting now would interrupt nothing (no recording); the store answers it.
   var canQuit: @MainActor () -> Bool = { true }
   private var lastUse = Date()
@@ -64,11 +66,12 @@ import SwiftUI
   func reveal() {
     promote()
     windowHidden = false
-    if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else { reopenSelf() }
+    // Even with the presenter on screen, --show means the library comes forward.
+    if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else if let openLibrary { openLibrary() } else { reopenSelf() }
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
   }
-  /// A headless launch never creates the library window (its launch behaviour is suppressed). Asking LaunchServices
-  /// to reopen this running copy makes SwiftUI open one, as a Dock click would.
+  /// The fallback when the commands have not handed over `openLibrary`: asking LaunchServices to reopen this running
+  /// copy makes SwiftUI open a library window, as a Dock click would, as long as no other window is on screen.
   private func reopenSelf() {
     let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true
     NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
