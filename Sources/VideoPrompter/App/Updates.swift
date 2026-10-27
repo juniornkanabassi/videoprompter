@@ -25,7 +25,16 @@ import SwiftUI
       // A test run (--data-directory) shares the production defaults domain, so it never checks or installs anything.
       !CommandLine.arguments.contains("--data-directory"), Self.isDeveloperIDSigned
     else { return }
-    controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    // A headless copy must never put an update window on screen; it starts checking once it becomes the visible app.
+    deferred = Headless.shared.active
+    controller = SPUStandardUpdaterController(startingUpdater: !deferred, updaterDelegate: nil, userDriverDelegate: nil)
+  }
+  private var deferred = false
+  /// Called when a headless copy becomes the visible app.
+  func resume() {
+    guard deferred, let controller else { return }
+    deferred = false
+    controller.startUpdater()
   }
 
   /// Whether the running app carries Junior's Developer ID signature (team M6L2VW4W5Z). A copy re-signed ad hoc or

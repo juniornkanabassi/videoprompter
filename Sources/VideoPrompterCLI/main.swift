@@ -86,12 +86,14 @@ if fd == nil {
   if let custom = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"] { launch += ["-a", custom] }
   else if let ownApp { launch += ["-a", ownApp.path] }
   else { launch += ["-b", bundleID] }
-  if invocation.dataDirectory != nil { launch += ["-n", "--args", "--data-directory", root.path] }
+  // --headless: no library window, Dock tile or update prompt; `present` still shows the presenter.
+  if invocation.dataDirectory != nil { launch += ["-n", "--args", "--headless", "--data-directory", root.path] } else { launch += ["--args", "--headless"] }
   process.arguments = launch
   process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
   do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch Video Prompter in the background.", json: invocation.json) }
   let deadline = Date().addingTimeInterval(10)
-  while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.1); fd = connectSocket(path) }
+  // The socket appears a few hundred milliseconds into the launch; checking often answers as soon as it does.
+  while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.02); fd = connectSocket(path) }
 }
 guard let fd else { failure("Video Prompter is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
 defer { Darwin.close(fd) }

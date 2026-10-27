@@ -808,11 +808,17 @@ private enum PresenterSaveError: LocalizedError {
 @main struct VideoPrompterApp: App {
   @StateObject private var store = AppStore()
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
-  init() { Updates.shared.start() }
+  init() {
+    // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
+    Headless.shared.start()
+    Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
+    Updates.shared.start()
+  }
   var body: some Scene {
     WindowGroup("Video Prompter", id: "library") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
+        .background(HeadlessWindowHider())
         .onAppear { appDelegate.store = store }
     }
       .defaultSize(width: 1100, height: 750)
@@ -966,6 +972,12 @@ private struct CameraCommands: Commands {
     }
   }
   func applicationWillTerminate(_ notification: Notification) { controlServer?.stop() }
+  /// A Dock click, Spotlight or Finder launch while a headless copy runs: show the library instead of nothing.
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    guard Headless.shared.active else { return true }
+    Headless.shared.reveal()
+    return false
+  }
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       if Self.deletesLineWhileTyping(event, in: NSApp.keyWindow) { return nil }
