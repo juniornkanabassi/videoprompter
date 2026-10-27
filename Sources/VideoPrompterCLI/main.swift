@@ -95,12 +95,14 @@ var fd = connectSocket(path)
 if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["running": false, "app": bundleID, "socket": path]], json: invocation.json); exit(0) }
 // A copy that is still starting (two MCP calls at once) or briefly refusing connections must not be opened again:
 // macOS would send it a reopen, which shows the window. Wait for its socket instead. The lock makes CLIs that find
-// the app closed at the same moment decide one at a time; it is held until this process exits.
+// the app closed at the same moment decide one at a time; it is let go once the socket answers, before the request,
+// so a long command never holds up others.
+var launchLock: Int32 = -1
 if fd == nil {
   // A first launch has no data folder yet; make it (as the app would) so the lock always exists.
   try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-  let lock = Darwin.open(root.appendingPathComponent("cli-launch.lock").path, O_CREAT | O_RDWR, 0o600)
-  guard lock >= 0, flock(lock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
+  launchLock = Darwin.open(root.appendingPathComponent("cli-launch.lock").path, O_CREAT | O_RDWR, 0o600)
+  guard launchLock >= 0, flock(launchLock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
 if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
@@ -120,6 +122,7 @@ if fd == nil {
   // The socket appears a few hundred milliseconds into the launch; checking often answers as soon as it does.
   while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.02); fd = connectSocket(path) }
 }
+if launchLock >= 0 { Darwin.close(launchLock) }
 guard let fd else { failure("Video Prompter is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
 defer { Darwin.close(fd) }
 let request: [String: Any] = ["id": UUID().uuidString, "action": invocation.action, "params": invocation.params]

@@ -183,7 +183,8 @@ struct InspectorView: View {
       deviceObserver = nil
       session.stopMicrophoneTest()
     }.alert("Following options changed", isPresented: Binding(
-      get: { store.modeMigrationNotice != nil }, set: { if !$0 { store.dismissModeMigrationNotice() } })
+      // Kept back while headless; it shows once the library comes up.
+      get: { store.modeMigrationNotice != nil && !Headless.shared.active }, set: { if !$0 { store.dismissModeMigrationNotice() } })
     ) {
       Button("OK") {}
     } message: {
