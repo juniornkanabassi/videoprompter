@@ -67,8 +67,8 @@ import SwiftUI
     if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else { reopenSelf() }
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
   }
-  /// A headless launch through LaunchServices may never create the library window. Asking LaunchServices to reopen
-  /// this running copy makes SwiftUI open one, as a Dock click would.
+  /// A headless launch never creates the library window (its launch behaviour is suppressed). Asking LaunchServices
+  /// to reopen this running copy makes SwiftUI open one, as a Dock click would.
   private func reopenSelf() {
     let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true
     NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
@@ -81,9 +81,9 @@ import SwiftUI
   }
 }
 
-/// Placed behind the library window's content. While headless it makes the window transparent and click-through before
-/// it is first drawn and then takes it off screen, so not even a frame of it shows; it also remembers the window for
-/// `Headless.reveal()`.
+/// Placed behind the library window's content. It remembers the window for `Headless.reveal()`. A headless launch
+/// makes no library window, but should one be made while still headless, this makes it transparent and click-through
+/// and takes it off screen.
 struct HeadlessWindowHider: NSViewRepresentable {
   final class Probe: NSView {
     override func viewDidMoveToWindow() {

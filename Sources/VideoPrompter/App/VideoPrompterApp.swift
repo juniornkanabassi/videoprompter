@@ -814,6 +814,9 @@ private enum PresenterSaveError: LocalizedError {
     // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
     // Restored windows (the Camera window, extra library windows) would bypass the hidden-window path.
     if Headless.shared.active { UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true]) }
+    // The bundle starts as an agent (LSUIElement), so a headless launch never shows a Dock tile, not even for the
+    // moment before this init runs. Every other launch becomes the ordinary app here, before it finishes launching.
+    if !Headless.shared.active { NSApplication.shared.setActivationPolicy(.regular) }
     Headless.shared.start()
     Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
     Updates.shared.start()
@@ -827,6 +830,8 @@ private enum PresenterSaveError: LocalizedError {
     }
       .defaultSize(width: 1100, height: 750)
       .windowResizability(.contentMinSize)
+      // Headless, the library window is never made, so it cannot appear even for a frame; a reveal opens it.
+      .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
       .commands {
         CommandGroup(after: .textEditing) {
           Button("Find…") {
@@ -891,6 +896,7 @@ private enum PresenterSaveError: LocalizedError {
       }
     Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
+      .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
   }
 }
 
