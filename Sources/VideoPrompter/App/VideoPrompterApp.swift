@@ -93,6 +93,8 @@ private enum PresenterSaveError: LocalizedError {
 }
 
 @MainActor final class AppStore: ObservableObject {
+  /// The app's one store. Shared so the control server can start without a library window: a headless launch has none.
+  static let shared = AppStore()
   @Published var scripts: [ScriptRecord] = []
   @Published var folders: [ScriptFolder] = []
   @Published var selectedFolderID: UUID?
@@ -806,7 +808,7 @@ private enum PresenterSaveError: LocalizedError {
 }
 
 @main struct VideoPrompterApp: App {
-  @StateObject private var store = AppStore()
+  @StateObject private var store = AppStore.shared
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   init() {
     // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
@@ -977,10 +979,14 @@ private struct CameraCommands: Commands {
   /// A Dock click, Spotlight or Finder launch while a headless copy runs: show the library instead of nothing.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
     guard Headless.shared.active || Headless.shared.windowHidden else { return true }
+    // With no library window yet, SwiftUI's own reopen handling opens one once the app is ordinary again.
+    guard Headless.shared.mainWindow != nil else { Headless.shared.promote(); return true }
     Headless.shared.reveal()
     return false
   }
   func applicationDidFinishLaunching(_ notification: Notification) {
+    // Starts the control server even when no library window opens (a headless launch never shows one).
+    if store == nil { store = AppStore.shared }
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       if Self.deletesLineWhileTyping(event, in: NSApp.keyWindow) { return nil }
       if let presenter = NSApp.keyWindow as? PresenterPanel, presenter.handlePassageKey(event) { return nil }

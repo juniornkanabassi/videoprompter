@@ -61,9 +61,15 @@ import SwiftUI
   /// Promote and bring the library window forward: --show, or a reopen from the Dock, Spotlight or Finder.
   func reveal() {
     promote()
-    mainWindow?.makeKeyAndOrderFront(nil)
     windowHidden = false
+    if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else { reopenSelf() }
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+  }
+  /// A headless launch through LaunchServices may never create the library window. Asking LaunchServices to reopen
+  /// this running copy makes SwiftUI open one, as a Dock click would.
+  private func reopenSelf() {
+    let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true
+    NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
   }
   private func quitIfIdle() {
     // The hidden main window counts as nothing on screen, even if SwiftUI ordered it back in at alpha 0.
