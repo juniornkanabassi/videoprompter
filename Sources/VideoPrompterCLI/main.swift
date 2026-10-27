@@ -49,6 +49,18 @@ func connectSocket(_ path: String) -> Int32? {
   guard connected == 0, getpeereid(fd, &uid, &gid) == 0, uid == getuid() else { Darwin.close(fd); return nil }
   return fd
 }
+/// Whether a copy of the app is running already, from any install: a process whose executable is
+/// `…/Contents/MacOS/<name>`. Reading the process table costs well under a millisecond.
+func appRunning(executable name: String) -> Bool {
+  var pids = [pid_t](repeating: 0, count: 4096)
+  let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
+  var path = [CChar](repeating: 0, count: 4096)  // PROC_PIDPATHINFO_MAXSIZE
+  for pid in pids.prefix(max(0, count)) where pid > 0 && pid != getpid() {
+    guard proc_pidpath(pid, &path, UInt32(path.count)) > 0 else { continue }
+    if String(cString: path).hasSuffix("/Contents/MacOS/" + name) { return true }
+  }
+  return false
+}
 let argv = Array(CommandLine.arguments.dropFirst())
 var invocation: ControlCLI.Invocation
  do { invocation = try ControlCLI.parse(argv) }
@@ -80,7 +92,9 @@ if invocation.params["text"] == "-" {
 }
 var fd = connectSocket(path)
 if fd == nil && invocation.action == "status" { emit(["ok": true, "result": ["running": false, "app": bundleID, "socket": path]], json: invocation.json); exit(0) }
-if fd == nil {
+// A copy that is still starting (two MCP calls at once) or briefly refusing connections must not be opened again:
+// macOS would send it a reopen, which shows the window. Wait for its socket instead.
+if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter")) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   var launch = ["-g"]
   if let custom = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"] { launch += ["-a", custom] }
@@ -91,6 +105,8 @@ if fd == nil {
   process.arguments = launch
   process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
   do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch Video Prompter in the background.", json: invocation.json) }
+}
+if fd == nil {
   let deadline = Date().addingTimeInterval(10)
   // The socket appears a few hundred milliseconds into the launch; checking often answers as soon as it does.
   while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.02); fd = connectSocket(path) }

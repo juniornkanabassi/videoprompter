@@ -91,7 +91,7 @@ import Speech
   }
 
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
-    Headless.shared.touch()
+    Headless.shared.begin(); defer { Headless.shared.end() }
     await store.waitForInitialLoad()
     guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use videoprompter --help for supported actions.") }
     let words = command.words.joined(separator: " ")

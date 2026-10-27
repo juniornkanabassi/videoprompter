@@ -23,6 +23,11 @@ import SwiftUI
   /// Whether quitting now would interrupt nothing (no recording); the store answers it.
   var canQuit: @MainActor () -> Bool = { true }
   private var lastUse = Date()
+  /// Commands still running; the copy never quits under one.
+  private var inFlight = 0
+  /// The main window is off screen because this class put it there, not because someone closed it; a reopen
+  /// brings it back rather than letting SwiftUI open a second one.
+  var windowHidden = false
   private var timer: Timer?
   private var activeObserver: Any?
 
@@ -36,8 +41,9 @@ import SwiftUI
     }
     timer = Timer.scheduledTimer(withTimeInterval: min(30, idleLimit), repeats: true) { _ in MainActor.assumeIsolated { Headless.shared.quitIfIdle() } }
   }
-  /// A control request arrived: the idle clock starts again.
-  func touch() { lastUse = Date() }
+  /// A control request started or finished: the idle clock starts again.
+  func begin() { inFlight += 1; lastUse = Date() }
+  func end() { inFlight -= 1; lastUse = Date() }
   /// Become the ordinary app: Dock tile, menu bar, update checks. The library window comes back too, unless another
   /// window (the presenter) is already on screen, so the app is never visible with nothing to show.
   func promote() {
@@ -50,16 +56,19 @@ import SwiftUI
     Updates.shared.resume()
     guard let window = mainWindow else { return }
     window.alphaValue = 1; window.ignoresMouseEvents = false
-    if !NSApp.windows.contains(where: \.isVisible) { window.makeKeyAndOrderFront(nil) }
+    if !NSApp.windows.contains(where: \.isVisible) { window.makeKeyAndOrderFront(nil); windowHidden = false }
   }
   /// Promote and bring the library window forward: --show, or a reopen from the Dock, Spotlight or Finder.
   func reveal() {
     promote()
     mainWindow?.makeKeyAndOrderFront(nil)
+    windowHidden = false
     if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
   }
   private func quitIfIdle() {
-    guard active, Date().timeIntervalSince(lastUse) >= idleLimit, !NSApp.windows.contains(where: \.isVisible), canQuit() else { return }
+    // The hidden main window counts as nothing on screen, even if SwiftUI ordered it back in at alpha 0.
+    let shown = NSApp.windows.contains { $0.isVisible && !($0 === mainWindow && windowHidden) }
+    guard active, inFlight == 0, !shown, Date().timeIntervalSince(lastUse) >= idleLimit, canQuit() else { return }
     NSApp.terminate(nil)
   }
 }
@@ -78,6 +87,7 @@ struct HeadlessWindowHider: NSViewRepresentable {
         guard Headless.shared.active else { return }
         window.alphaValue = 0
         window.ignoresMouseEvents = true
+        Headless.shared.windowHidden = true
         // SwiftUI orders the window front later in the same launch pass; take it away again after that.
         DispatchQueue.main.async { if Headless.shared.active { window.orderOut(nil) } }
       }

@@ -810,6 +810,8 @@ private enum PresenterSaveError: LocalizedError {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   init() {
     // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
+    // Restored windows (the Camera window, extra library windows) would bypass the hidden-window path.
+    if Headless.shared.active { UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true]) }
     Headless.shared.start()
     Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
     Updates.shared.start()
@@ -974,7 +976,7 @@ private struct CameraCommands: Commands {
   func applicationWillTerminate(_ notification: Notification) { controlServer?.stop() }
   /// A Dock click, Spotlight or Finder launch while a headless copy runs: show the library instead of nothing.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-    guard Headless.shared.active else { return true }
+    guard Headless.shared.active || Headless.shared.windowHidden else { return true }
     Headless.shared.reveal()
     return false
   }
