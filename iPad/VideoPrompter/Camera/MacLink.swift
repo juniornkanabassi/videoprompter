@@ -152,6 +152,20 @@ final class LinkReceiver: @unchecked Sendable {
   }
 
   func accept(_ new: NWConnection, overWiFi: Bool) {
+    // The current Mac stays until the newcomer is ready, so a peer that fails the pairing
+    // handshake cannot knock it off.
+    new.stateUpdateHandler = { [weak self, weak new] state in
+      guard let self, let new else { return }
+      switch state {
+      case .ready: self.queue.async { self.promote(new, overWiFi: overWiFi) }
+      case .failed, .cancelled: self.queue.async { self.closed(new) }
+      default: break
+      }
+    }
+    new.start(queue: queue)
+  }
+
+  private func promote(_ new: NWConnection, overWiFi: Bool) {
     connection?.cancel()
     connection = new
     connectionIsWiFi = overWiFi
@@ -159,15 +173,6 @@ final class LinkReceiver: @unchecked Sendable {
     format = nil
     needsKeyFrame = true
     renderer.flush(removingDisplayedImage: true, completionHandler: nil)
-    new.stateUpdateHandler = { [weak self, weak new] state in
-      switch state {
-      case .failed, .cancelled:
-        guard let self, let new else { return }
-        self.queue.async { self.closed(new) }
-      default: break
-      }
-    }
-    new.start(queue: queue)
     receive(on: new)
   }
 
@@ -229,8 +234,11 @@ final class LinkReceiver: @unchecked Sendable {
     }
     // A slow decoder must not build a queue: the picture is for framing, and a late frame is
     // worse than a dropped one.
-    guard renderer.isReadyForMoreMediaData || keyFrame else { return }
-    guard let sample = Self.sampleBuffer(data, format: format) else { return }
+    // A dropped frame breaks the ones that refer to it, so wait for the next key frame.
+    guard renderer.isReadyForMoreMediaData || keyFrame, let sample = Self.sampleBuffer(data, format: format) else {
+      needsKeyFrame = true
+      return
+    }
     renderer.enqueue(sample)
   }
 

@@ -40,11 +40,16 @@ extension AppStore {
       guard alert.runModal() == .alertFirstButtonReturn else { return }
     }
     let id = script.id
+    let before = script.markdown
     Task {
       do {
         let (_, markdown) = try await MacGoogleDocs.docs.export(link.document)
         // Deleted while Google answered: do not bring it, or its link, back.
-        guard MacGoogleDocs.links[id] != nil, scripts.contains(where: { $0.id == id }) else { return }
+        guard MacGoogleDocs.links[id] != nil, let now = scripts.first(where: { $0.id == id }) else { return }
+        guard now.markdown == before else {
+          errorMessage = "The script changed while Google Docs answered, so it was not replaced. Try the update again."
+          return
+        }
         MacGoogleDocs.links[id] = .init(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
         updateMarkdown(markdown, for: id)
       } catch {

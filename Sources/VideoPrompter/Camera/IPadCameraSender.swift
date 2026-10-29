@@ -417,7 +417,7 @@ class LinkPipe: @unchecked Sendable {
 final class SocketPipe: LinkPipe, @unchecked Sendable {
   private let socket: Int32
   private let queue = DispatchQueue(label: "VideoPrompter.ipadlink.usb", qos: .userInteractive)
-  private var isOpen = true
+  private let isOpen = Mutex(true)
 
   init(socket: Int32, name: String) {
     self.socket = socket
@@ -428,16 +428,20 @@ final class SocketPipe: LinkPipe, @unchecked Sendable {
     queued(data.count)
     queue.async { [self] in
       defer { sent(data.count) }
-      guard isOpen else { return }
+      guard isOpen.withLock({ $0 }) else { return }
       if !USBMux.writeAll(socket, data) { shut() }
     }
   }
 
-  override func close() { queue.async { [self] in shut() } }
+  override func close() {
+    // Unblocks a write stuck on an iPad that stopped reading; the queue then closes the socket.
+    // Under the lock, so it never touches a descriptor `shut` has already closed and reused.
+    isOpen.withLock { if $0 { Darwin.shutdown(socket, SHUT_RDWR) } }
+    queue.async { [self] in shut() }
+  }
 
   private func shut() {
-    guard isOpen else { return }
-    isOpen = false
+    guard isOpen.withLock({ open in defer { open = false }; return open }) else { return }
     Darwin.close(socket)
     closed()
   }
@@ -619,14 +623,22 @@ enum USBMux {
 /// are left out: the Wi-Fi path finds those through Bonjour instead.
 final class USBMuxListener: @unchecked Sendable {
   private let onChange: @Sendable ([Int]) -> Void
-  private let socket = Mutex<Int32?>(nil)
+  private let socket = Mutex<(fd: Int32?, stopped: Bool)>((nil, false))
 
   init(onChange: @escaping @Sendable ([Int]) -> Void) { self.onChange = onChange }
 
   func start() {
     Thread.detachNewThread { [self] in
       guard let fd = USBMux.openSocket() else { return }
-      socket.withLock { $0 = fd }
+      // Only this thread closes the socket, after unpublishing it, so `stop` never shuts a
+      // reused descriptor. A `stop` that came first leaves nothing listening.
+      defer { Darwin.close(fd) }
+      guard socket.withLock({ state in
+        guard !state.stopped else { return false }
+        state.fd = fd
+        return true
+      }) else { return }
+      defer { socket.withLock { $0.fd = nil } }
       guard USBMux.write(USBMux.request("Listen"), to: fd) else { return }
       var devices: [Int] = []
       while let message = USBMux.read(from: fd) {
@@ -646,10 +658,10 @@ final class USBMuxListener: @unchecked Sendable {
   }
 
   func stop() {
-    // Closing the socket ends the read loop on its thread.
-    if let fd = socket.withLock({ value -> Int32? in defer { value = nil }; return value }) {
-      Darwin.shutdown(fd, SHUT_RDWR)
-      Darwin.close(fd)
+    // Shutting the socket ends the read loop, and its thread closes it.
+    socket.withLock { state in
+      state.stopped = true
+      if let fd = state.fd { Darwin.shutdown(fd, SHUT_RDWR) }
     }
   }
 }
