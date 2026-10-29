@@ -39,6 +39,8 @@ cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # Everything taken from the source tree is copied before the commit is stamped below.
 if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
+ENTITLEMENTS="$WORK/Entitlements.plist"   # signed from this copy, so a later edit to the source cannot reach the app
+cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"
 # A checkout that moved or changed while compiling marks the build dirty.
 STATUS=$("$GIT" -C "$ROOT" status --porcelain --untracked-files=all) || { print -u2 "git status failed"; exit 1; }
 [[ $("$GIT" -C "$ROOT" rev-parse HEAD) == ${COMMIT%-dirty} && -z $STATUS ]] || COMMIT="${COMMIT%-dirty}-dirty"
@@ -61,10 +63,7 @@ done
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$SPARKLE"
 # Hardened runtime only loads Sparkle when it shares the app's Team ID. A local identity (ReadAlong Dev or ad hoc) has
 # none, so only those builds turn library validation off; Developer ID builds keep it.
-ENTITLEMENTS="$ROOT/Resources/Entitlements.plist"
 if (( ! DEVELOPER_ID_AVAILABLE )); then
-  ENTITLEMENTS="$WORK/Entitlements.plist"
-  cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"
   /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$ENTITLEMENTS"
 fi
 /usr/bin/codesign "${SIGN_FLAGS[@]}" --entitlements "$ENTITLEMENTS" "$APP"
