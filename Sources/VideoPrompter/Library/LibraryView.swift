@@ -153,7 +153,8 @@ struct LibraryView: View {
     .alert(
       "Video Prompter",
       isPresented: Binding(
-        get: { store.errorMessage != nil }, set: { if !$0 { store.errorMessage = nil } })
+        // A headless copy keeps the error (commands report it) and shows it once the library comes up.
+        get: { store.errorMessage != nil && !Headless.shared.active }, set: { if !$0 { store.errorMessage = nil } })
     ) {
       if store.hasFailedSaves {
         Button("Retry Save") { Task { await store.retryFailedSaves() } }.help("Try saving the pending edits again")

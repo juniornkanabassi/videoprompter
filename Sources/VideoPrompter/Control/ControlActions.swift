@@ -91,6 +91,7 @@ import Speech
   }
 
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
+    Headless.shared.begin(); defer { Headless.shared.end() }
     await store.waitForInitialLoad()
     guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use videoprompter --help for supported actions.") }
     let words = command.words.joined(separator: " ")
@@ -103,7 +104,7 @@ import Speech
     let show = isTrue(params["show"])
     switch action {
     case "status":
-      var result: [String: Any] = ["running": true, "app": Bundle.main.bundleIdentifier ?? ControlProtocol.bundleID,
+      var result: [String: Any] = ["running": true, "headless": Headless.shared.active, "app": Bundle.main.bundleIdentifier ?? ControlProtocol.bundleID,
         "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev", "library": store.libraryAvailable, "scripts": store.scripts.count,
         "selected": store.selected.map(identity) as Any? ?? NSNull(), "presenter": presenter.isEditing ? "editing" : presenter.panel?.isVisible == true ? "visible" : "hidden",
         "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "state": state, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
@@ -165,9 +166,14 @@ import Speech
       select(record)
       if action == "present" {
         presenter.present(store: store, activate: show)
+        // --show makes it the ordinary app around the presenter; without it a headless copy stays headless.
+        if show { Headless.shared.promote() }
         var value: [String: Any] = identity(record); value["presenter"] = "visible"; return .ok(value)
       }
-      if show { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil) }
+      if show {
+        Headless.shared.reveal()
+        NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil)
+      }
       return .ok(identity(record))
     case "script_rename", "script_tag", "script_move":
       // Resolved inside the retry guard: a retry never renames a different script that took the old name.
