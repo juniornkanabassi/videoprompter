@@ -53,9 +53,11 @@ import SwiftUI
     guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
       !window.styleMask.contains(.fullScreen), let screen = window.screen else { return }
     // A display that drops out pushes the panel onto another one. That move is not a choice, so
-    // it never replaces the memory of the absent display; a drag (a button held) still does.
+    // it never replaces the memory of the absent display; dragging this window still does.
     let screens = NSScreen.screens.map(PresenterFrameMemory.Screen.init)
-    if NSEvent.pressedMouseButtons == 0, PresenterFrameMemory.savedDisplayIsAbsent(in: frameDefaults, screens: screens) { return }
+    let event = NSApp.currentEvent
+    let dragged = event?.window === window && [.leftMouseDragged, .leftMouseUp].contains(event?.type)
+    if !dragged, PresenterFrameMemory.savedDisplayIsAbsent(in: frameDefaults, screens: screens) { return }
     PresenterFrameMemory.save(window.frame, on: .init(screen), to: frameDefaults)
   }
   func windowDidExitFullScreen(_ notification: Notification) {
@@ -340,9 +342,12 @@ enum PresenterFrameMemory {
     return display(for: saved, in: screens) == nil
   }
 
+  /// ID and name together first, then the name: IDs can be reused by another monitor after a
+  /// reconnect. An ID alone counts only for an entry saved without a name.
   private static func display(for saved: [String: Any], in screens: [Screen]) -> Screen? {
     let id = (saved["display"] as? Int).flatMap { UInt32(exactly: $0) }
-    return screens.first(where: { $0.id == id }) ?? screens.first(where: { $0.name == saved["name"] as? String })
+    guard let name = saved["name"] as? String, !name.isEmpty else { return screens.first { $0.id == id } }
+    return screens.first { $0.id == id && $0.name == name } ?? screens.first { $0.name == name }
   }
 
   /// The saved frame, moved fully inside its display's visible area, or nil when that display is

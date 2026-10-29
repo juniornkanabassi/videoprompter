@@ -48,6 +48,13 @@ final class PresenterFrameMemoryTests: XCTestCase {
     XCTAssertFalse(PresenterFrameMemory.savedDisplayIsAbsent(in: store, screens: [main, prompter]))
   }
 
+  func testAReusedIDOnAnotherMonitorDoesNotTakeThePresenter() {
+    let store = defaults()
+    PresenterFrameMemory.save(NSRect(x: 2600, y: 656, width: 760, height: 520), on: prompter, to: store)
+    let impostor = PresenterFrameMemory.Screen(id: 7, name: "Other Monitor", frame: prompter.frame, visibleFrame: prompter.visibleFrame)
+    XCTAssertNil(PresenterFrameMemory.restored(from: store, screens: [main, impostor]))
+  }
+
   func testACorruptDisplayNumberDoesNotCrash() {
     let store = defaults()
     store.set(["offset": NSStringFromRect(NSRect(x: 0, y: 0, width: 760, height: 520)), "display": -5, "name": "Gone"], forKey: PresenterFrameMemory.key)
