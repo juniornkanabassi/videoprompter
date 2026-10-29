@@ -22,8 +22,8 @@
 #      are still updated by hand, as before.
 #   6. only then replace the website's appcast.xml (refused if it changed since step 3)
 #   7. report the tag (made and pushed in step 5, so the release and the source point at the same commit)
-# Releases up to 2.0.2 were published on juniornkanabassi/videoprompter-releases, which stays online (archived) so old
-# appcast items and links keep working.
+# Releases up to 2.0.2 were first published on juniornkanabassi/videoprompter-releases and were copied here byte for
+# byte on 25 Oct 2026, so every link now points at this repo.
 # --resume --zip <the zip it published>: finish a release a failed run left behind (never rebuilds): an existing
 #   release and tag are reused only when they match (each asset, if present, must be this file byte for byte; the tag
 #   must be on HEAD); a missing asset is uploaded and a draft is published.

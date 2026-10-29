@@ -33,7 +33,10 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   var speed = 120.0
   var audioDeviceUID: String?
   var inputGain = 1.0
-  var speechLanguage = "Mixed"
+  /// "Automatic" for new settings: one recogniser in the script's language. On 25 October the
+  /// French half of "Mixed" heard English speech as noise and once sent Voice 26 words ahead.
+  /// Saved settings keep their choice, and those from before this setting decode as "Mixed".
+  var speechLanguage = "Automatic"
   var fontWeight = "Regular"
   var textColorHex = "#FFFFFF"
   var backgroundColorHex = "#000000"
@@ -52,7 +55,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   }
   var alignment = "Left"
   var showCues = false
-  var highlightActiveWord = false
+  var highlightActiveWord = true
   var presenterSnappingEnabled = false
   var allowsBackwardVoiceTracking = true
   init() {}
@@ -66,7 +69,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable {
   static func backdropOpacityRange(withVideo: Bool) -> ClosedRange<Double> { withVideo ? 0...0.9 : 0...1 }
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = Self.normalisedMode(try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"); speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = Self.clampedTextWidth(try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1); alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? false; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
+    id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID(); name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Default"; fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? "Lexend Deca"; fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 44; textOpacity = try c.decodeIfPresent(Double.self, forKey: .textOpacity) ?? 1; backgroundOpacity = try c.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.82; videoDimming = try c.decodeIfPresent(Double.self, forKey: .videoDimming) ?? 0.25; guideFraction = try c.decodeIfPresent(Double.self, forKey: .guideFraction) ?? 0.35; guideOpacity = try c.decodeIfPresent(Double.self, forKey: .guideOpacity) ?? 0.82; horizontalMirror = try c.decodeIfPresent(Bool.self, forKey: .horizontalMirror) ?? false; verticalMirror = try c.decodeIfPresent(Bool.self, forKey: .verticalMirror) ?? false; rotation = try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0; mode = Self.normalisedMode(try c.decodeIfPresent(String.self, forKey: .mode) ?? "Voice"); speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? 120; audioDeviceUID = try c.decodeIfPresent(String.self, forKey: .audioDeviceUID); inputGain = try c.decodeIfPresent(Double.self, forKey: .inputGain) ?? 1; speechLanguage = try c.decodeIfPresent(String.self, forKey: .speechLanguage) ?? "Mixed"; fontWeight = try c.decodeIfPresent(String.self, forKey: .fontWeight) ?? "Regular"; textColorHex = try c.decodeIfPresent(String.self, forKey: .textColorHex) ?? "#FFFFFF"; backgroundColorHex = try c.decodeIfPresent(String.self, forKey: .backgroundColorHex) ?? "#000000"; lineSpacing = try c.decodeIfPresent(Double.self, forKey: .lineSpacing) ?? 0.16; paragraphSpacing = try c.decodeIfPresent(Double.self, forKey: .paragraphSpacing) ?? 0.34; textWidth = Self.clampedTextWidth(try c.decodeIfPresent(Double.self, forKey: .textWidth) ?? 1); alignment = try c.decodeIfPresent(String.self, forKey: .alignment) ?? "Left"; showCues = try c.decodeIfPresent(Bool.self, forKey: .showCues) ?? false; highlightActiveWord = try c.decodeIfPresent(Bool.self, forKey: .highlightActiveWord) ?? true; presenterSnappingEnabled = try c.decodeIfPresent(Bool.self, forKey: .presenterSnappingEnabled) ?? false; allowsBackwardVoiceTracking = try c.decodeIfPresent(Bool.self, forKey: .allowsBackwardVoiceTracking) ?? true
     fontSize = min(max(fontSize, 18), 120)
     speed = min(max(speed, 20), 300)
   }

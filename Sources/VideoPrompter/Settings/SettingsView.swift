@@ -5,7 +5,10 @@ import CoreText
 
 struct InspectorView: View {
   @ObservedObject var store: AppStore
-  @ObservedObject private var session: SessionStore
+  /// Not observed: the session publishes on every word read, and observing it redrew this whole
+  /// form (19 to 27 ms a word in a Manual trace) for a panel that shows no reading position. Only
+  /// `MicrophoneTestRow` watches it.
+  private let session: SessionStore
   @ObservedObject private var camera = CameraModel.shared
   @State private var presetName = ""
   @State private var devices: [AudioInputDevice] = []
@@ -45,17 +48,7 @@ struct InspectorView: View {
             devices.first { $0.uid == uid }?.name ?? "Selected microphone unavailable"
           } ?? "Choose a microphone"))
           }
-          HStack(spacing: 12) {
-            Button(session.isTestingMicrophone ? "Stop test" : "Test") {
-              if session.isTestingMicrophone { session.stopMicrophoneTest() }
-              else { session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
-            }.help("Check your microphone before presenting")
-              .disabled(!session.isTestingMicrophone && store.settings.audioDeviceUID == nil)
-            InputLevelMeter(peakDBFS: session.audioPeakDBFS, isClipping: session.isClipping, showsScale: false)
-          }
-          if let notice = session.microphoneTestNotice {
-            Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
-          }
+          MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
         } else {
           ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
             readout: "\(Int(store.settings.speed)) words per minute").help("Set how fast Manual moves through your script")
@@ -112,14 +105,7 @@ struct InspectorView: View {
           commitGain()
         }
         LabeledContent("Loudest sound") {
-          HStack {
-            if session.isClipping {
-              Label("Sound distortion", systemImage: "exclamationmark.triangle.fill")
-                .labelStyle(.iconOnly).foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
-            }
-            Text(session.audioPeakDBFS.isFinite ? String(format: "%.1f dBFS", session.audioPeakDBFS) : "−∞ dBFS")
-              .monospacedDigit().lineLimit(1).fixedSize()
-          }
+          LoudestSoundReadout(meter: session.meter)
         }
           .help("dBFS measures sound against the microphone’s maximum level. Zero is the limit. Lower Microphone volume if the sound distorts.")
             Text("Layout").font(.headline)
@@ -278,6 +264,48 @@ enum AvailableFonts {
       guard member.count >= 4, (member[2] as? Int) == 5, let traits = member[3] as? UInt
       else { return false }
       return traits & UInt(NSFontTraitMask.italicFontMask.rawValue) == 0
+    }
+  }
+}
+
+/// The microphone test's button, meter and notice: the only part of the form that shows session state.
+private struct MicrophoneTestRow: View {
+  @ObservedObject var session: SessionStore
+  let deviceUID: String?
+  let gain: Double
+  var body: some View {
+    HStack(spacing: 12) {
+      Button(session.isTestingMicrophone ? "Stop test" : "Test") {
+        if session.isTestingMicrophone { session.stopMicrophoneTest() }
+        else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
+      }.help("Check your microphone before presenting")
+        .disabled(!session.isTestingMicrophone && deviceUID == nil)
+      LiveInputLevelMeter(meter: session.meter)
+    }
+    if let notice = session.microphoneTestNotice {
+      Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
+    }
+  }
+}
+
+/// The meter observes the level on its own, so only it redraws as the level moves, not the form.
+private struct LiveInputLevelMeter: View {
+  @ObservedObject var meter: InputMeter
+  var body: some View {
+    InputLevelMeter(peakDBFS: meter.peakDBFS, isClipping: meter.isClipping, showsScale: false)
+  }
+}
+
+private struct LoudestSoundReadout: View {
+  @ObservedObject var meter: InputMeter
+  var body: some View {
+    HStack {
+      if meter.isClipping {
+        Label("Sound distortion", systemImage: "exclamationmark.triangle.fill")
+          .labelStyle(.iconOnly).foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
+      }
+      Text(meter.peakDBFS.isFinite ? String(format: "%.1f dBFS", meter.peakDBFS) : "−∞ dBFS")
+        .monospacedDigit().lineLimit(1).fixedSize()
     }
   }
 }

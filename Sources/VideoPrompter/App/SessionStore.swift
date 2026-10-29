@@ -23,8 +23,12 @@ final class SessionStore: ObservableObject {
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var acceptedWords = 0
   @Published private(set) var anchorNotice: String?
-  @Published private(set) var audioPeakDBFS: Float = -.infinity
-  @Published private(set) var isClipping = false
+  /// The microphone level lives in its own object: the presenter and the settings form observe
+  /// the session, and a level published 20 times a second re-rendered both, camera controls and
+  /// all, for as long as Voice was listening. Only the meters observe `meter`.
+  let meter = InputMeter()
+  var audioPeakDBFS: Float { meter.peakDBFS }
+  var isClipping: Bool { meter.isClipping }
   @Published private(set) var isTestingMicrophone = false
   @Published private(set) var microphoneTestNotice: String?
   @Published private(set) var settings = PrompterSettings()
@@ -396,8 +400,7 @@ final class SessionStore: ObservableObject {
               self.microphoneTestTask = nil
               self.isTestingMicrophone = false
               if let error {
-                self.audioPeakDBFS = -.infinity
-                self.isClipping = false
+                self.meter.reset()
                 self.microphoneTestNotice = error == .deviceLost
                   ? "The selected microphone was disconnected."
                   : "Microphone test stopped: \(error)"
@@ -427,8 +430,7 @@ final class SessionStore: ObservableObject {
     audioCapture = nil
     isTestingMicrophone = false
     pendingPeak = 0
-    audioPeakDBFS = -.infinity
-    isClipping = false
+    meter.reset()
   }
 
   func setMicrophoneTestGain(_ gain: Double) {
@@ -452,9 +454,8 @@ final class SessionStore: ObservableObject {
     guard clipping != isClipping || now - lastMeterPublish >= 0.05 else { return }
     lastMeterPublish = now
     // The loudest buffer since the last publish, so throttling cannot hide a transient peak.
-    audioPeakDBFS = AudioCapture.decibels(fullScalePeak: pendingPeak)
+    meter.show(peakDBFS: AudioCapture.decibels(fullScalePeak: pendingPeak), isClipping: clipping)
     pendingPeak = 0
-    isClipping = clipping
   }
 
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
@@ -571,8 +572,7 @@ final class SessionStore: ObservableObject {
       await speechProvider.stop()
     }
     pendingPeak = 0
-    audioPeakDBFS = -.infinity
-    isClipping = false
+    meter.reset()
     isTestingMicrophone = false
     audioDeviceObserver = nil
   }
@@ -629,7 +629,7 @@ final class SessionStore: ObservableObject {
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
-        self.state = .uncertain("Preparing on-device English and French speech models")
+        self.state = .uncertain("Preparing on-device speech recognition")
         let format = try await self.speechProvider.prepare(
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
@@ -691,9 +691,17 @@ final class SessionStore: ObservableObject {
     if settings.speechLanguage == "Automatic" {
       let language = NLLanguageRecognizer.dominantLanguage(for: document.markdown)
       guard let language else { throw SpeechProvider.Error.unavailable }
-      guard let supported = await DictationTranscriber.supportedLocale(
-        equivalentTo: Locale(identifier: language.rawValue))
-      else { throw SpeechProvider.Error.unavailable }
+      // With the user's region first: asked for plain "en", the recogniser answers en_GB, en_AU,
+      // en_NZ or en_SG from one call to the next, while "en-GB" is always en_GB.
+      let regional = Locale.current.region.map { Locale(identifier: "\(language.rawValue)-\($0.identifier)") }
+      var supported: Locale?
+      if let regional { supported = await DictationTranscriber.supportedLocale(equivalentTo: regional) }
+      // Then the main variant, and only then whatever the recogniser offers for the bare language.
+      let main = ["en": "en-GB", "fr": "fr-FR", "es": "es-ES", "pt": "pt-PT", "de": "de-DE"][language.rawValue]
+      for fallback in [main, language.rawValue].compactMap({ $0 }) where supported == nil {
+        supported = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: fallback))
+      }
+      guard let supported else { throw SpeechProvider.Error.unavailable }
       return [supported]
     }
     switch settings.speechLanguage {
@@ -703,6 +711,18 @@ final class SessionStore: ObservableObject {
     default: return [Locale(identifier: settings.speechLanguage)]
     }
   }
+}
+
+/// The microphone readout the Settings meters draw. It publishes only what changed, so a reset
+/// that finds it already silent wakes nothing.
+@MainActor final class InputMeter: ObservableObject {
+  @Published private(set) var peakDBFS: Float = -.infinity
+  @Published private(set) var isClipping = false
+  func show(peakDBFS: Float, isClipping: Bool) {
+    if self.peakDBFS != peakDBFS { self.peakDBFS = peakDBFS }
+    if self.isClipping != isClipping { self.isClipping = isClipping }
+  }
+  func reset() { show(peakDBFS: -.infinity, isClipping: false) }
 }
 
 private final class AudioFrameCounter: @unchecked Sendable {
