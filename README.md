@@ -103,10 +103,14 @@ Video Prompter was called VidPrompt before 2.0.0, and JuniorPrompter before that
 
 Quit VidPrompt before opening Video Prompter. Once you have checked your scripts are there, move the old `VidPrompt.app` to the Bin so you only have one copy. A JuniorPrompter library is not imported automatically, so keep it and its backups until you have recovered what you need.
 
+## Video Prompter for iPad (in testing)
+
+An iPad version for teleprompters that cannot take a computer is in testing through TestFlight. It follows your voice the same way, mirrors for the glass, and takes a Bluetooth clicker or foot pedal. To share scripts with it, turn on File › Keep Scripts in iCloud Drive for iPad on the Mac. See [iPad/README.md](iPad/README.md).
+
 ## Not included yet
 
 - OBS integration.
-- Editing from iPhone or iCloud.
+- Editing from iPhone.
 
 ## Building from source
 

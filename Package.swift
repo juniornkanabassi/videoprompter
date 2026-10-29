@@ -3,10 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "VideoPrompter",
-    platforms: [.macOS("26.0")],
-    products: [.executable(name: "VideoPrompter", targets: ["VideoPrompter"]), .executable(name: "VideoPrompterCLI", targets: ["VideoPrompterCLI"])],
+    platforms: [.macOS("26.0"), .iOS("26.0")],
+    products: [.library(name: "PrompterCore", targets: ["PrompterCore"]), .executable(name: "VideoPrompter", targets: ["VideoPrompter"]), .executable(name: "VideoPrompterCLI", targets: ["VideoPrompterCLI"])],
     dependencies: [
-        // Self-updating, the same Sparkle release as Talk & Read.
+        // Self-updating, the same Sparkle release as Talk & Read. Mac only: the iPad app uses PrompterCore alone.
         .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
     ],
     targets: [

@@ -24,6 +24,14 @@
 	<string>26.0</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Video Prompter shows a live preview of your camera so you can frame yourself while reading.</string>
+	<key>GoogleClientID</key>
+	<string></string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Video Prompter finds Video Prompter on an iPad on the same Wi-Fi to send it your camera.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vpcamera._tcp</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Video Prompter uses your selected microphone for voice tracking.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>

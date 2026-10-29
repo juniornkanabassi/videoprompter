@@ -1,5 +1,7 @@
 import AVFoundation
+#if canImport(AppKit)
 import AppKit
+#endif
 import Combine
 import Foundation
 import PrompterCore
@@ -254,6 +256,11 @@ final class SessionStore: ObservableObject {
     if let id = activeRecord?.metadata.id { savedAnchors.removeValue(forKey: id); savePositions() }
   }
   func forgetPosition(for id: UUID) { savedAnchors.removeValue(forKey: id); savePositions() }
+  /// A deleted script: its saved position goes, and if it is the one loaded the session stops,
+  /// so presenting another script cannot save it again.
+  func forgetScript(_ id: UUID) {
+    if activeRecord?.metadata.id == id { stop() } else { forgetPosition(for: id) }
+  }
   func stop() {
     if let id = activeRecord?.metadata.id { forgetPosition(for: id) }
     stopTasks()

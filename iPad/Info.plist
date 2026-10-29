@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en-GB</string>
+	<key>CFBundleDisplayName</key>
+	<string>Video Prompter</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Video Prompter</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Video Prompter shows a camera picture behind your script so you can frame yourself while reading.</string>
+	<key>GoogleClientID</key>
+	<string></string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Video Prompter receives the camera picture a Mac sends to it over Wi-Fi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_vpcamera._tcp</string>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Video Prompter listens to your voice so the script follows you as you read.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Video Prompter uses on-device speech recognition to follow your script.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>LexendDeca-Variable.ttf</string>
+		<string>Lexend-Variable.ttf</string>
+	</array>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string></string>
+	</dict>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIStatusBarStyle</key>
+	<string>UIStatusBarStyleLightContent</string>
+</dict>
+</plist>

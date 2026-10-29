@@ -1,0 +1,331 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26C84FA553FEA2B823DA12A /* SessionStore.swift */; };
+		4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D855FD629A122F15A7FE97E /* PrompterSettings.swift */; };
+		4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD650CCB71926F8862A6220 /* SpeechProvider.swift */; };
+		231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */; };
+		AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */; };
+		EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */; };
+		A698447D355A4D7944783966 /* CameraGuides.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09486326B37D8BA3B702E4C6 /* CameraGuides.swift */; };
+		311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */; };
+		2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */; };
+		DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */; };
+		932B66FBA0F63A68B7B66FE6 /* Lexend-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */; };
+		B04E630E40B5392C4792BD4C /* PrompterCore in Frameworks */ = {isa = PBXBuildFile; productRef = E07036B5367EDC4E164C8BB4 /* PrompterCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0B8FE8C58B23D2288819C897 /* VideoPrompter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoPrompter.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FA685967BAA69CB4A9C14425 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C26C84FA553FEA2B823DA12A /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SessionStore.swift; sourceTree = "<group>"; };
+		3D855FD629A122F15A7FE97E /* PrompterSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PrompterSettings.swift; sourceTree = "<group>"; };
+		0AD650CCB71926F8862A6220 /* SpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech/SpeechProvider.swift; sourceTree = "<group>"; };
+		79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/DocumentImporter.swift; sourceTree = "<group>"; };
+		FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocsSheet.swift; sourceTree = "<group>"; };
+		34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocs.swift; sourceTree = "<group>"; };
+		09486326B37D8BA3B702E4C6 /* CameraGuides.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraGuides.swift; sourceTree = "<group>"; };
+		769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraOrientation.swift; sourceTree = "<group>"; };
+		4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraLinkSecurity.swift; sourceTree = "<group>"; };
+		B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LexendDeca-Variable.ttf"; sourceTree = "<group>"; };
+		BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lexend-Variable.ttf"; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		74C61EEF9C048939045A3EDA /* VideoPrompter */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VideoPrompter; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4F6F5CC3FCCF73F75AE9CCF4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B04E630E40B5392C4792BD4C /* PrompterCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		2B731CEFC6751AAE0EC69B98 = {
+			isa = PBXGroup;
+			children = (
+				74C61EEF9C048939045A3EDA /* VideoPrompter */,
+				429461E971936A1CC87DA17D /* Shared with the Mac app */,
+				863E78993B57209C9A5B482C /* Fonts */,
+				FA685967BAA69CB4A9C14425 /* Info.plist */,
+				0A2C978E52A76F0AA9F68BB5 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		429461E971936A1CC87DA17D /* Shared with the Mac app */ = {
+			isa = PBXGroup;
+			children = (
+				C26C84FA553FEA2B823DA12A /* SessionStore.swift */,
+				3D855FD629A122F15A7FE97E /* PrompterSettings.swift */,
+				0AD650CCB71926F8862A6220 /* SpeechProvider.swift */,
+				79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */,
+				FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */,
+				34D447E6B3AABCB86AA6F8B9 /* GoogleDocs.swift */,
+				09486326B37D8BA3B702E4C6 /* CameraGuides.swift */,
+				769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */,
+				4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */,
+			);
+			name = "Shared with the Mac app";
+			path = ../Sources/VideoPrompter;
+			sourceTree = "<group>";
+		};
+		863E78993B57209C9A5B482C /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */,
+				BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */,
+			);
+			name = Fonts;
+			path = ../Resources/Fonts;
+			sourceTree = "<group>";
+		};
+		0A2C978E52A76F0AA9F68BB5 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0B8FE8C58B23D2288819C897 /* VideoPrompter.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		42AEFBAE01D2DFD981F7DA7D /* VideoPrompter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A8168C751E7DB730EEA5B5DB /* Build configuration list for PBXNativeTarget "VideoPrompter" */;
+			buildPhases = (
+				F2AB5FB218DA8B84623F4557 /* Sources */,
+				4F6F5CC3FCCF73F75AE9CCF4 /* Frameworks */,
+				55B558C7EF820E6E00E5993B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				74C61EEF9C048939045A3EDA /* VideoPrompter */,
+			);
+			name = VideoPrompter;
+			packageProductDependencies = (
+				E07036B5367EDC4E164C8BB4 /* PrompterCore */,
+			);
+			productName = VideoPrompter;
+			productReference = 0B8FE8C58B23D2288819C897 /* VideoPrompter.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					42AEFBAE01D2DFD981F7DA7D = {
+						CreatedOnToolsVersion = 26.0;
+					};
+				};
+			};
+			buildConfigurationList = C33C66E28B3501D071CFB88C /* Build configuration list for PBXProject "VideoPrompter" */;
+			developmentRegion = "en-GB";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				"en-GB",
+				Base,
+			);
+			mainGroup = 2B731CEFC6751AAE0EC69B98;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				715E1E3F015A64BA0327CAEF /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0A2C978E52A76F0AA9F68BB5 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				42AEFBAE01D2DFD981F7DA7D /* VideoPrompter */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		55B558C7EF820E6E00E5993B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */,
+				932B66FBA0F63A68B7B66FE6 /* Lexend-Variable.ttf in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F2AB5FB218DA8B84623F4557 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */,
+				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
+				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
+				231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */,
+				AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */,
+				EBC93E7FAF47F78B892CF1D3 /* GoogleDocs.swift in Sources */,
+				A698447D355A4D7944783966 /* CameraGuides.swift in Sources */,
+				311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */,
+				2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		6F0B85FC643AF9C218F627EA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		1B05A9D10F61E514E88AF240 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CB8FE7DDB06B8A28E578DE77 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+		C049B1C2A83F1767ABF6526D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				ENABLE_PREVIEWS = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		C33C66E28B3501D071CFB88C /* Build configuration list for PBXProject "VideoPrompter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6F0B85FC643AF9C218F627EA /* Debug */,
+				1B05A9D10F61E514E88AF240 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A8168C751E7DB730EEA5B5DB /* Build configuration list for PBXNativeTarget "VideoPrompter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB8FE7DDB06B8A28E578DE77 /* Debug */,
+				C049B1C2A83F1767ABF6526D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		715E1E3F015A64BA0327CAEF /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E07036B5367EDC4E164C8BB4 /* PrompterCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PrompterCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+}
