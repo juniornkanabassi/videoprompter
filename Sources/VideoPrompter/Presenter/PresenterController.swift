@@ -20,8 +20,13 @@ import SwiftUI
     panel.map { $0.isVisible && !$0.isMiniaturized && !$0.isInFullScreen } ?? false
   }
 
-  init(camera: CameraModel = .shared) {
+  /// Where the presenter's last frame is kept, per data directory. Nil in tests and on an agent
+  /// screen, which place the panel themselves.
+  private let frameDefaults: UserDefaults?
+
+  init(camera: CameraModel = .shared, frameDefaults: UserDefaults? = PresenterFrameMemory.defaultStore()) {
     self.camera = camera
+    self.frameDefaults = frameDefaults
     super.init()
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
     // property. `dropFirst` skips the value the presenter opens with.
@@ -39,6 +44,26 @@ import SwiftUI
     finishPendingClose()
   }
   func windowDidFailToEnterFullScreen(_ window: NSWindow) { (window as? PresenterPanel)?.settle() }
+  // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
+  // rather than at the main screen's corner. AppKit's own autosave forgot a second screen whose
+  // visible frame it had recorded differently, and kept one frame for every data directory.
+  func windowDidMove(_ notification: Notification) { rememberFrame(notification) }
+  func windowDidResize(_ notification: Notification) { rememberFrame(notification) }
+  private func rememberFrame(_ notification: Notification) {
+    guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
+      !window.styleMask.contains(.fullScreen), let screen = window.screen else { return }
+    // A display that drops out pushes the panel onto another one. That move is not a choice, so
+    // it never replaces the memory of the absent display; dragging this window still does.
+    let screens = NSScreen.screens.map(PresenterFrameMemory.Screen.init)
+    // The left button is held right now, and the event it belongs to is this window's: a click
+    // released earlier, followed by a display dropping out, does not count.
+    let leftHeld = NSEvent.pressedMouseButtons & 1 != 0
+    let dragged = leftHeld && NSApp.currentEvent.map { event in
+      event.window === window && [.leftMouseDown, .leftMouseDragged].contains(event.type)
+    } ?? false
+    if !dragged, PresenterFrameMemory.savedDisplayIsAbsent(in: frameDefaults, screens: screens) { return }
+    PresenterFrameMemory.save(window.frame, on: .init(screen), to: frameDefaults)
+  }
   func windowDidExitFullScreen(_ notification: Notification) {
     (notification.object as? PresenterPanel)?.settle()
     finishPendingClose()
@@ -244,6 +269,9 @@ import SwiftUI
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
+    if let frame = PresenterFrameMemory.restored(from: frameDefaults, screens: NSScreen.screens.map(PresenterFrameMemory.Screen.init)) {
+      value.setFrame(frame, display: false)
+    }
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
@@ -283,6 +311,66 @@ import SwiftUI
 }
 
 private extension NSRect { var area: CGFloat { width * height } }
+
+/// The presenter's last frame with the display it was on, so a restart puts it back there.
+enum PresenterFrameMemory {
+  struct Screen {
+    let id: UInt32
+    let name: String
+    let frame: NSRect
+    let visibleFrame: NSRect
+    init(id: UInt32, name: String, frame: NSRect, visibleFrame: NSRect) {
+      self.id = id; self.name = name; self.frame = frame; self.visibleFrame = visibleFrame
+    }
+    @MainActor init(_ screen: NSScreen) {
+      let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+      self.init(id: number?.uint32Value ?? 0, name: screen.localizedName, frame: screen.frame, visibleFrame: screen.visibleFrame)
+    }
+  }
+  static let key = "presenterFrame"
+
+  @MainActor static func defaultStore() -> UserDefaults? {
+    guard NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") else { return nil }
+    return AppStore.preferences()
+  }
+
+  /// Kept relative to the display's origin, so rearranging displays in System Settings moves the
+  /// presenter with its display.
+  static func save(_ frame: NSRect, on screen: Screen, to defaults: UserDefaults?) {
+    let offset = frame.offsetBy(dx: -screen.frame.minX, dy: -screen.frame.minY)
+    defaults?.set(["offset": NSStringFromRect(offset), "display": Int(screen.id), "name": screen.name], forKey: key)
+  }
+
+  static func savedDisplayIsAbsent(in defaults: UserDefaults?, screens: [Screen]) -> Bool {
+    guard let saved = defaults?.dictionary(forKey: key) else { return false }
+    return display(for: saved, in: screens) == nil
+  }
+
+  /// ID and name together first, then the name: IDs can be reused by another monitor after a
+  /// reconnect. An ID alone counts only for an entry saved without a name.
+  private static func display(for saved: [String: Any], in screens: [Screen]) -> Screen? {
+    let id = (saved["display"] as? Int).flatMap { UInt32(exactly: $0) }
+    guard let name = saved["name"] as? String, !name.isEmpty else { return screens.first { $0.id == id } }
+    return screens.first { $0.id == id && $0.name == name } ?? screens.first { $0.name == name }
+  }
+
+  /// The saved frame, moved fully inside its display's visible area, or nil when that display is
+  /// gone. The display is found by its ID, else by name, since IDs can change after a reconnect.
+  static func restored(from defaults: UserDefaults?, screens: [Screen]) -> NSRect? {
+    guard let saved = defaults?.dictionary(forKey: key), let text = saved["offset"] as? String,
+      let screen = display(for: saved, in: screens) else { return nil }
+    let offset = NSRectFromString(text)
+    guard offset.width >= 100, offset.height >= 100 else { return nil }
+    return clamp(offset.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY), into: screen.visibleFrame)
+  }
+
+  static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
+    let size = NSSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
+    let x = min(max(frame.minX, area.minX), area.maxX - size.width)
+    let y = min(max(frame.minY, area.minY), area.maxY - size.height)
+    return NSRect(origin: NSPoint(x: x, y: y), size: size)
+  }
+}
 
 /// The presenter window. At rest it is `.fullScreenAuxiliary`, which is what lets it float over
 /// another app's full-screen Space (OBS, verified on 7 September). It turns `.fullScreenPrimary`
