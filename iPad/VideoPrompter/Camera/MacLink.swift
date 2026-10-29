@@ -90,6 +90,8 @@ import UIKit
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
       listener.service = NWListener.Service(name: UIDevice.current.name, type: CameraLink.bonjourType)
+      // Before it starts, so the receiver knows it before any of its connections arrive.
+      receiver.adoptWiFi(listener)
       configure(listener, wifi: true)
       wifi = listener
     }
@@ -97,7 +99,9 @@ import UIKit
 
   private func configure(_ listener: NWListener, wifi: Bool = false) {
     let receiver = self.receiver
-    listener.newConnectionHandler = { connection in receiver.accept(connection, overWiFi: wifi) }
+    listener.newConnectionHandler = { [weak listener] connection in
+      receiver.accept(connection, overWiFi: wifi, from: listener)
+    }
     listener.stateUpdateHandler = { [weak self, weak listener] state in
       guard case .failed = state else { return }
       listener?.cancel()
@@ -154,8 +158,20 @@ final class LinkReceiver: @unchecked Sendable {
   /// Connections still in their handshake, and whether each came over Wi-Fi.
   private var pending: [(connection: NWConnection, wifi: Bool)] = []
 
+  /// The Wi-Fi listener in use. Cancelling a listener is not immediate, so a connection from one
+  /// already replaced (Wi-Fi off, new pairing code) is refused here.
+  private weak var wifiListener: NWListener?
+
+  func adoptWiFi(_ listener: NWListener) {
+    queue.async { [self] in wifiListener = listener }
+  }
+
   /// Called on `queue`, where the listeners run.
-  func accept(_ new: NWConnection, overWiFi: Bool) {
+  func accept(_ new: NWConnection, overWiFi: Bool, from listener: NWListener?) {
+    if overWiFi, listener == nil || listener !== wifiListener {
+      new.cancel()
+      return
+    }
     // The current Mac stays until the newcomer is ready, so a peer that fails the pairing
     // handshake cannot knock it off.
     pending.append((new, overWiFi))
@@ -173,6 +189,8 @@ final class LinkReceiver: @unchecked Sendable {
     // A handshake that never finishes must not linger.
     queue.asyncAfter(deadline: .now() + 10) { [weak self, weak new] in
       guard let self, let new, self.pending.contains(where: { $0.connection === new }) else { return }
+      // Out of `pending` first, so a `.ready` already queued cannot promote it.
+      self.pending.removeAll { $0.connection === new }
       new.cancel()
     }
   }
@@ -193,6 +211,7 @@ final class LinkReceiver: @unchecked Sendable {
 
   func dropWiFi() {
     queue.async { [self] in
+      wifiListener = nil
       if connectionIsWiFi { connection?.cancel() }
       for waiting in pending where waiting.wifi { waiting.connection.cancel() }
       pending.removeAll { $0.wifi }

@@ -247,7 +247,8 @@ import UIKit
       let fresh = GoogleDocLinks.Link(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
       guard markdown != current else {
         googleLinks[script.id] = fresh
-        return .unchanged
+        // Google still matches what was read, but the file may have been edited meanwhile.
+        return try ScriptFolder.read(script.url) == current ? .unchanged : .hasLocalEdits
       }
       // Written straight over the file: the doc is the master. An open presenter picks the
       // change up from the folder like an edit made on the Mac, keeping its place. Edited here
