@@ -26,7 +26,7 @@
 # byte on 25 Oct 2026, so every link now points at this repo.
 # --resume --zip <the zip it published>: finish a release a failed run left behind (never rebuilds): an existing
 #   release and tag are reused only when they match (each asset, if present, must be this file byte for byte; the tag
-#   must be on HEAD); a missing asset is uploaded and a draft is published.
+#   must be on HEAD); a missing asset is uploaded, and a draft is published once both assets verify.
 # --dry-run: everything except the upload and the tag, into --out or a new /private/tmp/videoprompter-release-dry.XXXXXX;
 #   identity mismatches are listed as "a real run would refuse" instead of stopping.
 # Every step stops the script on failure. It never commits to or pushes the website: the website session does that.
@@ -65,9 +65,9 @@ step() { print "\n== $*"; }
 
 # Sparkle compares build numbers and the feed serves only full releases, so prereleases are never published here.
 # x.y.z exactly, as checks/package-dmg.sh requires.
-[[ $SRC_VERSION =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || die "version '$SRC_VERSION' is not a release number (x.y.z); prereleases are not published"
 EXISTS=0 TAGGED=0
 preflight=()   # read-only checks: a real run stops on any of them, a dry run lists them
+[[ $SRC_VERSION =~ '^[0-9]+\.[0-9]+\.[0-9]+$' ]] || preflight+=("version '$SRC_VERSION' is not a release number (x.y.z); prereleases are not published")
 (( CLEAN )) || preflight+=("the source has uncommitted changes; commit them first")
 # The tag is pushed to origin and the release is made on $REPO, so they must be the same repository.
 ORIGIN=$(git -C "$ROOT" remote get-url origin 2>/dev/null || true)
@@ -85,9 +85,10 @@ if gh auth status --hostname github.com >/dev/null 2>&1; then
   VISIBILITY=$(gh repo view $GHREPO --json visibility --jq .visibility 2>/dev/null) || VISIBILITY=UNREADABLE
   [[ $VISIBILITY == PUBLIC ]] || preflight+=("$REPO is ${VISIBILITY:l}: its release downloads would fail for everyone; make it public first")
   # The release is made from the pushed tag, so a tag already on origin must be this HEAD (peeled, for annotated tags).
-  RTAG=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" "refs/tags/v$SRC_VERSION^{}" | sort -k2 | tail -1 | cut -f1)
+  RTAGS=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" "refs/tags/v$SRC_VERSION^{}") || { RTAGS=""; preflight+=("could not read tags from origin"); }
+  RTAG=$(print -r -- "$RTAGS" | sort -k2 | tail -1 | cut -f1)
   [[ -z $RTAG || $RTAG == $HEAD ]] || preflight+=("tag v$SRC_VERSION on origin points at another commit ($RTAG)")
-  ROBJ=$(git -C "$ROOT" ls-remote origin "refs/tags/v$SRC_VERSION" | cut -f1)
+  ROBJ=$(print -r -- "$RTAGS" | grep -v '\^{}$' | cut -f1 || true)
   LOBJ=$(git -C "$ROOT" rev-parse -q --verify "refs/tags/v$SRC_VERSION" || true)
   [[ -z $ROBJ || -z $LOBJ || $ROBJ == $LOBJ ]] || preflight+=("the local tag v$SRC_VERSION is not the tag on origin; delete the local one")
   # A tag already on origin at HEAD is adopted as it is: a new annotated tag object could never replace it.
@@ -132,16 +133,16 @@ fi
 # The pinned Sparkle's tools, resolved (not built) into this run's own folder (mktemp, mode 0700): a cache shared in
 # /private/tmp could hold a replacement written by another user.
 SIGN_UPDATE="$WORK/tools/artifacts/sparkle/Sparkle/bin/sign_update"
-"$SWIFT" package resolve --package-path "$ROOT" --scratch-path "$WORK/tools" >/dev/null || die "could not resolve Sparkle"
+"$SWIFT" package resolve --disable-automatic-resolution --package-path "$ROOT" --scratch-path "$WORK/tools" >/dev/null || die "could not resolve Sparkle"
 [[ -x $SIGN_UPDATE ]] || die "no sign_update at $SIGN_UPDATE"
 # Everything from here reads private copies, so a build that replaces the zip or disk image mid-run cannot change
 # what is checked, signed and published.
 SRC_ZIP=$ZIP ZIP="$WORK/input.zip"
 /bin/cp "$SRC_ZIP" "$ZIP" || die "could not copy $SRC_ZIP"
 # Sparkle installs the first matching bundle it finds in the zip, so the zip must hold this one app and nothing else.
-# (ditto's __MACOSX entries carry that app's own extended attributes)
+# (ditto's __MACOSX entries carry that app's own extended attributes, the bundle folder's included)
 LISTING=("${(@f)$(/usr/bin/zipinfo -1 "$ZIP")}") || die "could not list $SRC_ZIP"
-OTHERS=(${${LISTING:#(__MACOSX/|)Video\ Prompter.app/*}:#__MACOSX/})
+OTHERS=(${${${LISTING:#(__MACOSX/|)Video\ Prompter.app/*}:#__MACOSX/}:#__MACOSX/._Video\ Prompter.app})
 (( ${#OTHERS} == 0 )) || die "$SRC_ZIP holds more than Video Prompter.app: ${OTHERS[1]}"
 [[ ${(j:\n:)LISTING} != *(/..|../)* ]] || die "$SRC_ZIP has a .. path"
 /usr/bin/ditto -x -k "$ZIP" "$WORK/app" || die "could not unpack $SRC_ZIP"
@@ -191,6 +192,9 @@ for arch in ${=ARCHS}; do
   [[ -n $CDHASH && $(cdhash "$DAPP" $arch) == $CDHASH ]] || problems+=("the $arch code in the disk image has CDHash '$(cdhash "$DAPP" $arch)', the zipped app '$CDHASH'")
 done
 /usr/bin/diff -rq --no-dereference "$APP" "$DAPP" >/dev/null 2>&1 || problems+=("the app in the disk image differs from the zipped app")
+# Permissions and entry types too (an executable without its x bit has the same bytes and CDHash).
+modes() { (cd "$1" && /usr/bin/find . -exec /usr/bin/stat -f '%Sp %N' {} + | LC_ALL=C sort); }
+[[ $(modes "$APP") == $(modes "$DAPP") ]] || problems+=("the app in the disk image has different file permissions or types from the zipped app")
 detach || die "the disk image is still mounted at $MNT"
 DEVELOPER_ID='anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists and certificate leaf[subject.OU] = M6L2VW4W5Z'
 /usr/bin/codesign --verify -R="$DEVELOPER_ID" "$APP" 2>/dev/null || problems+=("the zipped app is not signed with Junior's Developer ID (team M6L2VW4W5Z), so its updater would stay off")
@@ -348,10 +352,11 @@ typeset -A WANT=("VideoPrompter_$VERSION.zip" $SHA "VideoPrompter.dmg" $DMG_SHA)
 step "5. GitHub release v$VERSION on $REPO"
 if (( DRY )); then
   print "dry run, not run: git tag -a v$VERSION -m 'Video Prompter $VERSION' $HEAD; git push origin refs/tags/v$VERSION"
-  print "dry run, not run: gh release create v$VERSION --verify-tag ${(q)NAMES} --repo $GHREPO --title 'Video Prompter $VERSION (build $BUILD)' --notes-file '$NOTES'"
+  print "dry run, not run: gh release create v$VERSION --draft --verify-tag ${(q)NAMES} --repo $GHREPO --title 'Video Prompter $VERSION (build $BUILD)' --notes-file '$NOTES'"
   print "asset VideoPrompter_$VERSION.zip: $BYTES bytes, sha256 $SHA (Sparkle appcast enclosure)"
   print "asset VideoPrompter.dmg: $DMG_BYTES bytes, sha256 $DMG_SHA (website download)"
-  if (( EXISTS )); then
+  # Only when the zip is this source's version: a different one is already listed above as a refusal.
+  if (( EXISTS )) && [[ $VERSION == $SRC_VERSION ]]; then
     [[ $(gh release view "v$VERSION" --repo $GHREPO --json isPrerelease --jq .isPrerelease) == false ]] \
       || print "dry run: a real run would refuse: v$VERSION on $REPO is a prerelease"
     HAVE=$(gh release view "v$VERSION" --repo $GHREPO --json assets --jq '.assets[].name')
@@ -374,13 +379,15 @@ else
     TAGGED=1
   fi
   git -C "$ROOT" push origin "refs/tags/v$VERSION" || die "could not push tag v$VERSION (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
-  RTAG=$(git -C "$ROOT" ls-remote origin "refs/tags/v$VERSION" "refs/tags/v$VERSION^{}" | sort -k2 | tail -1 | cut -f1)
+  RTAGS=$(git -C "$ROOT" ls-remote origin "refs/tags/v$VERSION" "refs/tags/v$VERSION^{}") \
+    || die "could not read tag v$VERSION back from origin; nothing uploaded (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+  RTAG=$(print -r -- "$RTAGS" | sort -k2 | tail -1 | cut -f1)
   [[ $RTAG == $HEAD ]] || die "tag v$VERSION on origin is '$RTAG', not $HEAD; nothing uploaded"
   if (( EXISTS )); then
     # A prerelease is not what /releases/latest serves, so the appcast and website must not point at it. A draft is
     # what an interrupted gh release create leaves: it is finished below once its assets check out.
     STATE=$(gh release view "v$VERSION" --repo $GHREPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"')
-    [[ $STATE == *" false" ]] || die "v$VERSION on $REPO is a prerelease; make it a full release first, then rerun with --resume --zip ${(q)SRC_ZIP}"
+    [[ $STATE == *" false" ]] || die "v$VERSION on $REPO is a prerelease; make it a full release first, then rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG}"
     HAVE=$(gh release view "v$VERSION" --repo $GHREPO --json assets --jq '.assets[].name')
     missing=()
     for name in $NAMES; do   # every asset already there is checked first; only then is a missing one uploaded
@@ -394,20 +401,23 @@ else
       fi
     done
     for name in $missing; do gh release upload "v$VERSION" "$WORK/$name" --repo $GHREPO || die "gh release upload $name failed"; done
-    if [[ $STATE == "true "* ]]; then
-      gh release edit "v$VERSION" --repo $GHREPO --draft=false --verify-tag || die "could not publish the draft v$VERSION"
-    fi
-    [[ $(gh release view "v$VERSION" --repo $GHREPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
-      || die "v$VERSION on $REPO is still a draft or prerelease"
   else
-    gh release create "v$VERSION" --verify-tag "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $GHREPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+    # Created as a draft and published only after both assets are downloaded back and verified, below.
+    STATE="true false"
+    gh release create "v$VERSION" --draft --verify-tag "$WORK/VideoPrompter_$VERSION.zip" "$WORK/VideoPrompter.dmg" --repo $GHREPO --title "Video Prompter $VERSION (build $BUILD)" --notes-file "$NOTES" || die "gh release create failed (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
   fi
   for name in $NAMES; do
     gh release download "v$VERSION" --repo $GHREPO --pattern "$name" --dir "$WORK/remote" || die "could not download $name back (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
     [[ $(shasum -a 256 "$WORK/remote/$name" | cut -d' ' -f1) == $WANT[$name] ]] \
       || die "v$VERSION on $REPO holds a different $name (sha256 differs): refusing a conflicting release; the website appcast is unchanged"
-    print "Published and verified $name (sha256 $WANT[$name])"
+    print "Verified $name on the release (sha256 $WANT[$name])"
   done
+  if [[ $STATE == "true "* ]]; then
+    gh release edit "v$VERSION" --repo $GHREPO --draft=false --verify-tag || die "could not publish the draft v$VERSION (rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG})"
+  fi
+  [[ $(gh release view "v$VERSION" --repo $GHREPO --json isDraft,isPrerelease --jq '"\(.isDraft) \(.isPrerelease)"') == "false false" ]] \
+    || die "v$VERSION on $REPO is still a draft or prerelease"
+  print "Published v$VERSION"
   print "Zip (appcast): $URL"
   print "DMG (website): $DMG_URL"
   print "\nRelease object for lib/apps.json:"
@@ -419,7 +429,7 @@ if (( DRY )); then
   APPCAST="$OUT/appcast.xml"
   /bin/cp "$WORK/appcast.xml" "$APPCAST"
 else
-  [[ $(digest "$APPCAST") == $SEEN ]] || die "$APPCAST changed while this ran; rerun with --resume --zip ${(q)SRC_ZIP}"
+  [[ $(digest "$APPCAST") == $SEEN ]] || die "$APPCAST changed while this ran; rerun with --resume --zip ${(q)SRC_ZIP} --dmg ${(q)SRC_DMG}"
   mkdir -p "${APPCAST:h}"
   /bin/cp "$WORK/appcast.xml" "$APPCAST.tmp.$$" && /bin/mv -f "$APPCAST.tmp.$$" "$APPCAST" || die "could not write $APPCAST"
 fi
