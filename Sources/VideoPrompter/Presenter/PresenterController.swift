@@ -55,8 +55,9 @@ import SwiftUI
     // A display that drops out pushes the panel onto another one. That move is not a choice, so
     // it never replaces the memory of the absent display; dragging this window still does.
     let screens = NSScreen.screens.map(PresenterFrameMemory.Screen.init)
-    let event = NSApp.currentEvent
-    let dragged = event?.window === window && [.leftMouseDragged, .leftMouseUp].contains(event?.type)
+    let dragged = NSApp.currentEvent.map { event in
+      event.window === window && [.leftMouseDown, .leftMouseDragged, .leftMouseUp].contains(event.type)
+    } ?? false
     if !dragged, PresenterFrameMemory.savedDisplayIsAbsent(in: frameDefaults, screens: screens) { return }
     PresenterFrameMemory.save(window.frame, on: .init(screen), to: frameDefaults)
   }
