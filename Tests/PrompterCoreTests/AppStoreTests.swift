@@ -30,6 +30,25 @@ private actor PresenterSaveGate {
 
 @MainActor
 final class AppStoreTests: XCTestCase {
+  func testMetadataActionUpdatesMemoryAndDiskAndThrowsWithoutChangingMemory() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpm-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let record = try await store.createScript(title: "Read", markdown: "one two")
+    try await store.updateScriptMetadata(record.id, title: "Renamed", tags: [" draft ", "ready", "draft"])
+    let updated = try XCTUnwrap(store.scripts.first)
+    XCTAssertEqual(updated.metadata.title, "Renamed")
+    XCTAssertEqual(updated.metadata.tags, ["draft", "ready"])
+    await store.reload()
+    XCTAssertEqual(store.scripts.first?.metadata, updated.metadata)
+    do {
+      try await store.updateScriptMetadata(record.id, title: " ")
+      XCTFail("An empty title should be rejected")
+    } catch {}
+    XCTAssertEqual(store.scripts.first?.metadata, updated.metadata)
+  }
+
   func testDuplicateFlushesDraftAndKeepsTheInvokedScriptWhenSelectionChanges() async throws {
     let (store, root, outside) = makeStore()
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
@@ -907,5 +926,74 @@ final class AppStoreTests: XCTestCase {
     store.settings.fontSize = 118
     store.zoomText(in: true, presenter: true)
     XCTAssertEqual(store.settings.fontSize, 120, "stops at the largest size")
+  }
+
+  func testANewLibraryGetsTheWelcomeScriptOnceAndDeletingItIsFinal() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    await store.waitForWelcomeScript()
+    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+    XCTAssertEqual(store.selected?.markdown, WelcomeScript.markdown)
+    try await store.deleteScript(try XCTUnwrap(store.scripts.first).id)
+    let again = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    await again.waitForWelcomeScript()
+    XCTAssertTrue(again.scripts.isEmpty, "offered once per library")
+    again.showWelcomeScript()
+    try await waitUntil { again.scripts.count == 1 }
+    XCTAssertEqual(again.selected?.metadata.title, WelcomeScript.title, "Help > Welcome Script brings it back")
+  }
+
+  func testHelpWelcomeScriptDuringTheFirstLaunchAddDoesNotAddASecondCopy() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    store.showWelcomeScript()
+    await store.waitForWelcomeScript()
+    try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+  }
+
+  func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    defaults.set(true, forKey: WelcomeScript.offeredKey)
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    await store.waitForWelcomeScript()
+    XCTAssertTrue(store.scripts.isEmpty && store.trash.isEmpty, "the saved marker alone keeps it out")
+  }
+
+  func testAnExistingLibraryIsNotGivenTheWelcomeScript() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    _ = try await MarkdownLibrary(rootURL: root).create(title: "Mine", markdown: "my words")
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    await store.waitForWelcomeScript()
+    XCTAssertEqual(store.scripts.map(\.metadata.title), ["Mine"])
+    XCTAssertTrue(defaults.bool(forKey: WelcomeScript.offeredKey))
+    let isolated = AppStore(arguments: ["test", "--data-directory", root.path + "-isolated"], defaults: UserDefaults(suiteName: "AppStoreTests.\(UUID())")!)
+    defer { try? FileManager.default.removeItem(atPath: root.path + "-isolated") }
+    await isolated.waitForInitialLoad()
+    await isolated.waitForWelcomeScript()
+    XCTAssertTrue(isolated.scripts.isEmpty, "--data-directory launches start empty")
+  }
+
+  func testTheWelcomeScriptKeepsItsNotesAndStageDirectionsOutOfTracking() {
+    let document = PrompterDocument(markdown: WelcomeScript.markdown)
+    let spoken = Set(document.spokenTokens.map(\.normalised))
+    XCTAssertFalse(spoken.contains("practice"), "the opening note is a callout")
+    XCTAssertEqual(document.blocks.flatMap(\.stageDirections).map(\.text),
+                   ["Look at the camera, not the screen.", "Smile. You made it to the end."])
+    XCTAssertTrue(spoken.contains("teleprompter"))
+  }
+
+  private func waitUntil(_ condition: @MainActor () -> Bool) async throws {
+    for _ in 0..<200 where !condition() { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertTrue(condition())
   }
 }

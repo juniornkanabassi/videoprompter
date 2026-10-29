@@ -34,6 +34,31 @@ final class CameraLatencyTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(Choice(in: deckLink, signal: hd, signalDuration: ntsc30)), choice)
   }
 
+  /// After a re-pin from the card's default mode, the frames say the real rate: 25 fps here,
+  /// though 29.97 was pinned. Jitter and a missed frame do not move the median.
+  func testTheMeasuredRateIsTheListedDurationNearestTheFrames() {
+    var times = (0..<10).map { Double($0) * 0.04 + ($0 % 2 == 0 ? 0.0015 : -0.0015) }
+    times.remove(at: 5)
+    XCTAssertEqual(Choice.measuredDuration(times, in: hd), time(1, 25))
+    XCTAssertEqual(Choice.measuredDuration((0..<10).map { Double($0) * 1001 / 30000 }, in: hd), ntsc30)
+    XCTAssertNil(Choice.measuredDuration([0, 0.04, 0.08], in: hd), "too few frames to tell")
+    // A webcam's range: the nearer end.
+    let range = Format(width: 1280, height: 720, subType: FourCharCode(kCVPixelFormatType_422YpCbCr8),
+                       frameDurations: [time(1, 30)...time(1, 15)])
+    XCTAssertEqual(Choice.measuredDuration((0..<8).map { Double($0) / 30 }, in: range), time(1, 30))
+  }
+
+  /// 25 October: a DeckLink that had streamed nothing reported its 720x486 default, and that was
+  /// pinned though the card then delivered 4K. The 4K picture is a new signal; the 1080p the re-pin
+  /// then delivers is not, so it cannot loop; a signal that shrinks is new too.
+  func testOnlyADifferentSignalPinsAgain() {
+    func d(_ w: Int32, _ h: Int32) -> CMVideoDimensions { CMVideoDimensions(width: w, height: h) }
+    XCTAssertTrue(Choice.isNewSignal(delivered: d(3840, 2160), signal: d(720, 486), pinned: d(720, 486)))
+    XCTAssertFalse(Choice.isNewSignal(delivered: d(1920, 1080), signal: d(3840, 2160), pinned: d(1920, 1080)))
+    XCTAssertFalse(Choice.isNewSignal(delivered: d(3840, 2160), signal: d(3840, 2160), pinned: d(1920, 1080)))
+    XCTAssertTrue(Choice.isNewSignal(delivered: d(720, 486), signal: d(3840, 2160), pinned: d(1920, 1080)))
+  }
+
   func testNativeFormatOverrideKeepsDetectedDimensionsAndCoding() throws {
     let choice = try XCTUnwrap(Choice(in: deckLink, signal: uhd, signalDuration: ntsc30, useNativeFormat: true))
     XCTAssertEqual(choice.wanted.format, 5)

@@ -57,12 +57,39 @@ import SwiftUI
   /// Video turned on in a windowed presenter fits the window to the camera once. Opening with video
   /// already on, a closed or minimised presenter, full screen and video off all leave it alone.
   func videoDidChange(_ on: Bool) {
-    guard on, isWindowedOnScreen else { return }
+    // A temporary view (the monitor, a camera-only start) leaves the window's shape alone.
+    guard on, isWindowedOnScreen, !camera.isShowingTemporarily else { return }
     // The new preview selects the camera, and so learns its size, in this same update.
     DispatchQueue.main.async { self.matchCameraSize() }
   }
   /// The presenter capsule's video button.
   func toggleVideo() { camera.presentsWithVideo.toggle() }
+
+  /// Pins the selected passage over the full camera picture. From the library editor this opens
+  /// the presenter first; reading pauses, since the script itself is out of view.
+  func monitorSelection(store: AppStore, selection: ReferenceMonitor.Selection? = ReferenceMonitor.focusedSelection()) {
+    guard let selection, !isEditing else { return }
+    // The script the words belong to is presented first, so Back to script returns to it: a
+    // camera-only presenter has none, and a library selection may be from another script.
+    let otherScript = !selection.inPresenter && store.selected?.id != activeSession?.activeScriptID
+    if panel?.isVisible != true || isShowingWithoutScript || otherScript { present(store: store) }
+    guard panel?.isVisible == true, !isShowingWithoutScript else { return }
+    activeSession?.pause()
+    ReferenceMonitor.shared.begin(selection.text, camera: camera)
+    // Key, so Esc reaches Back to script even when the command came from the library.
+    panel?.orderFrontRegardless()
+    panel?.makeKey()
+  }
+  /// The Prompter menu's Start or Pause. Nothing starts while the script is out of sight.
+  func toggleReading(store: AppStore) {
+    if store.session.isActivelyRunning { store.session.pause() } else if canStartReading { store.session.play() }
+  }
+  /// The script is on screen to be read: the same test that enables the bar's Start button.
+  var canStartReading: Bool {
+    panel?.isVisible == true && panel?.isMiniaturized == false && !isEditing
+      && !isShowingWithoutScript && !ReferenceMonitor.shared.isActive && camera.displayMode != .videoOnly
+  }
+  func endMonitor() { ReferenceMonitor.shared.end(camera: camera) }
   func toggleFullScreen() {
     guard let panel, panel.isVisible else { return }
     panel.toggleFullScreen(nil)
@@ -72,28 +99,86 @@ import SwiftUI
     // The red button or Cmd-W in full screen: leave the Space first, then close.
     if isFullScreen { closeNow(); return false }
     activeSession?.pause()
+    resetTransientViews()
     return true
   }
+  /// Ends the monitor and the camera-only presenter, putting back the view the person chose.
+  private func resetTransientViews() {
+    endMonitor()
+    // Every view the person picks is saved, so one that differs was only ever temporary.
+    camera.restoreSavedDisplayMode()
+    isShowingWithoutScript = false
+    cameraOnlyForWantOfScript = false
+  }
   func moveReading(_ action: (SessionStore) -> Void) {
-    guard let session = activeSession, !isEditing, camera.displayMode != .videoOnly else { return }
+    guard let session = activeSession, !isEditing, !isShowingWithoutScript, camera.displayMode != .videoOnly else { return }
     action(session)
   }
 
   var isEditing: Bool { draft?.isEditing == true }
+  /// True while the presenter shows the camera with no script in it.
+  private(set) var isShowingWithoutScript = false
+  /// Camera only was shown because there was no script, so a script added to it comes up over the
+  /// camera instead of hidden behind it. Cleared, with the saved view put back, when it closes.
+  private var cameraOnlyForWantOfScript = false
+
+  /// The library's Present: the selected script, or with none selected the camera on its own.
+  func presentFromLibrary(store: AppStore) {
+    if store.selected != nil { present(store: store) } else { presentCamera(store: store) }
+  }
+
+  /// The camera alone, as a monitor for recording without a script. Presenting a script later adds
+  /// it over the same picture; the View menu adds the camera to a script the other way round.
+  func presentCamera(store: AppStore) {
+    guard draft?.isEditing != true else { panel?.makeKeyAndOrderFront(nil); return }
+    closesAfterFullScreen = false
+    endMonitor()
+    if let panel, panel.isVisible, panel.contentView is NSHostingView<PresenterView> {
+      // Temporary, like the rest of camera-only: presenting a script brings it back over the camera.
+      camera.showTemporarily(.videoOnly)
+      cameraOnlyForWantOfScript = true
+      activeSession?.pause()
+      panel.makeKeyAndOrderFront(nil)
+      return
+    }
+    camera.showTemporarily(.videoOnly)
+    let panel = self.panel ?? makePanel()
+    self.panel = panel
+    store.session.pause()
+    activeSession = store.session
+    isShowingWithoutScript = true
+    cameraOnlyForWantOfScript = true
+    panel.onPassageKey = { _ in false }
+    panel.title = "Video Prompter · Camera"
+    panel.settle()
+    let draft = PresenterDraft()
+    self.draft = draft
+    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: false))
+    recoverVisibleFrame(panel)
+    panel.makeKeyAndOrderFront(nil)
+    NSApp.activate(ignoringOtherApps: true)
+  }
+
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
       if activate { panel?.makeKeyAndOrderFront(nil) } else { panel?.orderFrontRegardless() }
       return
     }
-    guard let script = store.selected else { return }
+    guard let script = store.selected, !store.deletingIDs.contains(script.id) else { return }
     closesAfterFullScreen = false
     let panel = self.panel ?? makePanel()
     self.panel = panel
     // Present on the presenter already showing this script only brings it forward: a new hosting
     // view restarted the camera and threw the open edit away.
     let isShowing = panel.isVisible && store.session.activeScriptID == script.id
-      && panel.contentView is NSHostingView<PresenterView>
+      && panel.contentView is NSHostingView<PresenterView> && !isShowingWithoutScript
+    // A new script never inherits a passage pinned over the last one.
+    if !isShowing { endMonitor() }
+    // A script added to a camera-only presenter shows over the picture rather than hiding it.
+    if cameraOnlyForWantOfScript, camera.displayMode == .videoOnly { camera.showTemporarily(.prompterWithVideo) }
+    cameraOnlyForWantOfScript = false
+    isShowingWithoutScript = false
     // For the script already presented this only passes on settings; the anchor stays.
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
@@ -111,7 +196,7 @@ import SwiftUI
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
-    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft))
+    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: true))
     let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen") ? NSScreen.agentScreen : nil)
     if let area = targetScreen?.visibleFrame, !isFullScreen {
       panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
@@ -133,7 +218,9 @@ import SwiftUI
   }
   func closeNow() {
     activeSession?.pause()
+    // The flags go with the panel, so a present during the full-screen exit still rebuilds it.
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
+    resetTransientViews()
     panel?.orderOut(nil)
     // The camera is already let go: the stage view stops holding it when `orderOut` clears the
     // window's `isVisible`. Dropping the hosting view also stops the hidden presenter observing the
@@ -293,6 +380,10 @@ class PresenterPanel: NSPanel {
   private var originalMarkdown: String
   var hasEdits: Bool { markdown != originalMarkdown }
 
+  /// For the camera-only presenter, which has no script to edit.
+  convenience init() {
+    self.init(record: ScriptRecord(metadata: ScriptMetadata(title: "", fileName: ""), markdown: ""))
+  }
   init(record: ScriptRecord) {
     recordID = record.id
     expectedFingerprint = record.metadata.contentFingerprint
@@ -379,11 +470,14 @@ private struct PresenterView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
+  /// False for the camera on its own; the session may still hold an earlier script, never shown.
+  var hasScript = true
   @ObservedObject private var camera = CameraModel.shared
+  @ObservedObject private var monitor = ReferenceMonitor.shared
   @State private var editorNotice: String?
-  @State private var showsGuideSettings = false
+  @State private var showsCameraSettings = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
-  private var showsScript: Bool { camera.displayMode != .videoOnly || draft.isEditing }
+  private var showsScript: Bool { hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
   var body: some View {
     GeometryReader { geometry in
       let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
@@ -443,10 +537,27 @@ private struct PresenterView: View {
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
         }
+        if !hasScript, camera.displayMode != .videoOnly {
+          Text("No script yet. Choose one in the library and press Present to add it here.")
+            .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
+            .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        if let passage = monitor.passage, !showsScript {
+          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
+            PresenterController.shared.endMonitor()
+          }
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          .padding(.bottom, 8)
+          // Read through the same glass as the script.
+          .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
+          .rotationEffect(.degrees(Double(store.settings.rotation)))
+        }
       }
     }.background(Color.clear).onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
+    .onChange(of: camera.displayMode) { _, mode in monitor.displayModeDidChange(mode) }
     .safeAreaInset(edge: .top, spacing: 0) {
       ZStack {
         RoundedRectangle(cornerRadius: 2).frame(width: 24, height: 4)
@@ -490,16 +601,36 @@ private struct PresenterView: View {
               .buttonStyle(.borderedProminent)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          CapsuleButton(camera.presentsWithVideo ? "Hide camera" : "Show camera",
-                        systemImage: camera.presentsWithVideo ? "video.fill" : "video.slash", help: "Show or hide the camera picture behind your script") {
+          // One View menu instead of a camera toggle, picker and guides button: the bar keeps the
+          // same width whether or not the camera is on.
+          Menu {
+            Picker("What to show", selection: $camera.displayMode) {
+              ForEach(PresenterDisplayMode.allCases) { mode in
+                Label(mode.label, systemImage: mode.systemImage).tag(mode)
+              }
+            }.pickerStyle(.inline)
+            Divider()
+            Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
+              .disabled(draft.isEditing)
+              .help("Drag across a passage first; it is pinned over the camera picture")
+            Button("Camera Settings…") { showsCameraSettings = true }
+              .disabled(!camera.presentsWithVideo)
+          } label: {
+            // A titled label: an icon-only one dropped the menu from the accessibility tree, and a
+            // Text image drew as a blank square in the bordered bar.
+            Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.titleAndIcon)
+          } primaryAction: {
+            // One click still turns the camera on or off, as the old camera button did.
             PresenterController.shared.toggleVideo()
           }
-          if camera.presentsWithVideo {
-            CameraPicker(model: camera, zoom: store.uiZoom)
-            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", help: "Choose composition lines and an output frame marker") { showsGuideSettings = true }
-              .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
-                CameraGuideSettings(model: camera).frame(width: 300).padding()
-              }
+          .menuStyle(.button).menuIndicator(.visible).fixedSize()
+          .accessibilityLabel("Presenter view")
+          .accessibilityValue(camera.displayMode.label)
+          .help("Click to show or hide the camera; the arrow has every view, Camera Settings and the monitor. \(camera.displayMode.label) now")
+          .background {
+            Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
+              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
+            }
           }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
@@ -669,6 +800,9 @@ struct ScriptTextView: NSViewRepresentable {
     text.onCharacterClick = { context.coordinator.seek($0) }
     text.onLayout = { [weak scroll] in
       guard let scroll else { return }
+      context.coordinator.dropScrollGeometry()
+      // During a full layout the caller aligns once it returns; see `layOutScript`.
+      guard !context.coordinator.isLayingOutScript else { return }
       context.coordinator.invalidateAlignment()
       context.coordinator.alignToCurrent(in: scroll)
     }
@@ -720,6 +854,31 @@ struct ScriptTextView: NSViewRepresentable {
     var mappings: [(NSRange, Int)] = []
     /// The system's Reduce Motion; tests that only check where the text lands set it to skip the easing.
     static var reducesMotion: () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    /// How long an eased move takes. Ease-out, so the line starts moving at full speed the moment
+    /// the reader reaches it, and a new target picks up from wherever the last move had got to:
+    /// the 0.60 s ease-in-out this replaced started every line from rest and put the line on the
+    /// guide over a second after the reader got there at a fast pace.
+    static let easedMoveSeconds = 0.20
+    /// Moves the script: eased, or at once, which also stops an easing in flight. Tests swap it to
+    /// see what was asked for, since an eased scroll does not advance while the screen is locked.
+    static var moveClip: (NSClipView, NSPoint, _ eased: Bool) -> Void = { clip, destination, eased in
+      if eased {
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = easedMoveSeconds
+          context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+          clip.animator().setBoundsOrigin(destination)
+        }
+      } else {
+        // A zero-length animator move is what replaces an animator move in flight; the layer's
+        // own animations go too, and the plain assignment leaves the origin exact.
+        NSAnimationContext.runAnimationGroup { context in
+          context.duration = 0
+          clip.animator().setBoundsOrigin(destination)
+        }
+        clip.layer?.removeAllAnimations()
+        clip.setBoundsOrigin(destination)
+      }
+    }
     private var renderedDocument: PrompterDocument?
     private var renderedStyle = ""
     var tokenIndex = 0
@@ -748,6 +907,10 @@ struct ScriptTextView: NSViewRepresentable {
     var snapNextAlignment = false
     private var scrollObservers: [NSObjectProtocol] = []
     private var isLiveScrolling = false
+    /// Every mapping's rendered midY, measured on the gesture's first scroll event. Only geometry
+    /// clears it (a new gesture, a render, a resize): each hand-scroll seek re-aligns, and clearing
+    /// it there too would measure the whole script again on every event.
+    private(set) var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
     /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
@@ -802,6 +965,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSView.frameDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self, weak scroll] _ in
           MainActor.assumeIsolated {
             guard let self, let scroll else { return }
+            self.dropScrollGeometry()
             self.snapToGuide()
             self.alignToCurrent(in: scroll)
           }
@@ -809,6 +973,7 @@ struct ScriptTextView: NSViewRepresentable {
         center.addObserver(forName: NSScrollView.willStartLiveScrollNotification, object: scroll, queue: .main) { [weak self] _ in
           MainActor.assumeIsolated {
             self?.isLiveScrolling = true
+            self?.dropScrollGeometry()
             if self?.manualPosition != nil { self?.isHandScrolled = true }
           }
         },
@@ -890,6 +1055,7 @@ struct ScriptTextView: NSViewRepresentable {
         }
       }
       mappings = []
+      dropScrollGeometry()
       let plain = attributed.string as NSString
       let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
@@ -984,19 +1150,28 @@ struct ScriptTextView: NSViewRepresentable {
       guard isLiveScrolling, let textView,
         let manager = textView.layoutManager, let container = textView.textContainer
       else { return }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       let guide = scroll.contentView.bounds.origin.y
         + layoutGuideY(height: scroll.contentView.bounds.height, fraction: guideFraction) - textView.textContainerInset.height
-      guard let nearest = mappings.min(by: { left, right in
-        let leftGlyph = manager.glyphRange(forCharacterRange: left.0, actualCharacterRange: nil)
-        let rightGlyph = manager.glyphRange(forCharacterRange: right.0, actualCharacterRange: nil)
-        return abs(manager.boundingRect(forGlyphRange: leftGlyph, in: container).midY - guide)
-          < abs(manager.boundingRect(forGlyphRange: rightGlyph, in: container).midY - guide)
-      }) else { return }
+      // Each word is measured once per gesture, not twice per trackpad event (60 to 120 a second,
+      // and a long script lagged behind the fingers). Layout holds still while the hand scrolls;
+      // a render, resize or reflow drops these.
+      let midYs = liveScrollMidYs ?? mappings.map { range in
+        let glyph = manager.glyphRange(forCharacterRange: range.0, actualCharacterRange: nil)
+        return manager.boundingRect(forGlyphRange: glyph, in: container).midY
+      }
+      liveScrollMidYs = midYs
+      guard let slot = Self.nearestSlot(midYs, to: guide) else { return }
+      let nearest = mappings[slot]
       tokenIndex = nearest.1
       lastConfirmedTokenIndex = nil
       if manualPosition != nil { pendingUserSeeks += 1 }
       (onUserScroll ?? onSeek)(nearest.1)
+    }
+    /// The first slot nearest `guide`. A scan, not a search: mappings are in token order, which is
+    /// not always page order (a code fence's language tag can map to a later line of its body).
+    static func nearestSlot(_ midYs: [CGFloat], to guide: CGFloat) -> Int? {
+      midYs.indices.min { abs(midYs[$0] - guide) < abs(midYs[$1] - guide) }
     }
     private func layoutGuideY(height: CGFloat, fraction: Double) -> CGFloat {
       let visual = ScriptTextView.visualGuideY(height: height, fraction: fraction)
@@ -1007,6 +1182,7 @@ struct ScriptTextView: NSViewRepresentable {
     func setSideInset(_ inset: CGFloat) {
       guard let textView, abs(textView.textContainerInset.width - inset) > 0.5 else { return }
       textView.textContainerInset.width = inset
+      dropScrollGeometry()
       snapToGuide()
     }
     func invalidateAlignment() {
@@ -1014,6 +1190,7 @@ struct ScriptTextView: NSViewRepresentable {
       lastGuideFraction = nil
       lastAlignmentDestination = nil
     }
+    func dropScrollGeometry() { liveScrollMidYs = nil }
     /// Re-align on the next update without easing.
     func snapToGuide() {
       invalidateAlignment()
@@ -1033,8 +1210,20 @@ struct ScriptTextView: NSViewRepresentable {
       if abs(textView.textContainerInset.height - edgeInset) > 0.5 {
         textView.textContainerInset = NSSize(width: textView.textContainerInset.width, height: edgeInset)
       }
-      manager.ensureLayout(for: container)
+      layOutScript(manager, container)
       return (manager, container, guideY)
+    }
+    /// True while `layOutScript` runs. Each paragraph laid out grows the text view, and its
+    /// `onLayout` used to align (and so lay out again) inside this very call: one open of a
+    /// 4,800-word script ran 134 nested align passes, nested up to 15 deep, about 400 ms.
+    private(set) var isLayingOutScript = false
+    /// The whole script laid out, with the size changes it causes left to the caller, which
+    /// measures and aligns once afterwards.
+    private func layOutScript(_ manager: NSLayoutManager, _ container: NSTextContainer) {
+      guard !isLayingOutScript else { return }
+      isLayingOutScript = true
+      defer { isLayingOutScript = false }
+      manager.ensureLayout(for: container)
     }
     /// Where the scroll must sit to put this rendered range on the guide.
     private func scrollY(
@@ -1132,16 +1321,7 @@ struct ScriptTextView: NSViewRepresentable {
       let isSameDestination = lastAlignmentDestination.map {
         abs($0.x - destination.x) <= 0.5 && abs($0.y - destination.y) <= 0.5
       } ?? false
-      if animate && !isSameDestination {
-        NSAnimationContext.runAnimationGroup { context in
-          context.duration = 0.60
-          context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-          scroll.contentView.animator().setBoundsOrigin(destination)
-        }
-      } else if !animate {
-        scroll.contentView.layer?.removeAllAnimations()
-        scroll.contentView.setBoundsOrigin(destination)
-      }
+      if !animate || !isSameDestination { Self.moveClip(scroll.contentView, destination, animate) }
       if !animate || !isSameDestination { scroll.reflectScrolledClipView(scroll.contentView) }
       lastAligned = tokenIndex
       lastGuideFraction = guideFraction
@@ -1208,8 +1388,17 @@ private final class TrackingTextView: NSTextView {
       guard glyph < manager.numberOfGlyphs else { super.mouseDown(with: event); return }
       let character = manager.characterIndexForGlyph(at: glyph)
       if character != NSNotFound {
+        // Control-click is the context menu and shift-click extends a selection: neither seeks.
+        guard event.modifierFlags.isDisjoint(with: [.control, .shift]) else { super.mouseDown(with: event); return }
         setSelectedRange(NSRange(location: 0, length: 0))
-        onCharacterClick?(character)
+        // AppKit's own tracking runs until the button comes up: a drag leaves a selection for
+        // the reference monitor, and a plain click still moves the reading position. A click
+        // that wobbles over one character is still a click.
+        super.mouseDown(with: event)
+        if selectedRange().length <= 1 {
+          setSelectedRange(NSRange(location: selectedRange().location, length: 0))
+          onCharacterClick?(character)
+        }
         return
       }
     }

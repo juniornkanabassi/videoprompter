@@ -18,6 +18,15 @@ final class PresenterControllerTests: XCTestCase {
     }
   }
 
+  func testHandScrollNearestWordIsTheFirstOfTheNearestEvenOutOfPageOrder() {
+    // A fence's language tag maps to a later line of its body, so token order runs B, A, B, C.
+    XCTAssertEqual(ScriptTextView.Coordinator.nearestSlot([45, 15, 45, 75], to: 15), 1)
+    // Words on one line share a midY: the line's first word wins, as does the earlier of two lines.
+    XCTAssertEqual(ScriptTextView.Coordinator.nearestSlot([15, 15, 45, 45, 45], to: 44), 2)
+    XCTAssertEqual(ScriptTextView.Coordinator.nearestSlot([15, 15, 45, 45], to: 30), 0)
+    XCTAssertNil(ScriptTextView.Coordinator.nearestSlot([], to: 10))
+  }
+
   func testReadStateAndAlignmentPreserveSparseAndEmptyMappings() throws {
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let view = NSTextView(frame: scroll.bounds)
@@ -853,6 +862,9 @@ final class PresenterControllerTests: XCTestCase {
     NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
     NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
     let handY = y()
+    XCTAssertNotNil(coordinator.liveScrollMidYs, "the gesture measured the words")
+    coordinator.snapToGuide()  // what updateNSView does for the hand's own seek
+    XCTAssertNotNil(coordinator.liveScrollMidYs, "a seek must not make the next scroll event measure again")
     coordinator.isActivelyRunning = false  // what updateNSView reports after the pause
     XCTAssertTrue(coordinator.isHandScrolled)
     XCTAssertTrue(coordinator.noteSeekRevision(session.seekRevision), "the hand's own seek")
@@ -871,6 +883,7 @@ final class PresenterControllerTests: XCTestCase {
 
     // Play lifts the suppression too.
     NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    XCTAssertNil(coordinator.liveScrollMidYs, "a new gesture measures afresh")
     NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
     rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
     let secondHandY = y()
@@ -927,35 +940,48 @@ final class PresenterControllerTests: XCTestCase {
       let current = target(for: index)
       return current > start + 20 && abs(current - previous) < 0.5
     }
+    // Records what the coordinator asks for and moves the scroll by hand: an eased `animator()`
+    // scroll does not advance at all while the Mac's screen is locked, and fixed waits for a
+    // 0.60 s animation failed whenever the Mac was busy.
+    var moves: [(y: CGFloat, eased: Bool)] = []
+    let system = ScriptTextView.Coordinator.moveClip
+    ScriptTextView.Coordinator.moveClip = { clip, destination, eased in
+      moves.append((destination.y, eased))
+      if !eased { clip.setBoundsOrigin(destination) }
+    }
+    defer { ScriptTextView.Coordinator.moveClip = system }
+    var y: CGFloat { scroll.contentView.bounds.origin.y }
+
     let sameLineIndex = try! XCTUnwrap(sameLinePair)
     let sameLineTarget = target(for: sameLineIndex)
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex - 1, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.10))
+    XCTAssertEqual(moves.last?.eased, true, "Running progress to a new line eases")
+    XCTAssertEqual(moves.last?.y ?? -1, sameLineTarget, accuracy: 2)
+    let easings = moves.count
     coordinator.align(scroll: scroll, tokenIndex: sameLineIndex, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.55))
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, sameLineTarget, accuracy: 2,
-      "A same-line token update must not restart the existing alignment")
+    XCTAssertEqual(moves.count, easings, "A same-line token update must not restart the existing alignment")
     coordinator.snapNextAlignment = true
     coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
+    XCTAssertEqual(moves.last?.eased, false)
+    XCTAssertEqual(y, start, accuracy: 1, "An explicit snap lands at once")
 
     coordinator.align(scroll: scroll, tokenIndex: 5, guideFraction: 0.35)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
-    let intermediate = scroll.contentView.bounds.origin.y
     let firstTarget = target(for: 5)
-    XCTAssertTrue(min(start, firstTarget) < intermediate && intermediate < max(start, firstTarget))
-
+    XCTAssertEqual(moves.last?.eased, true)
+    XCTAssertEqual(moves.last?.y ?? -1, firstTarget, accuracy: 2)
+    XCTAssertEqual(y, start, accuracy: 1, "An eased alignment does not jump")
+    // Part way there, the next line retargets from where the scroll is, without jumping.
+    let intermediate = (start + firstTarget) / 2
+    scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: intermediate))
     coordinator.align(scroll: scroll, tokenIndex: 10, guideFraction: 0.35)
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, intermediate, accuracy: 1)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.075))
-    let retargeted = scroll.contentView.bounds.origin.y
-    let secondTarget = target(for: 10)
-    XCTAssertTrue(min(intermediate, secondTarget) < retargeted && retargeted < max(intermediate, secondTarget))
+    XCTAssertEqual(moves.last?.eased, true)
+    XCTAssertEqual(moves.last?.y ?? -1, target(for: 10), accuracy: 2)
+    XCTAssertEqual(y, intermediate, accuracy: 1)
 
     coordinator.snapNextAlignment = true
     coordinator.align(scroll: scroll, tokenIndex: 0, guideFraction: 0.35)
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
-    RunLoop.main.run(until: Date().addingTimeInterval(0.34))
-    XCTAssertEqual(scroll.contentView.bounds.origin.y, start, accuracy: 1)
+    XCTAssertEqual(moves.last?.eased, false, "An explicit snap stops the easing")
+    XCTAssertEqual(y, start, accuracy: 1)
   }
 
   // MARK: Present with video

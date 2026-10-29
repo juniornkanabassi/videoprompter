@@ -84,7 +84,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
 
   func testBilingualFixtureThroughProductionProviderAndSession() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VIDEOPROMPTER_RUN_SPEECH_INTEGRATION"] == "1")
-    let root = URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/speech-fixtures")
+    let root = researchFolder.appendingPathComponent("speech-fixtures")
     let expected = try String(contentsOf: root.appendingPathComponent("expected.txt"), encoding: .utf8)
     let session = SessionStore()
     let record = ScriptRecord(metadata: .init(title: "Fixture", fileName: "fixture.md"), markdown: expected)
@@ -138,11 +138,15 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       environment["VIDEOPROMPTER_SPEECH_REPLAY_WAV"].map { URL(fileURLWithPath: $0) }
         ?? acceptanceInputs.appendingPathComponent("JuniorPrompter v0.3.0 (9) Test Script Reading.wav"),
       script: URL(fileURLWithPath: environment["VIDEOPROMPTER_SPEECH_REPLAY_SCRIPT"]
-        ?? "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/demo-test-script-exact.md"))
+        ?? researchFolder.appendingPathComponent("demo-test-script-exact.md").path))
   }
 
-  private let acceptanceInputs = URL(fileURLWithPath:
-    "/Users/junior.nkanabassi/Documents/JuniorOS/02 Projects/Development/Video Prompter/00 Project State/Acceptance inputs")
+  /// The opt-in replays read recordings kept outside the repository, under VIDEOPROMPTER_JUNIOROS
+  /// (default ~/Documents/JuniorOS).
+  private let juniorOS = ProcessInfo.processInfo.environment["VIDEOPROMPTER_JUNIOROS"].map { URL(fileURLWithPath: $0) }
+    ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/JuniorOS")
+  private var researchFolder: URL { juniorOS.appendingPathComponent("05 Other/Codex Workspace/JuniorPrompter-research-20260905") }
+  private var acceptanceInputs: URL { juniorOS.appendingPathComponent("02 Projects/Development/Video Prompter/00 Project State/Acceptance inputs") }
 
   /// Short 173: six minutes of natural reading with mistakes, false starts, going back to re-read,
   /// hard names and numbers. Same production path and the same environment as the replay above.
@@ -159,7 +163,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
   func testShort172ReadingThroughProductionProviderAndSession() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VIDEOPROMPTER_RUN_172_REPLAY"] == "1")
     try await replayRecording(
-      URL(fileURLWithPath: "/Users/junior.nkanabassi/Documents/JuniorOS/05 Other/Codex Workspace/JuniorPrompter-research-20260905/172-rough-cut-reading.wav"),
+      researchFolder.appendingPathComponent("172-rough-cut-reading.wav"),
       script: acceptanceInputs.appendingPathComponent("172 script.md"))
   }
 
@@ -292,8 +296,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       audio.length, AVAudioFramePosition((startOffset * audio.processingFormat.sampleRate).rounded()))
     audio.framePosition = startFrame
     let actualStartOffset = Double(startFrame) / audio.processingFormat.sampleRate
+    // VIDEOPROMPTER_SPEECH_REPLAY_LOCALES="en-GB" compares one recogniser with the Mixed pair.
+    let locales = environment["VIDEOPROMPTER_SPEECH_REPLAY_LOCALES"].map {
+      $0.split(separator: ",").map { Locale(identifier: String($0)) }
+    } ?? [Locale(identifier: "en-GB"), Locale(identifier: "fr-FR")]
     let format = try await provider.prepare(
-      naturalFormat: audio.processingFormat,
+      locales: locales, naturalFormat: audio.processingFormat,
       contextualStrings: engine == .dictation ? SpeechProvider.contextualPhrases(from: script) : [], engine: engine)
     let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
     let monitor = Task { @MainActor in
