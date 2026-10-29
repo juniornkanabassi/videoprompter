@@ -309,4 +309,20 @@ enum ScriptFolderError: LocalizedError {
     }
     if let failure = failure ?? error { throw failure }
   }
+
+  /// Writes `text` only if the file still holds `expected`, checked and written in one
+  /// coordinated write so no other writer lands in between. False when the file had changed.
+  static func replace(_ expected: String, with text: String, at url: URL) throws -> Bool {
+    var error: NSError?
+    var result: Result<Bool, Error> = .success(false)
+    NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &error) { url in
+      result = Result {
+        guard try String(contentsOf: url, encoding: .utf8) == expected else { return false }
+        try Data(text.utf8).write(to: url, options: .atomic)
+        return true
+      }
+    }
+    if let error { throw error }
+    return try result.get()
+  }
 }

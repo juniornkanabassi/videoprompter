@@ -151,21 +151,36 @@ final class LinkReceiver: @unchecked Sendable {
     self.renderer = renderer
   }
 
+  /// Connections still in their handshake, and whether each came over Wi-Fi.
+  private var pending: [(connection: NWConnection, wifi: Bool)] = []
+
+  /// Called on `queue`, where the listeners run.
   func accept(_ new: NWConnection, overWiFi: Bool) {
     // The current Mac stays until the newcomer is ready, so a peer that fails the pairing
     // handshake cannot knock it off.
+    pending.append((new, overWiFi))
     new.stateUpdateHandler = { [weak self, weak new] state in
       guard let self, let new else { return }
       switch state {
-      case .ready: self.queue.async { self.promote(new, overWiFi: overWiFi) }
-      case .failed, .cancelled: self.queue.async { self.closed(new) }
+      case .ready: self.promote(new, overWiFi: overWiFi)
+      case .failed, .cancelled:
+        self.pending.removeAll { $0.connection === new }
+        self.closed(new)
       default: break
       }
     }
     new.start(queue: queue)
+    // A handshake that never finishes must not linger.
+    queue.asyncAfter(deadline: .now() + 10) { [weak self, weak new] in
+      guard let self, let new, self.pending.contains(where: { $0.connection === new }) else { return }
+      new.cancel()
+    }
   }
 
   private func promote(_ new: NWConnection, overWiFi: Bool) {
+    // Dropped while it shook hands: Wi-Fi was turned off or the pairing code changed.
+    guard pending.contains(where: { $0.connection === new }) else { return }
+    pending.removeAll { $0.connection === new }
     connection?.cancel()
     connection = new
     connectionIsWiFi = overWiFi
@@ -177,7 +192,11 @@ final class LinkReceiver: @unchecked Sendable {
   }
 
   func dropWiFi() {
-    queue.async { [self] in if connectionIsWiFi { connection?.cancel() } }
+    queue.async { [self] in
+      if connectionIsWiFi { connection?.cancel() }
+      for waiting in pending where waiting.wifi { waiting.connection.cancel() }
+      pending.removeAll { $0.wifi }
+    }
   }
 
   private func receive(on connection: NWConnection) {

@@ -223,10 +223,13 @@ enum GoogleDocsError: LocalizedError {
     }
     do {
       let tokens = try await postToken(["refresh_token": refresh, "client_id": Self.clientID, "grant_type": "refresh_token"])
+      // Signed out, or into another account, while Google answered: this token is not theirs.
+      guard Keychain.read(Self.keychainAccount) == refresh else { throw GoogleDocsError.signInFailed("signed out") }
       remember(tokens)
     } catch GoogleDocsError.http(400) {
-      // Revoked, or expired: Google ends a testing-mode app's sign-in after seven days.
-      signOut()
+      // Revoked, or expired: Google ends a testing-mode app's sign-in after seven days. Only
+      // the sign-in this refresh belonged to ends, never one made while Google answered.
+      if Keychain.read(Self.keychainAccount) == refresh { signOut() }
       throw GoogleDocsError.signInFailed("Google ended the sign-in. Sign in again.")
     }
     guard let access else { throw GoogleDocsError.signInFailed("no access token") }

@@ -77,7 +77,8 @@ struct LibraryScreen: View {
       }
     } detail: {
       if let script = store.selected {
-        ScriptDetail(script: script)
+        // Fresh state per script, so a refresh still answering for one never asks about another.
+        ScriptDetail(script: script).id(script.id)
       } else {
         ContentUnavailableView("Choose a script", systemImage: "doc.text", description: Text("Pick a script on the left, then press Present."))
       }

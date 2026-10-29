@@ -244,16 +244,15 @@ import UIKit
       guard googleLinks[script.id] != nil, folder.script(script.id) != nil,
         FileManager.default.fileExists(atPath: script.url.path)
       else { return nil }
-      // Edited here or on the Mac while Google answered: those edits were never confirmed away.
-      guard try ScriptFolder.read(script.url) == current else { return .hasLocalEdits }
       let fresh = GoogleDocLinks.Link(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
       guard markdown != current else {
         googleLinks[script.id] = fresh
         return .unchanged
       }
       // Written straight over the file: the doc is the master. An open presenter picks the
-      // change up from the folder like an edit made on the Mac, keeping its place.
-      try ScriptFolder.write(markdown, to: script.url)
+      // change up from the folder like an edit made on the Mac, keeping its place. Edited here
+      // or on the Mac while Google answered: those edits were never confirmed away.
+      guard try ScriptFolder.replace(current, with: markdown, at: script.url) else { return .hasLocalEdits }
       googleLinks[script.id] = fresh
       folder.refresh()
       return .updated
