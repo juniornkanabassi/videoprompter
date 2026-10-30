@@ -15,9 +15,16 @@ public struct SpeechCandidate: Sendable, Hashable {
 }
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation }
-  public enum Error: Swift.Error, Sendable {
+  public enum Error: Swift.Error, Sendable, LocalizedError {
     case unavailable, notPrepared
     case analysisFailed(String)
+    public var errorDescription: String? {
+      switch self {
+      case .unavailable: "Speech recognition is not available for this language on this device."
+      case .notPrepared: "Speech recognition was not ready."
+      case .analysisFailed(let reason): "Speech recognition failed. \(reason)"
+      }
+    }
   }
   private var analyzer: SpeechAnalyzer?
   private var modules: [SpeechTranscriber] = []
@@ -73,6 +80,11 @@ public actor SpeechProvider {
     case .transcription: activeModules = modules
     case .dictation: activeModules = dictationModules
     }
+    // The speech files first: until a locale's files are on the device, there is no audio format
+    // for it, and an iPad that has never used British English or French dictation has neither.
+    if let installation = try await AssetInventory.assetInstallationRequest(supporting: activeModules) {
+      try await installation.downloadAndInstall()
+    }
     guard
       let format = await SpeechAnalyzer.bestAvailableAudioFormat(
         compatibleWith: activeModules, considering: naturalFormat)
@@ -82,9 +94,6 @@ public actor SpeechProvider {
       let context = AnalysisContext()
       context.contextualStrings[.general] = Array(contextualStrings.prefix(100))
       try await a.setContext(context)
-    }
-    if let installation = try await AssetInventory.assetInstallationRequest(supporting: activeModules) {
-      try await installation.downloadAndInstall()
     }
     try await a.prepareToAnalyze(in: format)
     analyzer = a

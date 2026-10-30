@@ -636,7 +636,7 @@ final class SessionStore: ObservableObject {
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
-        self.state = .uncertain("Preparing on-device speech recognition")
+        self.state = .uncertain("Preparing speech recognition. The first time, this downloads Apple's speech files.")
         let format = try await self.speechProvider.prepare(
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
@@ -684,7 +684,7 @@ final class SessionStore: ObservableObject {
         }
       } catch is CancellationError {} catch {
         guard self.lifecycleGeneration == generation else { return }
-        self.failAudio("Voice following stopped: \(error)")
+        self.failAudio("Voice following stopped. \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)")
       }
     }
   }
