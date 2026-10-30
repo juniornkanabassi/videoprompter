@@ -53,7 +53,7 @@ import UIKit
     var found = Self.discover().map {
       Device(id: $0.uniqueID, name: $0.localizedName, isExternal: $0.deviceType == .external)
     }.sorted { $0.isExternal && !$1.isExternal }
-    if let mac = link.macName { found.insert(Device(id: Self.macLinkID, name: mac, isExternal: true), at: 0) }
+    if let mac = link.macName, link.pictureSize != nil { found.insert(Device(id: Self.macLinkID, name: mac, isExternal: true), at: 0) }
     devices = found
     if selectedID.map({ id in devices.contains { $0.id == id } }) != true {
       selectedID = devices.first?.id
@@ -71,10 +71,13 @@ import UIKit
   }
 
   /// A Mac that starts sending takes over the picture, as plugging in a camera does; when it
-  /// stops, the picture falls back to whatever camera is left.
+  /// stops, the picture falls back to whatever camera is left. A Mac connected only to control
+  /// the presenter sends no picture and changes nothing here.
   private func linkChanged() {
+    let hadMac = devices.contains(where: \.isMac)
     refreshDevices()
-    if link.macName != nil, selectedID != Self.macLinkID {
+    // Taken over when the picture first arrives, even when the Mac is already the only choice.
+    if link.pictureSize != nil, !hadMac {
       selectedID = Self.macLinkID
       if !isOn { isOn = true }
     }

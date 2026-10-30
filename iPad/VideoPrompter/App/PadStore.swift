@@ -60,6 +60,7 @@ import UIKit
       Task { @MainActor in self?.foldersChanged(scripts) }
     }.store(in: &bag)
     pullPresets()
+    startMacRemote()
   }
 
   private func persist() {
@@ -260,6 +261,69 @@ import UIKit
     } catch {
       errorMessage = error.localizedDescription
       return nil
+    }
+  }
+}
+
+// MARK: - Control from a Mac
+
+extension PadStore {
+  /// The Mac's File › Control iPad drives the presenter the way its own buttons do, and sees
+  /// what it shows: sent a moment after anything changes, and at once when a Mac connects.
+  fileprivate func startMacRemote() {
+    let link = camera.link
+    link.onCommand = { [weak self] in self?.perform($0) }
+    var lastSent: PadRemote.State?
+    // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
+    objectWillChange.receive(on: DispatchQueue.main)
+      .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
+      .sink { [weak self] _ in
+        guard let self, link.macName != nil else { return }
+        let state = remoteState
+        if state != lastSent { link.send(state) }
+        lastSent = state
+      }.store(in: &bag)
+    link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
+      guard let self, name != nil else { return }
+      lastSent = remoteState
+      link.send(lastSent!)
+    }.store(in: &bag)
+  }
+
+  var remoteState: PadRemote.State {
+    let open = presentingID != nil
+    let words = open ? session.document.spokenTokens.count : 0
+    return PadRemote.State(
+      scripts: folder.scripts.map { PadRemote.Script(id: $0.id, title: $0.title) },
+      presenting: presentingID, running: open && session.isActivelyRunning,
+      mode: settings.mode, speed: Int(settings.speed.rounded()),
+      word: words > 0 ? session.tokenIndex + 1 : 0, words: words)
+  }
+
+  func perform(_ command: PadRemote.Command) {
+    switch command {
+    case .present(let id):
+      guard let script = folder.script(id) else { return }
+      selectedID = id
+      present(script)
+    case .mode(let mode):
+      if ["Voice", "Manual"].contains(mode) { settings.mode = mode }
+    case .speed(let speed):
+      settings.speed = Double(min(max(speed, 20), 300))
+    default:
+      // The rest act on the open presenter, as its buttons do.
+      guard presentingID != nil else { return }
+      switch command {
+      case .close: closePresenter()
+      case .play: session.play()
+      case .pause: session.pause()
+      case .backToStart: session.restart()
+      case .nextPassage: session.nextPassage()
+      case .previousPassage: session.previousPassage()
+      case .seek(let word):
+        if word >= 1, word <= session.document.spokenTokens.count { session.seek(to: word - 1) }
+      case .present, .mode, .speed: break
+      }
     }
   }
 }

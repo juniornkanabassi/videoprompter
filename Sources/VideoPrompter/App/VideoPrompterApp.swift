@@ -843,6 +843,9 @@ private enum PresenterSaveError: LocalizedError {
       }
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store) }
       .defaultSize(width: 520, height: 560)
+    Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared) }
+      .defaultSize(width: 420, height: 380)
+      .defaultLaunchBehavior(.suppressed)
     Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)

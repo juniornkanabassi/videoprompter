@@ -416,8 +416,81 @@ import Speech
       if let quality = params["quality"].flatMap(RecordingPreset.init(rawValue:)) { recorder.preset = quality }
       if let float = params["floatAudio"] { recorder.floatAudio = float == "on" }
       return .ok(recordingSettings)
+    case "ipad": return await iPad(params)
     default: return .error("unknown_action", "Unsupported action.")
     }
+  }
+
+  /// Keeps the link open for the call, as File › Control iPad does, sends what was
+  /// asked in order, and reports what the iPad then shows, or that it did not do it.
+  private func iPad(_ params: [String: String]) async -> ControlResult {
+    await IPadCameraSender.shared.whileLinked { await iPadLinked(params) }
+  }
+
+  private func iPadLinked(_ params: [String: String]) async -> ControlResult {
+    let link = IPadCameraSender.shared
+    for _ in 0..<50 where link.iPadState == nil && !link.iPadIsOld { try? await Task.sleep(for: .milliseconds(100)) }
+    if link.iPadIsOld { return .error("ipad_too_old", "The iPad's Video Prompter is too old to be controlled. Update it.") }
+    guard let before = link.iPadState else {
+      return .error("ipad_not_found", "No iPad answered. Connect it by USB-C, trust this Mac and open Video Prompter on it. For Wi-Fi, pair it first with File › Also Connect over Wi-Fi.")
+    }
+    if before.presenting == nil, params["present"] == nil, ["move", "word", "run"].contains(where: { params[$0] != nil }) {
+      return .error("ipad_not_presenting", "Nothing is open on the iPad. Add --present <id|title>.")
+    }
+    var commands: [PadRemote.Command] = []
+    var wanted: [(PadRemote.State) -> Bool] = []
+    if let name = params["present"] {
+      let (script, error) = choose(name, in: before.scripts, id: { $0.id.uuidString }, title: { $0.title }, kind: "script", list: "ipad")
+      guard let script else { return error! }
+      commands.append(.present(script.id))
+      wanted.append { $0.presenting == script.id && $0.words > 0 }
+    }
+    if let mode = params["mode"].map({ $0 == "manual" ? "Manual" : "Voice" }) {
+      commands.append(.mode(mode))
+      wanted.append { $0.mode == mode }
+    }
+    if let speed = params["speed"].flatMap(Int.init) {
+      commands.append(.speed(speed))
+      wanted.append { $0.speed == speed }
+    }
+    switch params["move"] {
+    case "start": commands.append(.backToStart)
+    case "next": commands.append(.nextPassage)
+    case "previous": commands.append(.previousPassage)
+    default: break
+    }
+    if let word = params["word"].flatMap(Int.init) {
+      if params["present"] == nil, word > before.words { return .error("invalid_params", "Word must be from 1 to \(before.words).") }
+      commands.append(.seek(word: word))
+      // Reading on moves it at once, so only a paused script must land exactly.
+      if params["run"] != "on" { wanted.append { $0.word == word } }
+    }
+    if let run = params["run"] {
+      commands.append(run == "on" ? .play : .pause)
+      wanted.append { $0.running == (run == "on") }
+    }
+    if isTrue(params["close"]) {
+      commands.append(.close)
+      wanted.append { $0.presenting == nil }
+    }
+    for command in commands { link.send(command) }
+    // A passage move has no target to check: any change after it will do.
+    if params["move"] != nil { wanted.append { $0 != before } }
+    if !wanted.isEmpty {
+      for _ in 0..<30 where !(link.iPadState.map { state in wanted.allSatisfy { $0(state) } } ?? false) {
+        try? await Task.sleep(for: .milliseconds(100))
+      }
+    }
+    guard let state = link.iPadState else { return .error("ipad_not_found", "The iPad disconnected.") }
+    let title = { (id: UUID) in state.scripts.first { $0.id == id }.map { ["id": id.uuidString, "title": $0.title] } }
+    let result: [String: Any] = ["over": link.transport ?? "", "scripts": state.scripts.map { ["id": $0.id.uuidString, "title": $0.title] },
+      "script": state.presenting.flatMap(title) as Any? ?? NSNull(),
+      "state": state.presenting == nil ? "closed" : state.running ? "running" : "paused",
+      "mode": state.mode.lowercased(), "speed": state.speed, "position": ["word": state.word, "words": state.words]]
+    guard wanted.allSatisfy({ $0(state) }) else {
+      return .error("ipad_unconfirmed", "The iPad did not show the change within three seconds. Its state now: \(result["state"]!), \(state.mode.lowercased()), \(state.speed) words a minute, word \(state.word) of \(state.words).")
+    }
+    return .ok(result)
   }
 
   private func navigate(_ action: String, _ params: [String: String]) -> ControlResult {

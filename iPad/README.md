@@ -29,6 +29,10 @@ Through a Mac, connect the iPad to the Mac with a USB-C cable and choose File �
 
 Rotation, mirroring and the framing guides apply to either source and are remembered per camera.
 
+## Controlling the iPad from the Mac
+
+File › Control iPad… on the Mac opens the iPad Remote window: choose the script the iPad shows, start and pause it, switch between Voice and Manual, set the manual speed, and move the reading position by passage or with the slider. It uses the same USB-C or paired Wi-Fi link as the camera, with or without the camera being sent, and the link closes with the window. `videoprompter ipad` does the same from the command line and MCP, and confirms each change from what the iPad reports back. The iPad needs this version or later; an older iPad build is left alone. `checks/ipad-link-e2e.sh` tests the whole link against the iPad app in a Simulator, with nothing on screen.
+
 ## Scripts from Google Docs
 
 Add › From Google Docs on the iPad, or File › Import from Google Docs… on the Mac, copies a document in as Markdown. The code is shared (`Sources/VideoPrompter/Import/GoogleDocs.swift` and `GoogleDocsSheet.swift`), so any future Apple target gets it too. The doc stays the master: Update from Google Docs on the script fetches it again, and asks first if the script was edited since.

@@ -1,8 +1,9 @@
 import Foundation
 
-/// The Mac sends its camera to the iPad over this: H.264 from VideoToolbox, framed so either end
-/// can read it off a byte stream. Over USB-C the stream is a usbmuxd tunnel to `usbPort` on the
-/// iPad; on Wi-Fi it is a Bonjour TCP connection. Both carry the same messages.
+/// The Mac sends its camera to the iPad over this, H.264 from VideoToolbox, and drives the iPad's
+/// presenter; the iPad answers with what it shows. Framed so either end can read it off a byte
+/// stream. Over USB-C the stream is a usbmuxd tunnel to `usbPort` on the iPad; on Wi-Fi it is a
+/// Bonjour TCP connection. Both carry the same messages.
 ///
 /// Each message is a four-byte big-endian length, then a one-byte kind, then the payload. The
 /// length counts the kind and the payload.
@@ -11,7 +12,8 @@ public enum CameraLink {
   public static let usbPort: UInt16 = 47_417
   /// The Bonjour service type the iPad advertises for the Wi-Fi link.
   public static let bonjourType = "_vpcamera._tcp"
-  public static let protocolVersion = 1
+  /// 2 added `command` and `state`. An iPad sends `state` only to a Mac that said 2 or more.
+  public static let protocolVersion = 2
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
 
@@ -19,13 +21,18 @@ public enum CameraLink {
     /// First on every connection: the Mac's name, shown on the iPad, and the protocol version.
     case hello(name: String, version: Int)
     /// The picture's size and the H.264 parameter sets (SPS then PPS), before the first frame
-    /// and again whenever they change.
+    /// and again whenever they change. None means the Mac stopped sending its camera but stays
+    /// connected to control the iPad.
     case format(width: Int, height: Int, parameterSets: [Data])
     /// One encoded frame: NAL units each with a four-byte length (AVCC), as VideoToolbox writes
     /// them. `time` is the capture time in microseconds.
     case frame(time: UInt64, keyFrame: Bool, data: Data)
     /// The Mac has stopped sending; the iPad goes back to its own source.
     case goodbye
+    /// Mac to iPad: do this in the presenter.
+    case command(PadRemote.Command)
+    /// iPad to Mac: what the iPad shows, after each change.
+    case state(PadRemote.State)
 
     var kind: UInt8 {
       switch self {
@@ -33,6 +40,8 @@ public enum CameraLink {
       case .format: 2
       case .frame: 3
       case .goodbye: 4
+      case .command: 5
+      case .state: 6
       }
     }
 
@@ -56,6 +65,10 @@ public enum CameraLink {
         payload.append(data)
       case .goodbye:
         break
+      case .command(let command):
+        payload = (try? JSONEncoder().encode(command)) ?? Data()
+      case .state(let state):
+        payload = (try? JSONEncoder().encode(state)) ?? Data()
       }
       var message = Data()
       message.append(UInt32(payload.count + 1))
@@ -117,9 +130,56 @@ public enum CameraLink {
         return .frame(time: p.readUInt64(at: s), keyFrame: p[s + 8] != 0, data: p.subdata(in: (s + 9)..<p.endIndex))
       case 4:
         return .goodbye
+      // JSON, so a newer Mac's command an older iPad cannot read is skipped, not fatal.
+      case 5:
+        return (try? JSONDecoder().decode(PadRemote.Command.self, from: p)).map(Message.command)
+      case 6:
+        return (try? JSONDecoder().decode(PadRemote.State.self, from: p)).map(Message.state)
       default:
         return nil
       }
+    }
+  }
+}
+
+/// The Mac's remote for the iPad's presenter, carried by `CameraLink`.
+public enum PadRemote {
+  public enum Command: Codable, Equatable, Sendable {
+    /// Opens a script from `State.scripts` in the presenter.
+    case present(UUID)
+    case close
+    case play
+    case pause
+    case backToStart
+    case nextPassage
+    case previousPassage
+    /// A word number from 1, as `State.word` counts them.
+    case seek(word: Int)
+    /// "Voice" or "Manual".
+    case mode(String)
+    /// Manual speed in words per minute, 20 to 300.
+    case speed(Int)
+  }
+
+  public struct Script: Codable, Equatable, Sendable {
+    public var id: UUID
+    public var title: String
+    public init(id: UUID, title: String) { self.id = id; self.title = title }
+  }
+
+  public struct State: Codable, Equatable, Sendable {
+    public var scripts: [Script]
+    /// The script in the presenter, if it is open.
+    public var presenting: UUID?
+    public var running: Bool
+    public var mode: String
+    public var speed: Int
+    /// The reading position from 1, and the script's length in words; 0 when nothing is open.
+    public var word: Int
+    public var words: Int
+    public init(scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int) {
+      self.scripts = scripts; self.presenting = presenting; self.running = running
+      self.mode = mode; self.speed = speed; self.word = word; self.words = words
     }
   }
 }

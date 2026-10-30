@@ -40,6 +40,29 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertThrowsError(try empty.append(Data([0, 0, 0, 0])))
   }
 
+  func testRemoteMessagesSurviveTheRoundTrip() throws {
+    let id = UUID()
+    let commands: [PadRemote.Command] = [
+      .present(id), .close, .play, .pause, .backToStart, .nextPassage, .previousPassage,
+      .seek(word: 42), .mode("Manual"), .speed(150),
+    ]
+    let state = PadRemote.State(
+      scripts: [.init(id: id, title: "Arsenal v Spurs")], presenting: id, running: true,
+      mode: "Voice", speed: 120, word: 12, words: 340)
+    let sent = commands.map(CameraLink.Message.command) + [.state(state)]
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
+  }
+
+  func testACommandFromANewerMacIsSkipped() throws {
+    var reader = CameraLink.Reader()
+    let json = Data(#"{"teleport":{}}"#.utf8)
+    var bytes = Data([0, 0, 0, UInt8(json.count + 1), 5])
+    bytes.append(json)
+    bytes.append(CameraLink.Message.goodbye.encoded())
+    XCTAssertEqual(try reader.append(bytes), [.goodbye])
+  }
+
   func testATruncatedParameterSetIsRefused() {
     var reader = CameraLink.Reader()
     // Format with one parameter set claiming 5 bytes but carrying 1.
