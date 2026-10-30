@@ -120,7 +120,7 @@ private struct ICloudPrompt: View {
     Section {
       VStack(alignment: .leading, spacing: 8) {
         Label("Use the same scripts as your Mac", systemImage: "icloud").font(.headline)
-        Text("On the Mac, turn on Settings › Keep scripts in iCloud Drive. Then choose iCloud Drive › Video Prompter here.")
+        Text("On the Mac, turn on File › Keep Scripts in iCloud Drive for iPad. Then choose iCloud Drive › Video Prompter here.")
           .font(.subheadline).foregroundStyle(.secondary)
         HStack {
           Button("Choose Folder", action: choose).buttonStyle(.borderedProminent)
