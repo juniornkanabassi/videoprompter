@@ -26,7 +26,7 @@ struct PresenterScreen: View {
           isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
           layoutGuideFraction: settings.verticalMirror ? 1 - settings.guideFraction : settings.guideFraction,
           style: ScriptStyle(settings), textWidth: settings.textWidth,
-          manualPosition: session.isManual ? { [session] in session.manualPosition() } : nil,
+          manualPosition: session.isManual ? { [session] in session.manualPosition() } : { [session] in session.voicePosition() },
           onSeek: { session.seek(to: $0) },
           onUserScroll: { session.seekFromUserScroll(to: $0) })
         .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)

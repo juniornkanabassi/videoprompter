@@ -2,9 +2,9 @@ import PrompterCore
 import SwiftUI
 import UIKit
 
-/// The scrolling script. It keeps the current word on the reading line: Voice eases to each new
-/// word, Manual follows the session's exact fractional position on every display refresh, the
-/// same rules as the Mac presenter. A drag moves the reading position to the word left on the line.
+/// The scrolling script. It keeps the current word on the reading line: Manual and Voice both
+/// follow the session's fractional position on every display refresh (Manual's timeline, Voice's
+/// glide after the recogniser), the same rules as the Mac presenter. A drag moves the reading position to the word left on the line.
 struct ScriptCanvas: UIViewRepresentable {
   let document: PrompterDocument
   let tokenIndex: Int
@@ -15,7 +15,7 @@ struct ScriptCanvas: UIViewRepresentable {
   let layoutGuideFraction: Double
   let style: ScriptStyle
   let textWidth: Double
-  /// Manual only: the session's fractional token position, read on every frame while running.
+  /// The session's fractional token position, read on every frame while running. Nil eases to each word.
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   var onUserScroll: ((Int) -> Void)?

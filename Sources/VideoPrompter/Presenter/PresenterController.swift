@@ -613,7 +613,7 @@ private struct PresenterView: View {
               lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
               horizontalMargin: sideInset, alignment: store.settings.alignment,
               showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
-              manualPosition: session.isManual ? { session.manualPosition() } : nil,
+              manualPosition: session.isManual ? { session.manualPosition() } : { session.voicePosition() },
               onSeek: session.seek, onUserScroll: session.seekFromUserScroll
             )
           }
@@ -854,8 +854,8 @@ struct ScriptTextView: NSViewRepresentable {
   var alignment = "Left"
   var showCues = true
   var highlightActiveWord = false
-  /// Manual mode only: the session's exact fractional token position, painted on a display link
-  /// while running. Voice passes nil and keeps its eased, word-at-a-time alignment.
+  /// The session's fractional token position, painted on a display link while running: Manual's
+  /// timeline, or Voice's glide after the recogniser. Nil keeps the eased, word-at-a-time alignment.
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   /// A scroll the reader made by hand; falls back to `onSeek`.
@@ -915,6 +915,7 @@ struct ScriptTextView: NSViewRepresentable {
       coordinator.snapToGuide()
     }
     coordinator.isActivelyRunning = isActivelyRunning
+    coordinator.releaseHandScroll()
     coordinator.updateDisplayLink(for: scroll)
     let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
     if coordinator.needsRender(document: document, style: style) {
@@ -1000,7 +1001,7 @@ struct ScriptTextView: NSViewRepresentable {
     /// it there too would measure the whole script again on every event.
     private(set) var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
-    /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
+    /// Manual's timeline or Voice's glide. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
     private var displayLink: CADisplayLink?
     private weak var manualScroll: NSScrollView?
@@ -1083,6 +1084,11 @@ struct ScriptTextView: NSViewRepresentable {
           }
         },
       ]
+    }
+    /// Voice keeps running through a hand scroll, so no Play comes to lift the hold once the gesture
+    /// and the seeks it caused are done (Manual is paused by then, and stays held).
+    func releaseHandScroll() {
+      if isActivelyRunning, !isLiveScrolling, pendingUserSeeks == 0 { isHandScrolled = false }
     }
     /// Takes the session's seek revision and returns whether it changed. A seek the hand scroll
     /// caused keeps Manual suppressed; any other (a click, Next passage, Restart) is explicit, so

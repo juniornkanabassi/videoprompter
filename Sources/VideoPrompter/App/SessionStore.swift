@@ -313,10 +313,20 @@ final class SessionStore: ObservableObject {
   var isManual: Bool { settings.mode == "Manual" }
   private var tokensPerSecond: Double { max(1, settings.speed) / 60 }
 
+  /// Every position change that is not the reader's voice comes through here, so Voice's glide
+  /// jumps with it.
   private func rebaseManual(to position: Double, at time: TimeInterval? = nil) {
     manualBase = position
     manualStart = time ?? clock()
     manualCompleted = false
+    glide = VoiceGlide(at: position)
+  }
+  private var glide = VoiceGlide(at: 0)
+  /// Voice's position for the presenter to paint on every display refresh: `tokenIndex`, followed
+  /// smoothly (see `VoiceGlide`). Held while paused.
+  func voicePosition(at time: TimeInterval? = nil) -> Double {
+    guard isActivelyRunning else { return glide.position }
+    return min(glide.step(toward: tokenIndex, at: time ?? clock()), Double(max(0, document.spokenTokens.count - 1)))
   }
   /// The unclamped Manual position: it passes the last token's index while that token is read.
   private func rawManualPosition(at time: TimeInterval) -> Double {

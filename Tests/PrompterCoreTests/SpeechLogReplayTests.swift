@@ -326,6 +326,66 @@ final class SpeechLogReplayTests: XCTestCase {
     XCTAssertLessThanOrEqual(latency.max, max, "\(name) max", file: file, line: line)
   }
 
+  /// Voice's scroll on the three readings, painted at 120 Hz from the moments the recogniser credited
+  /// each word. Scrolling to each credited word (0.2 s ease-out, the Mac until 2.0.3) stopped and
+  /// started about 120 times a minute with p99 accelerations near 1,200 words/s²; the iPad's 0.6 s
+  /// ease-in-out added 0.43 s. The glide must move continuously, add little lag after the word is
+  /// credited, and never run more than its lead past it. Measured 30 October 2026: 9 to 23 hops a
+  /// minute (most of them real pauses between sentences), p99 acceleration 35 to 84, added lag p50
+  /// 0.12 to 0.17 s and p90 0.36 to 0.40 s.
+  func testVoiceGlideScrollsContinuouslyOnRecordedReadings() throws {
+    let fixtures = try XCTUnwrap(Bundle.module.url(forResource: "Fixtures", withExtension: nil))
+    for name in ["canonical", "short-173", "short-172"] {
+      let tokens = PrompterDocument(markdown: try String(
+        contentsOf: fixtures.appendingPathComponent("\(name)-script.md"), encoding: .utf8)).spokenTokens
+      let deflated = try Data(contentsOf: fixtures.appendingPathComponent("\(name)-reading.jsonl.deflate"))
+      let trace = try (deflated as NSData).decompressed(using: .zlib) as Data
+      let shown = try Self.replay(Self.lines(String(decoding: trace, as: UTF8.self)), script: tokens).shown
+      let credits = shown.enumerated().compactMap { token, time in time.map { (time: $0, token: token) } }
+        .sorted { $0.time < $1.time }
+      let start = try XCTUnwrap(credits.first?.time), end = try XCTUnwrap(credits.last?.time) + 3
+      let dt = 1.0 / 120
+      var glide = VoiceGlide(at: Double(credits[0].token))
+      var next = 0, target = credits[0].token
+      var positions: [Double] = [], times: [Double] = []
+      var time = start
+      while time < end {
+        while next < credits.count, credits[next].time <= time { target = max(target, credits[next].token); next += 1 }
+        let position = glide.step(toward: target, at: time)
+        XCTAssertLessThanOrEqual(position, Double(target) + VoiceGlide.lead + 1e-9, "\(name) ran past its lead")
+        positions.append(position)
+        times.append(time)
+        time += dt
+      }
+      let speeds = zip(positions.dropFirst(), positions).map { ($0 - $1) / dt }
+      let accelerations = zip(speeds.dropFirst(), speeds).map { abs($0 - $1) / dt }.sorted()
+      // A hop: moving, then stopped, while the next word arrives within 1.2 s (the reader is still going).
+      var hops = 0, moving = false, upcoming = 0
+      for (frame, speed) in speeds.enumerated() {
+        if speed > 0.5 { moving = true } else if speed < 0.1, moving {
+          moving = false
+          while upcoming < credits.count, credits[upcoming].time <= times[frame] { upcoming += 1 }
+          if upcoming < credits.count, credits[upcoming].time - times[frame] < 1.2 { hops += 1 }
+        }
+      }
+      var lags: [Double] = [], frame = 0
+      for (token, credited) in shown.enumerated() {
+        guard let credited else { continue }
+        while frame < positions.count, positions[frame] < Double(token) - 0.5 { frame += 1 }
+        if frame < positions.count { lags.append(max(0, times[frame] - credited)) }
+      }
+      lags.sort()
+      let minutes = (end - 3 - start) / 60
+      let report = String(format: "%@ glide: %.1f hops/min, p99 acceleration %.0f words/s², added lag p50 %.2f s p90 %.2f s",
+        name, Double(hops) / minutes, accelerations[accelerations.count * 99 / 100], lags[lags.count / 2], lags[lags.count * 9 / 10])
+      print(report)
+      XCTAssertLessThanOrEqual(Double(hops) / minutes, 30, report)
+      XCTAssertLessThanOrEqual(accelerations[accelerations.count * 99 / 100], 100, report)
+      XCTAssertLessThanOrEqual(lags[lags.count / 2], 0.2, report)
+      XCTAssertLessThanOrEqual(lags[lags.count * 9 / 10], 0.5, report)
+    }
+  }
+
   /// Canonical reading. Before this work the same measure on the rendered presenter was p50 0.501 s,
   /// p90 1.231 s, max 3.586 s; this trace replays at p50 0.434 s, p90 0.875 s, max 2.606 s.
   func testCanonicalRecordingDimsEachWordWithinTheMeasuredBound() throws {
