@@ -12,6 +12,10 @@ import SwiftUI
 /// - A file nobody links to is a script made on the iPad, and is imported as a linked script.
 /// - A file whose script is in the library's Trash was deleted here, so the file goes to the
 ///   Finder Trash; a linked file deleted on the iPad sends its script to the library's Trash.
+/// - A script linked to a file elsewhere (a Content Creation or Obsidian note, say) keeps that
+///   file as its master and gets a mirror copy in the folder instead, kept in step both ways:
+///   an edit on the iPad reaches the script, and so its own file; an edit here or in that file
+///   reaches the mirror. Deleting a mirror on the iPad only stops the mirroring.
 /// - Presets are shared through `Video Prompter presets.json` in the same folder.
 @MainActor enum ICloudScripts {
   static let enabledKey = "keepScriptsInICloud"
@@ -52,6 +56,34 @@ import SwiftUI
     }
     scan(folder, depth: 0)
     return result
+  }
+
+  /// A mirror copy in iCloud Drive of a script whose master is a file elsewhere, and the text
+  /// both sides agreed on at the last pass, to tell which side changed since.
+  struct Mirror: Codable, Equatable {
+    var path: String
+    var fingerprint: String
+  }
+  static let mirrorsKey = "iCloudScriptMirrors"
+  static let declinedMirrorsKey = "iCloudScriptMirrorsDeclined"
+
+  static var mirrors: [UUID: Mirror] {
+    get {
+      UserDefaults.standard.data(forKey: mirrorsKey)
+        .flatMap { try? JSONDecoder().decode([UUID: Mirror].self, from: $0) } ?? [:]
+    }
+    set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: mirrorsKey) }
+  }
+  /// Scripts whose mirror was deleted on the iPad, so it is not made again.
+  static var declinedMirrors: Set<UUID> {
+    get { Set((UserDefaults.standard.stringArray(forKey: declinedMirrorsKey) ?? []).compactMap(UUID.init(uuidString:))) }
+    set { UserDefaults.standard.set(newValue.map(\.uuidString), forKey: declinedMirrorsKey) }
+  }
+
+  /// The file is there, or iCloud has it but has not brought it to this Mac yet.
+  static func exists(_ url: URL) -> Bool {
+    let placeholder = url.deletingLastPathComponent().appendingPathComponent("." + url.lastPathComponent + ".icloud")
+    return FileManager.default.fileExists(atPath: url.path) || FileManager.default.fileExists(atPath: placeholder.path)
   }
 
   static func isInside(_ url: URL) -> Bool {
@@ -180,13 +212,22 @@ extension AppStore {
     }
     let states = await library.linkStates()
     let folders = Dictionary(uniqueKeysWithValues: await library.listFolders().map { ($0.id, $0.name) })
-    var linked = Set<String>()
+    // Mirrors are never new scripts from the iPad, whatever state their script is in.
+    var linked = Set(ICloudScripts.mirrors.values.map { URL(fileURLWithPath: $0.path).standardizedFileURL.path })
     for metadata in await library.listScripts() {
       // Turned off mid-pass: stop here, before anything more is written or deleted.
       guard keepsScriptsInICloud else { return }
       switch states[metadata.id] {
       case .resolved(let url), .staleBookmark(let url):
-        if ICloudScripts.isInside(url) { linked.insert(url.standardizedFileURL.path) }
+        if ICloudScripts.isInside(url) {
+          linked.insert(url.standardizedFileURL.path)
+        } else {
+          do {
+            try mirrorLinkedScript(metadata, folders: folders, linked: &linked)
+          } catch {
+            errorMessage = "“\(metadata.title)” could not be mirrored to iCloud Drive. \(error.localizedDescription)"
+          }
+        }
       case .missing(let path) where ICloudScripts.isInside(path: path):
         // Deleted on the iPad. The script goes to the library's Trash, where it can be restored.
         if !fm.fileExists(atPath: path), (try? await library.delete(metadata.id)) != nil {
@@ -217,8 +258,17 @@ extension AppStore {
         break
       }
     }
-    let trashed = Set(await library.listTrash().compactMap(\.metadata.linkedPath)
+    let trash = await library.listTrash()
+    let trashed = Set(trash.compactMap(\.metadata.linkedPath)
       .map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    // A mirrored script deleted here: its mirror goes to the Finder Trash, so the iPad loses it.
+    guard keepsScriptsInICloud else { return }
+    var mirrors = ICloudScripts.mirrors
+    for item in trash {
+      guard let mirror = mirrors.removeValue(forKey: item.metadata.id) else { continue }
+      try? fm.trashItem(at: URL(fileURLWithPath: mirror.path), resultingItemURL: nil)
+    }
+    ICloudScripts.mirrors = mirrors
     let folderIDs = Dictionary(await library.listFolders().map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
     guard keepsScriptsInICloud else { return }
     for url in ICloudScripts.files() where !linked.contains(url.path) {
@@ -247,6 +297,57 @@ extension AppStore {
       }
     }
     if keepsScriptsInICloud { syncICloudPresets() }
+  }
+
+  /// Keeps the mirror of a script linked to a file outside iCloud Drive in step with it. The
+  /// script's text here already follows its own file, so only the mirror needs handling.
+  private func mirrorLinkedScript(
+    _ metadata: ScriptMetadata, folders: [UUID: String], linked: inout Set<String>
+  ) throws {
+    let id = metadata.id
+    guard !ICloudScripts.declinedMirrors.contains(id),
+      let text = scripts.first(where: { $0.id == id })?.markdown
+    else { return }
+    let ours = MarkdownLibrary.fingerprint(text)
+    guard let mirror = ICloudScripts.mirrors[id] else {
+      var directory = ICloudScripts.folder
+      if let name = metadata.folderID.flatMap({ folders[$0] }) {
+        directory.appendPathComponent(ICloudScripts.safeName(name), isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      }
+      let url = ICloudScripts.freeURL(for: metadata.title, in: directory)
+      try ICloudScripts.write(text, to: url)
+      ICloudScripts.mirrors[id] = .init(path: url.standardizedFileURL.path, fingerprint: ours)
+      linked.insert(url.standardizedFileURL.path)
+      return
+    }
+    let url = URL(fileURLWithPath: mirror.path)
+    guard ICloudScripts.exists(url) else {
+      // Deleted on the iPad. The script's master is its own file here, so the script stays and
+      // is simply no longer mirrored.
+      ICloudScripts.mirrors[id] = nil
+      ICloudScripts.declinedMirrors.insert(id)
+      return
+    }
+    // Still downloading: next pass.
+    guard let mirrored = ICloudScripts.read(url) else { return }
+    let theirs = MarkdownLibrary.fingerprint(mirrored)
+    if ours == theirs {
+      if mirror.fingerprint != ours { ICloudScripts.mirrors[id]?.fingerprint = ours }
+    } else if ours == mirror.fingerprint {
+      // Edited on the iPad: it becomes an edit here, which the library saves to the script's file.
+      updateMarkdown(mirrored, for: id)
+      ICloudScripts.mirrors[id]?.fingerprint = theirs
+    } else {
+      if theirs != mirror.fingerprint {
+        // Edited on both sides: this side wins, and the iPad's version is kept beside it as a
+        // new script, so nothing is lost.
+        let copy = ICloudScripts.freeURL(for: metadata.title + " (iPad edit)", in: url.deletingLastPathComponent())
+        try ICloudScripts.write(mirrored, to: copy)
+      }
+      try ICloudScripts.write(text, to: url)
+      ICloudScripts.mirrors[id]?.fingerprint = ours
+    }
   }
 
   /// Presets: whichever side changed since the last pass wins, so a preset saved on the iPad
