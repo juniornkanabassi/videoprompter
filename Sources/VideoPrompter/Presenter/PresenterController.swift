@@ -1079,7 +1079,7 @@ struct ScriptTextView: NSViewRepresentable {
           MainActor.assumeIsolated {
             guard let self else { return }
             self.isLiveScrolling = false
-            if self.isActivelyRunning, self.pendingUserSeeks == 0 { self.isHandScrolled = false }
+            self.releaseHandScroll()
             // The hand let go (momentum included): glide the word it chose onto the guide, once.
             if self.manualPosition == nil, let scroll {
               self.invalidateAlignment()

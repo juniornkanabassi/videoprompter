@@ -83,7 +83,9 @@ struct ScriptCanvas: UIViewRepresentable {
     private var lastAligned: (token: Int, guide: Double, height: CGFloat)?
     /// The last Manual or Voice paint. The same position, guide and height with the scroll still
     /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
-    private var lastPaint: (position: Double, guide: Double, height: CGFloat, y: CGFloat)?
+    private var lastPaint: (position: Double, guide: Double, size: CGSize, y: CGFloat)?
+    /// A drag let go of: the next paints ease from where the finger left the text instead of jumping.
+    private var settle: (from: CGFloat, start: CFTimeInterval)?
     private var displayLink: CADisplayLink?
     private var isDragging = false
     private var baseColour = UIColor.white
@@ -194,8 +196,8 @@ struct ScriptCanvas: UIViewRepresentable {
       guard !isDragging, let textView, let position = parent?.manualPosition?(),
         !mappings.isEmpty
       else { return }
-      if !snapNext, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
-        last.height == textView.bounds.height, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
+      if !snapNext, settle == nil, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
+        last.size == textView.bounds.size, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
       guard let (manager, guideY) = prepare() else { return }
       func y(_ slot: Int) -> CGFloat { midY(mappings[slot].range, manager: manager) - guideY }
       var low = 0, high = mappings.count
@@ -216,7 +218,13 @@ struct ScriptCanvas: UIViewRepresentable {
         target = here + (y(next) - here) * CGFloat(fraction)
       }
       target = max(0, target)
-      lastPaint = (position, parent?.layoutGuideFraction ?? 0, textView.bounds.height, target)
+      if let settle {
+        let t = (CACurrentMediaTime() - settle.start) / 0.2
+        if t >= 1 || UIAccessibility.isReduceMotionEnabled { self.settle = nil } else {
+          target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
+        }
+      }
+      lastPaint = (position, parent?.layoutGuideFraction ?? 0, textView.bounds.size, target)
       if abs(textView.contentOffset.y - target) > 0.01 {
         textView.layer.removeAllAnimations()
         textView.contentOffset = CGPoint(x: 0, y: target)
@@ -255,6 +263,7 @@ struct ScriptCanvas: UIViewRepresentable {
     /// The word nearest the reading line becomes the reading position.
     private func finishDrag() {
       isDragging = false
+      if let textView { settle = (textView.contentOffset.y, CACurrentMediaTime()) }
       guard let textView, let parent, let (manager, guideY) = prepare(), !mappings.isEmpty else { return }
       let line = textView.contentOffset.y + guideY
       var best = 0

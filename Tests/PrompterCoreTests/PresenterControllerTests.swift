@@ -951,6 +951,8 @@ final class PresenterControllerTests: XCTestCase {
 
     XCTAssertFalse(coordinator.isHandScrolled)
     let expected = try! XCTUnwrap(coordinator.manualScrollY(at: 3, in: rig.scroll))
+    // Letting go eases back onto the timeline over `settleSeconds` rather than jumping.
+    Thread.sleep(forTimeInterval: ScriptTextView.Coordinator.settleSeconds + 0.05)
     coordinator.alignManual(in: rig.scroll)
     XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, expected, accuracy: 0.5)
   }

@@ -16,7 +16,11 @@ final class SessionStore: ObservableObject {
   }
 
   @Published private(set) var activeRecord: ScriptRecord?
-  @Published private(set) var document = PrompterDocument(markdown: "")
+  @Published private(set) var document = PrompterDocument(markdown: "") {
+    // `spokenTokens` flattens the whole script; the positions read this on every display frame.
+    didSet { lastToken = Double(max(0, document.spokenTokens.count - 1)) }
+  }
+  private var lastToken = 0.0
   @Published private(set) var anchor: ReadingAnchor?
   /// The most recent word consumed by recognition or automatic playback.
   @Published private(set) var lastConfirmedTokenIndex: Int?
@@ -245,6 +249,7 @@ final class SessionStore: ObservableObject {
   }
   func pause() {
     freezeManual()
+    glide.hold()
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
     rememberCurrent()
@@ -326,7 +331,7 @@ final class SessionStore: ObservableObject {
   /// smoothly (see `VoiceGlide`). Held while paused.
   func voicePosition(at time: TimeInterval? = nil) -> Double {
     guard isActivelyRunning else { glide.hold(); return glide.position }
-    return min(glide.step(toward: tokenIndex, at: time ?? clock()), Double(max(0, document.spokenTokens.count - 1)))
+    return min(glide.step(toward: tokenIndex, at: time ?? clock()), lastToken)
   }
   /// The unclamped Manual position: it passes the last token's index while that token is read.
   private func rawManualPosition(at time: TimeInterval) -> Double {
@@ -336,7 +341,7 @@ final class SessionStore: ObservableObject {
   /// The exact fractional position the presenter paints, read from the monotonic timeline on every
   /// display refresh; it publishes nothing.
   func manualPosition(at time: TimeInterval? = nil) -> Double {
-    min(rawManualPosition(at: time ?? clock()), Double(max(0, document.spokenTokens.count - 1)))
+    min(rawManualPosition(at: time ?? clock()), lastToken)
   }
   /// Publishes the whole-token frontier (current word, words read) and finishes at the end. The
   /// timer task calls it a token at a time, also with no presenter open; the fraction is not stored.
