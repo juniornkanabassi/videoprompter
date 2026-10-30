@@ -4,7 +4,8 @@ import PrompterCore
 import SwiftUI
 import UIKit
 
-/// Receives the camera a Mac sends with File › Send Camera to iPad. Over USB-C the Mac reaches
+/// Receives the camera a Mac sends with File › Send Camera to iPad, and the commands of its
+/// File › Control iPad. Over USB-C the Mac reaches
 /// the iPad through usbmuxd, the same channel Xcode and Finder use, so no network or pairing is
 /// needed; the iPad only listens on its own loopback port. On Wi-Fi it advertises itself with
 /// Bonjour, but only when Settings allows it, since that asks for local network access.
@@ -13,8 +14,10 @@ import UIKit
 @MainActor final class MacLink: ObservableObject {
   /// The sending Mac's name while one is connected.
   @Published private(set) var macName: String?
-  /// The picture's size as the Mac encodes it.
+  /// The picture's size as the Mac encodes it; nil while the Mac sends no camera.
   @Published private(set) var pictureSize: CGSize?
+  /// Commands from the Mac's remote.
+  var onCommand: ((PadRemote.Command) -> Void)?
   @Published var allowsWiFi = UserDefaults.standard.bool(forKey: "macLinkWiFi") {
     didSet {
       UserDefaults.standard.set(allowsWiFi, forKey: "macLinkWiFi")
@@ -42,6 +45,9 @@ import UIKit
       restartWiFi()
     }
   }
+
+  /// Tells the Mac what the presenter shows. Dropped unless a Mac that reads it is connected.
+  func send(_ state: PadRemote.State) { receiver.send(.state(state)) }
 
   /// Called when a Mac connects or goes, so the camera can switch to it and back.
   var onChange: (() -> Void)?
@@ -122,6 +128,8 @@ import UIKit
     case .format(let size):
       pictureSize = size
       onChange?()
+    case .command(let command):
+      onCommand?(command)
     case .disconnected:
       guard macName != nil else { return }
       macName = nil
@@ -137,7 +145,8 @@ import UIKit
 final class LinkReceiver: @unchecked Sendable {
   enum Event: Sendable {
     case connected(String)
-    case format(CGSize)
+    case format(CGSize?)
+    case command(PadRemote.Command)
     case disconnected
   }
 
@@ -146,6 +155,8 @@ final class LinkReceiver: @unchecked Sendable {
   private let renderer: AVSampleBufferVideoRenderer
   private var connection: NWConnection?
   private var connectionIsWiFi = false
+  /// The connected Mac's protocol version, from its hello.
+  private var peerVersion = 0
   private var reader = CameraLink.Reader()
   private var format: CMVideoFormatDescription?
   /// After a connection or a decoder failure, frames wait for the next key frame.
@@ -202,6 +213,7 @@ final class LinkReceiver: @unchecked Sendable {
     connection?.cancel()
     connection = new
     connectionIsWiFi = overWiFi
+    peerVersion = 0
     reader = CameraLink.Reader()
     format = nil
     needsKeyFrame = true
@@ -215,6 +227,14 @@ final class LinkReceiver: @unchecked Sendable {
       if connectionIsWiFi { connection?.cancel() }
       for waiting in pending where waiting.wifi { waiting.connection.cancel() }
       pending.removeAll { $0.wifi }
+    }
+  }
+
+  /// A Mac from before version 2 never reads, so nothing is sent to it to pile up.
+  func send(_ message: CameraLink.Message) {
+    queue.async { [self] in
+      guard peerVersion >= 2, let connection else { return }
+      connection.send(content: message.encoded(), completion: .idempotent)
     }
   }
 
@@ -247,16 +267,22 @@ final class LinkReceiver: @unchecked Sendable {
 
   private func handle(_ message: CameraLink.Message) {
     switch message {
-    case .hello(let name, _):
+    case .hello(let name, let version):
+      peerVersion = version
       onEvent?(.connected(name))
     case .format(let width, let height, let sets):
       format = Self.formatDescription(sets)
       needsKeyFrame = true
-      onEvent?(.format(CGSize(width: width, height: height)))
+      if sets.isEmpty { renderer.flush(removingDisplayedImage: true, completionHandler: nil) }
+      onEvent?(.format(sets.isEmpty ? nil : CGSize(width: width, height: height)))
     case .frame(_, let keyFrame, let data):
       enqueue(data, keyFrame: keyFrame)
     case .goodbye:
       connection?.cancel()
+    case .command(let command):
+      onEvent?(.command(command))
+    case .state:
+      break
     }
   }
 

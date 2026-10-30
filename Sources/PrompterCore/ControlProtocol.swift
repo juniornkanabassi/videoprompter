@@ -145,7 +145,16 @@ public enum ControlProtocol {
     .init(action: "record_set", words: ["record", "set"], summary: "Set recording quality, microphone and audio format while not recording. Give at least one.", example: "videoprompter record set --quality high --float-audio off", params: [
       .init("quality", "choice", choices: ["standard", "high", "edit"], help: "standard: H.264; high: HEVC; edit: ProRes 422"),
       .init("microphone", help: "Recording microphone id from microphone list, or default"),
-      .init("floatAudio", "choice", choices: onOff, help: "32-bit float audio")])
+      .init("floatAudio", "choice", choices: onOff, help: "32-bit float audio")]),
+    // iPad
+    .init(action: "ipad", words: ["ipad"], summary: "Drive Video Prompter on an iPad linked by USB-C or paired Wi-Fi, then report its scripts and presenter. With no options it only reports.", example: "videoprompter ipad --present 'My Script' --mode manual --speed 150 --run on", params: [
+      .init("present", help: "Open this script on the iPad, by id or exact title from the iPad's own list"),
+      .init("mode", "choice", choices: ["voice", "manual"], help: "Tracking mode"),
+      .init("speed", "integer", range: 20...300, help: "Manual speed in words per minute"),
+      .init("move", "choice", choices: ["start", "next", "previous"], help: "Back to the start, or to the next or previous passage"),
+      .init("word", "integer", range: 1...10_000_000, help: "Move the reading position to this word number"),
+      .init("run", "choice", choices: onOff, help: "Start or pause reading"),
+      .init("close", "boolean", help: "Close the iPad's presenter")])
   ]
   public static func command(action: String) -> ControlCommand? { commands.first { $0.action == action } }
   public static func dataRoot(bundleIdentifier: String?, arguments: [String],

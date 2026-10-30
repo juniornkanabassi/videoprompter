@@ -8,8 +8,9 @@ import SwiftUI
 import Synchronization
 import VideoToolbox
 
-/// File › Send Camera to iPad. The camera this Mac shows goes to Video Prompter on an iPad, which
-/// puts it behind the script. Over USB-C it travels through usbmuxd, the channel Finder and Xcode
+/// File › Send Camera to iPad and File › Control iPad. The camera this Mac shows goes to Video
+/// Prompter on an iPad, which puts it behind the script, and the iPad's presenter can be driven
+/// from here. Both share one connection, kept open while either is on. Over USB-C it travels through usbmuxd, the channel Finder and Xcode
 /// use to talk to an iPad, so it needs no network and no pairing beyond "Trust This Computer".
 /// An iPad that allows it is also found on the same Wi-Fi with Bonjour. USB-C wins when both are
 /// there: it is faster and nothing else shares it.
@@ -19,15 +20,20 @@ import VideoToolbox
 @MainActor final class IPadCameraSender: ObservableObject {
   static let shared = IPadCameraSender()
 
-  @Published var isOn = false { didSet { if isOn != oldValue { isOn ? start() : stop() } } }
-  /// What the menu shows under the toggle.
+  /// Sends the camera.
+  @Published var isOn = false { didSet { if isOn != oldValue { isOn ? startCamera() : stopCamera() } } }
+  /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
+  @Published var controlsIPad = false { didSet { if controlsIPad != oldValue { updateLink() } } }
+  /// What the iPad's presenter shows, while an iPad that reports it is connected.
+  @Published private(set) var iPadState: PadRemote.State?
+  /// What the menu shows under the toggles.
   @Published private(set) var status = "Off"
   /// Off by default: USB-C needs no trust decision, while Wi-Fi is unencrypted and anything on
   /// the network can advertise itself as an iPad.
   @Published var usesWiFi = UserDefaults.standard.bool(forKey: "sendCameraOverWiFi") {
     didSet {
       UserDefaults.standard.set(usesWiFi, forKey: "sendCameraOverWiFi")
-      if isOn { usesWiFi ? startBrowsing() : stopBrowsing() }
+      if linkOn { usesWiFi ? startBrowsing() : stopBrowsing() }
     }
   }
   /// The pairing code for each iPad the user has paired over Wi-Fi, by its Bonjour name.
@@ -49,9 +55,21 @@ import VideoToolbox
   /// next or survives the switch being turned off.
   private var generation = 0
   private var retry: Task<Void, Never>?
+  private var linkOn = false
 
-  private func start() {
-    generation += 1
+  /// Drives the iPad's presenter. Nothing happens unless an iPad is connected.
+  func send(_ command: PadRemote.Command) {
+    pipe?.send(CameraLink.Message.command(command).encoded())
+  }
+
+  private func updateLink() {
+    let wanted = isOn || controlsIPad
+    guard wanted != linkOn else { return }
+    linkOn = wanted
+    wanted ? startLink() : stopLink()
+  }
+
+  private func startCamera() {
     let camera = CameraModel.shared
     camera.start()
     guard let uid = camera.selectedUID else {
@@ -71,6 +89,28 @@ import VideoToolbox
       if !session.outputs.contains(output), session.canAddOutput(output) { session.addOutput(output) }
       session.commitConfiguration()
     }
+    if let pipe { attachCamera(pipe) }
+    updateLink()
+  }
+
+  private func stopCamera() {
+    encoder.attach(nil)
+    // Still connected for the remote: the iPad goes back to its own camera.
+    pipe?.send(CameraLink.Message.format(width: 0, height: 0, parameterSets: []).encoded())
+    let output = self.output
+    let shared = SharedCameraSession.shared
+    shared.reconfigure { session in
+      session.beginConfiguration()
+      session.removeOutput(output)
+      session.commitConfiguration()
+    }
+    shared.release()
+    if let pipe { status = Self.connected(over: pipe.name, sending: false) }
+    updateLink()
+  }
+
+  private func startLink() {
+    generation += 1
     status = "Looking for an iPad…"
     let mux = USBMuxListener { [weak self] devices in
       Task { @MainActor in self?.usbChanged(devices) }
@@ -98,7 +138,7 @@ import VideoToolbox
     if pipe?.name == "Wi-Fi" { pipe?.close() }
   }
 
-  private func stop() {
+  private func stopLink() {
     generation += 1
     retry?.cancel()
     mux?.stop()
@@ -109,15 +149,7 @@ import VideoToolbox
     pipe?.send(CameraLink.Message.goodbye.encoded())
     pipe?.close()
     pipe = nil
-    encoder.attach(nil)
-    let output = self.output
-    let shared = SharedCameraSession.shared
-    shared.reconfigure { session in
-      session.beginConfiguration()
-      session.removeOutput(output)
-      session.commitConfiguration()
-    }
-    shared.release()
+    iPadState = nil
     status = "Off"
   }
 
@@ -157,7 +189,7 @@ import VideoToolbox
   /// Tries each USB-C device, then each iPad on Wi-Fi, until one answers. An iPhone, or an iPad
   /// without Video Prompter open, refuses the port and the next is tried.
   private func connectIfNeeded() {
-    guard isOn, pipe == nil, !connecting else { return }
+    guard linkOn, pipe == nil, !connecting else { return }
     connecting = true
     let usb = usbDevices
     let wifi = wifiTargets
@@ -187,9 +219,9 @@ import VideoToolbox
       }
       connecting = false
       // Turned off, restarted, or Wi-Fi switched off while this was connecting: drop it.
-      guard isOn, run == generation, opened?.name != "Wi-Fi" || usesWiFi else {
+      guard linkOn, run == generation, opened?.name != "Wi-Fi" || usesWiFi else {
         opened?.close()
-        if isOn { connectIfNeeded() }
+        if linkOn { connectIfNeeded() }
         return
       }
       guard let opened else {
@@ -206,20 +238,38 @@ import VideoToolbox
 
   private func use(_ pipe: LinkPipe) {
     self.pipe = pipe
-    status = "Sending to iPad over \(pipe.name)"
+    status = Self.connected(over: pipe.name, sending: isOn)
     pipe.onClose = { [weak self, weak pipe] in
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
     }
+    pipe.onMessage = { [weak self, weak pipe] message in
+      guard case .state(let state) = message else { return }
+      Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.iPadState = state } }
+    }
+    pipe.startReading()
     let name = Host.current().localizedName ?? "Mac"
     pipe.send(CameraLink.Message.hello(name: name, version: CameraLink.protocolVersion).encoded())
-    encoder.attach(pipe, bitRate: pipe.name == "USB-C" ? 10_000_000 : 4_000_000)
+    if isOn { attachCamera(pipe) }
   }
+
+  private func attachCamera(_ pipe: LinkPipe) {
+    encoder.attach(pipe, bitRate: pipe.name == "USB-C" ? 10_000_000 : 4_000_000)
+    status = Self.connected(over: pipe.name, sending: true)
+  }
+
+  private static func connected(over transport: String, sending: Bool) -> String {
+    sending ? "Sending to iPad over \(transport)" : "Connected to iPad over \(transport)"
+  }
+
+  /// How the iPad is connected, while it is.
+  var transport: String? { pipe?.name }
 
   private func lost(_ old: LinkPipe) {
     guard pipe === old else { return }
     encoder.attach(nil)
     pipe = nil
-    guard isOn else { return }
+    iPadState = nil
+    guard linkOn else { return }
     status = "Looking for an iPad…"
     scheduleRetry()
   }
@@ -234,17 +284,71 @@ import VideoToolbox
   }
 }
 
-/// File › Send Camera to iPad, with what it is doing underneath.
+/// File › Send Camera to iPad and Control iPad, with what the link is doing underneath.
 struct IPadCameraCommands: Commands {
   @ObservedObject var sender: IPadCameraSender
+  @Environment(\.openWindow) private var openWindow
   var body: some Commands {
     CommandGroup(after: .importExport) {
       Toggle("Send Camera to iPad", isOn: $sender.isOn)
         .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
-      Toggle("Also Send over Wi-Fi", isOn: $sender.usesWiFi)
-        .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The picture is encrypted with that key.")
-      if sender.isOn { Text(sender.status) }
+      Button("Control iPad…") { openWindow(id: "ipad-remote") }
+        .help("Chooses the script on the iPad, starts and pauses it, and sets its mode, speed and place")
+      Toggle("Also Connect over Wi-Fi", isOn: $sender.usesWiFi)
+        .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The link is encrypted with that key.")
+      if sender.isOn || sender.controlsIPad { Text(sender.status) }
     }
+  }
+}
+
+/// Window › iPad Remote: the iPad presenter's controls, showing what the iPad reports.
+struct IPadRemoteView: View {
+  @ObservedObject var link: IPadCameraSender
+  /// The slider's value while it is dragged; the iPad moves when it is let go.
+  @State private var dragging: Double?
+
+  var body: some View {
+    Form {
+      Toggle("Control iPad", isOn: $link.controlsIPad)
+      Text(link.iPadState == nil && link.controlsIPad ? "\(link.status). Open Video Prompter on the iPad, connected by USB-C." : link.status)
+        .foregroundStyle(.secondary)
+      if let state = link.iPadState { controls(state) }
+    }
+    .formStyle(.grouped)
+    .frame(minWidth: 380)
+    .onAppear { link.controlsIPad = true }
+  }
+
+  @ViewBuilder private func controls(_ state: PadRemote.State) -> some View {
+    Picker("Script", selection: Binding(get: { state.presenting }, set: { link.send($0.map(PadRemote.Command.present) ?? .close) })) {
+      Text("None (presenter closed)").tag(UUID?.none)
+      ForEach(state.scripts, id: \.id) { Text($0.title).tag(Optional($0.id)) }
+    }
+    Picker("Follow", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
+      Text("Voice").tag("Voice")
+      Text("Manual").tag("Manual")
+    }
+    .pickerStyle(.segmented)
+    Stepper("Speed \(state.speed) words a minute", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
+    HStack {
+      Button("Back to Start", systemImage: "backward.end.fill") { link.send(.backToStart) }
+      Button("Previous Passage", systemImage: "chevron.up") { link.send(.previousPassage) }
+      Button(state.running ? "Pause" : "Start", systemImage: state.running ? "pause.fill" : "play.fill") {
+        link.send(state.running ? .pause : .play)
+      }
+      Button("Next Passage", systemImage: "chevron.down") { link.send(.nextPassage) }
+    }
+    .labelStyle(.iconOnly)
+    .disabled(state.presenting == nil)
+    LabeledContent("Word \(state.word) of \(state.words)") {
+      Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }),
+             in: 1...Double(max(state.words, 2))) { editing in
+        guard !editing, let value = dragging else { return }
+        link.send(.seek(word: Int(value.rounded())))
+        dragging = nil
+      }
+    }
+    .disabled(state.presenting == nil || state.words == 0)
   }
 }
 
@@ -398,26 +502,45 @@ class LinkPipe: @unchecked Sendable {
   let name: String
   private let pending = Atomic<Int>(0)
   private let closeHandler = Mutex<(@Sendable () -> Void)?>(nil)
+  private let messageHandler = Mutex<(@Sendable (CameraLink.Message) -> Void)?>(nil)
+  private let reader = Mutex(CameraLink.Reader())
   var pendingBytes: Int { pending.load(ordering: .relaxed) }
   var onClose: (@Sendable () -> Void)? {
     get { closeHandler.withLock { $0 } }
     set { closeHandler.withLock { $0 = newValue } }
   }
+  /// What the iPad sends back, from `startReading` on.
+  var onMessage: (@Sendable (CameraLink.Message) -> Void)? {
+    get { messageHandler.withLock { $0 } }
+    set { messageHandler.withLock { $0 = newValue } }
+  }
 
   init(name: String) { self.name = name }
   func send(_ data: Data) {}
   func close() {}
+  func startReading() {}
+
+  /// Hands whole messages to `onMessage`; false when the bytes make no sense and the pipe
+  /// should close.
+  func received(_ bytes: Data) -> Bool {
+    guard let messages = try? reader.withLock({ try $0.append(bytes) }) else { return false }
+    let handler = onMessage
+    for message in messages { handler?(message) }
+    return true
+  }
 
   func queued(_ count: Int) { pending.add(count, ordering: .relaxed) }
   func sent(_ count: Int) { pending.subtract(count, ordering: .relaxed) }
   func closed() { closeHandler.withLock { $0 }?() }
 }
 
-/// The usbmuxd tunnel: a plain socket written from one serial queue.
+/// The usbmuxd tunnel: a plain socket written from one serial queue and read on its own thread.
 final class SocketPipe: LinkPipe, @unchecked Sendable {
   private let socket: Int32
   private let queue = DispatchQueue(label: "VideoPrompter.ipadlink.usb", qos: .userInteractive)
-  private let isOpen = Mutex(true)
+  /// The writing queue holds the socket, and so does the reading thread once it starts. The last
+  /// to let go closes it, so neither ever touches a descriptor already closed and reused.
+  private let state = Mutex((open: true, holders: 1))
 
   init(socket: Int32, name: String) {
     self.socket = socket
@@ -428,22 +551,51 @@ final class SocketPipe: LinkPipe, @unchecked Sendable {
     queued(data.count)
     queue.async { [self] in
       defer { sent(data.count) }
-      guard isOpen.withLock({ $0 }) else { return }
+      guard state.withLock({ $0.open }) else { return }
       if !USBMux.writeAll(socket, data) { shut() }
     }
   }
 
   override func close() {
-    // Unblocks a write stuck on an iPad that stopped reading; the queue then closes the socket.
-    // Under the lock, so it never touches a descriptor `shut` has already closed and reused.
-    isOpen.withLock { if $0 { Darwin.shutdown(socket, SHUT_RDWR) } }
+    // Unblocks a write stuck on an iPad that stopped reading, and the reading thread; the queue
+    // then lets go of the socket.
+    state.withLock { if $0.open { Darwin.shutdown(socket, SHUT_RDWR) } }
     queue.async { [self] in shut() }
   }
 
+  override func startReading() {
+    guard state.withLock({ state in
+      guard state.open else { return false }
+      state.holders += 1
+      return true
+    }) else { return }
+    Thread.detachNewThread { [self] in
+      var buffer = [UInt8](repeating: 0, count: 65_536)
+      while true {
+        let count = Darwin.read(socket, &buffer, buffer.count)
+        if count < 0, errno == EINTR { continue }
+        guard count > 0, received(Data(buffer[0..<count])) else { break }
+      }
+      close()
+      release()
+    }
+  }
+
   private func shut() {
-    guard isOpen.withLock({ open in defer { open = false }; return open }) else { return }
-    Darwin.close(socket)
+    guard state.withLock({ state in
+      defer { state.open = false }
+      if state.open { Darwin.shutdown(socket, SHUT_RDWR) }
+      return state.open
+    }) else { return }
+    release()
     closed()
+  }
+
+  private func release() {
+    state.withLock { state in
+      state.holders -= 1
+      if state.holders == 0 { Darwin.close(socket) }
+    }
   }
 }
 
@@ -517,6 +669,14 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
   }
 
   override func close() { connection.cancel() }
+
+  override func startReading() {
+    connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, isComplete, error in
+      guard let self else { return }
+      if let data, !data.isEmpty, !self.received(data) { return self.connection.cancel() }
+      if isComplete || error != nil { self.connection.cancel() } else { self.startReading() }
+    }
+  }
 }
 
 /// The client side of usbmuxd's plist protocol, as libimobiledevice and Peertalk speak it: a

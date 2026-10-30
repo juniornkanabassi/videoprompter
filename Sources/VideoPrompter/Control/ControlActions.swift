@@ -416,8 +416,52 @@ import Speech
       if let quality = params["quality"].flatMap(RecordingPreset.init(rawValue:)) { recorder.preset = quality }
       if let float = params["floatAudio"] { recorder.floatAudio = float == "on" }
       return .ok(recordingSettings)
+    case "ipad": return await iPad(params)
     default: return .error("unknown_action", "Unsupported action.")
     }
+  }
+
+  /// Opens the link if it is closed, as File › Control iPad does, sends what was asked in order,
+  /// and reports what the iPad then shows.
+  private func iPad(_ params: [String: String]) async -> ControlResult {
+    let link = IPadCameraSender.shared
+    link.controlsIPad = true
+    for _ in 0..<50 where link.iPadState == nil { try? await Task.sleep(for: .milliseconds(100)) }
+    guard let before = link.iPadState else {
+      return .error("ipad_not_found", "No iPad answered. Connect it by USB-C, trust this Mac and open Video Prompter on it. For Wi-Fi, pair it with File › Also Connect over Wi-Fi.")
+    }
+    if before.presenting == nil, params["present"] == nil, ["move", "word", "run"].contains(where: { params[$0] != nil }) {
+      return .error("ipad_not_presenting", "Nothing is open on the iPad. Add --present <id|title>.")
+    }
+    var commands: [PadRemote.Command] = []
+    if let name = params["present"] {
+      let (script, error) = choose(name, in: before.scripts, id: { $0.id.uuidString }, title: { $0.title }, kind: "script", list: "ipad")
+      guard let script else { return error! }
+      commands.append(.present(script.id))
+    }
+    if let mode = params["mode"] { commands.append(.mode(mode == "manual" ? "Manual" : "Voice")) }
+    if let speed = params["speed"].flatMap(Int.init) { commands.append(.speed(speed)) }
+    switch params["move"] {
+    case "start": commands.append(.backToStart)
+    case "next": commands.append(.nextPassage)
+    case "previous": commands.append(.previousPassage)
+    default: break
+    }
+    if let word = params["word"].flatMap(Int.init) { commands.append(.seek(word: word)) }
+    if let run = params["run"] { commands.append(run == "on" ? .play : .pause) }
+    if isTrue(params["close"]) { commands.append(.close) }
+    for command in commands { link.send(command) }
+    if !commands.isEmpty {
+      // The iPad reports a moment after it changes; wait for that, at most two seconds.
+      try? await Task.sleep(for: .milliseconds(300))
+      for _ in 0..<17 where link.iPadState == before { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+    guard let state = link.iPadState else { return .error("ipad_not_found", "The iPad disconnected.") }
+    let title = { (id: UUID) in state.scripts.first { $0.id == id }.map { ["id": id.uuidString, "title": $0.title] } }
+    return .ok(["over": link.transport ?? "", "scripts": state.scripts.map { ["id": $0.id.uuidString, "title": $0.title] },
+      "script": state.presenting.flatMap(title) as Any? ?? NSNull(),
+      "state": state.presenting == nil ? "closed" : state.running ? "running" : "paused",
+      "mode": state.mode.lowercased(), "speed": state.speed, "position": ["word": state.word, "words": state.words]])
   }
 
   private func navigate(_ action: String, _ params: [String: String]) -> ControlResult {
