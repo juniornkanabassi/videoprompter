@@ -101,12 +101,13 @@ import SwiftUI
     return stem.hasPrefix(".") ? "Script " + stem : stem
   }
 
-  /// A file name for a title that is not taken in `directory`.
+  /// A file name for a title that is not taken in `directory`, counting files iCloud has not
+  /// brought to this Mac yet.
   static func freeURL(for title: String, in directory: URL) -> URL {
     let stem = safeName(title)
     var candidate = directory.appendingPathComponent(stem + ".md")
     var n = 2
-    while FileManager.default.fileExists(atPath: candidate.path) {
+    while exists(candidate) {
       candidate = directory.appendingPathComponent("\(stem) \(n).md")
       n += 1
     }
@@ -120,6 +121,33 @@ import SwiftUI
       do { try Data(text.utf8).write(to: target, options: .atomic) } catch { failure = error }
     }
     if let error = failure ?? coordinationError { throw error }
+  }
+
+  /// Writes a new file, failing rather than replacing one that appeared since `freeURL` chose it.
+  static func create(_ text: String, at url: URL) throws {
+    var coordinationError: NSError?
+    var failure: Error?
+    NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { target in
+      do { try Data(text.utf8).write(to: target, options: .withoutOverwriting) } catch { failure = error }
+    }
+    if let error = failure ?? coordinationError { throw error }
+  }
+
+  /// Writes `text` only if the file still holds `expected`, checked and written in one
+  /// coordinated write, so an iPad edit arriving meanwhile is never overwritten. False when the
+  /// file had changed.
+  static func replace(_ expected: String, with text: String, at url: URL) throws -> Bool {
+    var coordinationError: NSError?
+    var result: Result<Bool, Error> = .success(false)
+    NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordinationError) { target in
+      result = Result {
+        guard try String(contentsOf: target, encoding: .utf8) == expected else { return false }
+        try Data(text.utf8).write(to: target, options: .atomic)
+        return true
+      }
+    }
+    if let coordinationError { throw coordinationError }
+    return try result.get()
   }
 
   static func read(_ url: URL) -> String? {
@@ -243,6 +271,19 @@ extension AppStore {
         do {
           let record = try await library.read(metadata.id)
           guard keepsScriptsInICloud else { return }
+          if let mirror = ICloudScripts.mirrors[metadata.id] {
+            // Unlinked from its own file while mirrored: the mirror becomes its iCloud file, unless
+            // the iPad edited it since the last pass, when it stays as a script of its own.
+            ICloudScripts.mirrors[metadata.id] = nil
+            let url = URL(fileURLWithPath: mirror.path)
+            if let current = ICloudScripts.read(url), MarkdownLibrary.fingerprint(current) == mirror.fingerprint,
+              try current == record.markdown || ICloudScripts.replace(current, with: record.markdown, at: url)
+            {
+              _ = try await library.link(metadata.id, to: url)
+              changed = true
+              continue
+            }
+          }
           var directory = ICloudScripts.folder
           if let name = metadata.folderID.flatMap({ folders[$0] }) {
             directory.appendPathComponent(ICloudScripts.safeName(name), isDirectory: true)
@@ -267,8 +308,12 @@ extension AppStore {
     guard keepsScriptsInICloud else { return }
     var mirrors = ICloudScripts.mirrors
     for item in trash {
-      guard let mirror = mirrors.removeValue(forKey: item.metadata.id) else { continue }
-      try? fm.trashItem(at: URL(fileURLWithPath: mirror.path), resultingItemURL: nil)
+      guard let mirror = mirrors[item.metadata.id] else { continue }
+      // Forgotten only once it is gone: a mirror left behind would come back as a new script.
+      let url = URL(fileURLWithPath: mirror.path)
+      if !ICloudScripts.exists(url) || (try? fm.trashItem(at: url, resultingItemURL: nil)) != nil {
+        mirrors[item.metadata.id] = nil
+      }
     }
     ICloudScripts.mirrors = mirrors
     let folderIDs = Dictionary(await library.listFolders().map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
@@ -318,7 +363,7 @@ extension AppStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       }
       let url = ICloudScripts.freeURL(for: metadata.title, in: directory)
-      try ICloudScripts.write(text, to: url)
+      try ICloudScripts.create(text, at: url)
       ICloudScripts.mirrors[id] = .init(path: url.standardizedFileURL.path, fingerprint: ours)
       linked.insert(url.standardizedFileURL.path)
       return
@@ -341,13 +386,25 @@ extension AppStore {
       updateMarkdown(mirrored, for: id)
       ICloudScripts.mirrors[id]?.fingerprint = theirs
     } else {
+      var copy: URL?
       if theirs != mirror.fingerprint {
         // Edited on both sides: this side wins, and the iPad's version is kept beside it as a
         // new script, so nothing is lost.
-        let copy = ICloudScripts.freeURL(for: metadata.title + " (iPad edit)", in: url.deletingLastPathComponent())
-        try ICloudScripts.write(mirrored, to: copy)
+        let url = ICloudScripts.freeURL(for: metadata.title + " (iPad edit)", in: url.deletingLastPathComponent())
+        try ICloudScripts.create(mirrored, at: url)
+        copy = url
       }
-      try ICloudScripts.write(text, to: url)
+      // Only over the text just read: an iPad edit since then is never overwritten. When the
+      // replace does not happen, the copy goes too, so the next pass does not make another.
+      let replaced: Bool
+      do { replaced = try ICloudScripts.replace(mirrored, with: text, at: url) } catch {
+        if let copy { try? FileManager.default.removeItem(at: copy) }
+        throw error
+      }
+      guard replaced else {
+        if let copy { try? FileManager.default.removeItem(at: copy) }
+        return
+      }
       ICloudScripts.mirrors[id]?.fingerprint = ours
     }
   }

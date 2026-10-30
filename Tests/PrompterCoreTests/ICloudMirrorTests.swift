@@ -85,4 +85,28 @@ final class ICloudMirrorTests: XCTestCase {
     let copy = ICloudScripts.folder.appendingPathComponent("Linked (iPad edit).md")
     XCTAssertEqual(try text(copy), "iPad side.\n")
   }
+
+  func testUnlinkingAMirroredScriptMakesTheMirrorItsICloudFile() async throws {
+    let (store, id, _, mirror) = try await mirroredStore()
+    _ = try await store.library!.unlink(id)
+    await store.reload()
+    await pass(store)
+    XCTAssertNil(ICloudScripts.mirrors[id])
+    XCTAssertEqual(store.scripts.first { $0.id == id }?.metadata.linkedPath, mirror.standardizedFileURL.path)
+    // No second file, and nothing imported twice.
+    await pass(store)
+    XCTAssertEqual(ICloudScripts.files().count, 1)
+    XCTAssertEqual(store.scripts.count, 1)
+  }
+
+  func testDeletingAMirroredScriptTrashesItsMirrorWithoutReimportingIt() async throws {
+    let (store, id, _, mirror) = try await mirroredStore()
+    try await store.library!.delete(id)
+    await store.reload()
+    await pass(store)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: mirror.path))
+    XCTAssertNil(ICloudScripts.mirrors[id])
+    await pass(store)
+    XCTAssertTrue(store.scripts.isEmpty)
+  }
 }
