@@ -28,8 +28,10 @@ import SwiftUI
   static var pass: Task<Void, Never>?
   static var lastPass = Date.distantPast
 
+  /// Tests point this at a throwaway folder so they never touch the real iCloud Drive.
+  static var cloudDocsOverride: URL?
   static var cloudDocs: URL {
-    FileManager.default.homeDirectoryForCurrentUser
+    cloudDocsOverride ?? FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
   }
   static var folder: URL { cloudDocs.appendingPathComponent("Video Prompter", isDirectory: true) }
