@@ -840,6 +840,49 @@ final class PresenterControllerTests: XCTestCase {
     session.pause()
   }
 
+  /// Voice paints its glide on the same path as Manual, but a hand scroll does not pause it: once
+  /// the gesture's seek has come back through an update, Voice follows the glide again from there.
+  func testHandScrolledVoiceResumesGlidingOnceItsSeekArrives() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    session.present(
+      record: ScriptRecord(
+        metadata: .init(title: "Lines", fileName: "lines.md"), markdown: Self.manualLines),
+      settings: settings)
+    let rig = manualRig { session.voicePosition() }
+    let coordinator = rig.coordinator
+    coordinator.onSeek = session.seek
+    coordinator.onUserScroll = session.seekFromUserScroll
+    coordinator.observeUserScrolls(in: rig.scroll)
+    defer { coordinator.stopObservingUserScrolls() }
+    session.play(captureAudio: false)
+    coordinator.isActivelyRunning = true
+
+    NotificationCenter.default.post(name: NSScrollView.willStartLiveScrollNotification, object: rig.scroll)
+    rig.scroll.contentView.setBoundsOrigin(NSPoint(x: 0, y: 900))
+    NotificationCenter.default.post(name: NSScrollView.didLiveScrollNotification, object: rig.scroll)
+    NotificationCenter.default.post(name: NSScrollView.didEndLiveScrollNotification, object: rig.scroll)
+    XCTAssertTrue(session.isActivelyRunning, "Voice keeps listening through a hand scroll")
+    XCTAssertTrue(coordinator.isHandScrolled, "held until the seek comes back")
+    let landed = session.tokenIndex
+    XCTAssertGreaterThan(landed, 0)
+    XCTAssertEqual(session.voicePosition(), Double(landed), "the hand's word, not a glide to it")
+
+    // The update that carries the seek (`updateNSView`).
+    let left = rig.scroll.contentView.bounds.origin.y
+    _ = coordinator.noteSeekRevision(session.seekRevision)
+    coordinator.releaseHandScroll()
+    XCTAssertFalse(coordinator.isHandScrolled)
+    let target = coordinator.manualScrollY(at: Double(landed), in: rig.scroll)!
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, left, accuracy: abs(target - left) / 2 + 0.5,
+                   "it eases from where the hand left the text, not jumps")
+    Thread.sleep(forTimeInterval: ScriptTextView.Coordinator.settleSeconds + 0.05)
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, target, accuracy: 0.5)
+    session.pause()
+  }
+
   func testHandScrolledManualIsNotPulledBackUntilPlayOrAnExplicitSeek() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Manual"
@@ -908,6 +951,8 @@ final class PresenterControllerTests: XCTestCase {
 
     XCTAssertFalse(coordinator.isHandScrolled)
     let expected = try! XCTUnwrap(coordinator.manualScrollY(at: 3, in: rig.scroll))
+    // Letting go eases back onto the timeline over `settleSeconds` rather than jumping.
+    Thread.sleep(forTimeInterval: ScriptTextView.Coordinator.settleSeconds + 0.05)
     coordinator.alignManual(in: rig.scroll)
     XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, expected, accuracy: 0.5)
   }

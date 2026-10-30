@@ -2,9 +2,9 @@ import PrompterCore
 import SwiftUI
 import UIKit
 
-/// The scrolling script. It keeps the current word on the reading line: Voice eases to each new
-/// word, Manual follows the session's exact fractional position on every display refresh, the
-/// same rules as the Mac presenter. A drag moves the reading position to the word left on the line.
+/// The scrolling script. It keeps the current word on the reading line: Manual and Voice both
+/// follow the session's fractional position on every display refresh (Manual's timeline, Voice's
+/// glide after the recogniser), the same rules as the Mac presenter. A drag moves the reading position to the word left on the line.
 struct ScriptCanvas: UIViewRepresentable {
   let document: PrompterDocument
   let tokenIndex: Int
@@ -15,7 +15,7 @@ struct ScriptCanvas: UIViewRepresentable {
   let layoutGuideFraction: Double
   let style: ScriptStyle
   let textWidth: Double
-  /// Manual only: the session's fractional token position, read on every frame while running.
+  /// The session's fractional token position, read on every frame while running. Nil eases to each word.
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   var onUserScroll: ((Int) -> Void)?
@@ -66,6 +66,10 @@ struct ScriptCanvas: UIViewRepresentable {
     if c.lastSeekRevision != seekRevision {
       c.lastSeekRevision = seekRevision
       c.snapNext = true
+      // Only the drag's own seek eases; a click, Next passage or Restart lands at once, also
+      // when it arrives in the same update as the drag's.
+      if seekRevision != c.dragSeekRevision { c.settle = nil }
+      c.dragSeekRevision = nil
     }
     c.updateDisplayLink()
     if manualPosition == nil { c.alignVoice() } else { c.alignManual() }
@@ -81,6 +85,12 @@ struct ScriptCanvas: UIViewRepresentable {
     private var mappings: [(range: NSRange, token: Int)] = []
     private var colouredThrough: (token: Int, confirmed: Int?) = (-1, nil)
     private var lastAligned: (token: Int, guide: Double, height: CGFloat)?
+    /// The last Manual or Voice paint. The same position, guide and height with the scroll still
+    /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
+    private var lastPaint: (position: Double, guide: Double, size: CGSize, y: CGFloat)?
+    /// A drag let go of: the next paints ease from where the finger left the text instead of jumping.
+    var settle: (from: CGFloat, start: CFTimeInterval)?
+    var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
     private var baseColour = UIColor.white
@@ -188,9 +198,15 @@ struct ScriptCanvas: UIViewRepresentable {
     /// Words on one line share a scroll position, so the scroll runs from a line's first word to
     /// the next line's first word across the words between: smooth, with no hold-then-jump.
     func alignManual() {
-      guard !isDragging, let textView, let position = parent?.manualPosition?(),
-        !mappings.isEmpty, let (manager, guideY) = prepare()
-      else { return }
+      guard !isDragging, let textView else { return }
+      guard let position = parent?.manualPosition?(), !mappings.isEmpty else {
+        // Nothing left to settle onto (Reduce Motion turned on, the script emptied).
+        if settle != nil { settle = nil; updateDisplayLink() }
+        return
+      }
+      if !snapNext, settle == nil, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
+        last.size == textView.bounds.size, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
+      guard let (manager, guideY) = prepare() else { return }
       func y(_ slot: Int) -> CGFloat { midY(mappings[slot].range, manager: manager) - guideY }
       var low = 0, high = mappings.count
       while low < high {
@@ -210,6 +226,13 @@ struct ScriptCanvas: UIViewRepresentable {
         target = here + (y(next) - here) * CGFloat(fraction)
       }
       target = max(0, target)
+      if let settle {
+        let t = (CACurrentMediaTime() - settle.start) / 0.2
+        if t >= 1 || UIAccessibility.isReduceMotionEnabled { self.settle = nil; updateDisplayLink() } else {
+          target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
+        }
+      }
+      lastPaint = (position, parent?.layoutGuideFraction ?? 0, textView.bounds.size, target)
       if abs(textView.contentOffset.y - target) > 0.01 {
         textView.layer.removeAllAnimations()
         textView.contentOffset = CGPoint(x: 0, y: target)
@@ -218,7 +241,8 @@ struct ScriptCanvas: UIViewRepresentable {
     }
 
     func updateDisplayLink() {
-      let wanted = parent?.manualPosition != nil && parent?.isActivelyRunning == true
+      // A settle finishes even when the drag paused Manual.
+      let wanted = parent?.manualPosition != nil && parent?.isActivelyRunning == true || settle != nil
       if wanted, displayLink == nil {
         let link = CADisplayLink(target: self, selector: #selector(tick))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 60)
@@ -248,6 +272,10 @@ struct ScriptCanvas: UIViewRepresentable {
     /// The word nearest the reading line becomes the reading position.
     private func finishDrag() {
       isDragging = false
+      if let textView, parent?.manualPosition != nil, !UIAccessibility.isReduceMotionEnabled {
+        settle = (textView.contentOffset.y, CACurrentMediaTime())
+        dragSeekRevision = lastSeekRevision &+ 1
+      }
       guard let textView, let parent, let (manager, guideY) = prepare(), !mappings.isEmpty else { return }
       let line = textView.contentOffset.y + guideY
       var best = 0

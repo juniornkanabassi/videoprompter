@@ -613,7 +613,8 @@ private struct PresenterView: View {
               lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
               horizontalMargin: sideInset, alignment: store.settings.alignment,
               showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
-              manualPosition: session.isManual ? { session.manualPosition() } : nil,
+              manualPosition: session.isManual ? { session.manualPosition() }
+                : ScriptTextView.Coordinator.reducesMotion() ? nil : { session.voicePosition() },
               onSeek: session.seek, onUserScroll: session.seekFromUserScroll
             )
           }
@@ -854,8 +855,8 @@ struct ScriptTextView: NSViewRepresentable {
   var alignment = "Left"
   var showCues = true
   var highlightActiveWord = false
-  /// Manual mode only: the session's exact fractional token position, painted on a display link
-  /// while running. Voice passes nil and keeps its eased, word-at-a-time alignment.
+  /// The session's fractional token position, painted on a display link while running: Manual's
+  /// timeline, or Voice's glide after the recogniser. Nil keeps the eased, word-at-a-time alignment.
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   /// A scroll the reader made by hand; falls back to `onSeek`.
@@ -915,6 +916,7 @@ struct ScriptTextView: NSViewRepresentable {
       coordinator.snapToGuide()
     }
     coordinator.isActivelyRunning = isActivelyRunning
+    coordinator.releaseHandScroll()
     coordinator.updateDisplayLink(for: scroll)
     let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
     if coordinator.needsRender(document: document, style: style) {
@@ -987,9 +989,13 @@ struct ScriptTextView: NSViewRepresentable {
       // Play resumes Manual alignment after a hand scroll.
       didSet { if isActivelyRunning, !oldValue { isHandScrolled = false; pendingUserSeeks = 0 } }
     }
-    /// Manual only: set by the first live-scroll event and held until Play, so `updateNSView`,
-    /// `onLayout` and the display link cannot pull the reader's scroll back to the timeline.
+    /// Set by the first live-scroll event and held until the gesture's seek arrives (Voice) or Play
+    /// (Manual), so `updateNSView`, `onLayout` and the display link cannot pull the reader's scroll
+    /// back to the timeline.
     private(set) var isHandScrolled = false
+    /// Voice let go of: the next paints ease from where the hand left the text instead of jumping.
+    private var settle: (from: CGFloat, start: CFTimeInterval)?
+    static let settleSeconds = 0.2
     /// Seek revisions the hand scroll itself caused, which must not lift the suppression.
     private var pendingUserSeeks = 0
     var snapNextAlignment = false
@@ -1000,7 +1006,7 @@ struct ScriptTextView: NSViewRepresentable {
     /// it there too would measure the whole script again on every event.
     private(set) var liveScrollMidYs: [CGFloat]?
     var onUserScroll: ((Int) -> Void)?
-    /// Set only in Manual mode. The display link paints it while `isActivelyRunning`.
+    /// Manual's timeline or Voice's glide. The display link paints it while `isActivelyRunning`.
     private(set) var manualPosition: (() -> Double)?
     private var displayLink: CADisplayLink?
     private weak var manualScroll: NSScrollView?
@@ -1073,7 +1079,7 @@ struct ScriptTextView: NSViewRepresentable {
           MainActor.assumeIsolated {
             guard let self else { return }
             self.isLiveScrolling = false
-            if self.isActivelyRunning, self.pendingUserSeeks == 0 { self.isHandScrolled = false }
+            self.releaseHandScroll()
             // The hand let go (momentum included): glide the word it chose onto the guide, once.
             if self.manualPosition == nil, let scroll {
               self.invalidateAlignment()
@@ -1084,6 +1090,13 @@ struct ScriptTextView: NSViewRepresentable {
         },
       ]
     }
+    /// Voice keeps running through a hand scroll, so no Play comes to lift the hold once the gesture
+    /// and the seeks it caused are done (Manual is paused by then, and stays held).
+    func releaseHandScroll() {
+      guard isHandScrolled, isActivelyRunning, !isLiveScrolling, pendingUserSeeks == 0 else { return }
+      isHandScrolled = false
+      if let y = textView?.enclosingScrollView?.contentView.bounds.origin.y { settle = (y, CACurrentMediaTime()) }
+    }
     /// Takes the session's seek revision and returns whether it changed. A seek the hand scroll
     /// caused keeps Manual suppressed; any other (a click, Next passage, Restart) is explicit, so
     /// alignment follows it again.
@@ -1093,7 +1106,8 @@ struct ScriptTextView: NSViewRepresentable {
       seekRevision = revision
       let fromHand = min(max(bumps, 0), pendingUserSeeks)
       pendingUserSeeks -= fromHand
-      if bumps > fromHand { isHandScrolled = false }
+      // An explicit seek (a click, Next passage, Restart) lands at once, not eased from a hand.
+      if bumps > fromHand { isHandScrolled = false; settle = nil }
       return true
     }
     /// Whether this document or style differs from what is drawn. It runs on every SwiftUI update,
@@ -1274,11 +1288,15 @@ struct ScriptTextView: NSViewRepresentable {
       snapToGuide()
     }
     func invalidateAlignment() {
+      lastPaint = nil
       lastAligned = nil
       lastGuideFraction = nil
       lastAlignmentDestination = nil
     }
-    func dropScrollGeometry() { liveScrollMidYs = nil }
+    func dropScrollGeometry() { liveScrollMidYs = nil; lastPaint = nil }
+    /// The last Manual or Voice paint. The same position, guide and height with the scroll still
+    /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
+    private var lastPaint: (position: Double, guide: Double, height: CGFloat, y: CGFloat)?
     /// Re-align on the next update without easing.
     func snapToGuide() {
       invalidateAlignment()
@@ -1378,7 +1396,17 @@ struct ScriptTextView: NSViewRepresentable {
       applyManualPosition(position, in: scroll)
     }
     func applyManualPosition(_ position: Double, in scroll: NSScrollView) {
-      guard let target = manualScrollY(at: position, in: scroll) else { return }
+      let height = scroll.contentView.bounds.height
+      if settle == nil, let last = lastPaint, last.position == position, last.guide == guideFraction, last.height == height,
+        abs(scroll.contentView.bounds.origin.y - last.y) <= 0.01 { return }
+      guard var target = manualScrollY(at: position, in: scroll) else { return }
+      if let settle {
+        let t = (CACurrentMediaTime() - settle.start) / Self.settleSeconds
+        if t >= 1 || Self.reducesMotion() { self.settle = nil } else {
+          target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
+        }
+      }
+      lastPaint = (position, guideFraction, height, target)
       if endsVoiceAnimation {
         // Voice's easing may still be in flight from before the mode changed.
         scroll.contentView.layer?.removeAllAnimations()

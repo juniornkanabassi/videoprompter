@@ -477,6 +477,41 @@ final class SessionStoreTests: XCTestCase {
     session.pause()
   }
 
+  func testVoicePositionGlidesAfterSpeechJumpsOnSeeksAndHoldsWhilePaused() {
+    var now = 100.0
+    let session = manualSession { now }
+    var voice = PrompterSettings(); voice.mode = "Voice"
+    session.updateSettings(voice)
+    session.play(captureAudio: false)
+    XCTAssertEqual(session.voicePosition(), 0)
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "a", generation: 1, locale: Locale(identifier: "en-GB"), text: "one two three",
+      range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
+    XCTAssertEqual(session.tokenIndex, 3)
+    var last = session.voicePosition()
+    for _ in 0..<30 {
+      now += 1.0 / 60
+      let position = session.voicePosition()
+      XCTAssertGreaterThanOrEqual(position, last, "the glide only moves forward towards the word")
+      XCTAssertLessThan(position - last, 0.3, "no jump in one frame")
+      last = position
+    }
+    XCTAssertGreaterThan(last, 1, "half a second in, most of the way there")
+    XCTAssertLessThanOrEqual(last, 3 + VoiceGlide.lead)
+    // Paused mid-glide: no time passes for it, and Play starts again from rest.
+    session.pause()
+    now += 10
+    XCTAssertEqual(session.voicePosition(), last)
+    session.play(captureAudio: false)
+    now += 1.0 / 60
+    XCTAssertLessThan(session.voicePosition() - last, 0.05, "the pause is not one long frame")
+    session.seek(to: 7)
+    XCTAssertEqual(session.voicePosition(), 7, "a seek is a jump, not a glide")
+    session.pause()
+    now += 1
+    XCTAssertEqual(session.voicePosition(), 7, "paused holds")
+  }
+
   func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {
     let session = SessionStore()
     var settings = PrompterSettings()
