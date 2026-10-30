@@ -66,8 +66,10 @@ struct ScriptCanvas: UIViewRepresentable {
     if c.lastSeekRevision != seekRevision {
       c.lastSeekRevision = seekRevision
       c.snapNext = true
-      // Only the drag's own seek eases; a click, Next passage or Restart lands at once.
-      if c.isDragSeek { c.isDragSeek = false } else { c.settle = nil }
+      // Only the drag's own seek eases; a click, Next passage or Restart lands at once, also
+      // when it arrives in the same update as the drag's.
+      if seekRevision != c.dragSeekRevision { c.settle = nil }
+      c.dragSeekRevision = nil
     }
     c.updateDisplayLink()
     if manualPosition == nil { c.alignVoice() } else { c.alignManual() }
@@ -88,7 +90,7 @@ struct ScriptCanvas: UIViewRepresentable {
     private var lastPaint: (position: Double, guide: Double, size: CGSize, y: CGFloat)?
     /// A drag let go of: the next paints ease from where the finger left the text instead of jumping.
     var settle: (from: CGFloat, start: CFTimeInterval)?
-    var isDragSeek = false
+    var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
     private var baseColour = UIColor.white
@@ -196,9 +198,12 @@ struct ScriptCanvas: UIViewRepresentable {
     /// Words on one line share a scroll position, so the scroll runs from a line's first word to
     /// the next line's first word across the words between: smooth, with no hold-then-jump.
     func alignManual() {
-      guard !isDragging, let textView, let position = parent?.manualPosition?(),
-        !mappings.isEmpty
-      else { return }
+      guard !isDragging, let textView else { return }
+      guard let position = parent?.manualPosition?(), !mappings.isEmpty else {
+        // Nothing left to settle onto (Reduce Motion turned on, the script emptied).
+        if settle != nil { settle = nil; updateDisplayLink() }
+        return
+      }
       if !snapNext, settle == nil, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
         last.size == textView.bounds.size, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
       guard let (manager, guideY) = prepare() else { return }
@@ -269,7 +274,7 @@ struct ScriptCanvas: UIViewRepresentable {
       isDragging = false
       if let textView, parent?.manualPosition != nil, !UIAccessibility.isReduceMotionEnabled {
         settle = (textView.contentOffset.y, CACurrentMediaTime())
-        isDragSeek = true
+        dragSeekRevision = lastSeekRevision &+ 1
       }
       guard let textView, let parent, let (manager, guideY) = prepare(), !mappings.isEmpty else { return }
       let line = textView.contentOffset.y + guideY
