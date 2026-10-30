@@ -325,7 +325,7 @@ final class SessionStore: ObservableObject {
   /// Voice's position for the presenter to paint on every display refresh: `tokenIndex`, followed
   /// smoothly (see `VoiceGlide`). Held while paused.
   func voicePosition(at time: TimeInterval? = nil) -> Double {
-    guard isActivelyRunning else { return glide.position }
+    guard isActivelyRunning else { glide.hold(); return glide.position }
     return min(glide.step(toward: tokenIndex, at: time ?? clock()), Double(max(0, document.spokenTokens.count - 1)))
   }
   /// The unclamped Manual position: it passes the last token's index while that token is read.

@@ -33,9 +33,16 @@ public struct VoiceGlide: Sendable {
     paceBase = position
   }
 
+  /// Stopped where it is: the next step starts from rest, with no time or pace from before.
+  public mutating func hold() {
+    lastTime = nil
+    velocity = 0
+  }
+
   /// Advances to `time` and returns the position to paint. Call once per display frame.
   public mutating func step(toward target: Int, at time: TimeInterval) -> Double {
     let goal = Double(target)
+    if lastTime == nil { changes.removeAll(); paceBase = goal }
     let dt = min(max(time - (lastTime ?? time), 0), 0.1)
     lastTime = time
     if goal != (changes.last?.target ?? paceBase) {
@@ -50,7 +57,10 @@ public struct VoiceGlide: Sendable {
     let behind = goal - position
     if behind > Self.jumpWords || behind < -Self.lead {
       position += behind * (1 - exp(-dt / Self.jumpSeconds))
-      velocity = 0
+      // A jump is not pace; and leaving it forward hands on its speed rather than stalling.
+      changes.removeAll()
+      paceBase = goal
+      velocity = max(0, goal - position) / Self.jumpSeconds
       return position
     }
     // Full pace until the coasting room runs out over the last word, plus a catch-up on the gap.

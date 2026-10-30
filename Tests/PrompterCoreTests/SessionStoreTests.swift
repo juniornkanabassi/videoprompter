@@ -498,6 +498,13 @@ final class SessionStoreTests: XCTestCase {
     }
     XCTAssertGreaterThan(last, 1, "half a second in, most of the way there")
     XCTAssertLessThanOrEqual(last, 3 + VoiceGlide.lead)
+    // Paused mid-glide: no time passes for it, and Play starts again from rest.
+    session.pause()
+    now += 10
+    XCTAssertEqual(session.voicePosition(), last)
+    session.play(captureAudio: false)
+    now += 1.0 / 60
+    XCTAssertLessThan(session.voicePosition() - last, 0.05, "the pause is not one long frame")
     session.seek(to: 7)
     XCTAssertEqual(session.voicePosition(), 7, "a seek is a jump, not a glide")
     session.pause()

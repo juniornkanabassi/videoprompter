@@ -613,7 +613,8 @@ private struct PresenterView: View {
               lineSpacing: store.settings.lineSpacing, paragraphSpacing: store.settings.paragraphSpacing,
               horizontalMargin: sideInset, alignment: store.settings.alignment,
               showCues: store.settings.showCues, highlightActiveWord: store.settings.highlightActiveWord,
-              manualPosition: session.isManual ? { session.manualPosition() } : { session.voicePosition() },
+              manualPosition: session.isManual ? { session.manualPosition() }
+                : ScriptTextView.Coordinator.reducesMotion() ? nil : { session.voicePosition() },
               onSeek: session.seek, onUserScroll: session.seekFromUserScroll
             )
           }
@@ -988,9 +989,13 @@ struct ScriptTextView: NSViewRepresentable {
       // Play resumes Manual alignment after a hand scroll.
       didSet { if isActivelyRunning, !oldValue { isHandScrolled = false; pendingUserSeeks = 0 } }
     }
-    /// Manual only: set by the first live-scroll event and held until Play, so `updateNSView`,
-    /// `onLayout` and the display link cannot pull the reader's scroll back to the timeline.
+    /// Set by the first live-scroll event and held until the gesture's seek arrives (Voice) or Play
+    /// (Manual), so `updateNSView`, `onLayout` and the display link cannot pull the reader's scroll
+    /// back to the timeline.
     private(set) var isHandScrolled = false
+    /// Voice let go of: the next paints ease from where the hand left the text instead of jumping.
+    private var settle: (from: CGFloat, start: CFTimeInterval)?
+    static let settleSeconds = 0.2
     /// Seek revisions the hand scroll itself caused, which must not lift the suppression.
     private var pendingUserSeeks = 0
     var snapNextAlignment = false
@@ -1088,7 +1093,9 @@ struct ScriptTextView: NSViewRepresentable {
     /// Voice keeps running through a hand scroll, so no Play comes to lift the hold once the gesture
     /// and the seeks it caused are done (Manual is paused by then, and stays held).
     func releaseHandScroll() {
-      if isActivelyRunning, !isLiveScrolling, pendingUserSeeks == 0 { isHandScrolled = false }
+      guard isHandScrolled, isActivelyRunning, !isLiveScrolling, pendingUserSeeks == 0 else { return }
+      isHandScrolled = false
+      if let y = textView?.enclosingScrollView?.contentView.bounds.origin.y { settle = (y, CACurrentMediaTime()) }
     }
     /// Takes the session's seek revision and returns whether it changed. A seek the hand scroll
     /// caused keeps Manual suppressed; any other (a click, Next passage, Restart) is explicit, so
@@ -1280,11 +1287,15 @@ struct ScriptTextView: NSViewRepresentable {
       snapToGuide()
     }
     func invalidateAlignment() {
+      lastPaint = nil
       lastAligned = nil
       lastGuideFraction = nil
       lastAlignmentDestination = nil
     }
-    func dropScrollGeometry() { liveScrollMidYs = nil }
+    func dropScrollGeometry() { liveScrollMidYs = nil; lastPaint = nil }
+    /// The last Manual or Voice paint. The same position, guide and height with the scroll still
+    /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
+    private var lastPaint: (position: Double, guide: Double, height: CGFloat, y: CGFloat)?
     /// Re-align on the next update without easing.
     func snapToGuide() {
       invalidateAlignment()
@@ -1384,7 +1395,17 @@ struct ScriptTextView: NSViewRepresentable {
       applyManualPosition(position, in: scroll)
     }
     func applyManualPosition(_ position: Double, in scroll: NSScrollView) {
-      guard let target = manualScrollY(at: position, in: scroll) else { return }
+      let height = scroll.contentView.bounds.height
+      if settle == nil, let last = lastPaint, last.position == position, last.guide == guideFraction, last.height == height,
+        abs(scroll.contentView.bounds.origin.y - last.y) <= 0.01 { return }
+      guard var target = manualScrollY(at: position, in: scroll) else { return }
+      if let settle {
+        let t = (CACurrentMediaTime() - settle.start) / Self.settleSeconds
+        if t >= 1 || Self.reducesMotion() { self.settle = nil } else {
+          target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
+        }
+      }
+      lastPaint = (position, guideFraction, height, target)
       if endsVoiceAnimation {
         // Voice's easing may still be in flight from before the mode changed.
         scroll.contentView.layer?.removeAllAnimations()

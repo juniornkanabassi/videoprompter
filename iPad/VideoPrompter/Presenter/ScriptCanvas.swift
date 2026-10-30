@@ -81,6 +81,9 @@ struct ScriptCanvas: UIViewRepresentable {
     private var mappings: [(range: NSRange, token: Int)] = []
     private var colouredThrough: (token: Int, confirmed: Int?) = (-1, nil)
     private var lastAligned: (token: Int, guide: Double, height: CGFloat)?
+    /// The last Manual or Voice paint. The same position, guide and height with the scroll still
+    /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
+    private var lastPaint: (position: Double, guide: Double, height: CGFloat, y: CGFloat)?
     private var displayLink: CADisplayLink?
     private var isDragging = false
     private var baseColour = UIColor.white
@@ -189,8 +192,11 @@ struct ScriptCanvas: UIViewRepresentable {
     /// the next line's first word across the words between: smooth, with no hold-then-jump.
     func alignManual() {
       guard !isDragging, let textView, let position = parent?.manualPosition?(),
-        !mappings.isEmpty, let (manager, guideY) = prepare()
+        !mappings.isEmpty
       else { return }
+      if !snapNext, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
+        last.height == textView.bounds.height, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
+      guard let (manager, guideY) = prepare() else { return }
       func y(_ slot: Int) -> CGFloat { midY(mappings[slot].range, manager: manager) - guideY }
       var low = 0, high = mappings.count
       while low < high {
@@ -210,6 +216,7 @@ struct ScriptCanvas: UIViewRepresentable {
         target = here + (y(next) - here) * CGFloat(fraction)
       }
       target = max(0, target)
+      lastPaint = (position, parent?.layoutGuideFraction ?? 0, textView.bounds.height, target)
       if abs(textView.contentOffset.y - target) > 0.01 {
         textView.layer.removeAllAnimations()
         textView.contentOffset = CGPoint(x: 0, y: target)

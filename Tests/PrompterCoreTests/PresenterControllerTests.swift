@@ -869,13 +869,17 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(session.voicePosition(), Double(landed), "the hand's word, not a glide to it")
 
     // The update that carries the seek (`updateNSView`).
+    let left = rig.scroll.contentView.bounds.origin.y
     _ = coordinator.noteSeekRevision(session.seekRevision)
     coordinator.releaseHandScroll()
     XCTAssertFalse(coordinator.isHandScrolled)
-    rig.scroll.contentView.setBoundsOrigin(.zero)
+    let target = coordinator.manualScrollY(at: Double(landed), in: rig.scroll)!
     coordinator.alignManual(in: rig.scroll)
-    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y,
-                   coordinator.manualScrollY(at: Double(landed), in: rig.scroll)!, accuracy: 0.5)
+    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, left, accuracy: abs(target - left) / 2 + 0.5,
+                   "it eases from where the hand left the text, not jumps")
+    Thread.sleep(forTimeInterval: ScriptTextView.Coordinator.settleSeconds + 0.05)
+    coordinator.alignManual(in: rig.scroll)
+    XCTAssertEqual(rig.scroll.contentView.bounds.origin.y, target, accuracy: 0.5)
     session.pause()
   }
 
