@@ -15,9 +15,16 @@ public struct SpeechCandidate: Sendable, Hashable {
 }
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation }
-  public enum Error: Swift.Error, Sendable {
+  public enum Error: Swift.Error, Sendable, LocalizedError {
     case unavailable, notPrepared
     case analysisFailed(String)
+    public var errorDescription: String? {
+      switch self {
+      case .unavailable: "Speech recognition is not available for this language on this device."
+      case .notPrepared: "Speech recognition was not ready."
+      case .analysisFailed(let reason): "Speech recognition failed. \(reason)"
+      }
+    }
   }
   private var analyzer: SpeechAnalyzer?
   private var modules: [SpeechTranscriber] = []
@@ -26,6 +33,7 @@ public actor SpeechProvider {
   private var locales: [Locale] = []
   private var generation: UInt64 = 0
   private var resultTasks: [Task<Void, Swift.Error>] = []
+  private var operation: UInt64 = 0
   public init() {}
   public static func contextualPhrases(from script: String) -> [String] {
     let words = script.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
@@ -41,13 +49,18 @@ public actor SpeechProvider {
     locales requested: [Locale] = [.init(identifier: "en-GB"), .init(identifier: "fr-FR")],
     naturalFormat: AVAudioFormat? = nil, contextualStrings: [String] = [], engine: Engine = .transcription
   ) async throws -> AVAudioFormat {
+    // A first download can take half a minute, and a pause, a resume or a new language can
+    // start another preparation or a stop meanwhile; only the latest one may set the analyzer.
+    operation &+= 1
+    let op = operation
     if let analyzer { await analyzer.cancelAndFinishNow() }
+    try checkCurrent(op)
     resultTasks.forEach { $0.cancel() }
     resultTasks = []
-    modules = []
-    dictationModules = []
-    locales = []
-    self.engine = engine
+    analyzer = nil
+    var newModules: [SpeechTranscriber] = []
+    var newDictationModules: [DictationTranscriber] = []
+    var newLocales: [Locale] = []
     for requestedLocale in requested {
       let supported = switch engine {
       case .transcription:
@@ -55,24 +68,31 @@ public actor SpeechProvider {
       case .dictation:
         await DictationTranscriber.supportedLocale(equivalentTo: requestedLocale)
       }
+      try checkCurrent(op)
       guard let supported
       else { throw Error.unavailable }
       switch engine {
       case .transcription:
-        modules.append(
+        newModules.append(
           SpeechTranscriber(locale: supported, preset: .timeIndexedProgressiveTranscription))
       case .dictation:
         var preset = DictationTranscriber.Preset.progressiveLongDictation
         preset.attributeOptions.insert(.audioTimeRange)
-        dictationModules.append(DictationTranscriber(locale: supported, preset: preset))
+        newDictationModules.append(DictationTranscriber(locale: supported, preset: preset))
       }
-      locales.append(supported)
+      newLocales.append(supported)
     }
     let activeModules: [any SpeechModule]
     switch engine {
-    case .transcription: activeModules = modules
-    case .dictation: activeModules = dictationModules
+    case .transcription: activeModules = newModules
+    case .dictation: activeModules = newDictationModules
     }
+    // The speech files first: until a locale's files are on the device, there is no audio format
+    // for it, and an iPad that has never used British English or French dictation has neither.
+    if let installation = try await AssetInventory.assetInstallationRequest(supporting: activeModules) {
+      try await installation.downloadAndInstall()
+    }
+    try checkCurrent(op)
     guard
       let format = await SpeechAnalyzer.bestAvailableAudioFormat(
         compatibleWith: activeModules, considering: naturalFormat)
@@ -83,12 +103,21 @@ public actor SpeechProvider {
       context.contextualStrings[.general] = Array(contextualStrings.prefix(100))
       try await a.setContext(context)
     }
-    if let installation = try await AssetInventory.assetInstallationRequest(supporting: activeModules) {
-      try await installation.downloadAndInstall()
-    }
     try await a.prepareToAnalyze(in: format)
+    do { try checkCurrent(op) } catch {
+      await a.cancelAndFinishNow()
+      throw error
+    }
+    self.engine = engine
+    modules = newModules
+    dictationModules = newDictationModules
+    locales = newLocales
     analyzer = a
     return format
+  }
+  /// Throws when a newer preparation or a stop came in while this one waited.
+  private func checkCurrent(_ op: UInt64) throws {
+    if op != operation || Task.isCancelled { throw CancellationError() }
   }
   public func start<S: AsyncSequence>(
     input: S, generation externalGeneration: UInt64? = nil,
@@ -146,6 +175,7 @@ public actor SpeechProvider {
     }
   }
   public func stop() async {
+    operation &+= 1
     generation &+= 1
     resultTasks.forEach { $0.cancel() }
     await analyzer?.cancelAndFinishNow()
