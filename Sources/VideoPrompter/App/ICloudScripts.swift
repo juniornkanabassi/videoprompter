@@ -123,6 +123,26 @@ import SwiftUI
     if let error = failure ?? coordinationError { throw error }
   }
 
+  /// True when the file is on this Mac. A file iCloud has not brought here yet is asked for and
+  /// left for a later pass: reading it now would hold the main thread until it downloads.
+  static func isLocal(_ url: URL) -> Bool {
+    if FileManager.default.fileExists(atPath: url.path) { return true }
+    try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+    return false
+  }
+
+  /// A copy of `text` in `directory` named after `title`, reusing one an earlier pass already
+  /// made with the same text, so retries never pile up copies.
+  static func keepCopy(_ text: String, title: String, in directory: URL) throws {
+    let stem = safeName(title)
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+    for name in names where name.hasPrefix(stem) && name.hasSuffix(".md") {
+      let url = directory.appendingPathComponent(name)
+      if (try? String(contentsOf: url, encoding: .utf8)) == text { return }
+    }
+    try create(text, at: freeURL(for: title, in: directory))
+  }
+
   /// Writes a new file, failing rather than replacing one that appeared since `freeURL` chose it.
   static func create(_ text: String, at url: URL) throws {
     var coordinationError: NSError?
@@ -273,16 +293,21 @@ extension AppStore {
           guard keepsScriptsInICloud else { return }
           if let mirror = ICloudScripts.mirrors[metadata.id] {
             // Unlinked from its own file while mirrored: the mirror becomes its iCloud file, unless
-            // the iPad edited it since the last pass, when it stays as a script of its own.
-            ICloudScripts.mirrors[metadata.id] = nil
+            // the iPad edited it since the last pass, when it stays as a script of its own. The
+            // mirror stays tracked until one of those is settled, so a failure is retried.
             let url = URL(fileURLWithPath: mirror.path)
-            if let current = ICloudScripts.read(url), MarkdownLibrary.fingerprint(current) == mirror.fingerprint,
-              try current == record.markdown || ICloudScripts.replace(current, with: record.markdown, at: url)
-            {
-              _ = try await library.link(metadata.id, to: url)
-              changed = true
-              continue
+            if ICloudScripts.exists(url) {
+              guard ICloudScripts.isLocal(url), let current = ICloudScripts.read(url) else { continue }
+              if MarkdownLibrary.fingerprint(current) == mirror.fingerprint {
+                guard try current == record.markdown || ICloudScripts.replace(current, with: record.markdown, at: url)
+                else { continue }
+                _ = try await library.link(metadata.id, to: url)
+                ICloudScripts.mirrors[metadata.id] = nil
+                changed = true
+                continue
+              }
             }
+            ICloudScripts.mirrors[metadata.id] = nil
           }
           var directory = ICloudScripts.folder
           if let name = metadata.folderID.flatMap({ folders[$0] }) {
@@ -290,7 +315,7 @@ extension AppStore {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
           }
           let url = ICloudScripts.freeURL(for: metadata.title, in: directory)
-          try ICloudScripts.write(record.markdown, to: url)
+          try ICloudScripts.create(record.markdown, at: url)
           _ = try await library.link(metadata.id, to: url)
           linked.insert(url.standardizedFileURL.path)
           changed = true
@@ -376,8 +401,8 @@ extension AppStore {
       ICloudScripts.declinedMirrors.insert(id)
       return
     }
-    // Still downloading: next pass.
-    guard let mirrored = ICloudScripts.read(url) else { return }
+    // Not on this Mac yet, or still downloading: next pass.
+    guard ICloudScripts.isLocal(url), let mirrored = ICloudScripts.read(url) else { return }
     let theirs = MarkdownLibrary.fingerprint(mirrored)
     if ours == theirs {
       if mirror.fingerprint != ours { ICloudScripts.mirrors[id]?.fingerprint = ours }
@@ -386,25 +411,14 @@ extension AppStore {
       updateMarkdown(mirrored, for: id)
       ICloudScripts.mirrors[id]?.fingerprint = theirs
     } else {
-      var copy: URL?
       if theirs != mirror.fingerprint {
         // Edited on both sides: this side wins, and the iPad's version is kept beside it as a
-        // new script, so nothing is lost.
-        let url = ICloudScripts.freeURL(for: metadata.title + " (iPad edit)", in: url.deletingLastPathComponent())
-        try ICloudScripts.create(mirrored, at: url)
-        copy = url
+        // new script, so nothing is lost. A retry reuses the copy rather than making another.
+        try ICloudScripts.keepCopy(mirrored, title: metadata.title + " (iPad edit)", in: url.deletingLastPathComponent())
       }
-      // Only over the text just read: an iPad edit since then is never overwritten. When the
-      // replace does not happen, the copy goes too, so the next pass does not make another.
-      let replaced: Bool
-      do { replaced = try ICloudScripts.replace(mirrored, with: text, at: url) } catch {
-        if let copy { try? FileManager.default.removeItem(at: copy) }
-        throw error
-      }
-      guard replaced else {
-        if let copy { try? FileManager.default.removeItem(at: copy) }
-        return
-      }
+      // Only over the text just read: an iPad edit since then is never overwritten; the next
+      // pass sees it.
+      guard try ICloudScripts.replace(mirrored, with: text, at: url) else { return }
       ICloudScripts.mirrors[id]?.fingerprint = ours
     }
   }
