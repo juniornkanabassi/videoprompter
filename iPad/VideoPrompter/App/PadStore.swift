@@ -274,15 +274,16 @@ extension PadStore {
     let link = camera.link
     link.onCommand = { [weak self] in self?.perform($0) }
     var lastSent: PadRemote.State?
-    objectWillChange.receive(on: RunLoop.main)
-      .throttle(for: .milliseconds(200), scheduler: RunLoop.main, latest: true)
+    // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
+    objectWillChange.receive(on: DispatchQueue.main)
+      .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
       .sink { [weak self] _ in
         guard let self, link.macName != nil else { return }
         let state = remoteState
         if state != lastSent { link.send(state) }
         lastSent = state
       }.store(in: &bag)
-    link.$macName.receive(on: RunLoop.main).sink { [weak self] name in
+    link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
       guard let self, name != nil else { return }
       lastSent = remoteState
       link.send(lastSent!)

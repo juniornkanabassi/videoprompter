@@ -37,6 +37,38 @@ final class CameraLinkPipelineTests: XCTestCase {
     }
   }
 
+  /// Turning the camera off while the remote stays: the end of the picture comes after every
+  /// frame, so the iPad never goes back to a frozen Mac picture.
+  func testTheEndOfThePictureFollowsTheLastFrame() throws {
+    let pipe = CollectingPipe(name: "test")
+    let encoder = LinkEncoder()
+    encoder.attach(pipe)
+    for index in 0..<5 { encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, index), from: Self.connection) }
+    encoder.finish(pipe)
+    encoder.captureQueue.sync {}
+    // A frame the camera delivers after the switch is not sent.
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, 5), from: Self.connection)
+    var reader = CameraLink.Reader()
+    let messages = try reader.append(pipe.bytes.withLock { $0 })
+    XCTAssertEqual(messages.last, .format(width: 0, height: 0, parameterSets: []))
+    XCTAssertEqual(messages.filter { if case .frame = $0 { true } else { false } }.count, 5)
+  }
+
+  /// Closed before it ever read: the socket is still let go of exactly once.
+  func testASocketPipeClosedBeforeReadingStillEnds() {
+    var fds: [Int32] = [0, 0]
+    XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+    let pipe = SocketPipe(socket: fds[0], name: "USB-C")
+    let ended = expectation(description: "closed")
+    pipe.onClose = { ended.fulfill() }
+    pipe.close()
+    pipe.startReading()
+    wait(for: [ended], timeout: 2)
+    var byte: UInt8 = 0
+    XCTAssertEqual(Darwin.read(fds[1], &byte, 1), 0, "the Mac end is closed")
+    Darwin.close(fds[1])
+  }
+
   /// The USB-C path: a socket the iPad answers on.
   func testTheSocketPipeCarriesBothWaysAndReportsTheEnd() throws {
     var fds: [Int32] = [0, 0]

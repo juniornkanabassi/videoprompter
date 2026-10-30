@@ -56,6 +56,9 @@ import VideoToolbox
   private var generation = 0
   private var retry: Task<Void, Never>?
   private var linkOn = false
+  /// An iPad from before version 2 answered without its state: it cannot be controlled, and a
+  /// link without a picture would leave it on a black Mac camera, so none is kept open.
+  private var oldIPad = false
 
   /// Drives the iPad's presenter. Nothing happens unless an iPad is connected.
   func send(_ command: PadRemote.Command) {
@@ -70,6 +73,7 @@ import VideoToolbox
   }
 
   private func startCamera() {
+    oldIPad = false
     let camera = CameraModel.shared
     camera.start()
     guard let uid = camera.selectedUID else {
@@ -94,9 +98,19 @@ import VideoToolbox
   }
 
   private func stopCamera() {
-    encoder.attach(nil)
-    // Still connected for the remote: the iPad goes back to its own camera.
-    pipe?.send(CameraLink.Message.format(width: 0, height: 0, parameterSets: []).encoded())
+    if let pipe {
+      if iPadState != nil {
+        // Still connected for the remote: the iPad goes back to its own camera once the last
+        // frame in flight has gone.
+        encoder.finish(pipe)
+      } else {
+        encoder.attach(nil)
+        pipe.send(CameraLink.Message.goodbye.encoded())
+        pipe.close()
+      }
+    } else {
+      encoder.attach(nil)
+    }
     let output = self.output
     let shared = SharedCameraSession.shared
     shared.reconfigure { session in
@@ -111,6 +125,7 @@ import VideoToolbox
 
   private func startLink() {
     generation += 1
+    oldIPad = false
     status = "Looking for an iPad…"
     let mux = USBMuxListener { [weak self] devices in
       Task { @MainActor in self?.usbChanged(devices) }
@@ -160,7 +175,8 @@ import VideoToolbox
 
   /// Only paired iPads are sent to. A new one is paired once, with the code its Settings show.
   private func wifiChanged(_ endpoints: [NWEndpoint]) {
-    for name in endpoints.compactMap(Self.serviceName) where codes[name] == nil && !declinedNames.contains(name) {
+    // A headless launch, for the CLI, never stops to ask.
+    for name in endpoints.compactMap(Self.serviceName) where codes[name] == nil && !declinedNames.contains(name) && !Headless.shared.active {
       if let code = Self.askForCode(name) { codes[name] = code } else { declinedNames.insert(name) }
     }
     wifiTargets = endpoints.filter { Self.serviceName($0).map { codes[$0] != nil } ?? false }
@@ -189,7 +205,7 @@ import VideoToolbox
   /// Tries each USB-C device, then each iPad on Wi-Fi, until one answers. An iPhone, or an iPad
   /// without Video Prompter open, refuses the port and the next is tried.
   private func connectIfNeeded() {
-    guard linkOn, pipe == nil, !connecting else { return }
+    guard linkOn, pipe == nil, !connecting, isOn || !oldIPad else { return }
     connecting = true
     let usb = usbDevices
     let wifi = wifiTargets
@@ -243,13 +259,24 @@ import VideoToolbox
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
     }
     pipe.onMessage = { [weak self, weak pipe] message in
-      guard case .state(let state) = message else { return }
+      guard case .state(var state) = message else { return }
+      // Whatever the iPad says, the window's slider and the CLI get sane numbers.
+      state.words = min(max(state.words, 0), 10_000_000)
+      state.word = min(max(state.word, 0), state.words)
       Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.iPadState = state } }
     }
     pipe.startReading()
     let name = Host.current().localizedName ?? "Mac"
     pipe.send(CameraLink.Message.hello(name: name, version: CameraLink.protocolVersion).encoded())
     if isOn { attachCamera(pipe) }
+    // A current iPad answers the hello at once.
+    Task { [weak self, weak pipe] in
+      try? await Task.sleep(for: .seconds(3))
+      guard let self, let pipe, self.pipe === pipe, iPadState == nil, !isOn else { return }
+      oldIPad = true
+      pipe.send(CameraLink.Message.goodbye.encoded())
+      pipe.close()
+    }
   }
 
   private func attachCamera(_ pipe: LinkPipe) {
@@ -270,6 +297,10 @@ import VideoToolbox
     pipe = nil
     iPadState = nil
     guard linkOn else { return }
+    if oldIPad, !isOn {
+      status = "Update Video Prompter on the iPad to control it from this Mac"
+      return
+    }
     status = "Looking for an iPad…"
     scheduleRetry()
   }
@@ -301,7 +332,7 @@ struct IPadCameraCommands: Commands {
   }
 }
 
-/// Window › iPad Remote: the iPad presenter's controls, showing what the iPad reports.
+/// File › Control iPad opens this: the iPad presenter's controls, showing what the iPad reports.
 struct IPadRemoteView: View {
   @ObservedObject var link: IPadCameraSender
   /// The slider's value while it is dragged; the iPad moves when it is let go.
@@ -317,6 +348,7 @@ struct IPadRemoteView: View {
     .formStyle(.grouped)
     .frame(minWidth: 380)
     .onAppear { link.controlsIPad = true }
+    .onDisappear { link.controlsIPad = false }
   }
 
   @ViewBuilder private func controls(_ state: PadRemote.State) -> some View {
@@ -449,8 +481,22 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     lastSets.withLock { $0 = [] }
   }
 
+  /// Stops sending to `pipe`, and once the frames in flight have gone, tells the iPad the
+  /// picture has ended. On the capture queue, after any frame being encoded.
+  func finish(_ pipe: LinkPipe) {
+    attach(nil)
+    captureQueue.async { [self] in
+      tearDown()
+      pipe.send(CameraLink.Message.format(width: 0, height: 0, parameterSets: []).encoded())
+    }
+  }
+
   private func tearDown() {
-    if let session { VTCompressionSessionInvalidate(session) }
+    if let session {
+      // Delivers every frame still in the encoder first, so none follows the end of the picture.
+      VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
+      VTCompressionSessionInvalidate(session)
+    }
     session = nil
     sessionSize = nil
   }

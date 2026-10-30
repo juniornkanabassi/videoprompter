@@ -74,8 +74,10 @@ import UIKit
   /// stops, the picture falls back to whatever camera is left. A Mac connected only to control
   /// the presenter sends no picture and changes nothing here.
   private func linkChanged() {
+    let hadMac = devices.contains(where: \.isMac)
     refreshDevices()
-    if link.pictureSize != nil, selectedID != Self.macLinkID {
+    // Taken over when the picture first arrives, even when the Mac is already the only choice.
+    if link.pictureSize != nil, !hadMac {
       selectedID = Self.macLinkID
       if !isOn { isOn = true }
     }
