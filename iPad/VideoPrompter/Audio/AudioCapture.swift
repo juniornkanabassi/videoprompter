@@ -14,9 +14,18 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable {
   }
 }
 
-public enum AudioCaptureError: Error, Equatable, Sendable {
+public enum AudioCaptureError: Error, Equatable, Sendable, LocalizedError {
   case permissionDenied, deviceUnavailable, conversionUnavailable, deviceLost
   case engineFailure(String)
+  public var errorDescription: String? {
+    switch self {
+    case .permissionDenied: "Microphone permission is required."
+    case .deviceUnavailable: "The selected microphone is not connected."
+    case .conversionUnavailable: "The microphone's audio format is not supported."
+    case .deviceLost: "The selected microphone was disconnected."
+    case .engineFailure(let reason): reason
+    }
+  }
 }
 
 public final class AudioCapture: @unchecked Sendable {
@@ -207,7 +216,12 @@ public final class AudioCapture: @unchecked Sendable {
       status.pointee = .haveData
       return source
     }
-    guard error == nil, output.frameLength > 0 else { return }
+    if let error {
+      stop(reason: .engineFailure("The microphone's audio could not be converted. \(error.localizedDescription)"))
+      return
+    }
+    // Normal now and then: the converter keeps a few samples back for the next buffer.
+    guard output.frameLength > 0 else { return }
     let currentGain = stateLock.withLock { gain }
     let levels = Self.applyGainAndMeasure(output, gain: currentGain)
     bufferHandler?(output, time, levels.rms, levels.peak, levels.peak >= 0.98)

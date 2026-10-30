@@ -610,7 +610,8 @@ final class SessionStore: ObservableObject {
   }
 
   private func startAudioMode() {
-    guard audioCapture == nil else { return }
+    // Also while a start is still preparing: a second one would race it for the recogniser.
+    guard audioCapture == nil, speechTask == nil else { return }
     if audioDeviceObserver == nil {
       audioDeviceObserver = AudioCapture.inputDeviceObserver { [weak self] in
         guard let self else { return }
@@ -669,7 +670,7 @@ final class SessionStore: ObservableObject {
               if let error {
                 let message = error == .deviceLost
                   ? "The selected microphone was disconnected. Tracking paused."
-                  : "Voice following stopped: \(error)"
+                  : "Voice following stopped. \((error as? LocalizedError)?.errorDescription ?? "\(error)")"
                 self.failAudio(message)
               }
             }
