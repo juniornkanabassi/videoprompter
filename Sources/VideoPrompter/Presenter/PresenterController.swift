@@ -1106,7 +1106,8 @@ struct ScriptTextView: NSViewRepresentable {
       seekRevision = revision
       let fromHand = min(max(bumps, 0), pendingUserSeeks)
       pendingUserSeeks -= fromHand
-      if bumps > fromHand { isHandScrolled = false }
+      // An explicit seek (a click, Next passage, Restart) lands at once, not eased from a hand.
+      if bumps > fromHand { isHandScrolled = false; settle = nil }
       return true
     }
     /// Whether this document or style differs from what is drawn. It runs on every SwiftUI update,

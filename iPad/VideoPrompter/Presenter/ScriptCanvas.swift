@@ -66,6 +66,8 @@ struct ScriptCanvas: UIViewRepresentable {
     if c.lastSeekRevision != seekRevision {
       c.lastSeekRevision = seekRevision
       c.snapNext = true
+      // Only the drag's own seek eases; a click, Next passage or Restart lands at once.
+      if c.isDragSeek { c.isDragSeek = false } else { c.settle = nil }
     }
     c.updateDisplayLink()
     if manualPosition == nil { c.alignVoice() } else { c.alignManual() }
@@ -85,7 +87,8 @@ struct ScriptCanvas: UIViewRepresentable {
     /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
     private var lastPaint: (position: Double, guide: Double, size: CGSize, y: CGFloat)?
     /// A drag let go of: the next paints ease from where the finger left the text instead of jumping.
-    private var settle: (from: CGFloat, start: CFTimeInterval)?
+    var settle: (from: CGFloat, start: CFTimeInterval)?
+    var isDragSeek = false
     private var displayLink: CADisplayLink?
     private var isDragging = false
     private var baseColour = UIColor.white
@@ -220,7 +223,7 @@ struct ScriptCanvas: UIViewRepresentable {
       target = max(0, target)
       if let settle {
         let t = (CACurrentMediaTime() - settle.start) / 0.2
-        if t >= 1 || UIAccessibility.isReduceMotionEnabled { self.settle = nil } else {
+        if t >= 1 || UIAccessibility.isReduceMotionEnabled { self.settle = nil; updateDisplayLink() } else {
           target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
         }
       }
@@ -233,7 +236,8 @@ struct ScriptCanvas: UIViewRepresentable {
     }
 
     func updateDisplayLink() {
-      let wanted = parent?.manualPosition != nil && parent?.isActivelyRunning == true
+      // A settle finishes even when the drag paused Manual.
+      let wanted = parent?.manualPosition != nil && parent?.isActivelyRunning == true || settle != nil
       if wanted, displayLink == nil {
         let link = CADisplayLink(target: self, selector: #selector(tick))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 60)
@@ -263,7 +267,10 @@ struct ScriptCanvas: UIViewRepresentable {
     /// The word nearest the reading line becomes the reading position.
     private func finishDrag() {
       isDragging = false
-      if let textView { settle = (textView.contentOffset.y, CACurrentMediaTime()) }
+      if let textView, parent?.manualPosition != nil, !UIAccessibility.isReduceMotionEnabled {
+        settle = (textView.contentOffset.y, CACurrentMediaTime())
+        isDragSeek = true
+      }
       guard let textView, let parent, let (manager, guideY) = prepare(), !mappings.isEmpty else { return }
       let line = textView.contentOffset.y + guideY
       var best = 0
