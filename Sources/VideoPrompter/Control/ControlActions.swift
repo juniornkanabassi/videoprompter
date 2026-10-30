@@ -421,14 +421,16 @@ import Speech
     }
   }
 
-  /// Opens the link for the call if it is closed, as File › Control iPad does, sends what was
+  /// Keeps the link open for the call, as File › Control iPad does, sends what was
   /// asked in order, and reports what the iPad then shows, or that it did not do it.
   private func iPad(_ params: [String: String]) async -> ControlResult {
+    await IPadCameraSender.shared.whileLinked { await iPadLinked(params) }
+  }
+
+  private func iPadLinked(_ params: [String: String]) async -> ControlResult {
     let link = IPadCameraSender.shared
-    let wasOn = link.controlsIPad
-    link.controlsIPad = true
-    defer { if !wasOn { link.controlsIPad = false } }
-    for _ in 0..<50 where link.iPadState == nil { try? await Task.sleep(for: .milliseconds(100)) }
+    for _ in 0..<50 where link.iPadState == nil && !link.iPadIsOld { try? await Task.sleep(for: .milliseconds(100)) }
+    if link.iPadIsOld { return .error("ipad_too_old", "The iPad's Video Prompter is too old to be controlled. Update it.") }
     guard let before = link.iPadState else {
       return .error("ipad_not_found", "No iPad answered. Connect it by USB-C, trust this Mac and open Video Prompter on it. For Wi-Fi, pair it first with File › Also Connect over Wi-Fi.")
     }

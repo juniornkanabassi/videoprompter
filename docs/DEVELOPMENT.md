@@ -95,6 +95,7 @@ The short `videoprompter` examples below assume the optional command link exists
 | Start recording the shown camera, with retry protection | `videoprompter record start --yes --request-id take1` |
 | Stop recording and report the saved file | `videoprompter record stop --recording <id>` |
 | Recording quality, microphone and audio format | `videoprompter record set --quality high --float-audio off` |
+| Drive Video Prompter on a linked iPad, or report what it shows | `videoprompter ipad --present 'My Script' --mode manual --speed 150 --run on` |
 | MCP tools manifest | `videoprompter mcp-manifest` |
 | Full help, with every option and its valid values | `videoprompter --help` |
 

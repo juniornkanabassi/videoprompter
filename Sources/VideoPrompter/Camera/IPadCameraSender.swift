@@ -56,6 +56,8 @@ import VideoToolbox
   private var generation = 0
   private var retry: Task<Void, Never>?
   private var linkOn = false
+  /// CLI and MCP calls under way, each keeping the link open while it runs.
+  private var calls = 0
   /// An iPad from before version 2 answered without its state: it cannot be controlled, and a
   /// link without a picture would leave it on a black Mac camera, so none is kept open.
   private var oldIPad = false
@@ -65,8 +67,22 @@ import VideoToolbox
     pipe?.send(CameraLink.Message.command(command).encoded())
   }
 
+  /// Keeps the link open for `body`, as the window does while it is open.
+  func whileLinked<T>(_ body: () async -> T) async -> T {
+    calls += 1
+    updateLink()
+    defer {
+      calls -= 1
+      updateLink()
+    }
+    return await body()
+  }
+
+  /// The iPad answered but is too old to be controlled.
+  var iPadIsOld: Bool { oldIPad }
+
   private func updateLink() {
-    let wanted = isOn || controlsIPad
+    let wanted = isOn || controlsIPad || calls > 0
     guard wanted != linkOn else { return }
     linkOn = wanted
     wanted ? startLink() : stopLink()
@@ -95,6 +111,8 @@ import VideoToolbox
     }
     if let pipe { attachCamera(pipe) }
     updateLink()
+    // The link may already be up but idle, after an older iPad was let go.
+    connectIfNeeded()
   }
 
   private func stopCamera() {
@@ -169,6 +187,8 @@ import VideoToolbox
   }
 
   private func usbChanged(_ devices: [Int]) {
+    // A plugged or swapped iPad may be an updated one.
+    if devices != usbDevices { oldIPad = false }
     usbDevices = devices
     connectIfNeeded()
   }
@@ -298,7 +318,7 @@ import VideoToolbox
     iPadState = nil
     guard linkOn else { return }
     if oldIPad, !isOn {
-      status = "Update Video Prompter on the iPad to control it from this Mac"
+      status = "Update Video Prompter on the iPad, then open Control iPad again"
       return
     }
     status = "Looking for an iPad…"
@@ -380,7 +400,7 @@ struct IPadRemoteView: View {
         dragging = nil
       }
     }
-    .disabled(state.presenting == nil || state.words == 0)
+    .disabled(state.presenting == nil || state.words < 2)
   }
 }
 
