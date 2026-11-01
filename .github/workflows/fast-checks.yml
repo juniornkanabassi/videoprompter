@@ -1,0 +1,24 @@
+# Fast checks on every pull request: the whole XCTest suite and the tracked-source check.
+# Unsigned, no secrets, read-only token, fixtures only; nothing is signed, notarised, released, published or installed.
+# build.sh, release.sh, install.sh, the built-app checks and the iPad link stay on the Mac.
+name: Fast checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: fast-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: macos-26   # Package.swift needs macOS 26; env.sh uses /Applications/Xcode.app
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - name: XCTest suite (test.sh, since swift test does not discover it)
+        run: zsh test.sh
+      - name: Nothing private is tracked, no source is ignored
+        run: zsh checks/check-source-ignore.sh
