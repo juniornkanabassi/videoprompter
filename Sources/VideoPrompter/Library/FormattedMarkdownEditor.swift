@@ -577,6 +577,13 @@ struct FormattedMarkdownEditModel {
           let font = NSFontManager.shared.convert(base, toHaveTrait: traits)
           part.addAttribute(.font, value: font, range: NSRange(run.range, in: rich))
         }
+        // It omits leading ones too: without them, Return before a space ("one.| Two") was refused.
+        // After the runs above, whose ranges count from the rendered start.
+        let rawLeadingSpaces = text.prefix { $0 == " " || $0 == "\t" }.count
+        let renderedLeadingSpaces = part.string.prefix { $0 == " " || $0 == "\t" }.count
+        if rawLeadingSpaces > renderedLeadingSpaces {
+          part.insert(NSAttributedString(string: String(text.prefix(rawLeadingSpaces - renderedLeadingSpaces))), at: 0)
+        }
         if rich.runs.contains(where: { run in
           run.presentationIntent?.components.contains(where: { if case .header = $0.kind { return true }; return false }) == true
         }) {

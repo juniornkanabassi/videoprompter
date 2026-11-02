@@ -689,4 +689,72 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(touching.string, "A\na\nB\nb")
     XCTAssertFalse(block(at: 0) === block(at: 4), "touching callouts draw as two boxes")
   }
+
+  /// Real key events through the window, in the library's and the presenter's set-up alike. Foundation drops a
+  /// line's leading spaces, so Return before a space ("one.| Two"), the usual way to split a paragraph, was refused.
+  @MainActor func testNativeKeysTypeSplitJoinPasteAndUndoInBothEditors() async throws {
+    _ = NSApplication.shared
+    let source = "# Title\n\nOne sentence. Two **bold** words and [a link](https://x.y) end.\n\nLast line."
+    let split = "# Title\n\nOne sentence.\n\nNew Two **bold**\n words and [a link](https://x.y) end.\n\nLast line.\nTail"
+    for presenter in [false, true] {
+      var value = source
+      var unsupported = 0
+      let host = NSHostingView(rootView: FormattedMarkdownEditor(
+        markdown: Binding(get: { value }, set: { value = $0 }), fontName: "System", fontSize: presenter ? 44 : 18,
+        onUnsupportedEdit: { unsupported += 1 }, focusesOnAppear: presenter,
+        typography: presenter ? EditorTypography(textColor: .white, lineSpacing: 8, paragraphSpacing: 20, horizontalInset: 40,
+          alignment: .center) : EditorTypography(),
+        anchorSourceOffset: presenter ? 30 : nil, readThroughSourceOffset: presenter ? 20 : nil))
+      let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 700, height: 500), styleMask: [.titled],
+        backing: .buffered, defer: true)
+      window.contentView = host
+      defer { window.contentView = nil }
+      for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(20)) }
+      func editors(_ view: NSView) -> [NSTextView] { (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(editors) }
+      let view = try XCTUnwrap(editors(host).first)
+      XCTAssertTrue(window.makeFirstResponder(view))
+      func caret(after text: String) { view.setSelectedRange(NSRange(location: NSMaxRange((view.string as NSString).range(of: text)), length: 0)) }
+      func press(_ keys: String) async {
+        for key in keys {
+          let code: UInt16 = key == "\r" ? 36 : key == "\u{7F}" ? 51 : 0
+          window.sendEvent(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: String(key), charactersIgnoringModifiers: String(key),
+            isARepeat: false, keyCode: code)!)
+          host.layoutSubtreeIfNeeded()
+          try? await Task.sleep(for: .milliseconds(5))
+        }
+      }
+      caret(after: "sentence.")
+      await press("\r\rNew")   // a new paragraph before the space
+      caret(after: "bold")
+      await press("\r")        // a line break straight after formatting
+      caret(after: "Last line.")
+      await press("\rTail")     // the end of the document
+      XCTAssertEqual(value, split, presenter ? "presenter" : "library")
+      XCTAssertEqual(view.string, "Title\n\nOne sentence.\n\nNew Two bold\n words and a link end.\n\nLast line.\nTail")
+      // The reading anchor still finds the passage after the split.
+      let model = FormattedMarkdownEditModel(markdown: value)
+      let words = (value as NSString).range(of: "words").location
+      XCTAssertEqual(model.visibleIndex(forSourceOffset: words), (view.string as NSString).range(of: "words").location)
+      // Backspace at the start of a paragraph joins it back.
+      caret(after: "bold\n")
+      await press("\u{7F}")
+      XCTAssertEqual(value, split.replacingOccurrences(of: "**bold**\n words", with: "**bold** words"))
+      // A multi-line paste takes the same native route as a paste from the Edit menu.
+      caret(after: "Tail")
+      let board = NSPasteboard(name: NSPasteboard.Name("VideoPrompterTests.\(UUID().uuidString)"))
+      defer { board.releaseGlobally() }
+      board.clearContents()
+      board.setString("\n\nPasted one\nPasted two", forType: .string)
+      XCTAssertTrue(view.readSelection(from: board, type: .string))
+      XCTAssertTrue(value.hasSuffix("Last line.\nTail\n\nPasted one\nPasted two"))
+      let final = value
+      while view.undoManager?.canUndo == true { view.undoManager?.undo() }
+      XCTAssertEqual(value, source)
+      XCTAssertEqual(view.string, "Title\n\nOne sentence. Two bold words and a link end.\n\nLast line.")
+      while view.undoManager?.canRedo == true { view.undoManager?.redo() }
+      XCTAssertEqual(value, final)
+      XCTAssertEqual(unsupported, 0)
+    }
+  }
 }
