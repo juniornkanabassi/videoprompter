@@ -93,6 +93,7 @@ final class AppStoreTests: XCTestCase {
       await store.reload()
       var settings = PrompterSettings()
       settings.mode = mode
+      store.session.clock = { 100 }
       store.session.present(record: record, settings: settings)
       store.session.seek(to: 2)
       store.updateMarkdown("one two three four five six seven", for: record.id)
@@ -101,7 +102,7 @@ final class AppStoreTests: XCTestCase {
       let blocks = store.session.document.blocks.map(\.id)
       let frontier = store.session.lastConfirmedTokenIndex
       let flushed = await store.flushPendingSaves()
-    XCTAssertTrue(flushed)
+      XCTAssertTrue(flushed)
       XCTAssertEqual(store.session.state, .running, mode)
       XCTAssertEqual(store.session.anchor?.blockID, anchor?.blockID)
       XCTAssertEqual(store.session.anchor?.tokenOffset, anchor?.tokenOffset)
@@ -487,10 +488,11 @@ final class AppStoreTests: XCTestCase {
     let record = try XCTUnwrap(store.selected)
     store.updateMarkdown("latest before delete", for: record.id)
     store.delete([record.id])
-    try await Task.sleep(for: .milliseconds(700))
+    try await waitUntil { store.trash.contains(where: { $0.id == record.id }) }
     let trash = await store.library!.listTrash()
     XCTAssertEqual(trash.count, 1)
-    _ = try await store.library!.restore(record.id)
+    store.restore(record.id)
+    try await waitUntil { store.scripts.contains(where: { $0.id == record.id }) }
     let restored = try await store.library!.read(record.id)
     XCTAssertEqual(restored.markdown, "latest before delete")
   }

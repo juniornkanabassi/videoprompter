@@ -1324,15 +1324,29 @@ final class PresenterControllerTests: XCTestCase {
         fontSize: 44, textOpacity: 1,
         horizontalMargin: ScriptTextView.sideInset(width: size.width, textWidth: textWidth), onSeek: { _ in })
     }
+    func waitForGuide(_ host: NSView, text: NSTextView, scroll: NSScrollView, visibleIndex: Int) async throws {
+      for _ in 0..<100 {
+        try await Task.sleep(for: .milliseconds(10))
+        host.layoutSubtreeIfNeeded()
+        guard let manager = text.layoutManager, let container = text.textContainer else { continue }
+        manager.ensureLayout(for: container)
+        let glyph = manager.glyphRange(forCharacterRange: NSRange(location: visibleIndex, length: 1), actualCharacterRange: nil)
+        let rect = manager.boundingRect(forGlyphRange: glyph, in: container)
+        let clip = scroll.contentView.bounds
+        let guide = ScriptTextView.visualGuideY(height: clip.height, fraction: 0.35)
+        if clip.origin.y > 1, abs(rect.midY + text.textContainerInset.height - clip.origin.y - guide) <= 2 { return }
+      }
+    }
     let readerHost = host(reader(1), size: size)
     let text = try XCTUnwrap(firstTextView(in: readerHost))
     let scroll = try XCTUnwrap(text.enclosingScrollView)
+    try await waitForGuide(readerHost, text: text, scroll: scroll, visibleIndex: rangeOfPassageNumber(12, in: text).location)
     XCTAssertEqual(text.textContainerInset.width, 42, accuracy: 0.5)
     try assertOnGuide(text, scroll: scroll, visibleIndex: rangeOfPassageNumber(12, in: text).location, "full width")
     let wideOrigin = scroll.contentView.bounds.origin.y
 
     readerHost.rootView = reader(store.settings.textWidth)
-    settle()
+    try await waitForGuide(readerHost, text: text, scroll: scroll, visibleIndex: rangeOfPassageNumber(12, in: text).location)
     XCTAssertEqual(text.textContainerInset.width, 480, accuracy: 0.5)
     XCTAssertEqual(try XCTUnwrap(text.textContainer).size.width, text.bounds.width - 960, accuracy: 0.5)
     XCTAssertGreaterThan(abs(scroll.contentView.bounds.origin.y - wideOrigin), 20, "the narrow column must reflow")
@@ -1351,9 +1365,10 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(editing.textContainer).size.width, editing.bounds.width - 960, accuracy: 0.5)
     let visible = try XCTUnwrap(FormattedMarkdownEditModel(markdown: markdown)
       .visibleIndex(forSourceOffset: token.sourceRange.location))
+    try await waitForGuide(editorHost, text: editing, scroll: editingScroll, visibleIndex: visible)
     try assertOnGuide(editing, scroll: editingScroll, visibleIndex: visible, "in-place editor")
     editorHost.rootView = editor(1)
-    settle()
+    try await waitForGuide(editorHost, text: editing, scroll: editingScroll, visibleIndex: visible)
     XCTAssertEqual(editing.textContainerInset.width, 42, accuracy: 0.5, "the editor follows a width change")
   }
 
