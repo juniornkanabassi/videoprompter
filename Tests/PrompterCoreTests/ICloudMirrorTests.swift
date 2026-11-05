@@ -10,9 +10,19 @@ final class ICloudMirrorTests: XCTestCase {
   private let keys = [ICloudScripts.enabledKey, ICloudScripts.mirrorsKey, ICloudScripts.declinedMirrorsKey, ICloudScripts.unlinkPendingKey]
 
   override func tearDown() async throws {
-    ICloudScripts.cloudDocsOverride = nil
+    // Stop new passes before removing the disposable cloud directory.
     for key in keys { UserDefaults.standard.removeObject(forKey: key) }
+    await waitForCurrentPass()
+    ICloudScripts.cloudDocsOverride = nil
     for url in dirs { try? FileManager.default.removeItem(at: url) }
+  }
+
+  private func waitForCurrentPass() async {
+    while let pending = ICloudScripts.pass {
+      await pending.value
+      // The owner clears the shared task after its await resumes.
+      await Task.yield()
+    }
   }
 
   private func temp(_ name: String) throws -> URL {
@@ -23,6 +33,7 @@ final class ICloudMirrorTests: XCTestCase {
   }
 
   private func pass(_ store: AppStore) async {
+    await waitForCurrentPass()
     ICloudScripts.lastPass = .distantPast
     await store.syncICloudScripts()
   }
@@ -32,6 +43,7 @@ final class ICloudMirrorTests: XCTestCase {
   /// A store with one script linked to `master.md`, mirrored by a first pass.
   private func mirroredStore() async throws -> (AppStore, UUID, master: URL, mirror: URL) {
     for key in keys { UserDefaults.standard.removeObject(forKey: key) }
+    await waitForCurrentPass()
     ICloudScripts.cloudDocsOverride = try temp("CloudDocs")
     UserDefaults.standard.set(true, forKey: ICloudScripts.enabledKey)
     let root = try temp("vp-lib"), outside = try temp("vp-notes")
