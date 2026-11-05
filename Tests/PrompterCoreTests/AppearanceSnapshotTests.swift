@@ -1,0 +1,90 @@
+import AppKit
+import PrompterCore
+import SwiftUI
+import XCTest
+@testable import VideoPrompter
+
+/// Opt-in, offscreen snapshots. No window is ordered, camera requested or account connected.
+@MainActor final class AppearanceSnapshotTests: XCTestCase {
+  func testEveryPageInLightAndDark() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    guard let output = environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in image check: run checks/check-snapshots.sh") }
+    let destination = URL(fileURLWithPath: output, isDirectory: true)
+    guard destination.path.hasPrefix("/private/tmp/bama/") else { throw SnapshotError.invalidDestination }
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.prohibited)
+    let root = destination.appendingPathComponent("fixture-\(UUID())", isDirectory: true)
+    let suite = "VideoPrompter.Appearance.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let store = AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults)
+    defer {
+      defaults.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let record = try await store.createScript(title: "A clear opening", markdown: "# A clear opening\n\nRead these opening words at your own pace.\n\nA second paragraph keeps the reading line easy to follow.\n\n**Important words** stay clear, with a [reference](https://example.com).")
+    _ = try await store.createScript(title: "A longer title for the next recording", markdown: "A second saved script.")
+    store.selectedID = record.id
+    _ = try await store.createLibraryFolder(named: "Recordings")
+    store.savePreset(named: "Studio")
+    let camera = CameraModel(defaults: defaults)
+    camera.authorization = .authorized
+    let recorder = CameraRecorder(defaults: defaults)
+    let link = IPadCameraSender(defaults: defaults)
+    let monitor = ReferenceMonitor()
+    store.settings.fontName = "Helvetica Neue"
+    store.previewFontName = "Helvetica Neue"
+    store.session.present(record: record, settings: store.settings)
+    let draft = PresenterDraft(record: record)
+    let previousAppearance = NSApp.appearance
+    defer { NSApp.appearance = previousAppearance }
+    for (mode, appearance, scheme) in [("light", NSAppearance.Name.aqua, ColorScheme.light), ("dark", .darkAqua, .dark)] {
+      if let requested = environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      NSApp.appearance = NSAppearance(named: appearance)
+      store.inspector = false
+      try await snapshot(LibraryView(store: store, camera: camera), name: "library-\(mode)", size: .init(width: 1200, height: 800), scheme: scheme, destination: destination)
+      store.inspector = true
+      try await snapshot(LibraryView(store: store, camera: camera), name: "library-inspector-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
+      try await snapshot(InspectorView(store: store, camera: camera), name: "presenter-inspector-\(mode)", size: .init(width: 360, height: 900), scheme: scheme, destination: destination)
+      for tab in SettingsTab.allCases {
+        try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "settings-\(tab.rawValue)-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
+      }
+      try await snapshot(CameraView(model: camera, recorder: recorder, startsCamera: false), name: "camera-\(mode)", size: .init(width: 960, height: 640), scheme: scheme, destination: destination)
+      try await snapshot(GoogleDocsSheet(google: GoogleDocs(), importDocument: { _ in nil }), name: "google-docs-\(mode)", size: .init(width: 640, height: 560), scheme: scheme, destination: destination)
+      try await snapshot(RelinkSheet(store: store, script: record), name: "relink-\(mode)", size: .init(width: 640, height: 320), scheme: scheme, destination: destination)
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      draft.begin(session: store.session)
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-editor-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      draft.cancel(resuming: false)
+      camera.displayMode = .prompterWithVideo
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-camera-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      camera.displayMode = .prompterOnly
+      try await snapshot(IPadRemoteView(link: link, startsLink: false), name: "ipad-remote-\(mode)", size: .init(width: 480, height: 420), scheme: scheme, destination: destination)
+    }
+    XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "Snapshots must never order windows")
+  }
+
+  private func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
+    let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme))
+    let window = NSWindow(contentRect: NSRect(origin: .init(x: -20000, y: -20000), size: size), styleMask: [.titled], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false
+    window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+    window.contentView = host
+    host.frame = NSRect(origin: .zero, size: size)
+    defer { window.contentView = nil; window.close() }
+    for _ in 0..<4 {
+      host.layoutSubtreeIfNeeded()
+      try await Task.sleep(for: .milliseconds(30))
+    }
+    XCTAssertFalse(window.isVisible)
+    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    host.cacheDisplay(in: host.bounds, to: bitmap)
+    let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+    try data.write(to: destination.appendingPathComponent(name + ".png"))
+    XCTAssertGreaterThan(data.count, 2_000, "A page must contain rendered content")
+    let metadata: [String: Any] = ["page": name, "width": size.width, "height": size.height, "visible": window.isVisible, "renderer": "NSHostingView.cacheDisplay", "limit": "Offscreen content only; native window glass and active toolbar require live review"]
+    try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent(name + "-snapshot.json"))
+    print("SNAPSHOT \(destination.appendingPathComponent(name + ".png").path)")
+  }
+  private enum SnapshotError: Error { case invalidDestination }
+}

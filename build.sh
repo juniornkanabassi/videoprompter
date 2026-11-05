@@ -8,7 +8,7 @@ mkdir -p "$BUILD_ROOT"
 [[ ! -L "$BUILD_ROOT" && -O "$BUILD_ROOT" ]] || { print -u2 "Unsafe build cache $BUILD_ROOT"; exit 1; }
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$ROOT/Resources/Info.plist")
 ARCHIVE="$OUTPUT_ROOT/Video Prompter $VERSION.zip"
-WORK=$(mktemp -d /private/tmp/videoprompter-package.XXXXXX)
+WORK=$(mktemp -d "$BUILD_ROOT/videoprompter-package.XXXXXX")
 APP="$WORK/Video Prompter.app"
 TMP_ARCHIVE="$WORK/Video Prompter $VERSION.zip"
 OUTPUT_TMP="$OUTPUT_ROOT/.Video Prompter $VERSION.zip.$$"

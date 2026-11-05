@@ -179,9 +179,16 @@ struct CameraPreview: NSViewRepresentable {
 }
 
 struct CameraView: View {
-  @ObservedObject private var model = CameraModel.shared
+  @ObservedObject private var model: CameraModel
   @State private var showsGuideSettings = false
-  @ObservedObject private var recorder = CameraRecorder.shared
+  @ObservedObject private var recorder: CameraRecorder
+  private let startsCamera: Bool
+
+  init(model: CameraModel = .shared, recorder: CameraRecorder = .shared, startsCamera: Bool = true) {
+    self.model = model
+    self.recorder = recorder
+    self.startsCamera = startsCamera
+  }
   var body: some View {
     Group {
       switch model.authorization {
@@ -202,7 +209,7 @@ struct CameraView: View {
       }
     }
     .frame(minWidth: 320, minHeight: 200)
-    .task { model.start() }
+    .task { if startsCamera { model.start() } }
     .onDisappear { Task { await recorder.stop() } }
     .onChange(of: model.selectedUID) { _, _ in Task { await recorder.stop() } }
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))

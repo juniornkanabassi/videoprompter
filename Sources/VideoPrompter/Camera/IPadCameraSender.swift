@@ -30,16 +30,24 @@ import VideoToolbox
   @Published private(set) var status = "Off"
   /// Off by default: USB-C needs no trust decision, while Wi-Fi is unencrypted and anything on
   /// the network can advertise itself as an iPad.
-  @Published var usesWiFi = UserDefaults.standard.bool(forKey: "sendCameraOverWiFi") {
+  @Published var usesWiFi: Bool {
     didSet {
-      UserDefaults.standard.set(usesWiFi, forKey: "sendCameraOverWiFi")
+      defaults.set(usesWiFi, forKey: "sendCameraOverWiFi")
       if linkOn { usesWiFi ? startBrowsing() : stopBrowsing() }
     }
   }
   /// The pairing code for each iPad the user has paired over Wi-Fi, by its Bonjour name.
-  private var codes = UserDefaults.standard.dictionary(forKey: "sendCameraPairingCodes") as? [String: String] ?? [:] {
-    didSet { UserDefaults.standard.set(codes, forKey: "sendCameraPairingCodes") }
+  private var codes: [String: String] {
+    didSet { defaults.set(codes, forKey: "sendCameraPairingCodes") }
   }
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    usesWiFi = defaults.bool(forKey: "sendCameraOverWiFi")
+    codes = defaults.dictionary(forKey: "sendCameraPairingCodes") as? [String: String] ?? [:]
+  }
+
   /// Asked about and refused in this run, so the question is not repeated.
   private var declinedNames = Set<String>()
 
@@ -355,6 +363,7 @@ struct IPadCameraCommands: Commands {
 /// File › Control iPad opens this: the iPad presenter's controls, showing what the iPad reports.
 struct IPadRemoteView: View {
   @ObservedObject var link: IPadCameraSender
+  var startsLink = true
   /// The slider's value while it is dragged; the iPad moves when it is let go.
   @State private var dragging: Double?
 
@@ -367,8 +376,8 @@ struct IPadRemoteView: View {
     }
     .formStyle(.grouped)
     .frame(minWidth: 380)
-    .onAppear { link.controlsIPad = true }
-    .onDisappear { link.controlsIPad = false }
+    .onAppear { if startsLink { link.controlsIPad = true } }
+    .onDisappear { if startsLink { link.controlsIPad = false } }
   }
 
   @ViewBuilder private func controls(_ state: PadRemote.State) -> some View {
