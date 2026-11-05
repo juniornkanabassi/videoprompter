@@ -93,7 +93,8 @@ try:
     assert mirror_switches, 'Glass mirroring needs a direct accessible label'
     advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXDisclosureTriangle', 'AXCheckBox', 'AXSwitch', 'AXButton'] and 'Mirroring and cues' in str(row)]
     assert advanced_switches and all(row.get('AXValue') == '0' for row in advanced_switches), advanced_switches
-    assert 'Saved settings' not in empty_text and 'Microphone volume' not in empty_text, 'Presenter advanced controls must start collapsed'
+    for hidden in ['Mirror text top to bottom', 'Text rotation', 'Show stage directions', 'Highlight active word']:
+        assert hidden not in empty_text, ('Presenter advanced controls must start collapsed', hidden)
     started = time.monotonic()
     imported = command(['script', 'import', str(input_file), '--request-id', 'once'])
     assert time.monotonic() - started < 10, 'Background import exceeded 10 seconds'

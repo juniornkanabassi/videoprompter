@@ -13,7 +13,9 @@ enum ScriptShortcuts {
   static let italic = KeyboardShortcut("i", modifiers: .command)
   static let newScript = KeyboardShortcut("n", modifiers: .command)
   static let library = KeyboardShortcut("l", modifiers: [.command, .shift])
-  static let camera = KeyboardShortcut("c", modifiers: [.command, .option])
+  static let camera = KeyboardShortcut("c", modifiers: [.command, .shift])
+  static let biggerText = KeyboardShortcut(">", modifiers: .command)
+  static let smallerText = KeyboardShortcut("<", modifiers: .command)
 }
 
 
@@ -32,7 +34,7 @@ enum ScriptShortcuts {
     Updates.shared.start()
   }
   var body: some Scene {
-    Window("Video Prompter", id: "library") {
+    WindowGroup("Video Prompter", id: "library") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
         .background(HeadlessWindowHider())
@@ -72,11 +74,11 @@ enum ScriptShortcuts {
           Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
             .disabled(store.uiZoom == 1)
           Divider()
-          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut("=", modifiers: [.command, .option])
-          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut("-", modifiers: [.command, .option])
+          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
+          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
           Divider()
         }
-        CommandGroup(after: .textFormatting) {
+        CommandMenu("Format") {
           Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
           Button("Italic") { FormattedMarkdownEditor.formatFocused(.italic) }.keyboardShortcut(ScriptShortcuts.italic)
           Button("Heading") { FormattedMarkdownEditor.formatFocused(.heading) }
@@ -152,9 +154,15 @@ private struct FileItems: View {
   var body: some View {
     let script = store.selected
     let link = script.flatMap { store.linkStates[$0.id] }
-    Button("New Script") { openWindow(id: "library"); store.create() }
+    Button("New Script") {
+      if let window = Headless.shared.mainWindow { window.makeKeyAndOrderFront(nil) }
+      else { openWindow(id: "library") }
+      store.create()
+    }
       .keyboardShortcut(ScriptShortcuts.newScript)
       .disabled(!store.libraryAvailable)
+    Button("New Library Window") { openWindow(id: "library") }
+      .keyboardShortcut(ScriptShortcuts.library)
     Button("New Folder…") { store.namingNewFolder = true }
       .disabled(!store.libraryAvailable)
     Button("Duplicate") { store.duplicate() }
@@ -187,14 +195,12 @@ private struct FileItems: View {
   }
 }
 
-/// The `Window` scene already lists itself under Window; this adds the shortcut. It also hands the headless copy a way
-/// to open the library window, which a headless launch never makes: commands are built even with no window open.
+/// Commands are built even without a window, so headless reveal can open the library group.
 private struct CameraCommands: Commands {
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Library") { openWindow(id: "library") }.keyboardShortcut(ScriptShortcuts.library)
       Button("Camera") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }

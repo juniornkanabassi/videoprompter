@@ -33,6 +33,7 @@ struct InspectorView: View {
         ValueSlider("Size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
           readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+          .accessibilityLabel("Mirror for teleprompter glass")
           .help("Flip text left to right for reflected glass")
       }
       Section("Layout") {
@@ -192,11 +193,7 @@ struct SettingsPage: View {
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
         Button("Cancel", role: .cancel) { renamePreset = nil }
       }
-      .alert("Following Options Changed", isPresented: Binding(
-        get: { tab == .general && store.modeMigrationNotice != nil && !Headless.shared.active },
-        set: { if !$0 { store.dismissModeMigrationNotice() } })
-      ) { Button("OK") { store.dismissModeMigrationNotice() } }
-        message: { Text(store.modeMigrationNotice ?? "") }
+
   }
 }
 

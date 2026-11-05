@@ -9,7 +9,11 @@ import XCTest
     XCTAssertEqual(ScriptShortcuts.newScript.key, KeyEquivalent("n"))
     XCTAssertEqual(ScriptShortcuts.newScript.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.library.modifiers, [.command, .shift])
-    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .option])
+    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .shift])
+    XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent(">"))
+    XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, .command)
+    XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent("<"))
+    XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, .command)
     XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Voice", "Editor", "Presets"])
   }
 
@@ -17,8 +21,12 @@ import XCTest
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("preset-undo-\(UUID())")
     let suite = "PresetUndo.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    addTeardownBlock { @MainActor in
+      await store.flushSettings()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
     store.savePreset(named: "One"); store.savePreset(named: "Two"); store.savePreset(named: "Three")
     let originals = store.presets
     let manager = UndoManager()
@@ -37,15 +45,21 @@ import XCTest
     }
     manager.undo()
     _ = await store.flushPendingSaves()
-    XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).presets, originals)
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(reopened.presets, originals)
+    _ = await reopened.flushPendingSaves()
   }
 
   func testFolderDeletionRestoresIdentityAndMembershipAcrossUndoRedo() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("folder-undo-\(UUID())")
     let suite = "FolderUndo.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    addTeardownBlock { @MainActor in
+      await store.flushSettings()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
     let library = try XCTUnwrap(store.library)
     let folder = try await library.createFolder(name: "Recordings")
     let other = try await library.createFolder(name: "Other")
@@ -54,6 +68,7 @@ import XCTest
     let trashed = try await library.create(title: "Trashed", markdown: "Keep in trash.", folderID: folder.id)
     try await library.delete(trashed.id)
     await store.reload()
+    let originalFolderOrder = store.folders.map(\.id)
     let manager = UndoManager()
     manager.groupsByEvent = false
     // Async disk success registers the first undo in its own explicit event group.
@@ -66,6 +81,7 @@ import XCTest
       manager.undo()
       for _ in 0..<100 where !store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
       XCTAssertEqual(store.folders.first(where: { $0.id == folder.id })?.name, folder.name)
+      XCTAssertEqual(store.folders.map(\.id), originalFolderOrder, "Undo preserves alphabetical folder order")
       XCTAssertEqual(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID, folder.id)
       XCTAssertEqual(store.scripts.first(where: { $0.id == moved.id })?.metadata.folderID, other.id)
       XCTAssertEqual(store.trash.first(where: { $0.id == trashed.id })?.metadata.folderID, folder.id)

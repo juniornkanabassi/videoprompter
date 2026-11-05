@@ -6,7 +6,12 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 FILES = ["Camera/CameraPicker.swift", "Library/RelinkSheet.swift", "Library/LibraryView.swift", "Settings/SettingsView.swift", "Presenter/PresenterController.swift"]
-PATTERN = re.compile(r"(?:spacing:|cornerRadius:|\.padding\((?:\.[A-Za-z]+,\s*)?)(\d+(?:\.\d+)?)")
+PATTERN = re.compile(r"(?:spacing:\s*|cornerRadius:\s*|\.padding\(\s*(?:\.[A-Za-z]+,\s*)?)(\d+(?:\.\d+)?)")
+# Keep all three spellings covered: this lint used to silently miss colon spacing.
+for sample, expected in [("HStack(spacing: 5)", "5"), ("RoundedRectangle(cornerRadius: 14)", "14"),
+                         (".padding( 7)", "7"), (".padding(.horizontal, 6)", "6")]:
+    match = PATTERN.search(sample)
+    assert match and match[1] == expected, sample
 errors = []
 for relative in FILES:
     path = ROOT / "Sources/VideoPrompter" / relative

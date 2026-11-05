@@ -30,6 +30,7 @@ final class UIZoomTests: XCTestCase {
   }
 
   override func tearDown() async throws {
+    await store.flushSettings()
     store = nil
     defaults.removePersistentDomain(forName: suite)
     try? FileManager.default.removeItem(at: root)
@@ -56,9 +57,11 @@ final class UIZoomTests: XCTestCase {
     _ = await store.flushPendingSaves()
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(reopened.uiZoom, 1.5, "kept across launches")
+    await reopened.flushSettings()
     defaults.set(40.0, forKey: "uiZoom")
-    XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).uiZoom, 2,
-      "a saved value out of range is clamped")
+    let clamped = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(clamped.uiZoom, 2, "a saved value out of range is clamped")
+    await clamped.flushSettings()
   }
 
   /// At every step an AppKit view in a zoomed pane fills the pane on screen, is laid out at

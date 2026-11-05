@@ -204,8 +204,12 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertFalse(encoded.contains("soundThreshold"))
   }
 
-  private func migrationStore(_ defaults: UserDefaults, root: URL) -> AppStore {
-    AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+  private func migrationStore(_ defaults: UserDefaults, root: URL) async -> AppStore {
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await store.flushSettings()
+    // Registered after freshDefaults: XCTest runs this before it removes the suite.
+    addTeardownBlock { @MainActor in await store.flushSettings() }
+    return store
   }
   private func freshDefaults() -> UserDefaults {
     let name = "VideoPrompterTests.\(UUID().uuidString)"
@@ -213,11 +217,11 @@ final class SessionStoreTests: XCTestCase {
     return UserDefaults(suiteName: name)!
   }
 
-  func testLegacySettingsAndPresetsMigrateAndApplyingAnOldPresetUsesTheNewMode() {
+  func testLegacySettingsAndPresetsMigrateAndApplyingAnOldPresetUsesTheNewMode() async {
     let defaults = freshDefaults()
     defaults.set(Data(#"{"mode":"Timed","speed":90}"#.utf8), forKey: "settings")
     defaults.set(Data(#"[{"name":"Old sound","mode":"Sound"},{"name":"Old manual","mode":"Manual"}]"#.utf8), forKey: "presets")
-    let store = migrationStore(defaults, root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+    let store = await migrationStore(defaults, root: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
     XCTAssertEqual(store.settings.mode, "Manual")
     XCTAssertEqual(store.settings.speed, 90)
     XCTAssertEqual(store.presets.map(\.mode), ["Voice", "Manual"])
@@ -230,30 +234,35 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(store.settings.mode, "Voice")
   }
 
-  func testMigrationNoticeShowsOnceAndOnlyForALegacyMode() {
+  func testMigrationNoticeShowsOnceAndOnlyForALegacyMode() async {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     // Nothing saved, or only Voice: no notice.
     let clean = freshDefaults()
-    XCTAssertNil(migrationStore(clean, root: root).modeMigrationNotice)
+    let empty = await migrationStore(clean, root: root)
+    XCTAssertNil(empty.modeMigrationNotice)
     clean.set(Data(#"{"mode":"Voice"}"#.utf8), forKey: "settings")
-    XCTAssertNil(migrationStore(clean, root: root).modeMigrationNotice)
+    let voice = await migrationStore(clean, root: root)
+    XCTAssertNil(voice.modeMigrationNotice)
 
     for legacy in ["Timed", "Sound", "Manual"] {
       let defaults = freshDefaults()
       defaults.set(Data(#"{"mode":"\#(legacy)"}"#.utf8), forKey: "settings")
-      let store = migrationStore(defaults, root: root)
+      let store = await migrationStore(defaults, root: root)
       XCTAssertNotNil(store.modeMigrationNotice, "\(legacy) was saved by an older build")
       XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 0, "not remembered until dismissed")
-      XCTAssertNotNil(migrationStore(defaults, root: root).modeMigrationNotice, "a relaunch keeps it until dismissed")
+      let pending = await migrationStore(defaults, root: root)
+      XCTAssertNotNil(pending.modeMigrationNotice, "a relaunch keeps it until dismissed")
       store.dismissModeMigrationNotice()
       XCTAssertNil(store.modeMigrationNotice)
       XCTAssertEqual(defaults.integer(forKey: "modeMigrationNoticeVersion"), 1)
-      XCTAssertNil(migrationStore(defaults, root: root).modeMigrationNotice, "shown once")
+      let dismissed = await migrationStore(defaults, root: root)
+      XCTAssertNil(dismissed.modeMigrationNotice, "shown once")
     }
     // A legacy mode only in a preset counts too.
     let preset = freshDefaults()
     preset.set(Data(#"[{"mode":"Sound"}]"#.utf8), forKey: "presets")
-    XCTAssertNotNil(migrationStore(preset, root: root).modeMigrationNotice)
+    let presetStore = await migrationStore(preset, root: root)
+    XCTAssertNotNil(presetStore.modeMigrationNotice)
   }
 
   // MARK: Manual timeline

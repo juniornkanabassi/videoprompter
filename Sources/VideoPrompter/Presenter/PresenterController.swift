@@ -601,20 +601,9 @@ struct PresenterView: View {
           .ignoresSafeArea()
         Group {
           if draft.isEditing {
-            FormattedMarkdownEditor(
-              markdown: $draft.markdown, fontName: store.settings.fontName,
-              fontSize: store.settings.fontSize,
-              onUnsupportedEdit: {
-                editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-              }, focusesOnAppear: true,
-              typography: Self.presenterTypography(store.settings, sideInset: sideInset),
-              anchorSourceOffset: session.activeToken?.sourceRange.location,
-              guideFraction: store.settings.guideFraction,
-              verticalMirror: store.settings.verticalMirror != (store.settings.rotation == 180),
-              readThroughSourceOffset: session.lastConfirmedTokenIndex.flatMap { index in
-                let tokens = session.document.spokenTokens
-                return tokens.indices.contains(index) ? tokens[index].sourceRange.upperBound : nil
-              })
+            PresenterEditorView(session: session, draft: draft, settings: store.settings, sideInset: sideInset) {
+              editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+            }
           } else {
             PresenterScriptView(session: session, settings: store.settings, sideInset: sideInset)
           }
@@ -629,7 +618,7 @@ struct PresenterView: View {
         if !hasScript, camera.displayMode != .videoOnly {
           Text("No script yet. Choose one in the library and press Present to add it here.")
             .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
-            .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+            .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Space.md))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         if let passage = monitor.passage, !showsScript {
@@ -782,7 +771,31 @@ struct PresenterView: View {
     editorNotice != nil || session.anchorNotice != nil || draft.noticeMessage != nil
       || draft.errorMessage != nil || (draft.isEditing && draft.hasExternalChange(in: store))
   }
-  private static func presenterTypography(_ settings: PrompterSettings, sideInset: CGFloat) -> EditorTypography {
+
+}
+
+/// Editing still observes reading position, independently of the camera and presenter controls.
+struct PresenterEditorView: View {
+  @ObservedObject var session: SessionStore
+  @ObservedObject var draft: PresenterDraft
+  let settings: PrompterSettings
+  let sideInset: CGFloat
+  var onUnsupportedEdit: () -> Void
+
+  var body: some View {
+    FormattedMarkdownEditor(
+      markdown: $draft.markdown, fontName: settings.fontName, fontSize: settings.fontSize,
+      onUnsupportedEdit: onUnsupportedEdit, focusesOnAppear: true,
+      typography: presenterTypography(settings, sideInset: sideInset),
+      anchorSourceOffset: session.activeToken?.sourceRange.location,
+      guideFraction: settings.guideFraction,
+      verticalMirror: settings.verticalMirror != (settings.rotation == 180),
+      readThroughSourceOffset: session.lastConfirmedTokenIndex.flatMap { index in
+        let tokens = session.document.spokenTokens
+        return tokens.indices.contains(index) ? tokens[index].sourceRange.upperBound : nil
+      })
+  }
+  private func presenterTypography(_ settings: PrompterSettings, sideInset: CGFloat) -> EditorTypography {
     EditorTypography(
       textColor: (NSColor(hex: settings.textColorHex) ?? .white)
         .withAlphaComponent(settings.textOpacity),

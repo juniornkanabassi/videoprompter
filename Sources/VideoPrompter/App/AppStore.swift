@@ -553,6 +553,9 @@ private enum PresenterSaveError: LocalizedError {
     scripts.insert(copy, at: 0)
     selectedID = copy.id
   }
+  func flushSettings() async {
+    _ = await settingsPersistence.flush()
+  }
   func flushPendingSaves() async -> Bool {
     while true {
       let folderRevision = folderChangeRevision

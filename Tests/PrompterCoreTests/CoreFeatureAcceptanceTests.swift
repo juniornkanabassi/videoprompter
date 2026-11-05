@@ -277,12 +277,14 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("vp-core-qa-\(UUID().uuidString)", isDirectory: true)
     let suite = "VideoPrompterCoreQA.\(UUID().uuidString)"
-    addTeardownBlock {
+    let defaults = UserDefaults(suiteName: suite)!
+    let store = AppStore(arguments: ["tests", "--data-directory", root.path], defaults: defaults)
+    addTeardownBlock { @MainActor in
+      await store.flushSettings()
       try? FileManager.default.removeItem(at: root)
-      UserDefaults.standard.removePersistentDomain(forName: suite)
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
     }
-    return AppStore(arguments: ["tests", "--data-directory", root.path],
-      defaults: UserDefaults(suiteName: suite)!)
+    return store
   }
 
   /// A store presenting `markdown` from its own disposable library.

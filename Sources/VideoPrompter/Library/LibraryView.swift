@@ -167,6 +167,11 @@ struct LibraryView: View {
     } message: {
       Text(store.errorMessage ?? "Unknown error")
     }
+    .alert("Following Options Changed", isPresented: Binding(
+      get: { store.modeMigrationNotice != nil && store.errorMessage == nil && !Headless.shared.active },
+      set: { if !$0 { store.dismissModeMigrationNotice() } })
+    ) { Button("OK") { store.dismissModeMigrationNotice() } }
+      message: { Text(store.modeMigrationNotice ?? "") }
     .onReceive(NotificationCenter.default.publisher(for: .videoPrompterImport)) { _ in importing = true }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md")!, .rtf, .pdf, UTType(filenameExtension: "docx")!]) { result in
       guard case .success(let url) = result else {

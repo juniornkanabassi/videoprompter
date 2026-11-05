@@ -2,8 +2,7 @@
 # Capture every page offscreen, using only a disposable library and preferences suite.
 set -euo pipefail
 ROOT="${0:A:h:h}"
-export VIDEOPROMPTER_TEST_SCRATCH="${VIDEOPROMPTER_TEST_SCRATCH:-/private/tmp/bama/build-prompter/snapshot-build}"
-export VIDEOPROMPTER_SNAPSHOTS="${VIDEOPROMPTER_SNAPSHOTS:-/private/tmp/bama/build-prompter/snapshots}"
+export VIDEOPROMPTER_SNAPSHOTS="${VIDEOPROMPTER_SNAPSHOTS:-$(mktemp -d "${TMPDIR:-/tmp}/VideoPrompter-snapshots.XXXXXX")}"
 source "$ROOT/env.sh"
 "$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH"
 BUNDLE="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"

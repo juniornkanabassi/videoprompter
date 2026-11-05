@@ -239,13 +239,14 @@ final class AppStoreTests: XCTestCase {
       let outside = URL(fileURLWithPath: "/private/tmp/link-original-\(UUID())")
       let suite = "VideoPrompterTests.link-unavailable.\(UUID())"
       let defaults = UserDefaults(suiteName: suite)!
-      defer {
-        try? FileManager.default.removeItem(at: root)
-        try? FileManager.default.removeItem(at: outside)
-        defaults.removePersistentDomain(forName: suite)
-      }
       try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
       let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+      addTeardownBlock { @MainActor in
+        await store.flushSettings()
+        try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: outside)
+        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      }
       let library = try XCTUnwrap(store.library)
       let original = outside.appendingPathComponent("script.md")
       try "One two three".write(to: original, atomically: true, encoding: .utf8)

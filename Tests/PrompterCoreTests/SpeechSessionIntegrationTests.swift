@@ -193,8 +193,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let session: SessionStore
     var renderedPanel: NSPanel?
     var renderedStore: AppStore?
-    var renderedDirectory: URL?
-    var renderedDefaults: (suiteName: String, defaults: UserDefaults)?
     var presenterStayedVisible = true
     var scrollBackTriggered = false
     var intentionalSeekRevision: Int?
@@ -224,6 +222,11 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       let defaults = UserDefaults(suiteName: suiteName)!
       defaults.removePersistentDomain(forName: suiteName)
       let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
+      addTeardownBlock { @MainActor in
+        await store.flushSettings()
+        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+        try? FileManager.default.removeItem(at: directory)
+      }
       guard let library = store.library else {
         return XCTFail("Rendered replay could not create its disposable library.")
       }
@@ -238,8 +241,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       panel.sharingType = .readOnly
       renderedPanel = panel
       renderedStore = store
-      renderedDirectory = directory
-      renderedDefaults = (suiteName, defaults)
       session = store.session
     } else {
       session = SessionStore()
@@ -252,8 +253,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       renderedPanel?.contentView = nil
       PresenterController.shared.closeNow()
       renderedStore = nil
-      if let renderedDirectory { try? FileManager.default.removeItem(at: renderedDirectory) }
-      if let renderedDefaults { renderedDefaults.defaults.removePersistentDomain(forName: renderedDefaults.suiteName) }
     }
     session.play(captureAudio: false)
 

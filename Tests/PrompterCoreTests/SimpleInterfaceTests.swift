@@ -29,6 +29,14 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
 }
 
 @MainActor final class SimpleInterfaceTests: XCTestCase {
+  private func cleanUp(_ store: AppStore, suite: String, root: URL) {
+    addTeardownBlock { @MainActor in
+      await store.flushSettings()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+  }
+
   func testPresenterSingleRowIsCentredAt100And150AndReportsEditing() async throws {
     _ = NSApplication.shared
     try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
@@ -38,8 +46,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("bar-centre-\(UUID())")
     let suite = "BarCentre.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    cleanUp(store, suite: suite, root: root)
     let record = try await store.library!.create(title: "Centred", markdown: "Opening words.\n\nAnother passage.")
     await store.reload()
     store.selectedID = record.id
@@ -86,8 +94,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("menu-trash-\(UUID())")
     let suite = "MenuTrash.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    cleanUp(store, suite: suite, root: root)
     let library = try XCTUnwrap(store.library)
     let record = try await library.create(title: "Keep", markdown: "Keep these words")
     await store.reload()
@@ -141,8 +149,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("context-scope-\(UUID())")
     let suite = "ContextScope.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    cleanUp(store, suite: suite, root: root)
     let library = try XCTUnwrap(store.library)
     let folder = try await library.createFolder(name: "Moved")
     let first = try await library.create(title: "First", markdown: "First words")
@@ -186,7 +194,6 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-suite-\(UUID())")
     let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
     var settings = PrompterSettings()
     settings.fontSize = 61
     defaults.set(try JSONEncoder().encode(settings), forKey: "settings")
@@ -195,13 +202,16 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     defaults.set("remembered-camera", forKey: "cameraDeviceUID")
     let arguments = ["test", "--data-directory", root.path]
     let store = AppStore(arguments: arguments)
+    cleanUp(store, suite: suite, root: root)
     XCTAssertEqual(store.settings.fontSize, 61)
     XCTAssertEqual(store.uiZoom, 1.5)
     XCTAssertFalse(store.simpleInterface)
     XCTAssertEqual(CameraModel(defaults: AppStore.preferences(arguments: arguments)).selectedUID, "remembered-camera")
     store.previewFontSize = 27
     _ = await store.flushPendingSaves()
-    XCTAssertEqual(AppStore(arguments: arguments).previewFontSize, 27)
+    let reopened = AppStore(arguments: arguments)
+    XCTAssertEqual(reopened.previewFontSize, 27)
+    await reopened.flushSettings()
     XCTAssertTrue(AppStore.preferences(arguments: ["test"]) === UserDefaults.standard)
   }
 
@@ -210,8 +220,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("switch-ui-\(UUID())")
     let suite = "VideoPrompter.Switch.\(UUID())"
     let defaults = UserDefaults(suiteName: suite)!
-    defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    cleanUp(store, suite: suite, root: root)
     let alpha = try await store.library!.create(title: "Alpha title", markdown: "**Alpha** body", tags: ["alpha-tag"])
     let beta = try await store.library!.create(title: "Beta title", markdown: "**Beta** body", tags: ["beta-tag"])
     await store.reload()
@@ -253,11 +263,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("empty-ui-\(UUID())")
     let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
-    }
     let store = AppStore(arguments: ["test", "--data-directory", root.path])
+    cleanUp(store, suite: suite, root: root)
     let host = NSHostingView(rootView: LibraryView(store: store))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1132, height: 750), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
@@ -293,8 +300,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-ui-\(UUID())")
     let suite = "SettingsUI.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    cleanUp(store, suite: suite, root: root)
     let camera = CameraModel(defaults: defaults)
     let before = store.settings
     let host = NSHostingView(rootView: AnyView(InspectorView(store: store, camera: camera)))
@@ -315,7 +322,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
     store.simpleInterface = false
     _ = await store.flushPendingSaves()
-    XCTAssertFalse(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).simpleInterface)
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertFalse(reopened.simpleInterface)
+    await reopened.flushSettings()
     let advanced = await rendered()
     XCTAssertTrue(advanced.contains("Show stage directions"))
     XCTAssertTrue(advanced.contains("Highlight active word"))

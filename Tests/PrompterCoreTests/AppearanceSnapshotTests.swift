@@ -10,16 +10,16 @@ import XCTest
     let environment = ProcessInfo.processInfo.environment
     guard let output = environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in image check: run checks/check-snapshots.sh") }
     let destination = URL(fileURLWithPath: output, isDirectory: true)
-    guard destination.path.hasPrefix("/private/tmp/bama/") else { throw SnapshotError.invalidDestination }
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.prohibited)
-    let root = destination.appendingPathComponent("fixture-\(UUID())", isDirectory: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("VideoPrompter-snapshot-fixture-\(UUID())", isDirectory: true)
     let suite = "VideoPrompter.Appearance.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     let store = AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults)
-    defer {
-      defaults.removePersistentDomain(forName: suite)
+    addTeardownBlock { @MainActor in
+      _ = await store.flushPendingSaves()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
       try? FileManager.default.removeItem(at: root)
     }
     let record = try await store.createScript(title: "A clear opening", markdown: "# A clear opening\n\nRead these opening words at your own pace.\n\nA second paragraph keeps the reading line easy to follow.\n\n**Important words** stay clear, with a [reference](https://example.com).")
@@ -86,5 +86,4 @@ import XCTest
     try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent(name + "-snapshot.json"))
     print("SNAPSHOT \(destination.appendingPathComponent(name + ".png").path)")
   }
-  private enum SnapshotError: Error { case invalidDestination }
 }
