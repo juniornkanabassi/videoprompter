@@ -92,6 +92,15 @@ import Speech
 
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
     Headless.shared.begin(); defer { Headless.shared.end() }
+    let result = await perform(action, params)
+    if ["set_mode", "set_zoom", "settings_set", "preset_apply", "preset_save"].contains(action),
+       result.body["ok"] as? Bool == true {
+      await store.flushSettings()
+    }
+    return result
+  }
+
+  private func perform(_ action: String, _ params: [String: String]) async -> ControlResult {
     await store.waitForInitialLoad()
     guard let command = ControlProtocol.command(action: action) else { return .error("unknown_action", "Use videoprompter --help for supported actions.") }
     let words = command.words.joined(separator: " ")

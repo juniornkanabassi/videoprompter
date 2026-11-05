@@ -4,7 +4,7 @@ import XCTest
 
 @MainActor final class SettingsPersistenceTests: XCTestCase {
   func testSliderBurstPerformance() async throws {
-    let root = URL(fileURLWithPath: "/private/tmp/bama/build-prompter/settings-\(UUID())")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-\(UUID())")
     let suite = "SettingsPersistence.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
@@ -73,4 +73,51 @@ import XCTest
     XCTAssertEqual(result.writes, 1)
     XCTAssertFalse(result.wroteOnMainThread)
   }
+
+  func testReleasingWriterFlushesBeforeItsDelayedWrite() async throws {
+    let suite = "SettingsPersistence.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    var writer: SettingsPersistence? = SettingsPersistence(defaults: defaults, delay: 60)
+    weak var releasedWriter = writer
+    writer?.schedule(SettingsSnapshot(settings: PrompterSettings(), presets: [],
+      typography: EditorTypographyPreferences(), uiZoom: 1.25, simpleInterface: false))
+    writer = nil
+    // schedule briefly owns the writer until its serial queue has accepted the snapshot.
+    for _ in 0..<100 where releasedWriter != nil { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertNil(releasedWriter)
+    for _ in 0..<100 where defaults.object(forKey: "uiZoom") == nil {
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    XCTAssertEqual(defaults.double(forKey: "uiZoom"), 1.25)
+    defaults.removePersistentDomain(forName: suite)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertNil(defaults.object(forKey: "uiZoom"), "Teardown must cancel delayed writes before fixture cleanup")
+  }
+
+  func testControlSettingsResponsesAreAlreadyPersisted() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-control-\(UUID())")
+    let suite = "SettingsPersistence.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera),
+      camera: camera, recorder: CameraRecorder(defaults: defaults))
+    let commands: [(String, [String: String])] = [
+      ("set_mode", ["mode": "manual"]), ("set_zoom", ["zoom": "150"]),
+      ("settings_set", ["speed": "150"]), ("preset_save", ["name": "Saved", "requestId": "saved"]),
+      ("settings_set", ["speed": "200"]), ("preset_apply", ["preset": "Saved"])
+    ]
+    for (action, params) in commands {
+      let reply = await actions.handle(action, params)
+      XCTAssertEqual(reply.body["ok"] as? Bool, true, action)
+      let saved = try JSONDecoder().decode(PrompterSettings.self, from: XCTUnwrap(defaults.data(forKey: "settings")))
+      XCTAssertEqual(saved, store.settings, "\(action) must commit before success")
+      XCTAssertEqual(defaults.double(forKey: "uiZoom"), store.uiZoom)
+      let presets = try JSONDecoder().decode([PrompterSettings].self, from: XCTUnwrap(defaults.data(forKey: "presets")))
+      XCTAssertEqual(presets, store.presets)
+    }
+  }
+
 }

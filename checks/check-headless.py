@@ -79,7 +79,18 @@ try:
     created, _ = command('script', 'create', '--title', 'Headless check', '--text', '# Headless check', '--request-id', 'headless-1')
     command('script', 'open', created['id'])
     check(command('status')[0]['headless'] is True, 'opening a script without --show keeps the copy headless')
-    os.kill(pid, 15)
+    command('set-mode', 'manual')
+    check(command('settings', 'set', '--speed', '150')[0]['speed'] == 150, 'settings command confirms the new speed')
+    os.kill(pid, 15)  # No grace period after the successful settings response.
+    for _ in range(100):
+        if not pids(data): break
+        time.sleep(0.05)
+    check(not pids(data), 'SIGTERM stopped the settings writer')
+    command('script', 'list')  # Relaunch with the same disposable library and preferences.
+    [restarted_pid] = pids(data)
+    check(command('settings', 'get')[0]['speed'] == 150, 'settings survive SIGTERM immediately after CLI success')
+    check(onscreen_windows(restarted_pid) == 0, 'settings recovery remains headless')
+    os.kill(restarted_pid, 15)
     for _ in range(100):
         if not pids(data): break
         time.sleep(0.05)
