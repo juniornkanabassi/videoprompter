@@ -12,7 +12,11 @@ import XCTest
 final class IPadSimulatorEndToEndTests: XCTestCase {
   func testTheMacDrivesTheIPadAndSendsItsCamera() throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
-    let fd = try XCTUnwrap(Self.connect(port: CameraLink.usbPort), "the iPad app is not listening")
+    let environment = ProcessInfo.processInfo.environment
+    let port = try XCTUnwrap(environment["VP_IPAD_E2E_PORT"].flatMap(UInt16.init), "the fixture needs its own port")
+    XCTAssertGreaterThanOrEqual(port, 1024)
+    let expectedTitle = try XCTUnwrap(environment["VP_IPAD_E2E_SCRIPT"], "the fixture needs its own script")
+    let fd = try XCTUnwrap(Self.connect(port: port), "the fixture iPad app is not listening")
     let pipe = SocketPipe(socket: fd, name: "USB-C")
     let latest = Mutex<PadRemote.State?>(nil)
     pipe.onMessage = { if case .state(let state) = $0 { latest.withLock { $0 = state } } }
@@ -28,8 +32,9 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     }
     func send(_ command: PadRemote.Command) { pipe.send(CameraLink.Message.command(command).encoded()) }
 
-    let first = try state("state on connect") { !$0.scripts.isEmpty }
-    let script = first.scripts[0]
+    defer { pipe.close() }
+    let first = try state("fixture state on connect") { $0.scripts.contains(where: { $0.title == expectedTitle }) }
+    let script = try XCTUnwrap(first.scripts.first(where: { $0.title == expectedTitle }))
     send(.close)
     send(.mode("Manual"))
     send(.speed(240))

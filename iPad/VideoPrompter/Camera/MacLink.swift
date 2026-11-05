@@ -78,7 +78,13 @@ import UIKit
     let parameters = NWParameters.tcp
     parameters.requiredInterfaceType = .loopback
     parameters.allowLocalEndpointReuse = true
-    guard let port = NWEndpoint.Port(rawValue: CameraLink.usbPort),
+    var portNumber = CameraLink.usbPort
+    #if targetEnvironment(simulator)
+    // Simulators share host loopback. The headless fixture supplies an isolated port.
+    if let raw = ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"],
+      let fixturePort = UInt16(raw), fixturePort >= 1024 { portNumber = fixturePort }
+    #endif
+    guard let port = NWEndpoint.Port(rawValue: portNumber),
       let listener = try? NWListener(using: parameters, on: port)
     else { return nil }
     configure(listener)
