@@ -1288,7 +1288,7 @@ final class PresenterControllerTests: XCTestCase {
 
   /// Text width is kept between 0.3 and 1 however it arrives, persists, and narrows the real
   /// reading view and the real in-place editor, with the anchor back on the guide line.
-  func testTextWidthIsClampedAndNarrowsTheRealReadingViewAndEditor() throws {
+  func testTextWidthIsClampedAndNarrowsTheRealReadingViewAndEditor() async throws {
     var clamped = PrompterSettings()
     clamped.textWidth = 0.05
     XCTAssertEqual(clamped.textWidth, 0.3)
@@ -1312,6 +1312,8 @@ final class PresenterControllerTests: XCTestCase {
     store.settings.textWidth = 0.4
     store.session.updateSettings(store.settings)
     XCTAssertEqual(store.session.tokenIndex, target, "a width change never moves the anchor")
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
     XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
       .settings.textWidth, 0.4)
 
@@ -1390,13 +1392,15 @@ final class PresenterControllerTests: XCTestCase {
 
   /// Over video the backdrop uses its own, light dimming, so switching modes never blacks the
   /// picture out; Prompter only keeps its background opacity.
-  func testBackdropOpacityFollowsTheModeAndVideoDimmingPersists() {
+  func testBackdropOpacityFollowsTheModeAndVideoDimmingPersists() async {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: false), 0.82)
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.25)
     store.settings.videoDimming = 0.6
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
     XCTAssertEqual(reopened.backdropOpacity(withVideo: true), 0.6)
     XCTAssertEqual(reopened.backdropOpacity(withVideo: false), 0.82, "Prompter only is unchanged")
@@ -1422,12 +1426,14 @@ final class PresenterControllerTests: XCTestCase {
   }
 
   /// The reading line's opacity persists and is what the line is drawn with.
-  func testGuideOpacityPersistsAndReachesTheLine() throws {
+  func testGuideOpacityPersistsAndReachesTheLine() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(store.settings.guideOpacity, 0.82, "the default keeps the current look")
     store.settings.guideOpacity = 0.25
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
     XCTAssertEqual(reopened.guideOpacity, 0.25)
 
