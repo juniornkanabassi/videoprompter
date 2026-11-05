@@ -27,21 +27,21 @@ struct RelinkSheet: View {
   private var isNewLink: Bool { script.metadata.linkedPath == nil }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("\(isNewLink ? "Link" : "Relink") “\(script.metadata.title)”").font(.headline)
+    VStack(alignment: .leading, spacing: Space.md) {
+      Text("\(isNewLink ? "Link" : "Relink") “\(script.metadata.title)”").font(UIType.heading)
       Text(isNewLink ? "Choose the Markdown file this script should follow." : "The linked file is no longer at \(savedPath).")
-        .font(.callout).foregroundStyle(.secondary)
+        .font(UIType.secondary).foregroundStyle(.secondary)
       if let chosen { confirmation(chosen) } else { picker }
-      if let problem { Text(problem).font(.callout).foregroundStyle(.orange) }
+      if let problem { Text(problem).font(UIType.secondary).foregroundStyle(.orange) }
       HStack {
         Spacer()
         Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).help("Close without linking a file")
       }
-    }.padding(24).frame(minWidth: 520)
+    }.padding(Space.xxl).frame(minWidth: 640)
   }
 
   private var picker: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Space.md) {
       HStack {
         if !isNewLink { Button("Search for It") { Task { await search() } }.disabled(searching).help("Search indexed files for a matching name or text") }
         Button("Choose File…") { chooseFile() }.help("Select the Markdown file to link")
@@ -49,17 +49,17 @@ struct RelinkSheet: View {
       }
       if let candidates {
         if candidates.isEmpty {
-          Text("No matching file was found. A file on an external or unindexed volume may need Choose File.").font(.callout)
+          Text("No matching file was found. A file on an external or unindexed volume may need Choose File.").font(UIType.secondary)
         } else {
           Text(candidates.count == 1 ? "One likely match:" : "Several files match. Pick the right one, or choose it yourself:")
-            .font(.callout)
+            .font(UIType.secondary)
           ForEach(candidates) { candidate in
             Button { Task { await select(candidate.url) } } label: {
               VStack(alignment: .leading, spacing: 2) {
                 Text(candidate.url.path).lineLimit(1).truncationMode(.middle)
                 Text([candidate.sameName ? "Same file name" : nil, candidate.sameContent ? "Same text" : nil]
                   .compactMap { $0 }.joined(separator: " · "))
-                  .font(.caption).foregroundStyle(.secondary)
+                  .font(UIType.caption).foregroundStyle(.secondary)
               }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.bordered).help("Review this matching file before linking it")
           }
@@ -69,17 +69,17 @@ struct RelinkSheet: View {
   }
 
   private func confirmation(_ url: URL) -> some View {
-    VStack(alignment: .leading, spacing: 10) {
+    VStack(alignment: .leading, spacing: Space.md) {
       Label(url.path, systemImage: "doc.text").lineLimit(2).truncationMode(.middle)
       Text("Which text should win? The other side is first copied into the library's Conflicts folder.")
-        .font(.callout)
+        .font(UIType.secondary)
       HStack {
         choice("Keep Library Text", .keepLibrary, url)
         choice("Use File Text", .useFile, url)
         choice("Keep Both", .keepBoth, url)
       }
       Text("Keep Both leaves this script as it is, unlinked, and imports the file as a new linked script.")
-        .font(.caption).foregroundStyle(.secondary)
+        .font(UIType.caption).foregroundStyle(.secondary)
       Button("Choose a Different File") { chosen = nil; problem = nil }.buttonStyle(.link).help("Return to the file choices")
     }
   }

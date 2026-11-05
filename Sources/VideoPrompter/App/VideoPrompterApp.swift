@@ -11,14 +11,11 @@ extension Notification.Name {
 enum ScriptShortcuts {
   static let importFile = KeyboardShortcut("i", modifiers: [.command, .shift])
   static let italic = KeyboardShortcut("i", modifiers: .command)
+  static let newScript = KeyboardShortcut("n", modifiers: .command)
+  static let library = KeyboardShortcut("l", modifiers: [.command, .shift])
+  static let camera = KeyboardShortcut("c", modifiers: [.command, .option])
 }
 
-private struct EditorTypographyPreferences: Codable {
-  var sourceFontName = "Lexend Deca"
-  var sourceFontSize = 17.0
-  var previewFontName = "Lexend Deca"
-  var previewFontSize = 18.0
-}
 
 private enum PresenterSaveError: LocalizedError {
   case changedBeforeSave, changedDuringSave
@@ -117,6 +114,7 @@ private enum PresenterSaveError: LocalizedError {
   /// repeating on top of the two-second poll.
   private var lastExternalRefresh = Date.distantPast
   private let defaults: UserDefaults
+  private let settingsPersistence: SettingsPersistence
 
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
     guard let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count else { return .standard }
@@ -131,6 +129,7 @@ private enum PresenterSaveError: LocalizedError {
     let root = ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier, arguments: arguments)
     let isolatedDefaults = defaults ?? Self.preferences(arguments: arguments)
     self.defaults = isolatedDefaults
+    self.settingsPersistence = SettingsPersistence(defaults: isolatedDefaults)
     self.session = SessionStore(defaults: isolatedDefaults)
     func stored<T: Decodable>(_ key: String) -> T? {
       isolatedDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
@@ -311,12 +310,41 @@ private enum PresenterSaveError: LocalizedError {
     try await library.renameFolder(id, name: name)
     if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
   }
-  func deleteFolder(_ id: UUID) {
-    withLibrary { [self] library in
-      try await library.deleteFolder(id)
-      folders.removeAll { $0.id == id }
-      scripts = scripts.map { var s = $0; if s.metadata.folderID == id { s.metadata.folderID = nil }; return s }
-      if selectedFolderID == id { selectedFolderID = nil }
+  private var folderChangeTask: Task<Void, Never>?
+  private var folderChangeRevision = 0
+  func deleteFolder(_ id: UUID, undoManager: UndoManager? = nil) {
+    guard let folder = folders.first(where: { $0.id == id }) else { return }
+    let members = Set(scripts.filter { $0.metadata.folderID == id }.map(\.id)
+      + trash.filter { $0.metadata.folderID == id }.map(\.id))
+    changeFolder(folder, members: members, deleting: true, undoManager: undoManager)
+  }
+  private func changeFolder(_ folder: ScriptFolder, members: Set<UUID>, deleting: Bool,
+                            undoManager: UndoManager?, duringUndo: Bool = false) {
+    func registerInverse() {
+      undoManager?.registerUndo(withTarget: self) { target in
+        target.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, duringUndo: true)
+      }
+      undoManager?.setActionName("Delete Folder")
+    }
+    // UndoManager needs its inverse synchronously; disk changes stay ordered even on rapid Undo/Redo.
+    if duringUndo { registerInverse() }
+    folderChangeRevision += 1
+    let previous = folderChangeTask
+    folderChangeTask = Task { [self] in
+      await previous?.value
+      guard let library else { return }
+      do {
+        if deleting { try await library.deleteFolder(folder.id) }
+        else { try await library.restoreFolder(folder, scriptIDs: members) }
+        folders = await library.listFolders()
+        for i in scripts.indices {
+          if deleting, scripts[i].metadata.folderID == folder.id { scripts[i].metadata.folderID = nil }
+          else if !deleting, members.contains(scripts[i].id), scripts[i].metadata.folderID == nil { scripts[i].metadata.folderID = folder.id }
+        }
+        trash = await library.listTrash()
+        if deleting, selectedFolderID == folder.id { selectedFolderID = nil }
+        if !duringUndo { registerInverse() }
+      } catch { errorMessage = String(describing: error) }
     }
   }
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
@@ -541,11 +569,15 @@ private enum PresenterSaveError: LocalizedError {
   }
   func flushPendingSaves() async -> Bool {
     while true {
+      let folderRevision = folderChangeRevision
+      await folderChangeTask?.value
       for task in Array(saveTasks.values) { await task.value }
       if let id = presenterSaveIDs.first {
         await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
         continue
       }
+      _ = await settingsPersistence.flush()
+      if folderRevision != folderChangeRevision { continue }
       return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
     }
   }
@@ -688,17 +720,29 @@ private enum PresenterSaveError: LocalizedError {
     applied.speechLanguage = settings.speechLanguage
     settings = applied
   }
-  func deletePreset(_ id: UUID) { presets.removeAll { $0.id == id } }
-  private func persistSettings() {
-    if let data = try? JSONEncoder().encode(settings) { defaults.set(data, forKey: "settings") }
-    if let data = try? JSONEncoder().encode(presets) { defaults.set(data, forKey: "presets") }
-    let typography = EditorTypographyPreferences(
-      sourceFontName: sourceFontName, sourceFontSize: sourceFontSize,
-      previewFontName: previewFontName, previewFontSize: previewFontSize)
-    if let data = try? JSONEncoder().encode(typography) { defaults.set(data, forKey: "editorTypography") }
-    defaults.set(uiZoom, forKey: "uiZoom")
-    defaults.set(simpleInterface, forKey: "simpleInterface")
+  func deletePreset(_ id: UUID, undoManager: UndoManager? = nil) {
+    guard let index = presets.firstIndex(where: { $0.id == id }) else { return }
+    let preset = presets.remove(at: index)
+    undoManager?.registerUndo(withTarget: self) { target in
+      target.restorePreset(preset, at: index, undoManager: undoManager)
+    }
+    undoManager?.setActionName("Delete Preset")
   }
+  private func restorePreset(_ preset: PrompterSettings, at index: Int, undoManager: UndoManager?) {
+    guard !presets.contains(where: { $0.id == preset.id }) else { return }
+    presets.insert(preset, at: min(index, presets.count))
+    undoManager?.registerUndo(withTarget: self) { target in target.deletePreset(preset.id, undoManager: undoManager) }
+    undoManager?.setActionName("Delete Preset")
+  }
+  private func persistSettings() {
+    settingsPersistence.schedule(SettingsSnapshot(
+      settings: settings, presets: presets,
+      typography: EditorTypographyPreferences(
+        sourceFontName: sourceFontName, sourceFontSize: sourceFontSize,
+        previewFontName: previewFontName, previewFontSize: previewFontSize),
+      uiZoom: uiZoom, simpleInterface: simpleInterface))
+  }
+
   private static func isMissingFile(_ error: Error) -> Bool {
     let nsError = error as NSError
     return (nsError.domain == NSCocoaErrorDomain && (nsError.code == CocoaError.Code.fileNoSuchFile.rawValue || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue))
@@ -761,7 +805,7 @@ private enum PresenterSaveError: LocalizedError {
     Updates.shared.start()
   }
   var body: some Scene {
-    WindowGroup("Video Prompter", id: "library") {
+    Window("Video Prompter", id: "library") {
       LibraryView(store: store)
         .background(MainWindowConfigurator())
         .background(HeadlessWindowHider())
@@ -792,7 +836,7 @@ private enum PresenterSaveError: LocalizedError {
           ICloudCommands(store: store)
           IPadCameraCommands(sender: .shared)
         }
-        CommandGroup(after: .newItem) { FileItems(store: store) }
+        CommandGroup(replacing: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
             .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
@@ -801,12 +845,11 @@ private enum PresenterSaveError: LocalizedError {
           Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
             .disabled(store.uiZoom == 1)
           Divider()
-          // Notes' text zoom keys. ">" is what Shift-period types, so AppKit matches it as Command-Shift-period.
-          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(">", modifiers: .command)
-          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut("<", modifiers: .command)
+          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut("=", modifiers: [.command, .option])
+          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut("-", modifiers: [.command, .option])
           Divider()
         }
-        CommandMenu("Format") {
+        CommandGroup(after: .textFormatting) {
           Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
           Button("Italic") { FormattedMarkdownEditor.formatFocused(.italic) }.keyboardShortcut(ScriptShortcuts.italic)
           Button("Heading") { FormattedMarkdownEditor.formatFocused(.heading) }
@@ -841,6 +884,7 @@ private enum PresenterSaveError: LocalizedError {
         CameraCommands()
         UpdateCommands()
       }
+    Settings { AppSettingsView(store: store) }
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store) }
       .defaultSize(width: 520, height: 560)
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared) }
@@ -881,8 +925,8 @@ private struct FileItems: View {
   var body: some View {
     let script = store.selected
     let link = script.flatMap { store.linkStates[$0.id] }
-    Button("New Script") { store.create() }
-      .keyboardShortcut("n", modifiers: [.command, .shift])
+    Button("New Script") { openWindow(id: "library"); store.create() }
+      .keyboardShortcut(ScriptShortcuts.newScript)
       .disabled(!store.libraryAvailable)
     Button("New Folder…") { store.namingNewFolder = true }
       .disabled(!store.libraryAvailable)
@@ -902,7 +946,7 @@ private struct FileItems: View {
       .disabled(script.map { !store.isFromGoogle($0.id) } ?? true)
     Button("Export Markdown…") { script.map(store.exportMarkdown) }
       .disabled(script == nil)
-    Button("Reveal in Finder") { script.map { store.revealInFinder($0.id) } }
+    Button("Show in Finder") { script.map { store.revealInFinder($0.id) } }
       .disabled(script == nil || link?.isBroken == true)
     Divider()
     Button(link?.isBroken == true ? "Find Linked File…" : "Link File…") { store.relinkingID = script?.id }
@@ -923,7 +967,8 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut("c", modifiers: [.command, .shift])
+      Button("Library") { openWindow(id: "library") }.keyboardShortcut(ScriptShortcuts.library)
+      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

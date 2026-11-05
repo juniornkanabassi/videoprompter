@@ -607,7 +607,7 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.presets.count, 1)
   }
 
-  func testSettingsAndMultiplePresetsSurviveNewStoreInstance() {
+  func testSettingsAndMultiplePresetsSurviveNewStoreInstance() async {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
     let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
@@ -620,6 +620,7 @@ final class AppStoreTests: XCTestCase {
     first.savePreset(named: "Desk")
     let expected = first.presets
     first.settings.fontSize = 83
+    _ = await first.flushPendingSaves()
 
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(reopened.settings.fontSize, 83)
@@ -639,6 +640,7 @@ final class AppStoreTests: XCTestCase {
     first.previewFontName = "Monospaced"
     first.previewFontSize = 31
     first.settings.fontSize = 67
+    _ = await first.flushPendingSaves()
 
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await reopened.reload()
@@ -656,6 +658,7 @@ final class AppStoreTests: XCTestCase {
     let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let a = AppStore(arguments: ["test", "--data-directory", first.path])
     a.settings.fontSize = 91
+    _ = await a.flushPendingSaves()
     let b = AppStore(arguments: ["test", "--data-directory", second.path])
     XCTAssertNotEqual(b.settings.fontSize, 91)
     let reopened = AppStore(arguments: ["test", "--data-directory", first.path])
@@ -663,6 +666,7 @@ final class AppStoreTests: XCTestCase {
     let injected = UserDefaults(suiteName: "VideoPrompterTests.injected.\(UUID().uuidString)")!
     let explicit = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
     explicit.settings.fontSize = 37
+    _ = await explicit.flushPendingSaves()
     let explicitReopened = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
     XCTAssertEqual(explicitReopened.settings.fontSize, 37)
   }
@@ -677,18 +681,18 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.scripts.count, 1)
 
     store.create(title: "Created", markdown: "two")
-    try await Task.sleep(for: .milliseconds(200))
+    try await waitUntil { store.scripts.count == 2 }
     XCTAssertEqual(store.scripts.count, 2)
     store.duplicate()
-    try await Task.sleep(for: .milliseconds(200))
+    try await waitUntil { store.scripts.count == 3 }
     XCTAssertEqual(store.scripts.count, 3)
     let duplicatedID = try XCTUnwrap(store.selectedID)
     store.delete([duplicatedID])
-    try await Task.sleep(for: .milliseconds(300))
+    try await waitUntil { store.scripts.count == 2 && store.trash.contains(where: { $0.id == duplicatedID }) }
     XCTAssertEqual(store.scripts.count, 2)
     XCTAssertEqual(store.trash.map(\.id), [duplicatedID])
     store.restore(duplicatedID)
-    try await Task.sleep(for: .milliseconds(100))
+    try await waitUntil { store.scripts.count == 3 && store.trash.isEmpty }
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await reopened.reload()
     XCTAssertEqual(reopened.scripts.count, 3)

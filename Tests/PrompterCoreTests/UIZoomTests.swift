@@ -36,7 +36,7 @@ final class UIZoomTests: XCTestCase {
     try await super.tearDown()
   }
 
-  func testZoomStepsStopAtTheEndsResetAndPersist() {
+  func testZoomStepsStopAtTheEndsResetAndPersist() async {
     XCTAssertEqual(store.uiZoom, 1)
     store.stepUIZoom(in: true)
     XCTAssertEqual(store.uiZoom, 1.1)
@@ -53,6 +53,7 @@ final class UIZoomTests: XCTestCase {
     XCTAssertEqual(store.settings.fontSize, PrompterSettings().fontSize, "the UI zoom leaves the text sizes alone")
     XCTAssertEqual(store.previewFontSize, 18)
 
+    _ = await store.flushPendingSaves()
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertEqual(reopened.uiZoom, 1.5, "kept across launches")
     defaults.set(40.0, forKey: "uiZoom")

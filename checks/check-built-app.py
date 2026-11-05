@@ -86,14 +86,14 @@ try:
     empty_gui = gui(pid)
     (root / 'empty-gui.json').write_text(json.dumps(empty_gui, indent=2))
     empty_text = json.dumps(empty_gui['windows'])
-    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Settings', 'Press Present', 'Import Script', 'New Script', 'More']:
+    for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Settings', 'Press Present', 'Import Script', 'New Script', 'Mirroring and cues']:
         assert label in empty_text, (label, empty_text)
     mirror_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXCheckBox', 'AXSwitch']
                        and row.get('AXDescription') == 'Mirror for teleprompter glass']
     assert mirror_switches, 'Glass mirroring needs a direct accessible label'
-    advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXDisclosureTriangle', 'AXCheckBox', 'AXSwitch', 'AXButton'] and 'More' in str(row)]
+    advanced_switches = [row for row in empty_gui['windows'] if row.get('AXRole') in ['AXDisclosureTriangle', 'AXCheckBox', 'AXSwitch', 'AXButton'] and 'Mirroring and cues' in str(row)]
     assert advanced_switches and all(row.get('AXValue') == '0' for row in advanced_switches), advanced_switches
-    assert 'Saved settings' not in empty_text and 'Microphone volume' not in empty_text, 'More must start collapsed'
+    assert 'Saved settings' not in empty_text and 'Microphone volume' not in empty_text, 'Presenter advanced controls must start collapsed'
     started = time.monotonic()
     imported = command(['script', 'import', str(input_file), '--request-id', 'once'])
     assert time.monotonic() - started < 10, 'Background import exceeded 10 seconds'
@@ -168,8 +168,8 @@ try:
     assert visible['trusted'] and visible['windows'], visible
     rows = visible['windows']
     rendered = json.dumps(rows)
-    assert imported['title'] in rendered and 'Manual' in rendered and 'How it follows you' in rendered, rendered
-    assert any("More" in row.values() for row in rows), rendered
+    assert imported['title'] in rendered and 'Presenter' in rendered, rendered
+    assert any("Mirroring and cues" in row.values() for row in rows), rendered
     for label in ['Start', 'Back to start', 'Edit script', 'Close presenter', 'Paused']:
         assert any(label in row.values() for row in rows), (label, rendered)
     for removed in ['Previous passage', 'Next passage']:

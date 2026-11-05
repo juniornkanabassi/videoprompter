@@ -27,7 +27,7 @@ struct CameraPicker: View {
   var body: some View {
     let label = Self.label(for: model.selectedUID, in: model.devices)
     Button { isOpen.toggle() } label: {
-      HStack(spacing: 5) {
+      HStack(spacing: Space.xs) {
         Text(label).lineLimit(1).truncationMode(.middle)
         Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(.secondary)
       }
@@ -53,17 +53,17 @@ private struct CameraPickerList: View {
   private var selected: String? { CameraModel.resolve(model.selectedUID, in: model.devices)?.uid }
 
   var body: some View {
-    HStack(alignment: .top, spacing: 12) {
+    HStack(alignment: .top, spacing: Space.md) {
       VStack(alignment: .leading, spacing: 1) {
         if model.devices.isEmpty {
-          Text("No camera found").foregroundStyle(.secondary).padding(6)
+          Text("No camera found").foregroundStyle(.secondary).padding(Space.sm)
         }
         ForEach(model.devices, content: row)
       }
       .frame(minWidth: 200, alignment: .leading)
       pane
     }
-    .padding(10)
+    .padding(Space.md)
     .focusable()
     .focusEffectDisabled()
     .focused($focused)
@@ -80,16 +80,16 @@ private struct CameraPickerList: View {
     let isSelected = device.uid == selected
     let isHighlighted = device.uid == highlighted
     return Button { choose(device.uid) } label: {
-      HStack(spacing: 6) {
+      HStack(spacing: Space.sm) {
         Image(systemName: "checkmark").fontWeight(.semibold).opacity(isSelected ? 1 : 0)
         Text(device.displayName).lineLimit(1)
         Spacer(minLength: 0)
       }
-      .padding(.horizontal, 8)
-      .padding(.vertical, 4)
+      .padding(.horizontal, Space.sm)
+      .padding(.vertical, Space.xs)
       .foregroundStyle(isHighlighted ? Color(nsColor: .selectedMenuItemTextColor) : .primary)
       .background(
-        isHighlighted ? Color(nsColor: .selectedContentBackgroundColor) : .clear, in: .rect(cornerRadius: 5))
+        isHighlighted ? Color(nsColor: .selectedContentBackgroundColor) : .clear, in: .rect(cornerRadius: Space.xs))
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
@@ -106,22 +106,22 @@ private struct CameraPickerList: View {
   }
 
   private var pane: some View {
-    VStack(spacing: 6) {
+    VStack(spacing: Space.sm) {
       ZStack {
         Rectangle().fill(.black)
         if let layer = preview.layer {
           PreviewLayerView(layer: layer, rotation: preview.rotation, aspect: preview.aspect)
         }
         if let note {
-          Text(note).font(.callout).foregroundStyle(.white.opacity(0.85))
-            .multilineTextAlignment(.center).padding(10)
+          Text(note).font(UIType.secondary).foregroundStyle(.white.opacity(0.85))
+            .multilineTextAlignment(.center).padding(Space.md)
         }
       }
       .frame(width: 240, height: 135)
-      .clipShape(.rect(cornerRadius: 6))
+      .clipShape(.rect(cornerRadius: Space.sm))
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(note ?? "Live preview of \(caption)")
-      Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1).frame(width: 240)
+      Text(caption).font(UIType.caption).foregroundStyle(.secondary).lineLimit(1).frame(width: 240)
         .accessibilityHidden(true)
     }
   }

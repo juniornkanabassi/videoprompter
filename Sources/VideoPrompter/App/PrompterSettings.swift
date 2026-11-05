@@ -2,7 +2,7 @@ import Foundation
 
 /// The presenter's look and behaviour, saved as named presets. Shared with the iPad app, which
 /// compiles this file too, so a preset made on either reads the same on the other.
-struct PrompterSettings: Codable, Equatable, Identifiable {
+struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   var id = UUID()
   var name = "Default"
   var fontName = "Lexend Deca"

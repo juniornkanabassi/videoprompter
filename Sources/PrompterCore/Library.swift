@@ -176,6 +176,20 @@ public actor MarkdownLibrary {
     index.folders.removeAll { $0.id == id }
     try persist(restoring: old)
   }
+  /// Restore an organisational folder without touching script contents or later moves.
+  public func restoreFolder(_ folder: ScriptFolder, scriptIDs: Set<UUID>) throws {
+    guard !index.folders.contains(where: { $0.id == folder.id }) else { return }
+    guard !folder.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PrompterCoreError.invalidTitle }
+    let old = index
+    index.folders.append(folder)
+    for i in index.scripts.indices where scriptIDs.contains(index.scripts[i].id) && index.scripts[i].folderID == nil {
+      index.scripts[i].folderID = folder.id
+    }
+    for i in index.trash.indices where scriptIDs.contains(index.trash[i].id) && index.trash[i].metadata.folderID == nil {
+      index.trash[i].metadata.folderID = folder.id
+    }
+    try persist(restoring: old)
+  }
   public func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) throws {
     if let folderID, !index.folders.contains(where: { $0.id == folderID }) { throw PrompterCoreError.scriptNotFound(folderID) }
     let old = index

@@ -4,6 +4,9 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
   @ObservedObject var store: AppStore
+  @Environment(\.undoManager) private var undoManager
+  private let camera: CameraModel
+  init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
   @State private var selection = Set<UUID>()
   @State private var importing = false
   @State private var importPreview: ImportPreview?
@@ -35,7 +38,7 @@ struct LibraryView: View {
             }
               .contextMenu {
                 Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
-                Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id) }.help("Remove the folder; its scripts return to All Scripts")
+                Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id, undoManager: undoManager) }.help("Remove the folder; its scripts return to All Scripts")
               }
               .help("Choose which scripts to show").selectionDisabled()
           }
@@ -120,7 +123,7 @@ struct LibraryView: View {
     .inspector(isPresented: $store.inspector) {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
-      InspectorView(store: store).uiZoom(store.uiZoom)
+      InspectorView(store: store, camera: camera).uiZoom(store.uiZoom)
         // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
@@ -130,7 +133,7 @@ struct LibraryView: View {
       ToolbarItemGroup {
         Menu {
           Button("New Script") { store.create() }
-            .keyboardShortcut("n", modifiers: [.command, .shift])
+            .keyboardShortcut(ScriptShortcuts.newScript)
           Button("Import File…") { importing = true }
             .keyboardShortcut(ScriptShortcuts.importFile)
           Button("Paste as New Script") { store.importClipboard() }
@@ -145,9 +148,9 @@ struct LibraryView: View {
           .tint(.accentColor)
           .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(!store.libraryAvailable)
-        Button("Settings", systemImage: "slider.horizontal.3") { store.inspector.toggle() }
-          .labelStyle(.titleAndIcon)
-          .help(store.inspector ? "Hide settings" : "Choose how the script follows you and how it looks")
+        Button("Presenter", systemImage: "sidebar.trailing") { store.inspector.toggle() }
+          .labelStyle(.iconOnly)
+          .help(store.inspector ? "Hide presenter controls" : "Show presenter controls")
       }
     }
     .alert(
@@ -238,7 +241,7 @@ struct LibraryView: View {
       }
     }
     Button("Export Markdown…") { store.exportMarkdown(script) }
-    Button("Reveal in Finder") { store.revealInFinder(id) }.disabled(broken)
+    Button("Show in Finder") { store.revealInFinder(id) }.disabled(broken)
     if !linked { Button("Link File…") { store.relinkingID = id } }
     if linked {
       Button("Unlink") { store.unlink(id) }
@@ -259,7 +262,7 @@ private struct ScriptRow: View {
   let script: ScriptRecord
   let link: LinkState?
   var body: some View {
-    VStack(alignment: .leading, spacing: 3) {
+    VStack(alignment: .leading, spacing: Space.xs) {
       HStack(spacing: 4) {
         Label(script.metadata.title, systemImage: "doc.text")
           .lineLimit(nil).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
@@ -321,18 +324,18 @@ private struct EditorView: View {
             .truncationMode(.middle).help("Edits stay in sync with this Markdown file: " + path)
           Spacer()
           if !present { Button("Find linked file…") { store.relinkingID = script.id }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
-        }.padding(.horizontal, 24).padding(.vertical, 6)
+        }.padding(.horizontal, 24).padding(.vertical, Space.sm)
       } else {
         HStack {
           Label("Stored in Video Prompter", systemImage: "doc.text")
             .font(.caption).foregroundStyle(.secondary)
           Spacer()
-        }.padding(.horizontal, 24).padding(.vertical, 6)
+        }.padding(.horizontal, 24).padding(.vertical, Space.sm)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
         Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
           .font(.callout).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 24).padding(.vertical, 10)
+          .padding(.horizontal, 24).padding(.vertical, Space.md)
       }
       FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
         fontSize: store.previewFontSize, onUnsupportedEdit: {

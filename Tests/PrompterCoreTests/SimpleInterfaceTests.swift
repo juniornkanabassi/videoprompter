@@ -182,7 +182,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertEqual(Set(bulkTrash.map(\.id)), [first.id, second.id, outside.id])
   }
 
-  func testPublicRenameRetainsLegacyIsolatedPreferences() throws {
+  func testPublicRenameRetainsLegacyIsolatedPreferences() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-suite-\(UUID())")
     let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -200,6 +200,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertFalse(store.simpleInterface)
     XCTAssertEqual(CameraModel(defaults: AppStore.preferences(arguments: arguments)).selectedUID, "remembered-camera")
     store.previewFontSize = 27
+    _ = await store.flushPendingSaves()
     XCTAssertEqual(AppStore(arguments: arguments).previewFontSize, 27)
     XCTAssertTrue(AppStore.preferences(arguments: ["test"]) === UserDefaults.standard)
   }
@@ -286,57 +287,49 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")
   }
 
-  func testPreferencePersistsPerDataDirectoryAndInspectorHidesOnlyAdvancedSections() async throws {
+  func testPreferencesUseSettingsPagesAndInspectorKeepsOnlyPresenterControls() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent("simple-\(UUID())")
-    defer { try? FileManager.default.removeItem(at: root) }
-    let arguments = ["test", "--data-directory", root.path]
-    let otherRoot = root.appendingPathComponent("another")
-    let otherArguments = ["test", "--data-directory", otherRoot.path]
-    defer {
-      for directory in [root, otherRoot] {
-        let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(directory.standardizedFileURL.path))"
-        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
-      }
-    }
-    let store = AppStore(arguments: arguments)
-    XCTAssertTrue(store.simpleInterface, "a new data root starts with the simple interface")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-ui-\(UUID())")
+    let suite = "SettingsUI.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let camera = CameraModel(defaults: defaults)
     let before = store.settings
-    let reopened = AppStore(arguments: arguments)
-    XCTAssertTrue(reopened.simpleInterface)
-    XCTAssertTrue(reopened.simpleInterface)
-    let other = AppStore(arguments: otherArguments)
-    XCTAssertTrue(other.simpleInterface)
-    XCTAssertTrue(other.simpleInterface)
-    let host = NSHostingView(rootView: InspectorView(store: store))
-    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 360, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
+    let host = NSHostingView(rootView: AnyView(InspectorView(store: store, camera: camera)))
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
     window.orderFrontRegardless()
     defer { window.orderOut(nil); window.contentView = nil }
-    func settle() async { for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
-    await settle()
-    let simple = labels(host).joined(separator: "|")
-    XCTAssertTrue(simple.contains("Size")); XCTAssertTrue(simple.contains("How it follows you"))
-    XCTAssertFalse(simple.contains("Typography")); XCTAssertFalse(simple.contains("Saved settings"))
-    XCTAssertFalse(simple.contains("Microphone volume"))
-    XCTAssertFalse(simple.contains("Loudest sound"))
-    XCTAssertFalse(simple.contains("Spoken language"))
-    XCTAssertTrue(simple.contains("Test"))
-    XCTAssertTrue(simple.contains("Microphone peak level"))
-    XCTAssertTrue(simple.contains("Mirror for teleprompter glass"))
+    func rendered() async -> String {
+      for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
+      return labels(host).joined(separator: "|")
+    }
+    let inspector = await rendered()
+    for label in ["Size", "Typography", "Mirror for teleprompter glass", "Mirroring and cues"] {
+      XCTAssertTrue(inspector.contains(label), label)
+    }
+    for label in ["Spoken language", "Microphone volume", "Saved settings", "How it follows you", "Editor font"] {
+      XCTAssertFalse(inspector.contains(label), label)
+    }
     store.simpleInterface = false
-    XCTAssertTrue(AppStore(arguments: otherArguments).simpleInterface, "the other data directory keeps its own preference")
-    XCTAssertFalse(AppStore(arguments: arguments).simpleInterface, "an explicit advanced preference survives reopening")
-    await settle()
-    let full = labels(host).joined(separator: "|")
-    XCTAssertTrue(full.contains("Typography")); XCTAssertTrue(full.contains("Saved settings"))
-    XCTAssertTrue(full.contains("Size")); XCTAssertTrue(full.contains("How it follows you"))
-    XCTAssertTrue(full.contains("Microphone volume"))
-    XCTAssertTrue(full.contains("Loudest sound"))
-    XCTAssertTrue(full.contains("Spoken language"))
-    store.simpleInterface = true
-    XCTAssertTrue(AppStore(arguments: arguments).simpleInterface, "an explicit simple preference survives reopening")
+    _ = await store.flushPendingSaves()
+    XCTAssertFalse(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).simpleInterface)
+    let advanced = await rendered()
+    XCTAssertTrue(advanced.contains("Show stage directions"))
+    XCTAssertTrue(advanced.contains("Highlight active word"))
+    let expected: [(SettingsTab, [String])] = [
+      (.general, ["How it follows you", "Interface size", "Align presenter to screen edges"]),
+      (.voice, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.editor, ["Editor font", "Editor size"]),
+      (.presets, ["Preset name", "Save Preset", "Saved settings"])
+    ]
+    for (tab, pageLabels) in expected {
+      host.rootView = AnyView(SettingsPage(store: store, tab: tab))
+      let page = await rendered()
+      for label in pageLabels { XCTAssertTrue(page.contains(label), "\(tab): \(label)") }
+    }
     XCTAssertEqual(store.settings, before)
   }
 }
