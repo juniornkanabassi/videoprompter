@@ -198,9 +198,7 @@ struct InspectorView: View {
 
   private var modePicker: some View {
     Picker("What to show", selection: $camera.displayMode) {
-      Text("Script").tag(PresenterDisplayMode.prompterOnly)
-      Text("Script and camera").tag(PresenterDisplayMode.prompterWithVideo)
-      Text("Camera").tag(PresenterDisplayMode.videoOnly)
+      ForEach([PresenterDisplayMode.prompterOnly, .prompterWithVideo, .videoOnly], id: \.self) { Text($0.label).tag($0) }
     }.labelsHidden().accessibilityLabel("What to show").help("Show the script, the camera picture, or both in the presenter")
   }
 
@@ -276,7 +274,7 @@ private struct MicrophoneTestRow: View {
   let gain: Double
   var body: some View {
     HStack(spacing: 12) {
-      Button(session.isTestingMicrophone ? "Stop test" : "Test") {
+      Button(session.isTestingMicrophone ? "Stop Test" : "Test Microphone") {
         if session.isTestingMicrophone { session.stopMicrophoneTest() }
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")

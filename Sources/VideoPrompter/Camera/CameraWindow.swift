@@ -186,12 +186,15 @@ struct CameraView: View {
     Group {
       switch model.authorization {
       case .denied, .restricted:
-        VStack(spacing: 12) {
-          Text("Video Prompter does not have permission to use the camera.")
+        ContentUnavailableView {
+          Label("No camera access", systemImage: "video.slash")
+        } description: {
+          Text("Allow Video Prompter in System Settings → Privacy & Security → Camera.")
+        } actions: {
           Button("Open System Settings") {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
           }
-        }.padding()
+        }
       default:
         if model.devices.isEmpty {
           ContentUnavailableView("Connect a camera", systemImage: "video",
@@ -213,12 +216,12 @@ struct CameraView: View {
         Menu {
           Toggle("Mirror Camera", isOn: $model.mirrored).help("Flip the camera picture left to right")
           Button("Framing Guides…") { showsGuideSettings = true }
-            .help("Choose composition lines and an output frame marker")
+            .help("Choose framing guides, zebra stripes, false colour and a frame marker")
           Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Camera window above other windows")
         } label: { Label("Options", systemImage: "ellipsis.circle") }
           .accessibilityLabel("Options").help("Camera mirroring, framing guides and window position")
           .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-            CameraGuideSettings(model: model).frame(width: 300).padding()
+            CameraGuideSettings(model: model).frame(width: 320)
           }
       }
     }
@@ -329,6 +332,27 @@ struct CameraGuideSections: View {
         ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")
         LabeledContent("Guide visibility") { Slider(value: $model.guides.opacity, in: 0...1).accessibilityLabel("Guide visibility") }.help("Fade the guides; zero hides them")
       }
+      Section("Exposure") {
+        Toggle("Zebra stripes", isOn: $model.guides.zebras).help("Stripe the parts of the picture that are too bright")
+        if model.guides.zebras {
+          Picker("Show stripes above", selection: $model.guides.zebraLevel) {
+            ForEach(Set([70, 80, 90, 95, 100, model.guides.zebraLevel]).sorted(), id: \.self) { Text("\($0)%").tag($0) }
+          }.help("Brightness where stripes start; 95% warns before highlights clip, 70% checks skin tones")
+        }
+        Toggle("False colour", isOn: $model.guides.falseColour).help("Colour the picture by brightness to set exposure against a grey card")
+        if model.guides.falseColour {
+          VStack(alignment: .leading, spacing: 4) {
+            ForEach(CameraExposure.bands, id: \.name) { band in
+              Label {
+                Text(band.name)
+              } icon: {
+                Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0) / 255, green: Double(band.rgb.1) / 255, blue: Double(band.rgb.2) / 255))
+              }
+            }
+            Text("Everything else shows in grey.")
+          }.font(.caption).foregroundStyle(.secondary)
+        }
+      }
       Section("Frame marker") {
         Picker("Frame shape", selection: $model.guides.marker) {
           Text("Off").tag(nil as CameraAspect?)
@@ -390,6 +414,7 @@ struct RecordingControls: View {
         TimelineView(.periodic(from: started, by: 1)) { context in
           let seconds = max(0, Int(context.date.timeIntervalSince(started)))
           Text(String(format: "%02d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
+            .accessibilityLabel("Recording time")
         }
       }
       Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }.accessibilityLabel("Recording settings").help("Choose recording quality, microphone and audio format")
@@ -409,10 +434,10 @@ struct RecordingControls: View {
             Text("Saves uncompressed sound for adjusting volume in an editor. Audio takes more space. Leave off for smaller files. This cannot repair sound distorted by the microphone.")
               .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let file = recorder.lastFile { Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.help("Find your latest saved recording") }
-            if let error = recorder.errorMessage { Text(error).foregroundStyle(.red) }
+            if let error = recorder.errorMessage { Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
           }.padding().frame(width: 380)
         }
-    }.alert("Recording", isPresented: Binding(get: { recorder.errorMessage != nil && !settings }, set: { if !$0 { recorder.errorMessage = nil } })) {
+    }.alert("Recording failed", isPresented: Binding(get: { recorder.errorMessage != nil && !settings }, set: { if !$0 { recorder.errorMessage = nil } })) {
       Button("OK") { recorder.errorMessage = nil }
     } message: { Text(recorder.errorMessage ?? "") }
   }

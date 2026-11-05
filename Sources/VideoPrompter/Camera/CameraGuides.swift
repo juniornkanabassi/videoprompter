@@ -41,6 +41,11 @@ struct CameraGuides: Codable, Equatable, Sendable {
   var marker: CameraAspect?
   /// How dark everything outside the marker goes.
   var shadeOpacity = 0.5
+  /// Stripes over everything at or above `zebraLevel` percent brightness.
+  var zebras = false
+  var zebraLevel = 95
+  /// The picture repainted by brightness band, for setting exposure against a grey card.
+  var falseColour = false
 
   /// Colour and opacity together, as the guide layer is stroked with.
   var strokeColor: CGColor {
@@ -69,6 +74,9 @@ struct CameraGuides: Codable, Equatable, Sendable {
     opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.85
     marker = try c.decodeIfPresent(CameraAspect.self, forKey: .marker)
     shadeOpacity = try c.decodeIfPresent(Double.self, forKey: .shadeOpacity) ?? 0.5
+    zebras = try c.decodeIfPresent(Bool.self, forKey: .zebras) ?? false
+    zebraLevel = try c.decodeIfPresent(Int.self, forKey: .zebraLevel) ?? 95
+    falseColour = try c.decodeIfPresent(Bool.self, forKey: .falseColour) ?? false
   }
 }
 
@@ -149,6 +157,20 @@ struct CameraGuideStore {
     if axes {
       line(CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.midX, y: rect.maxY))
       line(CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY))
+    }
+    return path
+  }
+
+  /// Diagonal stripes across the whole picture, for the zebra layer to mask down to the bright
+  /// parts. Spacing in points, so they look the same at any window size.
+  static func zebraPath(picture: CGRect, spacing: CGFloat = 8) -> CGPath {
+    let path = CGMutablePath()
+    guard !picture.isEmpty else { return path }
+    var x = picture.minX - picture.height
+    while x < picture.maxX {
+      path.move(to: CGPoint(x: x, y: picture.minY))
+      path.addLine(to: CGPoint(x: x + picture.height, y: picture.maxY))
+      x += spacing
     }
     return path
   }

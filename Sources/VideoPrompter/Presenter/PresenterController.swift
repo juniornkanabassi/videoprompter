@@ -686,9 +686,9 @@ private struct PresenterView: View {
           // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
           Group {
             CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
-                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position", action: session.toggle)
+                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position (⌥⌘S)", action: session.toggle)
               .buttonStyle(.borderedProminent)
-            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
+            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script (⌥⌘R)", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
           // One View menu instead of a camera toggle, picker and guides button: the bar keeps the
           // same width whether or not the camera is on.

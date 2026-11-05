@@ -117,6 +117,11 @@ struct CameraHolders {
   private var holders = CameraHolders()
   private var auto: CameraAutoOrientation?
   private var autoWanters = Set<ObjectIdentifier>()
+  private var exposure: CameraExposure?
+  private var exposureWanters = Set<ObjectIdentifier>()
+  /// The latest zebra mask and false colour picture, nil while both are off. Stage views follow
+  /// `.cameraExposureDidChange`.
+  private(set) var exposureFrame: CameraExposure.Frame?
   var holderCount: Int { holders.count }
   /// The camera actually attached.
   private(set) var attachedUID: String?
@@ -220,6 +225,31 @@ struct CameraHolders {
       queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
     }
   }
+  /// Zebras and false colour, held the same way as auto orientation: one detector for every
+  /// stage view that wants it, attached on the session queue.
+  func setExposure(_ settings: CameraExposure.Settings, for owner: AnyObject) {
+    let id = ObjectIdentifier(owner)
+    if settings.isOn { exposureWanters.insert(id) } else { exposureWanters.remove(id) }
+    let session = self.session
+    let probe = self.probe
+    if settings.isOn { exposure?.update(settings) }
+    if !exposureWanters.isEmpty, exposure == nil {
+      let detector = CameraExposure(settings: settings) { frame in
+        Task { @MainActor in
+          // A late frame from a detector already detached must not bring the overlay back.
+          guard SharedCameraSession.shared.exposure != nil || frame == nil else { return }
+          SharedCameraSession.shared.exposureFrame = frame
+          NotificationCenter.default.post(name: .cameraExposureDidChange, object: nil)
+        }
+      }
+      exposure = detector
+      queue.async { probe.holdingFormat(session) { detector.attach(to: session) } }
+    } else if exposureWanters.isEmpty, let detector = exposure {
+      exposure = nil
+      queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
+    }
+  }
+
   /// For the test that covering one window must not stop the other's Auto.
   var isAutoOrienting: Bool { auto != nil }
 

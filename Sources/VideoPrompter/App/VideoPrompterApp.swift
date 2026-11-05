@@ -818,6 +818,7 @@ private enum PresenterSaveError: LocalizedError {
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
           Button("Present Camera Only") { PresenterController.shared.presentCamera(store: store) }
+            .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Open the presenter with just the camera; present a script later to add it")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.

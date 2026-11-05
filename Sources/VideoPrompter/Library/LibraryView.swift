@@ -145,6 +145,10 @@ struct LibraryView: View {
           .tint(.accentColor)
           .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(!store.libraryAvailable)
+        // Always here, so the app works as a reference monitor without choosing a script first.
+        Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
+          .labelStyle(.titleAndIcon)
+          .help("Open the presenter with just the camera; present a script later to add it (⌥⌘C)")
         Button("Settings", systemImage: "slider.horizontal.3") { store.inspector.toggle() }
           .labelStyle(.titleAndIcon)
           .help(store.inspector ? "Hide settings" : "Choose how the script follows you and how it looks")
@@ -320,7 +324,7 @@ private struct EditorView: View {
             .lineLimit(1)
             .truncationMode(.middle).help("Edits stay in sync with this Markdown file: " + path)
           Spacer()
-          if !present { Button("Find linked file…") { store.relinkingID = script.id }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
+          if !present { Button("Find Linked File…") { store.relinkingID = script.id }.buttonStyle(.link).help("Choose the moved Markdown file and resolve any different text safely") }
         }.padding(.horizontal, 24).padding(.vertical, 6)
       } else {
         HStack {
