@@ -321,9 +321,45 @@ import XCTest
     if name.hasPrefix("presenter-waiting-") {
       XCTAssertEqual(host.bounds.height, size.height, accuracy: 1, "Preparing must not expand the presenter")
     }
-    let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    // Layer-backed SwiftUI can otherwise cache only the dirty tiles, leaving holes in a fresh bitmap.
+    func invalidate(_ view: NSView) {
+      view.needsDisplay = true
+      view.subviews.forEach(invalidate)
+    }
+    // Warm the layer cache before the final capture; AppKit can defer the first text draw.
+    let warmup = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    invalidate(host)
     window.effectiveAppearance.performAsCurrentDrawingAppearance {
+      host.displayIfNeeded()
+      host.cacheDisplay(in: host.bounds, to: warmup)
+    }
+    try await Task.sleep(for: .milliseconds(80))
+    invalidate(host)
+    var bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+    window.effectiveAppearance.performAsCurrentDrawingAppearance {
+      host.displayIfNeeded()
       host.cacheDisplay(in: host.bounds, to: bitmap)
+    }
+    if name.hasPrefix("r8-") {
+      func headingSamples() -> Int {
+        stride(from: 40, to: bitmap.pixelsHigh / 2, by: 4).reduce(0) { total, y in
+          total + stride(from: 50, to: bitmap.pixelsWide - 50, by: 4).filter { x in
+            guard let colour = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+            return min(colour.redComponent, colour.greenComponent, colour.blueComponent) > 0.75
+          }.count
+        }
+      }
+      // Wait for the known white heading, not just its independently painted yellow first word.
+      for _ in 0..<10 where headingSamples() <= 200 {
+        try await Task.sleep(for: .milliseconds(100))
+        invalidate(host)
+        bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        window.effectiveAppearance.performAsCurrentDrawingAppearance {
+          host.displayIfNeeded()
+          host.cacheDisplay(in: host.bounds, to: bitmap)
+        }
+      }
+      XCTAssertGreaterThan(headingSamples(), 200, "The reading heading must be painted completely: \(name)")
     }
     let corner = bitmap.colorAt(x: 0, y: 0)
     let hasRenderedContent = stride(from: 0, to: bitmap.pixelsHigh, by: max(1, bitmap.pixelsHigh / 64)).contains { y in
