@@ -11,6 +11,7 @@ struct LibraryView: View {
   @State private var selection = Set<UUID>()
   @State private var showsDeleted = false
   @State private var showsPractice = false
+  @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   @State private var importing = false
   @State private var importPreview: ImportPreview?
@@ -22,11 +23,22 @@ struct LibraryView: View {
   @Environment(\.controlActiveState) private var controlActiveState
 
   var body: some View {
-    NavigationSplitView {
+    GeometryReader { geometry in
+    NavigationSplitView(columnVisibility: $columnVisibility) {
       VStack(spacing: 0) {
+        HStack {
+          sidebarHeading("Folders")
+          Spacer()
+          Menu {
+            Button("New Folder…") { store.namingNewFolder = true }
+          } label: { Image(systemName: "folder.badge.plus") }
+            .menuStyle(.borderlessButton).fixedSize()
+            .accessibilityLabel("Folder actions").help("Create a folder")
+            .disabled(!store.libraryAvailable)
+        }.padding(.horizontal, Space.md).padding(.top, Space.md)
         List(selection: scopeSelection) {
           scopeRow("All Scripts", symbol: "tray", scope: .all)
-          Section("Folders") {
+          Group {
             ForEach(store.folders) { folder in
               scopeRow(folder.name, symbol: "folder", scope: .folder(folder.id))
                 .help(folder.name)
@@ -37,14 +49,18 @@ struct LibraryView: View {
                   }
                 }
             }
-            Button("New Folder…", systemImage: "folder.badge.plus") { store.namingNewFolder = true }
-              .selectionDisabled().disabled(!store.libraryAvailable)
           }
           scopeRow("Recently Deleted", symbol: "trash", scope: .deleted)
         }.listStyle(.inset)
           .accessibilityLabel("Script folders")
           .frame(height: min(220, CGFloat(148 + store.folders.count * 28)))
         Divider()
+        HStack {
+          sidebarHeading(scriptScopeTitle)
+          Spacer()
+          Text("\(showsDeleted ? store.trash.count : store.visible.count)")
+            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+        }.padding(.horizontal, Space.md).padding(.vertical, Space.sm)
         List(selection: $selection) {
           if showsDeleted {
             ForEach(store.trash) { entry in
@@ -56,6 +72,7 @@ struct LibraryView: View {
           } else {
             ForEach(store.visible) { script in
               ScriptRow(script: script, link: store.linkStates[script.id], selected: selection.contains(script.id))
+                .listRowSeparator(.hidden)
                 .contextMenu { scriptActions(script) }
                 .simultaneousGesture(TapGesture().onEnded { showsPractice = true })
             }
@@ -83,8 +100,7 @@ struct LibraryView: View {
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
       .uiZoom(store.uiZoom)
-      .frame(minWidth: max(280, 200 * store.uiZoom))
-      .navigationSplitViewColumnWidth(min: max(280, 200 * store.uiZoom), ideal: max(320, 260 * store.uiZoom), max: max(400, 360 * store.uiZoom))
+      .navigationSplitViewColumnWidth(min: min(320, 220 * store.uiZoom), ideal: min(360, 260 * store.uiZoom), max: 400)
     } detail: {
       VStack(spacing: 0) {
         if let notice = store.libraryNotice {
@@ -219,8 +235,25 @@ struct LibraryView: View {
       Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
-    // Keep the sidebar and editor usable at 200% without changing constraints mid-zoom.
-    .frame(minWidth: 1132, minHeight: 500)
+    .onChange(of: geometry.size.width < 560 * store.uiZoom, initial: true) { _, compact in
+      columnVisibility = compact ? .detailOnly : .all
+    }
+    }
+    .frame(minWidth: 640, minHeight: 500)
+  }
+
+  private var scriptScopeTitle: String {
+    if showsDeleted { return "Recently Deleted" }
+    if let id = store.selectedFolderID, let folder = store.folders.first(where: { $0.id == id }) {
+      return "Scripts in \(folder.name)"
+    }
+    return "Scripts"
+  }
+
+  private func sidebarHeading(_ title: String) -> some View {
+    Text(title).font(UIType.secondary.weight(.semibold))
+      .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+      .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
   }
 
   private var showsStart: Bool {
@@ -326,17 +359,23 @@ private struct EditorView: View {
   var body: some View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: Space.sm) {
-        TextField("Title", text: $title, axis: .vertical).textFieldStyle(.plain).font(UIType.title).lineLimit(1...3)
-          .accessibilityLabel("Script title")
-          .help("Title, tags and script text save automatically")
-        HStack(alignment: .firstTextBaseline) {
-          Text("\(saver.isSaving || saver.failed ? saver.message : "Changes save automatically") · \(PrompterDocument(markdown: text).spokenTokens.count) words")
+        LibraryTitleField(title: $title)
+        metadataLayout {
+          Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
             .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
-          Spacer()
+          if store.uiZoom < 1.5 { Spacer() }
           Button("Editor text size") { showsTextSize = true }
             .buttonStyle(.link).help("Change the editor font and text size")
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
+        }
+        if let path = script.metadata.linkedPath {
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
+              .fixedSize(horizontal: false, vertical: true).help(path)
+            Button("Unlink file") { store.unlink(script.id) }.buttonStyle(.link)
+              .help("Keep this script in Video Prompter without changing the original file again")
+          }.font(UIType.secondary)
         }
         DisclosureGroup("Script details", isExpanded: $showsDetails) {
           VStack(alignment: .leading, spacing: Space.sm) {
@@ -380,6 +419,12 @@ private struct EditorView: View {
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if !saver.isSaving, value != title { title = value } }
 
+  }
+
+  private var metadataLayout: AnyLayout {
+    store.uiZoom >= 1.5
+      ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.sm))
+      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: Space.sm))
   }
 
   private func scheduleSave() {

@@ -68,7 +68,7 @@ import XCTest
     XCTAssertFalse(LibraryAX.named("Text may be hard to read over the camera picture.", in: host).isEmpty)
     let button = try XCTUnwrap(LibraryAX.named("Make Readable", in: host).first)
     XCTAssertTrue(LibraryAX.bool(button, "accessibilityPerformPress"))
-    XCTAssertEqual(darkness, try XCTUnwrap(ReadingContrast.minimumDarkness(textHex: "#FFFFFF", textOpacity: 1, backgroundHex: "#000000")), accuracy: 0.000001)
+    XCTAssertEqual(darkness, ceil(try XCTUnwrap(ReadingContrast.minimumDarkness(textHex: "#FFFFFF", textOpacity: 1, backgroundHex: "#000000")) * 100) / 100, accuracy: 0.000001)
   }
 
   func testCameraPickerLockThroughoutRecordingLifecycle() async throws {

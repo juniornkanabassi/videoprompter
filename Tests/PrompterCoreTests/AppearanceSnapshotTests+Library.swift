@@ -77,4 +77,39 @@ extension AppearanceSnapshotTests {
     }
   }
 
+  func testBuilderBRoundSevenFixtures() async throws {
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.prohibited)
+    let env = ProcessInfo.processInfo.environment
+    guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }
+    let destination = URL(fileURLWithPath: output)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("BuilderBSevenSnapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let camera = CameraModel(defaults: defaults)
+    let folder = try await store.createLibraryFolder(named: "Drafts")
+    let sourceFolder = root.appendingPathExtension("source")
+    try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
+    let linked = sourceFolder.appendingPathComponent("Production script.md")
+    addTeardownBlock { try? FileManager.default.removeItem(at: sourceFolder) }
+    try "Read these words.".write(to: linked, atomically: true, encoding: .utf8)
+    let script = try await store.createScript(title: "An opening with a long title that wraps in a narrow window", markdown: "Read these words.", linkTo: linked)
+    store.moveSelectedScripts([script.id], to: folder.id)
+    store.selectFolder(folder.id)
+    store.selectedID = script.id
+    let scheme: ColorScheme = env["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
+    let mode = scheme == .dark ? "dark" : "light"
+    for zoom in [1.0, 1.5, 2.0] {
+      store.uiZoom = zoom
+      try await snapshot(LibraryView(store: store, camera: camera), name: "library-narrow-\(Int(zoom * 100))-\(mode)", size: .init(width: 840, height: 700), scheme: scheme, destination: destination)
+    }
+    store.uiZoom = 1
+    camera.displayMode = .prompterOnly
+    store.settings.textColorHex = "#000000"
+    store.settings.backgroundColorHex = "#000000"
+    try await snapshot(ReadingSettingsPage(store: store, camera: camera), name: "script-colour-recovery-\(mode)", size: .init(width: 700, height: 1400), scheme: scheme, destination: destination)
+  }
+
 }

@@ -127,3 +127,13 @@ These implement the council follow-up to the authoritative design specification.
 - Modern app-icon artwork consists of editable vector objects in three native
   Icon Composer groups. The system applies the outer mask. Default, dark and
   tinted appearances are exported at 16, 32, 64 and 128 points for inspection.
+
+
+## Round 7 Builder B refinement
+
+- Library (section 2.1): keep two columns. Label folder navigation and the current script scope separately. Folder creation is a quiet Folder actions menu beside its heading. Below 560 points per interface scale, collapse the sidebar with the native toggle retaining access. The library minimum width is 640 points. Linked-file destination and Unlink stay below save status. Saved remains visible until the next edit.
+- Start page (section 2.1): place Try the Practice Script immediately after the reading instruction, before Camera Only and secondary import/write choices. At larger sizes use the smaller existing heading style so the teaching route fits.
+- Camera picker: at 150/200%, keep the preview and its caption visible above a bounded scrolling list of camera choices and permission/recovery actions. Keyboard selection scrolls its row into view.
+- Readability (section 8.5): evaluate both camera and script-only backdrops, including translucent backgrounds, dimmed words, stage directions and the active-word colour. Describe the complete proposed change before Make Readable. Prefer only increasing the relevant backdrop opacity. If impossible, use white text on solid black at full visibility, preserving highlighting and stage directions unless their dimming fails the threshold. Expose Undo Make Readable immediately.
+- Exposure legend: use practical decisions and plain brightness descriptions. A nonzero custom range never implies a face target. Numerical received-picture measurements are secondary details.
+- Icon: simplify the existing editable vector layers, strengthen page/reading-marker separation, and remove fine microphone seams so the modern renditions remain distinct at 16 and 32 points.

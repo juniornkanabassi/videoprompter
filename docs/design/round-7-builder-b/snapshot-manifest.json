@@ -1,0 +1,954 @@
+[
+  {
+    "file": "recording-status-preparing-100-dark.png",
+    "sha256": "6ed868d221cd7c3c8a0577f48b323151fbd562dcb59b09a3e67fa7d1e4ea0805"
+  },
+  {
+    "file": "presenter-warning-100-light.png",
+    "sha256": "5b2f7f96e3cbca0fe30466886170eb11814b1f845369207a19e93ddd1da936ee"
+  },
+  {
+    "file": "relink-comparison-100-dark.png",
+    "sha256": "4625a1aafb2dc342ee31a5eb3b7b936ee8270350bd98b041ab2c8af4e53338cf"
+  },
+  {
+    "file": "presenter-200-light.png",
+    "sha256": "0799fa1160bb11cbaf1b59ad17d8082c40315d4bd5bb4320f739198a41d40359"
+  },
+  {
+    "file": "presenter-waiting-200-light.png",
+    "sha256": "962e0945105fba5b779d3318781675c6d6d3c846da101d1c652939fe6520bc8b"
+  },
+  {
+    "file": "recording-status-idle-150-light.png",
+    "sha256": "e3e829bfbcaf42682e326b6161f6077b05d712b8d4b2278fae3b3c3929f256b5"
+  },
+  {
+    "file": "reading-settings-page-200-light.png",
+    "sha256": "e90299f862ebc338bc3cf03cf9954c1c3e5baf762cdbac9ea5ba31c8fd40a20a"
+  },
+  {
+    "file": "presenter-saved-reading-200-light.png",
+    "sha256": "10795703eaab1a71b1cf14f808dd37169030a921544dd6e6306231397a410d13"
+  },
+  {
+    "file": "recording-status-preparing-200-light.png",
+    "sha256": "481df7d9f7d1d807387b684b8aa93923f9eb264cedd59f047751ab04d575b3b8"
+  },
+  {
+    "file": "exposure-tools-light.png",
+    "sha256": "3e302bd6f022da0fc6603b93b78cd2acf8c0b5022da427ab753eb31be0b73e7e"
+  },
+  {
+    "file": "reading-settings-page-100-dark.png",
+    "sha256": "b66c567992805cde60dc003c7b731c204fb337d5ceec6a4a2f84a36ddffada86"
+  },
+  {
+    "file": "reading-settings-wide-100-dark.png",
+    "sha256": "de5186a676c67b865a860c72b82cb664745d7c4cf6818991b9bcd15fb00ffe34"
+  },
+  {
+    "file": "settings-Camera & Recording-200-dark.png",
+    "sha256": "21fa7c39d9c306c970cfda2d0f3149da506ae37a89d69ecee23c161d28cec27f"
+  },
+  {
+    "file": "camera-recovery-0-dark.png",
+    "sha256": "06a69d058eab4ca8b2d792b16caa34cae08968e7e37062a26347d8abde35b0dd"
+  },
+  {
+    "file": "library-narrow-200-dark.png",
+    "sha256": "ff4b94a646be02ac0ac8f76a94cb9c44611fe1afe6ddc7a891a953d5ae3b1269"
+  },
+  {
+    "file": "recording-status-failed-100-dark.png",
+    "sha256": "578c249c729d1d2d20d67ec725559f9ec52406e9a584f80bf42ff2a2afb0faf8"
+  },
+  {
+    "file": "presenter-reading-light.png",
+    "sha256": "4c7e2c214ca31a8bd418d15df8b580dcc30ea898d9384e418e222cb26769a589"
+  },
+  {
+    "file": "camera-picker-many-100-light.png",
+    "sha256": "2d3c6a6c644d397d4b2c7b342b93eede369d1c7ded935e1cc61969a4e79acae0"
+  },
+  {
+    "file": "settings-Reading-light.png",
+    "sha256": "ad289245c00f8ad7673869f9f26c15c7499fb595ecbf85d950d48e2b29d766e5"
+  },
+  {
+    "file": "presenter-waiting-200-dark.png",
+    "sha256": "f35a0ddf40e536a71e42c088460935866aca5538cba423dc25d32dc78dc60dd3"
+  },
+  {
+    "file": "presenter-recording-200-light.png",
+    "sha256": "2badf86c7e5f6eb8ce606e74d39de3487dd57c73dc383db4491490a79f316cfb"
+  },
+  {
+    "file": "presenter-script-over-video-halo-dark.png",
+    "sha256": "08467f0ae8d7646b543ecfac4b3e0a055ca7f71412dda6ab4f5d67d42465a51f"
+  },
+  {
+    "file": "first-launch-100-light.png",
+    "sha256": "d64b627c5023cd2c12b2b58e61a69db62e1f456458e4cb9eb10aee103e7a4f54"
+  },
+  {
+    "file": "recording-status-idle-200-dark.png",
+    "sha256": "0724818de422984c6aa0dd1f2ea5e0b5d4337d8f3881134e63fb6557b5668833"
+  },
+  {
+    "file": "library-100-scripts-100-light.png",
+    "sha256": "1e05fc639b21fd45bb7546cbfa4ba11e243134caf07360d7d81a35978ec5a8b5"
+  },
+  {
+    "file": "library-narrow-150-dark.png",
+    "sha256": "d0a4c69da09acfcd5175c88fad2afa841d7d7d4443a0db0c0c2f0344b155c0e2"
+  },
+  {
+    "file": "recording-status-waitingForFrames-150-light.png",
+    "sha256": "f66e068c3d15eb47b26999038ee86c5b2a48cc8e1483e623d1c713c3552a6dfb"
+  },
+  {
+    "file": "settings-Camera & Recording-dark.png",
+    "sha256": "14c84078095af48d85ad44800523041fc4117184dfeef382c982b098307697b0"
+  },
+  {
+    "file": "recording-status-idle-150-dark.png",
+    "sha256": "28e309266cd1b27584466a11dc7a80de937570a170b63df430659a6784b9120a"
+  },
+  {
+    "file": "library-folders-150-light.png",
+    "sha256": "7ac60f2e74cba2efc8a6d4cbd4b874fe2601ca71e6e27be5749ce6965ae9ef60"
+  },
+  {
+    "file": "settings-Camera & Recording-100-light.png",
+    "sha256": "251eb01d568d737567565ed9eb913515b9d7a5f60e18be48bd748fd18cbcbd15"
+  },
+  {
+    "file": "presenter-waiting-150-dark.png",
+    "sha256": "d41b9d149588aa18beece445a36799916a6da79689b213148f0e19aaf9070973"
+  },
+  {
+    "file": "settings-Microphone-100-light.png",
+    "sha256": "4bc80081bd3f4562f2d241bce31d0df2d418f93a730957586ef8e0f43c03dbff"
+  },
+  {
+    "file": "camera-picker-many-150-light.png",
+    "sha256": "0bf2aed23dd549bcce98f5d97c6b6b2beb50e523c96f2a6680bb12ef11cba64a"
+  },
+  {
+    "file": "presenter-warning-150-dark.png",
+    "sha256": "2ca24178429c8b3a4b665a4e2659e6bb1e11db4f0208665f72095c1b37a29d4d"
+  },
+  {
+    "file": "first-launch-150-dark.png",
+    "sha256": "2f22f817bb6856cb13153841e9877334dc827b20ebc90820f6dc84c53805638d"
+  },
+  {
+    "file": "first-launch-150-light.png",
+    "sha256": "2ebc888bc8ef29785152aff5ac563e3b7a081110fcbe9ca1326db8cf738d39bf"
+  },
+  {
+    "file": "presenter-inspector-dark.png",
+    "sha256": "38c8701bd6f2f0a91a9049db902993ce78045965808c884ed0bb1d5e95b793da"
+  },
+  {
+    "file": "settings-General-200-light.png",
+    "sha256": "748911cc2fc6e9447b3c668a3543d67a9aea78615502c7cb273a430f9778f616"
+  },
+  {
+    "file": "library-text-size-popover-light.png",
+    "sha256": "3d024fb0c95e81f13823149d7facc21b89e06fb7af43ae6d3ae2ac6e39b5d8ce"
+  },
+  {
+    "file": "library-folders-100-light.png",
+    "sha256": "8e12cf342a3a977f33541ea49f4ee92059ce2e2d19f43e8e289d6478ab66377a"
+  },
+  {
+    "file": "presenter-clean-view-light.png",
+    "sha256": "52154b97e4280551b1808d487ea5d31991e1bcafb9f3dd35713e215f606ba612"
+  },
+  {
+    "file": "first-launch-200-dark.png",
+    "sha256": "15af4a4dcdcab6b1e85637690adc7cfc0cf8f51343c69d2beecc3c348258f837"
+  },
+  {
+    "file": "presenter-warning-200-dark.png",
+    "sha256": "5e2ee0d3e67e7002b2dbe083d85185cadf48f11373f1e47f08da28705fe78665"
+  },
+  {
+    "file": "relink-dark.png",
+    "sha256": "63e918e9c289ffdeb064b65bfa31c86683178126dab42c82d636a7c5b550f145"
+  },
+  {
+    "file": "recording-status-waitingForFrames-100-light.png",
+    "sha256": "f64250a95b171594543f5f087ca1a17ed4c1a713dae894000f4af837b83d7ad1"
+  },
+  {
+    "file": "camera-recovery-0-light.png",
+    "sha256": "abaf6ec62b66095ca0fe77449962dd2105ab19a1bb7ace8e24704ea889d0c76f"
+  },
+  {
+    "file": "library-dark.png",
+    "sha256": "65779398e0b478e541613d8afb393f8692e7a0e7312f266e8fb01129a9f8bfc1"
+  },
+  {
+    "file": "recording-meter-200-dark.png",
+    "sha256": "60a19672f8ff3183cfb027f31d2b58c7903e6a5905e49b8025f019de3990e81e"
+  },
+  {
+    "file": "recording-status-idle-100-light.png",
+    "sha256": "ade548488a2561123bf86c7e0b45f22947c22a0b005c13938552e0f622177ece"
+  },
+  {
+    "file": "settings-Reading presets-light.png",
+    "sha256": "6b0cc4c5c0c4cdfe831d9900a21d964783685fd607ef089d90a79522379bb0ef"
+  },
+  {
+    "file": "library-folders-150-dark.png",
+    "sha256": "bd9099fa13210aa0b00aa0e9c5c7044db58c92b47921bb9f6270d2039b7298be"
+  },
+  {
+    "file": "settings-Reading-100-dark.png",
+    "sha256": "44566eb805b3fc43b6f4b150b8e0b98dcd93e24675ee2dd999c986263c023730"
+  },
+  {
+    "file": "presenter-warning-150-light.png",
+    "sha256": "5bf309079a709a0809e9e6b79a9a591f272fc4ae8a97982b6dd4b868a2f7383c"
+  },
+  {
+    "file": "settings-Reading-200-light.png",
+    "sha256": "3aacaa6b4ce0304f2517d47535e8180ed4064d6207932fe82b547432fe5d7f73"
+  },
+  {
+    "file": "settings-Microphone-dark.png",
+    "sha256": "ccd34fa708289f8fd6b5377e9f22b0793e52062d117a2ac3f2d4fd0174ac1d0c"
+  },
+  {
+    "file": "ipad-remote-dark.png",
+    "sha256": "f902df35a69854767bc21f00766bee2e1b0145146b5fb90dbc295500854096aa"
+  },
+  {
+    "file": "settings-General-dark.png",
+    "sha256": "76f50a89275c67d8cc5b05eca241ba236cdee882e9d864e21071085e52968818"
+  },
+  {
+    "file": "settings-Voice-200-dark.png",
+    "sha256": "0227207a5df9e341bf75cc7ffcfc8cdadcf2392794726ecf83957a5f21de5fbc"
+  },
+  {
+    "file": "library-100-dark.png",
+    "sha256": "92c5f30856919c4b74010b2d637066a450af0e63940c66283b82c3d2611530e7"
+  },
+  {
+    "file": "library-folders-200-dark.png",
+    "sha256": "8584880cbf3b0bf5a865a5646c4c2cec8a0893705929d9091bd5c78922fb3724"
+  },
+  {
+    "file": "presenter-dark.png",
+    "sha256": "958c7b4f1000ca13a36f71da2b7f46b8da779b39e1935bc4b526150dab8b56cb"
+  },
+  {
+    "file": "camera-picker-many-200-dark.png",
+    "sha256": "061c96ba0c06e92da5b9c30ecb57740be597321b97b7301afe237d35ee81b47c"
+  },
+  {
+    "file": "take-setup-dark.png",
+    "sha256": "e77b44412a852b4acb17392315f2e10933bb39e7af16a591f9b4f3dd262f5e00"
+  },
+  {
+    "file": "ipad-remote-light.png",
+    "sha256": "f1940486f936698a69ba952995d9c47436f31ef52cf42dc768e436427668d257"
+  },
+  {
+    "file": "recording-status-preparing-150-light.png",
+    "sha256": "cfccc3ddf9419827d770ac4126e034130a10bf10483f922a579f0ef5824f15b8"
+  },
+  {
+    "file": "presenter-200-dark.png",
+    "sha256": "13bae4a6bf006c1f87dc11b31e481f2819d8efcf9521be8c1e8b6b0170c05c3c"
+  },
+  {
+    "file": "recording-settings-light.png",
+    "sha256": "a8cc394baa32b9342c8fb56cc632c7dab953c14f7181c29dd7fbc7f5904c2590"
+  },
+  {
+    "file": "presenter-camera-light.png",
+    "sha256": "3735a96c9a43fd28fdfea2cbea99237a9eba9782fbd8a6fa442b5ea2565911a5"
+  },
+  {
+    "file": "settings-Reading-100-light.png",
+    "sha256": "709c65fe0fefca615042158a21a7c03bf7f2069bc03606e7b48499f65ec95611"
+  },
+  {
+    "file": "camera-picker-many-150-dark.png",
+    "sha256": "59e4d36d680ba43ab9557bd2b062821f977c1517eb74c8e3e6956f8896ba1156"
+  },
+  {
+    "file": "microphone-separate-dark.png",
+    "sha256": "d2e898dc1e2e4b9e90e179ba2afcbe1c0d5d3e3915e7ceaa2f5994177463f34b"
+  },
+  {
+    "file": "presenter-waiting-150-light.png",
+    "sha256": "d3639a970d372e841b2a97f1fa6bc957049261e7c402db3cf048e45b90a6c54c"
+  },
+  {
+    "file": "settings-General-light.png",
+    "sha256": "380a5f09a3b703d40cf7b26c929d333139339d0765245daacf56b451973a0d85"
+  },
+  {
+    "file": "recording-status-idle-200-light.png",
+    "sha256": "533c898d9bc96b093d469a6c6970cae17950f152370465652858d027b113934c"
+  },
+  {
+    "file": "reading-settings-page-150-light.png",
+    "sha256": "db9cd3e00f19c658721eb87b2082a96e233c3d4cc2f37c7f8a2dcf9585106439"
+  },
+  {
+    "file": "presenter-light.png",
+    "sha256": "24d5bf487c1970f3ffd37ae3624ab5f86e8d6dc5b4012eb0b1c9b0dff170bab3"
+  },
+  {
+    "file": "take-setup-light.png",
+    "sha256": "66067aef8ba3792976dd5f3ad471ac67f9578ac58cdf3718ec34d24536af652f"
+  },
+  {
+    "file": "camera-dark.png",
+    "sha256": "bd3d8cd18ef63dff5b8ad1bd1300d6e4c66927860bf4e2d43b5240d9561346a0"
+  },
+  {
+    "file": "recording-status-waitingForFrames-200-light.png",
+    "sha256": "69ca474ca0c87c04deb70e69b51edc5a293bca0c9afa7980766b7322c206980b"
+  },
+  {
+    "file": "settings-Microphone-200-dark.png",
+    "sha256": "1e1dcf2fe6227ac15c6f29c5af9940c066a7326a55e7e86fec3b26b82fefb355"
+  },
+  {
+    "file": "settings-Voice-light.png",
+    "sha256": "a3ab9e9d2f5f1bed341926a7a6155f507838909db6d04ac5739ded5ab104b5ea"
+  },
+  {
+    "file": "reading-contrast-warning-light.png",
+    "sha256": "70c5d10d0123570740803f85cdb8496802f9348f9346e0d26b98a02a622d5769"
+  },
+  {
+    "file": "library-folders-200-light.png",
+    "sha256": "b2f9d25ed4a383385ceca178fd25b734f0302360ae4ae9cb7e3cbce38979677c"
+  },
+  {
+    "file": "practice-reading-dark.png",
+    "sha256": "bc2ae2033688c6c37c70f45e24b5a325f5d7f9f01c80f61884e56d7d62790ecc"
+  },
+  {
+    "file": "library-100-scripts-200-dark.png",
+    "sha256": "191676e787f2b07be8a7a47e7c6ec0c74feac5693af5c96359ec02f34040fe87"
+  },
+  {
+    "file": "settings-General-100-light.png",
+    "sha256": "71aedea291951bedaa6f1e4c8169c5d5a7fae0f30a932e59d13bd99e7b4505f5"
+  },
+  {
+    "file": "settings-Microphone-200-light.png",
+    "sha256": "3d0f9346599fbcd24fb72e2547dd29fa42ef2410a9835543bcec4e60e5dd5acb"
+  },
+  {
+    "file": "settings-Saved settings-light.png",
+    "sha256": "9aeda634220068dc91a70238e62cdda3c8cf60a58600ee9c51351d39ce6f1a11"
+  },
+  {
+    "file": "presenter-script-over-video-halo-light.png",
+    "sha256": "61de41fb2297d51ac6669cb2afc7e0c95a0c3d31881223636d315ceae8daae2c"
+  },
+  {
+    "file": "settings-Reading-dark.png",
+    "sha256": "7b4ae810aba3af1cc5dff7854453ab24ce5ae259616d80f9c85420a8693eade3"
+  },
+  {
+    "file": "library-inspector-dark.png",
+    "sha256": "e519c454483ffe58f3ef1a3e8050544e8d6e33f621e0155c95835f3c4a057eb8"
+  },
+  {
+    "file": "presenter-failed-200-dark.png",
+    "sha256": "ae3228b7492dcafea7d686967f960ee6bcddb6896347492cdb6796957a3d38cd"
+  },
+  {
+    "file": "presenter-editor-light.png",
+    "sha256": "aece1a56ac71b687c5ed7b1b8c2b5fb9c5f02b88966384332c8715333e368f92"
+  },
+  {
+    "file": "recording-status-recording-200-dark.png",
+    "sha256": "151f0bc03c41543fab379d192626611074b168ceb791910d836a0e88e36bfa1c"
+  },
+  {
+    "file": "presenter-idle-camera-100-dark.png",
+    "sha256": "18cc14a888f8529e0c85e0c33e7adbc99eb2ed2c7343aa313bb49ba614700799"
+  },
+  {
+    "file": "settings-Camera & Recording-200-light.png",
+    "sha256": "398fb33ab5880984b5a9d3697ffe629d319210cb3bf8c6152b8036f141e4c906"
+  },
+  {
+    "file": "settings-General-200-dark.png",
+    "sha256": "f9f4c7a4bbbc0b65c4372e68ad12ca7a282ff5d9b213337ac7bd7ad0323f581b"
+  },
+  {
+    "file": "exposure-guidance-dark.png",
+    "sha256": "77f8f006bf1e1de82175dea1a85ef65e0a59de6e52a83c14f5af9c432de447a5"
+  },
+  {
+    "file": "library-100-scripts-200-light.png",
+    "sha256": "c8287422fb3304bde4c2758d1064a485338711fcd224b3829bf14a8b8bf1b3a7"
+  },
+  {
+    "file": "welcome-callout-light.png",
+    "sha256": "5089d5ba46be15b199e860a227bb209b4f53f7f0d261ac4193963b592bd68207"
+  },
+  {
+    "file": "camera-picker-recording-locked-dark.png",
+    "sha256": "f9ef37d9afb16c1f70c7ed5f2d42bec7a96243ac83ad2a0246db3979d3485869"
+  },
+  {
+    "file": "settings-Microphone-light.png",
+    "sha256": "2c1d5ea5c077761011f3a4fc2f7529d3d6bd4c72fb4043680600a3b64c840a07"
+  },
+  {
+    "file": "recording-status-recording-150-dark.png",
+    "sha256": "42a6bb606e4de50ef04e2012c8c3484409c70ca322423a184704645dcfbe52bf"
+  },
+  {
+    "file": "camera-picker-many-200-light.png",
+    "sha256": "cd9da0529d6a184c2412157a7b6fc4947f90853ff9f0ef33e545a3cd55818e1e"
+  },
+  {
+    "file": "presenter-failed-150-dark.png",
+    "sha256": "3116ba04311eb6eae6baa26ad2cc3974233795366c1c92b56924723b68f5e865"
+  },
+  {
+    "file": "presenter-camera-only-200-dark.png",
+    "sha256": "a78723e3718f307924c9d464059840ddbc7168d69f994812638ced37fe3b8c7f"
+  },
+  {
+    "file": "relink-light.png",
+    "sha256": "1b1a86b977d7a27a82158bf620ffc218d1468981c6ab92f480600d6b0a287860"
+  },
+  {
+    "file": "first-launch-200-light.png",
+    "sha256": "369c6cb76b56268c8046087b333a7934a68016bd27e106ac632c594d10af8041"
+  },
+  {
+    "file": "camera-picker-recording-locked-light.png",
+    "sha256": "203cac5018c6b79bc2d423f9bf3c56413ef180e1875e4f82818088fea4683ee7"
+  },
+  {
+    "file": "settings-Reading presets-100-dark.png",
+    "sha256": "9462f6f35a93440938acd1fc57e4eda445069f40869994057576a5acd84aeb8d"
+  },
+  {
+    "file": "practice-reading-light.png",
+    "sha256": "bc2ae2033688c6c37c70f45e24b5a325f5d7f9f01c80f61884e56d7d62790ecc"
+  },
+  {
+    "file": "presenter-clean-view-dark.png",
+    "sha256": "dca90854601d06b3b8501a86c31db57695bdceb85d4a78d71cc07c5ee1cd9e71"
+  },
+  {
+    "file": "recording-status-preparing-100-light.png",
+    "sha256": "16c0c110c83b55b9388f5b5a6e60d6322e796239bc060d4ec4cf33a75c776e77"
+  },
+  {
+    "file": "recording-status-saving-100-dark.png",
+    "sha256": "aa7452f4c8dc7fd722f3ee72d35d7ff9f668c6c9fd56f111b7cc3d04680eb7d2"
+  },
+  {
+    "file": "camera-picker-200-dark.png",
+    "sha256": "5e98c73f6bb0650e7d1d0eebc5e9903c4ec9d19050bafde546363a92ee88a63b"
+  },
+  {
+    "file": "reference-cue-200-dark.png",
+    "sha256": "ed0fd0932bcf83ef32eb0d3138bb1ff4a1f94c79aa8dc115daab8944218a71e8"
+  },
+  {
+    "file": "reading-settings-page-100-light.png",
+    "sha256": "4d73fa3d59d7814aab9cb654df29df254db90f9d72a39819b97fdc391acea7f1"
+  },
+  {
+    "file": "recording-status-waitingForFrames-100-dark.png",
+    "sha256": "7cddf0625c9fc38ccccc1ce0194f6bc7d683564d9cbe7733a74efd4e28c589e9"
+  },
+  {
+    "file": "google-docs-dark.png",
+    "sha256": "ac9c63630ee4d957d9506619390c478b152ab67a4b1c9a0e160ff9d90adf2f55"
+  },
+  {
+    "file": "presenter-waiting-100-light.png",
+    "sha256": "21d3092005bb0845498113bd2ddd4164a2df36a578ad232f8aae2fb890c716c1"
+  },
+  {
+    "file": "recording-meter-200-light.png",
+    "sha256": "8c7307bcdea8e4eb5c0bd1775518235f50373f1e22987d02af3bbb243c03c43b"
+  },
+  {
+    "file": "exposure-active-light.png",
+    "sha256": "611defbd34d52c30b173ca0dc4944db75660ca4645630a01f221f70018ef365d"
+  },
+  {
+    "file": "presenter-warning-200-light.png",
+    "sha256": "89881e8e70e77409c6b023f8cccf6c02ea016e3236dd63f24ce1c6225d7385ea"
+  },
+  {
+    "file": "presenter-taking-200-dark.png",
+    "sha256": "35d7ca07fd3cbb1480eb013804e6d5ef6a8dd8f476ec59b261abe29dbe56ba4e"
+  },
+  {
+    "file": "settings-Editor-dark.png",
+    "sha256": "802bb5310b1c411ba573b333ad5264d3e64e6bd6f37a0e34791e6814ad993758"
+  },
+  {
+    "file": "camera-picker-150-dark.png",
+    "sha256": "efff3035ff9679f0cb099e878c00596f19b969115aad32570926c9234ee7263b"
+  },
+  {
+    "file": "reference-monitor-dark.png",
+    "sha256": "ba992fba8bfb7c1f3f0c241f96bc5e8ff6e9778771bd99f4dbb54d8107575309"
+  },
+  {
+    "file": "reference-cue-200-light.png",
+    "sha256": "2875b17cdabced5d5bb5868ada072a7c1874958b399b20f969580c6b95f106b2"
+  },
+  {
+    "file": "settings-Reading presets-200-dark.png",
+    "sha256": "92978d19f870ccf45350dce21fa9256c686ddb723e713f7e6eb7f28df9b02b7d"
+  },
+  {
+    "file": "presenter-idle-camera-150-dark.png",
+    "sha256": "877276a6b40607882690d2dbe8c74b5b2d9016da3f79e32d24807554cf298fd4"
+  },
+  {
+    "file": "settings-Camera & Recording-light.png",
+    "sha256": "b9c79ff45a880df25d948a6adc6eb05253935346a3c4d16f2c3485a2cd0a1ae9"
+  },
+  {
+    "file": "reading-settings-wide-200-light.png",
+    "sha256": "f7dfe99c5c1ee17126a418b660670ff6b99491d104496aae723b2920238d087e"
+  },
+  {
+    "file": "presenter-failed-200-light.png",
+    "sha256": "921d086a5646144896c7ddf7d77569a0751ec30daf38ebe8543d81c62e1f76a3"
+  },
+  {
+    "file": "settings-General-100-dark.png",
+    "sha256": "880be5f4518dc2496a2d3c96f62c38dac0b7bc92d7b7b81029d6d15fbbca05b0"
+  },
+  {
+    "file": "exposure-panel-dark.png",
+    "sha256": "1e55ed43bf61c4511b4db87bc570fa0c13a9e252af7ac9738932f4339bc4619b"
+  },
+  {
+    "file": "exposure-tools-dark.png",
+    "sha256": "9167d8b0e929cf956aa286f85600daa7bd4d5d2486356daf3393aa057ea69d84"
+  },
+  {
+    "file": "presenter-editor-dark.png",
+    "sha256": "e429d2cf3cea6768b199232457d139fd083adf93cbbef477a4857f309c660d2b"
+  },
+  {
+    "file": "camera-picker-200-light.png",
+    "sha256": "7c65cbe6099a3156c6e7881b1f355b3017a3117707dc5431cd5f4c9ecb9015d1"
+  },
+  {
+    "file": "presenter-idle-camera-200-light.png",
+    "sha256": "85ca9a4a50f9c88896facb22faddc3c86ee851142852e91cb0e330931c0da638"
+  },
+  {
+    "file": "presenter-idle-camera-200-dark.png",
+    "sha256": "c4d38b5e78f67f1947da3eec7ae3940a43937d796217c153bf96e3e51c3203ef"
+  },
+  {
+    "file": "recording-status-recording-100-dark.png",
+    "sha256": "95b853a16551cddd039940948e97102171796d3f9f57168f97497b363c6fdbef"
+  },
+  {
+    "file": "presenter-failed-100-dark.png",
+    "sha256": "c02e08065ef49d0b0bbdbcb781598b266a1e16be404cc364d48415407c3d71de"
+  },
+  {
+    "file": "presenter-taking-100-dark.png",
+    "sha256": "e61e693d73448c458d4c6c6da36cd858d5420ba85fda61ddcf64c3b403cb8561"
+  },
+  {
+    "file": "relink-comparison-200-light.png",
+    "sha256": "dda9d16d9c5c8b55c318868e55b5e57328e3c76066bf1cf2d3720de084696401"
+  },
+  {
+    "file": "recording-status-saving-150-light.png",
+    "sha256": "c638b06e1a080a198be502756c0b4f1a1a4ccf945a63177395382903a4cab440"
+  },
+  {
+    "file": "settings-Saved settings-dark.png",
+    "sha256": "cb67bbc28de26f6772a9bab73d251de0c8b668822fefc5bbdcfce68f4d071416"
+  },
+  {
+    "file": "recording-status-saving-150-dark.png",
+    "sha256": "acc91cb64a8277d86d7e4de9ff90b183d4b85fa6f806d7068db8e46edc2acfd2"
+  },
+  {
+    "file": "library-narrow-100-light.png",
+    "sha256": "b17d24f1fa455812bc764a79410f3a2d070dfcc7447920aa32e69868f807dc61"
+  },
+  {
+    "file": "recording-status-waitingForFrames-200-dark.png",
+    "sha256": "a317c5d440627891510663b2bd97cc18e437d850c0d7ae1bc7e412e39ab2bde2"
+  },
+  {
+    "file": "presenter-inspector-light.png",
+    "sha256": "93e0209940edcbbb82438bb96c0df0e68bc8820dd535e19831122bd427e52e07"
+  },
+  {
+    "file": "recording-status-saving-200-dark.png",
+    "sha256": "5946bf2b11d3639bee646219067c767733b32b031173cbcc20bba85e563594d3"
+  },
+  {
+    "file": "recording-status-failed-200-light.png",
+    "sha256": "b1b83d273d935b82ac453080b24ae5aa43697a5b9d084d2e39ee28a96038e65b"
+  },
+  {
+    "file": "camera-picker-100-dark.png",
+    "sha256": "f2e5b8339b8e427592a99cc6f89f442b732eb71320d82a2c6c59f214eef7f54f"
+  },
+  {
+    "file": "recording-status-waitingForFrames-150-dark.png",
+    "sha256": "85dfc2500aed4e9d81cc777956e8e396835b57fa78d4e1059a400b60f762c2e0"
+  },
+  {
+    "file": "recording-status-recording-150-light.png",
+    "sha256": "f32a5e263132a02c293db3a33491e254aec11b9c52d6a2f963952363b2aba5cb"
+  },
+  {
+    "file": "library-200-light.png",
+    "sha256": "1e865b2f120a8bb6a2b89eba1d538463c4be53de512bd1dfe53635015c80fb33"
+  },
+  {
+    "file": "camera-recovery-2-dark.png",
+    "sha256": "9f6a70508182026424b4150582093aa145b108220b649997beee9a33b05789fa"
+  },
+  {
+    "file": "camera-recovery-3-dark.png",
+    "sha256": "00b594448ee8bca67c7dda0a7c9c8eff500e413e24b6782b729b0c2a3dd94290"
+  },
+  {
+    "file": "library-narrow-150-light.png",
+    "sha256": "998a786a84a6fb24aeb62ffda465e1a51b3df54d8f415318d835b4a17807c43e"
+  },
+  {
+    "file": "settings-Reading presets-200-light.png",
+    "sha256": "238c139d0997275f8d294bdee44084eee38be4f2f2859aaa7dd9e3add727a62d"
+  },
+  {
+    "file": "reference-monitor-light.png",
+    "sha256": "35082721318d01c8a528cf132b9d398d7b41c8952e972a404686e51411310a7a"
+  },
+  {
+    "file": "camera-recovery-2-light.png",
+    "sha256": "3a02f3c685c726a528f6d20feffb7a94598ca29887745288bc4aaccf623b9545"
+  },
+  {
+    "file": "presenter-taking-100-light.png",
+    "sha256": "d03e4cd2ea165bb7f8ac4c6032a2569a5473ca0f600d8959dfaf0f3ca664496b"
+  },
+  {
+    "file": "recording-status-saving-100-light.png",
+    "sha256": "ce82f3dcc3c3976fb0cc05cef19d4157dd2ee8475744cf13f7d4d93fc3d474e5"
+  },
+  {
+    "file": "google-docs-200-light.png",
+    "sha256": "3af14e4b6fcf409a1c2b04dcfe3fc220a3bc89c83e4d878dfe2e80f686b13472"
+  },
+  {
+    "file": "recording-status-recording-100-light.png",
+    "sha256": "d016e9e741cf31e878dee3e0eeaae83b84f59c30659d911eb7b2dd04981ec4a6"
+  },
+  {
+    "file": "camera-picker-many-100-dark.png",
+    "sha256": "533cfff5ceb2b58e2026a9f589d886c377de5efb1c22a15ba6894881bd3777ac"
+  },
+  {
+    "file": "settings-navigation-200-light.png",
+    "sha256": "6c876b87d70ec866bad08e86cfb6efa451457c901585a8753948324372a738a8"
+  },
+  {
+    "file": "script-colour-recovery-dark.png",
+    "sha256": "4677dbaea5c534ec5e7e0490890741d488153c0520d14a8e5fc0252e0db734cb"
+  },
+  {
+    "file": "library-100-scripts-100-dark.png",
+    "sha256": "ac246857881bc0c94218f032414a06ee0065aff3abe253f96e39d4e2cc31e5bb"
+  },
+  {
+    "file": "exposure-guidance-light.png",
+    "sha256": "4c87835ba400e32e6d7088bb35194e92c7706b11583b191dbaf9da889c61d217"
+  },
+  {
+    "file": "recording-settings-dark.png",
+    "sha256": "803a5c9c648b6c0fc59277ad4660e213fb56409e8efdbf2f327a24ade4a97a20"
+  },
+  {
+    "file": "settings-Microphone-100-dark.png",
+    "sha256": "5d863a0b53a6ee6c73d78613a95cf7801c672f4bf5abdfcc335d9f68a3c0e628"
+  },
+  {
+    "file": "settings-Voice-200-light.png",
+    "sha256": "398bed41b646a2f04df1480520437e36b6a000dca8ad4cbbd365bba8cbd5639c"
+  },
+  {
+    "file": "presenter-failed-150-light.png",
+    "sha256": "211c51ba6e693143cb901e4dffcad86f440516c6a8ecad7d401e41ca413fb2d3"
+  },
+  {
+    "file": "library-text-size-popover-dark.png",
+    "sha256": "47a04ec76c5fd6235b27407f56aff5ca926246394aa88a523cd71450f5e55674"
+  },
+  {
+    "file": "settings-Reading presets-dark.png",
+    "sha256": "09b6857d42d4b29b2a834ffa4835c3a75a8cee31cd3f59453a23643d2952bbc0"
+  },
+  {
+    "file": "reading-contrast-warning-dark.png",
+    "sha256": "58e77e4c77aa4f2b8c696b347e2d09545611244fe9718132b68a1886b1cb1999"
+  },
+  {
+    "file": "camera-light.png",
+    "sha256": "4a54e2edad25026c2fcd222b3cd137da7af39aac68ae12816acefe308b4c8dc9"
+  },
+  {
+    "file": "camera-picker-150-light.png",
+    "sha256": "bbe028acca6b07e32f179f8462f11df09a777aab91ec8d3c4936634374b6392f"
+  },
+  {
+    "file": "first-launch-100-dark.png",
+    "sha256": "84565a6849d6fd0d7ac0fdb6e41262077f6f2c35d28807c9d98be164f97e3553"
+  },
+  {
+    "file": "presenter-warning-100-dark.png",
+    "sha256": "debbe046a35c2c4009bb02b5b2b4b55990f2b81f849520cd062f61c209f678eb"
+  },
+  {
+    "file": "presenter-idle-camera-150-light.png",
+    "sha256": "8b4350391594ad587fd5aef95090f2b1be67f651aa751bf891a4c60d6437cc15"
+  },
+  {
+    "file": "camera-only-200-dark.png",
+    "sha256": "874f2122a396bc0e7f629aa162aff607d0ecbbcec1be92bf54ac8a8ed3cea59d"
+  },
+  {
+    "file": "script-colour-recovery-light.png",
+    "sha256": "893baad40d3d43b3cb6644bd3670287e3d30a3d05799e98e44dfbad0602969fe"
+  },
+  {
+    "file": "settings-Voice-dark.png",
+    "sha256": "197c32b122accdac8105bb225de4d590b4c9648a07ca030e1e561f820ac9cf5a"
+  },
+  {
+    "file": "exposure-active-dark.png",
+    "sha256": "db3173e5e44c29753ec616446c9b23db568428ec73037490d2f8a2a7c59a0da7"
+  },
+  {
+    "file": "reading-settings-wide-150-light.png",
+    "sha256": "31f277db6b5e0f6454ac62cae7f3114cf8174ffc6681bd9fb033f1af09222124"
+  },
+  {
+    "file": "recording-status-failed-150-light.png",
+    "sha256": "22fabcaf0071d64533ed211e5de43b097e385b7f778ddf298291cc4bf67dc17c"
+  },
+  {
+    "file": "library-200-dark.png",
+    "sha256": "635f5ed428a2077489dd893fe27c7d0c668059746162eb6fc85f478ebad02109"
+  },
+  {
+    "file": "library-folders-100-dark.png",
+    "sha256": "b850a30f34eee08563579868895ae1f34b00e00f14001271f3b3946021886aa2"
+  },
+  {
+    "file": "recording-status-recording-200-light.png",
+    "sha256": "f5f04716ed4d70b939ccdd6c702fc1aee31db8ab9f156e020cef37cecc18dd79"
+  },
+  {
+    "file": "presenter-camera-dark.png",
+    "sha256": "eb6adb6615f1b4306c2e7647e1659835162b07bd37da622675ee0b54e5f25106"
+  },
+  {
+    "file": "presenter-recording-200-dark.png",
+    "sha256": "b4e6808331174333fb9e4148d6a4cd87d446e451808cbb695c0d1e0d1835d89a"
+  },
+  {
+    "file": "settings-Reading-200-dark.png",
+    "sha256": "963979c3010815e90e802f1bc4122432dcb2051723778565127b8582c65478da"
+  },
+  {
+    "file": "library-light.png",
+    "sha256": "95dbe40d82761f36b966e640422ab869138676d0c77c2b94e5cffaff44ea40a9"
+  },
+  {
+    "file": "settings-Reading presets-100-light.png",
+    "sha256": "4cb31dfef381ffbcc9dcd8cbb3421b4d4fe2bc43d40a9293bf1eaf588b3eb3f5"
+  },
+  {
+    "file": "relink-comparison-150-light.png",
+    "sha256": "811978adc7fd82863a9629e6617cac853a871b8ca55b07d37941f81c2a115917"
+  },
+  {
+    "file": "recording-status-saving-200-light.png",
+    "sha256": "caea97eaa3644b9fd197226d97ddfb15df14591389857af2bf6f67e73f2d0b48"
+  },
+  {
+    "file": "presenter-taking-200-light.png",
+    "sha256": "892e97eb615d60f2ed8c0a36f2cbfe35ad1822af0692ec36eda3065b6ff6dd70"
+  },
+  {
+    "file": "microphone-separate-light.png",
+    "sha256": "3b149ba06b2fd755c44c3f3d004ff9bebc0bdf90aec6e75c09936d44dedd4368"
+  },
+  {
+    "file": "welcome-callout-dark.png",
+    "sha256": "677fff53eedde09a4a7a960948a95b023ead40546c565cae57926543a19931a4"
+  },
+  {
+    "file": "camera-recovery-3-light.png",
+    "sha256": "d0796975188cfb3a0ad1ef548768b8525678aabacd8c4f93643fb81c73354d34"
+  },
+  {
+    "file": "reading-settings-page-200-dark.png",
+    "sha256": "ac513f9336df7d652c4bb5d32d5f63ab7786a66f1454a4fd77c39a98f6f842a5"
+  },
+  {
+    "file": "library-100-light.png",
+    "sha256": "0d0594f197a82ebbdde38d97f4f136a4e5bb1b992ba714b7802c775e5a078869"
+  },
+  {
+    "file": "reading-settings-wide-200-dark.png",
+    "sha256": "761b6631b4433d879736fa9e546582f5fda9a8791d7c48f332bee3f169edbdac"
+  },
+  {
+    "file": "settings-Camera & Recording-100-dark.png",
+    "sha256": "019b29817cde70f6eccfaf4172b28855f63019cb8f7662257d9e9f1ee458a2d6"
+  },
+  {
+    "file": "presenter-camera-200-light.png",
+    "sha256": "c71a3dd7d3610c9a1277a8317164aec3692c3c26307f1bc6045d4d8e20c63dc3"
+  },
+  {
+    "file": "relink-comparison-150-dark.png",
+    "sha256": "18d738b358bb9899118350291495e636bce082f257798fad2517a780acd617f5"
+  },
+  {
+    "file": "recording-status-failed-100-light.png",
+    "sha256": "1eae3f59f17ad7b51fe436914c3733b08bae6bfd46a57e93a2d72b004ad7b4e7"
+  },
+  {
+    "file": "settings-navigation-200-dark.png",
+    "sha256": "411fe298d9b4afe80572eef9c3b7ba3b2245f5c353bfa83d0fb28f80fe27419f"
+  },
+  {
+    "file": "recording-status-preparing-150-dark.png",
+    "sha256": "4f946a98050f5212288a30258578c0f8066f087094b20334524f4a01ab74fadb"
+  },
+  {
+    "file": "reading-settings-wide-150-dark.png",
+    "sha256": "0f7b8d0149fd685713629a257da24bd9cf04885415b69b89544024dab1254bab"
+  },
+  {
+    "file": "presenter-saved-reading-200-dark.png",
+    "sha256": "0483355a23efbbddbecf3d0c5f7649665b3a4df4ae13fbf2c3dfccceb517c643"
+  },
+  {
+    "file": "reading-settings-page-150-dark.png",
+    "sha256": "1207ece3dbbabecd75e35d511f9055eaaea1cbc975eaee40cb1e5ca10557d527"
+  },
+  {
+    "file": "google-docs-light.png",
+    "sha256": "5ad1ffab325c6a3e210289ec74457389bdc4947bb533d8d7d26b08e7c78b9c66"
+  },
+  {
+    "file": "library-narrow-200-light.png",
+    "sha256": "f9c24207d71ff85594fbd630f2228e316568cba7db6a79ed1ea9b3b6d6c4fc12"
+  },
+  {
+    "file": "recording-status-preparing-200-dark.png",
+    "sha256": "4b728d7d49a1be2355f585b7fed29373563ac5e0cac75123b615cf5956a642a1"
+  },
+  {
+    "file": "relink-comparison-100-light.png",
+    "sha256": "32e99aec32e709303f6a9ad1ddb43d4e0773f8d6de21065507ee9f997732d15c"
+  },
+  {
+    "file": "relink-comparison-200-dark.png",
+    "sha256": "9c78a44a2378e1463c638ac91073517aa32aac325875ff7135e51679d0028279"
+  },
+  {
+    "file": "camera-picker-100-light.png",
+    "sha256": "ba1512d0f30b72fb8d656bf7e862bad1b5a817a8e66ad5554c0c857da666994c"
+  },
+  {
+    "file": "google-docs-200-dark.png",
+    "sha256": "ac2d8c273d77b0fb0ed85ea1605c35c53558b2a8e0a3ae45c2b1fb39f73490b9"
+  },
+  {
+    "file": "camera-only-200-light.png",
+    "sha256": "6aad6f0063509e35d635fe0a83a23f0bbd69c544532dae1163569ab7e0c0d72e"
+  },
+  {
+    "file": "presenter-idle-camera-100-light.png",
+    "sha256": "dc8bdb13e61cf5e824b4d2a3e63b70448faba60a904b23a55f83a16e617ba96b"
+  },
+  {
+    "file": "recording-status-failed-150-dark.png",
+    "sha256": "b53e97e9fb29305b1efd8ccac30b31a30c0a032190e58baf04a9b3e3dc9b4599"
+  },
+  {
+    "file": "settings-Editor-light.png",
+    "sha256": "66c1438f9da6aef10d7956eed8b86dba009f5799a42e86b36b5d74efee0b0641"
+  },
+  {
+    "file": "library-inspector-light.png",
+    "sha256": "c020ebe0f56a48901c6531621149392696300590c753b48f47e7af7984948faa"
+  },
+  {
+    "file": "presenter-camera-only-200-light.png",
+    "sha256": "52fb2519eb4f2245169023cc5daba5fb19f796bf959d96f397db08824a78e0d9"
+  },
+  {
+    "file": "presenter-reading-dark.png",
+    "sha256": "8b6ed150f792717eb58c4958d063efd9a5d04c0ea3450f5f1d2400cb1baee761"
+  },
+  {
+    "file": "presenter-failed-100-light.png",
+    "sha256": "9e986ff3f7f161a3653d52fc7ee94c403d5d3dd4269da8961b9e7a8cff675fc2"
+  },
+  {
+    "file": "presenter-camera-200-dark.png",
+    "sha256": "7117926c3fa0024ce3a455f4cacb68826aea539ccd53a2aaa052647f73cfa021"
+  },
+  {
+    "file": "presenter-waiting-100-dark.png",
+    "sha256": "8e4817b8a27fd99908daa34bb987e67dc753bcfcb9f6b13275848c8a8b479893"
+  },
+  {
+    "file": "reading-settings-wide-100-light.png",
+    "sha256": "7fe65cbbb553d321367c246fa24cfda15b62e662ac9d4f597e27a6502b54bdfe"
+  },
+  {
+    "file": "recording-status-idle-100-dark.png",
+    "sha256": "7860bac30ff330c7b7e78a05fff6173b43adb67387b70ba8f74ab97ae2331f87"
+  },
+  {
+    "file": "exposure-panel-light.png",
+    "sha256": "e90b381aa5c9b7cfaa73ff11dc2e116e62d5de9a550beb8f0039a6a05db2a4da"
+  },
+  {
+    "file": "library-narrow-100-dark.png",
+    "sha256": "640be61f90f94513b533ed2f989aaee7f1d6ae867616debfa262d88a45afa098"
+  },
+  {
+    "file": "recording-status-failed-200-dark.png",
+    "sha256": "f5a5e75cfa5b45b8af230d406f869e07c8d64731a4f588895ec7a3904f9463d7"
+  }
+]

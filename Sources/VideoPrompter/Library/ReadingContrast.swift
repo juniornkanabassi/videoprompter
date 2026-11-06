@@ -1,4 +1,5 @@
 import SwiftUI
+import PrompterCore
 
 /// Conservative sRGB contrast bound across all possible camera pixels.
 enum ReadingContrast {
@@ -53,6 +54,40 @@ enum ReadingContrast {
   }
 }
 
+/// Computes the complete change before the button is offered; no reading aid is removed
+/// unless its dimmed text cannot meet the selected type size's contrast threshold.
+struct ReadingRecovery {
+  let settings: PrompterSettings
+  let explanation: String
+
+  init(current: PrompterSettings, overVideo: Bool) {
+    var next = current
+    let threshold = current.fontSize >= 24 ? 3.0 : 4.5
+    let scale = current.showCues ? 0.42 : 0.5
+    let highlight = current.highlightActiveWord ? NSColor.systemYellow.hex : nil
+    let backgroundName = overVideo ? "Background over camera" : "Script-only background"
+    if let minimum = ReadingContrast.minimumDarkness(textHex: current.textColorHex,
+      textOpacity: current.textOpacity * scale, backgroundHex: current.backgroundColorHex,
+      threshold: threshold, highlightHex: highlight) {
+      // Round upwards to the displayed percentage, so the stated change is exact.
+      let opacity = min(1, ceil(minimum * 100) / 100)
+      next.setBackdropOpacity(opacity, withVideo: overVideo)
+      explanation = "Make Readable changes only \(backgroundName) to \(Int(opacity * 100))%."
+    } else {
+      next.backgroundColorHex = "#000000"
+      next.textColorHex = "#FFFFFF"
+      next.textOpacity = 1
+      next.setBackdropOpacity(1, withVideo: overVideo)
+      let needsHideCues = current.showCues && ReadingContrast.worstCase(textHex: "#FFFFFF",
+        textOpacity: 0.42, backgroundHex: "#000000", darkness: 1) < threshold
+      next.showCues = current.showCues && !needsHideCues
+      explanation = "Make Readable sets Text colour to white, Background colour to black, Text visibility to 100%, and \(backgroundName) to 100%."
+        + (needsHideCues ? " It also hides stage directions because they are too faint at this text size." : " It keeps stage directions and word highlighting as chosen.")
+    }
+    settings = next
+  }
+}
+
 struct ReadingContrastWarning: View {
   let textHex: String
   let textOpacity: Double
@@ -62,6 +97,8 @@ struct ReadingContrastWarning: View {
   var threshold = 3.0
   var highlightHex: String? = nil
   var makeReadable: (() -> Void)? = nil
+  var overVideo = true
+  var changeExplanation: String? = nil
   private var ratio: Double {
     let text = ReadingContrast.worstCase(textHex: textHex, textOpacity: textOpacity * minimumOpacityScale,
       backgroundHex: backgroundHex, darkness: darkness)
@@ -72,15 +109,18 @@ struct ReadingContrastWarning: View {
   var body: some View {
     if ratio < threshold {
       VStack(alignment: .leading, spacing: Space.sm) {
-        Label("Text may be hard to read over the camera picture.", systemImage: "exclamationmark.triangle")
+        Label(overVideo ? "Text may be hard to read over the camera picture." : "These script colours may be hard to read.", systemImage: "exclamationmark.triangle")
           .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
         if let makeReadable {
-          Text("Make Readable uses solid black behind white text, full text visibility, and turns off stage directions and word highlighting.")
+          Text(changeExplanation ?? "Make Readable changes the background darkness to improve text contrast.")
             .font(UIType.secondary).fixedSize(horizontal: false, vertical: true)
           Button("Make Readable", action: makeReadable)
         } else {
           let readable = ReadingContrast.minimumDarkness(textHex: textHex, textOpacity: textOpacity, backgroundHex: backgroundHex)
-          Button("Make Readable") { if let readable { darkness = readable } }.disabled(readable == nil)
+          if let readable {
+            Text("Make Readable changes only background darkness to \(Int(ceil(readable * 100)))%.").font(UIType.secondary)
+          }
+          Button("Make Readable") { if let readable { darkness = ceil(readable * 100) / 100 } }.disabled(readable == nil)
           if readable == nil { Text("Increase Text visibility or choose a different text colour.").font(UIType.secondary) }
         }
       }

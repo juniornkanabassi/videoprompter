@@ -1,0 +1,211 @@
+{
+  "frontmostPID": 17323,
+  "pid": 72072,
+  "trusted": true,
+  "windows": [
+    {
+      "AXRole": "AXWindow",
+      "AXRoleDescription": "system dialog",
+      "AXSubrole": "AXSystemDialog",
+      "AXTitle": "Video Prompter \u00b7 Builder B verification",
+      "height": "520.0",
+      "width": "760.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXGroup",
+      "AXRoleDescription": "group",
+      "AXSubrole": "AXHostingView",
+      "height": "520.0",
+      "width": "760.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXScrollArea",
+      "AXRoleDescription": "scroll area",
+      "height": "332.0",
+      "width": "760.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXDescription": "Presenter script",
+      "AXHelp": "Select a word with the keyboard, then press Option-Command-Return to read from it.",
+      "AXRole": "AXTextArea",
+      "AXRoleDescription": "text entry area",
+      "AXValue": "A disposable script for checking the presenter.",
+      "height": "601.0",
+      "width": "760.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXScrollBar",
+      "AXRoleDescription": "scroll bar",
+      "AXValue": "0.4851301115241636",
+      "height": "334.0",
+      "width": "19.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXValueIndicator",
+      "AXRoleDescription": "value indicator",
+      "AXValue": "0.4851301115241636",
+      "height": "180.0",
+      "width": "6.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXButton",
+      "AXRoleDescription": "increment arrow button",
+      "AXSubrole": "AXIncrementArrow",
+      "height": "0.0",
+      "width": "0.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXButton",
+      "AXRoleDescription": "decrement arrow button",
+      "AXSubrole": "AXDecrementArrow",
+      "height": "0.0",
+      "width": "0.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXButton",
+      "AXRoleDescription": "increment page button",
+      "AXSubrole": "AXIncrementPage",
+      "height": "75.0",
+      "width": "6.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXButton",
+      "AXRoleDescription": "decrement page button",
+      "AXSubrole": "AXDecrementPage",
+      "height": "70.5",
+      "width": "6.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXScrollArea",
+      "AXRoleDescription": "scroll area",
+      "height": "0.0",
+      "width": "0.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXRoleDescription": "text",
+      "AXValue": "Paused",
+      "height": "34.5",
+      "width": "77.25",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXDescription": "Start reading",
+      "AXEnabled": "1",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "button",
+      "height": "36.0",
+      "width": "154.5",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXDescription": "Show camera",
+      "AXEnabled": "1",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "button",
+      "height": "36.0",
+      "width": "159.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXScrollArea",
+      "AXRoleDescription": "scroll area",
+      "height": "36.0",
+      "width": "488.25",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXRoleDescription": "menu button",
+      "AXTitle": "View",
+      "AXValue": "Script only",
+      "height": "36.0",
+      "width": "80.25",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXDescription": "Microphone",
+      "AXEnabled": "1",
+      "AXHelp": "ZOOM UAC-232",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "button",
+      "AXValue": "ZOOM UAC-232",
+      "height": "36.0",
+      "width": "144.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXRoleDescription": "menu button",
+      "AXTitle": "Text",
+      "height": "36.0",
+      "width": "109.5",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXRoleDescription": "menu button",
+      "AXTitle": "More",
+      "height": "36.0",
+      "width": "82.5",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "close button",
+      "AXSubrole": "AXCloseButton",
+      "height": "16.0",
+      "width": "16.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "zoom button",
+      "AXSubrole": "AXZoomButton",
+      "height": "16.0",
+      "width": "16.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXGroup",
+      "AXRoleDescription": "group",
+      "height": "14.0",
+      "width": "14.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXRole": "AXGroup",
+      "AXRoleDescription": "group",
+      "height": "14.0",
+      "width": "14.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXButton",
+      "AXRoleDescription": "minimize button",
+      "AXSubrole": "AXMinimizeButton",
+      "height": "16.0",
+      "width": "16.0",
+      "windowTitle": "Video Prompter \u00b7 Builder B verification"
+    }
+  ]
+}

@@ -60,3 +60,17 @@ final class CameraExposureTests: XCTestCase {
     XCTAssertFalse(guides.falseColour)
   }
 }
+
+final class FaceReferenceBandTests: XCTestCase {
+  func testFaceReferenceKeepsAnySkinBandAndDefaultsToTheOwnersLevel() {
+    var guides = CameraGuides()
+    guides.useZebraPreset(.faceReference)
+    XCTAssertEqual([guides.zebraLevel, guides.zebraRange], [45, 5])
+    guides.zebraLevel = 62; guides.zebraPurpose = .faceReference
+    guides.useZebraPreset(.faceReference)
+    XCTAssertEqual(guides.zebraLevel, 62, "a face band already set stays as it is")
+    XCTAssertEqual(guides.validatedZebraPurpose, .faceReference)
+    guides.zebraLevel = 88; guides.zebraPurpose = .faceReference
+    XCTAssertEqual(guides.validatedZebraPurpose, .custom, "a near-white band is never called a face reference")
+  }
+}

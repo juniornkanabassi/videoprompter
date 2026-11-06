@@ -731,7 +731,7 @@ struct CameraExposureSections: View {
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
       }
       DisclosureGroup("How exposure aids work") {
-        Text("For a standard video feed, zebras around 60 IRE can help check a lit face. Skin tones and camera profiles vary: use this as a reference, not a target for every face.")
+        Text("For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 45 ± 5; adjust it to your skin. Camera profiles vary, so use it as a reference.")
         Text("Bright-area zebras warn where detail may wash out. False colour compares the brightness of different areas.")
         Text("These colours and zebras measure the brightness of the feed received by your Mac. They do not change the saved video. The right levels depend on your camera and picture profile.")
       }.font(.callout)

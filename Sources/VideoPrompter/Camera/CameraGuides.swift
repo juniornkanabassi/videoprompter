@@ -52,16 +52,20 @@ struct CameraGuides: Codable, Equatable, Sendable {
       switch self { case .brightAreas: "Bright areas"; case .faceReference: "Face reference"; case .custom: "Custom" }
     }
   }
+  /// Lit-cheek bands: about 40 IRE for deep brown skin up to about 70 for light skin. The preset is
+  /// 45 ± 5, the owner's own researched level for a dark complexion (6 Nov 2026).
+  static let faceLevels = 40...70, faceRanges = 2...10, faceDefault = (level: 45, range: 5)
+  var isFaceBand: Bool { Self.faceLevels.contains(zebraLevel) && Self.faceRanges.contains(zebraRange) }
   // Never infer a face reference merely from the shape of a numerical band.
   var validatedZebraPurpose: ZebraPurpose {
     switch zebraPurpose {
-    case .faceReference: zebraLevel == 60 && zebraRange == 5 ? .faceReference : .custom
+    case .faceReference: isFaceBand ? .faceReference : .custom
     case .brightAreas: zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom
     case .custom: .custom
     }
   }
   mutating func useZebraPreset(_ purpose: ZebraPurpose) {
-    if purpose == .faceReference { zebraLevel = 60; zebraRange = 5 }
+    if purpose == .faceReference, !isFaceBand { zebraLevel = Self.faceDefault.level; zebraRange = Self.faceDefault.range }
     if purpose == .brightAreas { zebraLevel = 95; zebraRange = 0 }
     zebraPurpose = purpose
   }
@@ -75,7 +79,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
   }
   var zebraGuidance: String {
     switch validatedZebraPurpose {
-    case .faceReference: "Face reference for standard video only. Skin tones and camera profiles vary; this is not a target for every face. For log footage, follow your camera’s guidance."
+    case .faceReference: "For faces, check detail on the lit cheek. Skin tones vary, so there is no single target for every face. If your camera uses a flat picture setting, follow its instructions."
     case .brightAreas: "Check bright areas. Lower exposure on your camera if important parts of the picture lose detail."
     case .custom: zebraWarning ?? "Custom measurement only, not a face exposure target."
     }

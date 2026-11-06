@@ -20,7 +20,7 @@ import XCTest
     XCTAssertEqual(camera.previewGuides, saved)
     XCTAssertEqual(CameraModel(defaults: defaults).guides, saved)
     camera.applySkinExposurePreset()
-    XCTAssertEqual(camera.guides.zebraLevel, 60)
+    XCTAssertEqual(camera.guides.zebraLevel, 45)
     XCTAssertEqual(camera.guides.zebraRange, 5)
     XCTAssertTrue(camera.previewGuides.zebras)
     XCTAssertFalse(camera.previewGuides.falseColour)
