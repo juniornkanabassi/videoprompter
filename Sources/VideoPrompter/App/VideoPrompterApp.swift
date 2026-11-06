@@ -95,7 +95,7 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
+          Button("Open Camera View in Presenter") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Open the floating presenter for framing; add a script later. Shares camera settings with the separate monitor.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
@@ -218,7 +218,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Camera Monitor Window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

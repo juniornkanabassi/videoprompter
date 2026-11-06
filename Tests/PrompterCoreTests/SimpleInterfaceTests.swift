@@ -346,7 +346,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
       (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
       (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
-      (.camera, ["Camera", "Saved video"]),
+      (.camera, ["Camera", "Recording setup"]),
       (.presets, ["Preset name", "Save Reading Preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {

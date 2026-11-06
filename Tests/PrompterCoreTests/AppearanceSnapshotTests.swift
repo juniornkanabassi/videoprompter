@@ -6,6 +6,36 @@ import XCTest
 
 /// Opt-in, offscreen snapshots. No window is ordered, camera requested or account connected.
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
+  func testRoundSevenStates() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = freshDefaults("R7Snapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let record = try await store.createScript(title: "A short reading", markdown: "One two three four five.")
+    store.settings.mode = "Manual"
+    var now = 0.0
+    store.session.clock = { now }
+    store.session.present(record: record, settings: store.settings)
+    let camera = CameraModel(defaults: defaults)
+    camera.recordingReadyOverride = true
+    camera.displayMode = .prompterWithVideo
+    let recorder = CameraRecorder(defaults: defaults)
+    for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      camera.guides.zebraLevel = 95; camera.guides.zebraRange = 5
+      try await snapshot(CameraExposureSettings(model: camera), name: "r7-custom-exposure-\(mode)", size: .init(width: 520, height: 850), scheme: scheme, destination: URL(fileURLWithPath: output))
+      for zoom in [1.0, 2.0] {
+        store.uiZoom = zoom
+        now = 0; store.session.restart(); store.session.play(captureAudio: false)
+        now = 100; store.session.syncManualFrontier()
+        try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r7-end-\(Int(zoom * 100))-\(mode)", size: .init(width: 760, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+        store.session.restart(); recorder.phase = .recording
+        try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r7-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 760, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+        recorder.phase = .idle
+      }
+    }
+  }
+
   func testEveryPageInLightAndDark() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let output = environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in image check: run checks/check-snapshots.sh") }

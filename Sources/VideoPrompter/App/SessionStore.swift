@@ -30,6 +30,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var isPreparingVoice = false
   @Published private(set) var hasLiveRecognition = false
   var readingStatus: String {
+    if reachedEnd { return "End of script" }
     if isPreparingVoice { return "Preparing" }
     if settings.mode == "Voice", settings.audioDeviceUID == nil || (!isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true) { return "Needs microphone" }
     guard isActivelyRunning else { return "Paused" }
@@ -69,7 +70,10 @@ final class SessionStore: ObservableObject {
   private var manualBase = 0.0
   private var manualStart: TimeInterval = 0
   /// Manual ran off the end. The next Play starts again from the beginning unless a seek came first.
-  private(set) var manualCompleted = false
+  @Published private(set) var manualCompleted = false
+  var reachedEnd: Bool { manualCompleted || (!isActivelyRunning && lastConfirmedTokenIndex == document.spokenTokens.count - 1 && !document.spokenTokens.isEmpty) }
+  var readingModeName: String { isManual ? "Automatic scroll" : "Voice follow" }
+  var readingNextAction: String { isManual ? "Scrolls at \(Int(settings.speed)) wpm" : "Follows your voice" }
   private var speechGeneration: UInt64?
   private var minimumSpeechGeneration: UInt64 = 0
   private var pendingSpeechCandidate: (event: RecognitionEvent, tracker: RecognitionTracker)?
@@ -248,6 +252,7 @@ final class SessionStore: ObservableObject {
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
     stopMicrophoneTest()
     anchorNotice = nil
+    if reachedEnd { seek(to: 0) }
     if isManual {
       if manualCompleted {
         seek(to: 0)
@@ -564,7 +569,11 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
-      rememberSoon()
+      if update.tokenIndex >= document.spokenTokens.count - 1 {
+        state = .paused
+        stopTasks()
+        rememberCurrent()
+      } else { rememberSoon() }
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }

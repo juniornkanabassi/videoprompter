@@ -229,7 +229,7 @@ import PrompterCore
         Task { @MainActor [weak self] in
           guard let self, self.isCapturing else { return }
           self.recovery = Self.recovery(for: error)
-          self.errorMessage = "Recording stopped after a writer failure: \(error.localizedDescription)"
+          self.errorMessage = "Recording stopped. The take could not be completed. " + Self.recoveryMessage(for: error)
           await self.stop()
         }
       }
@@ -278,7 +278,7 @@ import PrompterCore
         })
       }
     } catch {
-      errorMessage = error.localizedDescription
+      errorMessage = Self.recoveryMessage(for: error)
       takeFailure = errorMessage
     }
   }
@@ -317,7 +317,7 @@ import PrompterCore
       } catch {
         recovery = Self.recovery(for: error)
         incompleteTake = FileManager.default.fileExists(atPath: sink.fileURL.path) ? sink.fileURL : nil
-        errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)"
+        errorMessage = "No completed take was saved. " + Self.recoveryMessage(for: error)
       }
       if let errorMessage { takeFailure = errorMessage }
 
@@ -325,6 +325,20 @@ import PrompterCore
       announce("Recording stopped")
     }
     stopTask = task; await task.value; stopTask = nil
+  }
+  static func recoveryMessage(for error: Error) -> String {
+    let detail = error as NSError
+    NSLog("Recording failure: %@", detail.localizedDescription)
+    if detail.domain == "CameraRecorder", detail.code == 1 { return detail.localizedDescription }
+    return switch recovery(for: error) {
+    case .cameraPrivacy: "Allow camera access in System Settings, then try again."
+    case .microphonePrivacy: "Allow microphone access in System Settings, then try again."
+    case .camera: "Reconnect or choose another camera, then try again."
+    case .microphone: "Reconnect or choose another microphone, then try again."
+    case .storage: "Check free space and access to the Recordings folder, then try again."
+    case .format: "Choose another recording format, then try again."
+    case .retry: "Check the camera and microphone, then try recording again."
+    }
   }
   var qualityWarning: String? {
     var parts: [String] = []
@@ -358,7 +372,7 @@ import PrompterCore
       inputTest = test
       await test.start()
       if generation != testGeneration { await test.stop() }
-    } catch { if generation == testGeneration { stopInputTest(); errorMessage = error.localizedDescription } }
+    } catch { if generation == testGeneration { stopInputTest(); errorMessage = Self.recoveryMessage(for: error) } }
   }
   func stopInputTest() {
     testGeneration = UUID(); isTestingInput = false

@@ -187,7 +187,7 @@ import SwiftUI
     isShowingWithoutScript = true
     cameraOnlyForWantOfScript = true
     panel.onPassageKey = { _ in false }
-    panel.title = "Video Prompter · Camera"
+    panel.title = "Video Prompter · Camera view in presenter"
     panel.settle()
     let draft = PresenterDraft()
     self.draft = draft
@@ -657,11 +657,13 @@ struct PresenterView: View {
   @State private var showsExposureSettings = false
   @State private var controlsRevealed = false
   @State private var showsSettings = false
+  @State private var showsReadingControls = false
+  @State private var showsSetupPopover = false
   @State private var settingsTab = SettingsTab.reading
   @FocusState private var focusedTool: String?
   @Environment(\.undoManager) private var undoManager
   private var isTaking: Bool { session.isActivelyRunning || recorder.isRecording || recorder.isBusy }
-  private var showsSetup: Bool { !isTaking || controlsRevealed || draft.isEditing || focusedTool != nil || showsMicrophone || showsGuideSettings || showsExposureSettings || showsSettings }
+  private var showsSetup: Bool { !isTaking || controlsRevealed || draft.isEditing || focusedTool != nil || showsMicrophone || showsGuideSettings || showsExposureSettings || showsSettings || showsReadingControls || showsSetupPopover }
   static func backdropOpacity(saved: Double, reduceTransparency: Bool) -> Double { reduceTransparency ? 1 : saved }
   @State private var presenterWidth: CGFloat = 1000
   @State private var presenterHeight: CGFloat = 600
@@ -721,8 +723,8 @@ struct PresenterView: View {
       recorder.useSettings(value)
     }
     .onChange(of: showsMicrophone) { _, open in if !open { focusedTool = "Microphone" } }
-    .onChange(of: showsGuideSettings) { _, open in if !open { focusedTool = compactControls ? "Camera tools" : "Guides" } }
-    .onChange(of: showsExposureSettings) { _, open in if !open { focusedTool = compactControls ? "Camera tools" : "Exposure" } }
+    .onChange(of: showsGuideSettings) { _, open in if !open { focusedTool = compactControls ? "Setup" : "Guides" } }
+    .onChange(of: showsExposureSettings) { _, open in if !open { focusedTool = compactControls ? "Setup" : "Exposure" } }
     .onChange(of: showsSettings) { _, open in if !open { focusedTool = "More" } }
     .onChange(of: camera.cleanView) { _, clean in
       announce("Clean view " + (clean ? "on" : "off"))
@@ -732,6 +734,8 @@ struct PresenterView: View {
       if showsMicrophone { showsMicrophone = false }
       else if showsGuideSettings { showsGuideSettings = false }
       else if showsExposureSettings { showsExposureSettings = false }
+      else if showsReadingControls { showsReadingControls = false }
+      else if showsSetupPopover { showsSetupPopover = false }
       else if showsSettings { showsSettings = false }
       else if camera.cleanView { camera.cleanView = false }
       else if draft.isEditing { draft.requestCancel() }
@@ -822,6 +826,22 @@ struct PresenterView: View {
   private var barContent: some View {
       VStack(spacing: Space.sm) {
         transport(short: compactControls)
+        if isTaking && !camera.cleanView {
+          HStack(spacing: Space.sm) {
+            if camera.presentsWithVideo {
+              ExposureToggle(model: camera, kind: .zebras, compact: compactControls)
+              ExposureToggle(model: camera, kind: .falseColour, compact: compactControls)
+              Button("Clean view") { camera.cleanView = true }
+            }
+            Button { controlsRevealed.toggle() } label: {
+              VStack(spacing: 0) {
+                Text(controlsRevealed ? "Fewer" : "More")
+                Text("controls")
+              }
+            }.accessibilityLabel(controlsRevealed ? "Fewer controls" : "More controls")
+              .accessibilityValue(controlsRevealed ? "Expanded" : "Collapsed")
+          }.accessibilityIdentifier("take-monitor-controls")
+        }
         if recorder.isRecording || recorder.isBusy {
           RecordingAudioHealth(recorder: recorder)
         }
@@ -839,18 +859,36 @@ struct PresenterView: View {
 
   private func transport(short: Bool) -> some View {
     HStack(spacing: Space.sm) {
-      Text(camera.cleanView ? "Clean view · \(session.readingStatus)" : draft.isEditing ? "Editing · not saved yet" : !showsScript ? (camera.devices.first { $0.uid == camera.selectedUID }?.name ?? "Camera") : short ? session.readingStatus : "\(store.settings.mode == "Voice" ? "Voice follow" : "Automatic scroll") · \(session.readingStatus)")
-        .font(.callout.weight(.semibold)).lineLimit(2)
-        .padding(Space.xs).background(.white.opacity(0.1), in: Capsule())
-        .accessibilityIdentifier("presenter-status")
+      if hasScript && (showsScript || camera.cleanView) && !draft.isEditing {
+        Button { showsReadingControls.toggle() } label: {
+          VStack(alignment: .leading, spacing: 0) {
+            Text("\(session.readingModeName) · \(session.readingStatus)")
+            if !session.isActivelyRunning && !session.reachedEnd { Text(session.readingNextAction).font(.caption) }
+          }.font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+        }.buttonStyle(.plain).accessibilityIdentifier("presenter-status")
+          .accessibilityLabel("\(session.readingModeName) · \(session.readingStatus)")
+          .accessibilityHint("\(session.readingNextAction). Choose reading mode and speed.")
+          .popover(isPresented: $showsReadingControls) { readingControls }
+      } else {
+        Text(draft.isEditing ? "Editing · not saved yet" : "Camera: " + (camera.devices.first { $0.uid == camera.selectedUID }?.name ?? "Choose camera"))
+          .font(.callout.weight(.semibold)).lineLimit(2).accessibilityIdentifier("presenter-status")
+      }
       if hasScript && (showsScript || camera.cleanView) {
         Button(action: session.toggle) {
-          if short { Text(session.isActivelyRunning ? "Pause" : "Start reading").fixedSize(horizontal: false, vertical: true) }
-          else { Label(session.isActivelyRunning ? "Pause" : "Start reading", systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill") }
-        }.accessibilityLabel(session.isActivelyRunning ? "Pause" : "Start reading")
+          if short {
+            VStack(spacing: 0) {
+              Text(session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read" : "Start")
+              if !session.isActivelyRunning { Text(session.reachedEnd ? "again" : "reading") }
+            }.fixedSize()
+          }
+          else { Label(session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read again" : "Start reading", systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill") }
+        }.accessibilityLabel(session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read again" : "Start reading")
           .buttonStyle(PresenterButtonStyle(prominent: true)).disabled(draft.isEditing)
-        if !short && !session.isActivelyRunning {
-          Button("Back to start", systemImage: "arrow.counterclockwise", action: session.restart).disabled(draft.isEditing)
+        if (!short || session.reachedEnd) && !session.isActivelyRunning {
+          Button(action: session.restart) {
+            if short { VStack(spacing: 0) { Text("Back to"); Text("start") }.fixedSize() }
+            else { Label("Back to start", systemImage: "arrow.counterclockwise") }
+          }.accessibilityLabel("Back to start").disabled(draft.isEditing)
         }
       }
       if camera.presentsWithVideo {
@@ -866,20 +904,14 @@ struct PresenterView: View {
           if short { Text("Show camera") } else { Label("Show camera", systemImage: "video") }
         }.accessibilityLabel("Show camera")
       }
-      if camera.presentsWithVideo && camera.isReadyToRecord && !isTaking {
-        Menu("Saved video") {
+      if !short && camera.presentsWithVideo && camera.isReadyToRecord && !isTaking {
+        Menu("Recording setup") {
           Text(recorder.outputSummary(camera: camera))
           Button("Camera & Recording…") { settingsTab = .camera; showsSettings = true }
         }.help(recorder.outputSummary(camera: camera))
       }
       if camera.cleanView {
         Button("Exit clean view", systemImage: "eye") { camera.cleanView = false }
-      } else if isTaking {
-        Button { controlsRevealed.toggle() } label: {
-          if short { Text(controlsRevealed ? "Fewer controls" : "More controls").fixedSize(horizontal: false, vertical: true) }
-          else { Label(controlsRevealed ? "Fewer controls" : "More controls", systemImage: "slider.horizontal.3") }
-        }.accessibilityLabel(controlsRevealed ? "Fewer controls" : "More controls")
-          .accessibilityValue(controlsRevealed ? "Expanded" : "Collapsed")
       }
     }.accessibilityIdentifier("presenter-transport")
   }
@@ -894,7 +926,65 @@ struct PresenterView: View {
       .accessibilityLabel("View").accessibilityValue(camera.displayMode.label)
       .focused($focusedTool, equals: "View")
   }
+  private var readingControls: some View {
+    Form {
+      Picker("Mode", selection: $store.settings.mode) {
+        Text("Voice follow").tag("Voice")
+        Text("Automatic scroll").tag("Manual")
+      }
+      if store.settings.mode == "Manual" {
+        LabeledContent("Reading speed") {
+          Slider(value: $store.settings.speed, in: 30...300, step: 5)
+            .accessibilityLabel("Reading speed").accessibilityValue("\(Int(store.settings.speed)) words per minute")
+          Text("\(Int(store.settings.speed)) wpm")
+        }
+      } else {
+        Text("Follows your voice. On first use, allow microphone and speech access when asked.").font(.callout)
+      }
+    }.formStyle(.grouped).frame(width: 400, height: 220).uiZoom(store.uiZoom)
+  }
+
   @ViewBuilder private func tools(compact: Bool) -> some View {
+    if compact && !draft.isEditing {
+      HStack(spacing: Space.sm) {
+        viewMenu(compact: true)
+        Button("Setup", systemImage: "slider.horizontal.3") { showsSetupPopover.toggle() }
+          .focused($focusedTool, equals: "Setup")
+          .popover(isPresented: $showsSetupPopover) {
+            ScrollView {
+              VStack(alignment: .leading, spacing: Space.lg) {
+                if camera.presentsWithVideo {
+                  Text("Camera in presenter").font(.headline)
+                  CameraPicker(model: camera, zoom: store.uiZoom, darkSurface: true)
+                  Text("Chosen camera: " + (camera.devices.first { $0.uid == camera.selectedUID }?.name ?? "Choose camera")).font(.callout)
+                  Button("Framing Guides…") { showsSetupPopover = false; showsGuideSettings = true }
+                  ExposureToggle(model: camera, kind: .zebras)
+                  ExposureToggle(model: camera, kind: .falseColour)
+                  Button("Exposure…") { showsSetupPopover = false; showsExposureSettings = true }
+                  Text(recorder.outputSummary(camera: camera)).font(.callout)
+                  Button("Recording setup…") { showsSetupPopover = false; settingsTab = .camera; showsSettings = true }
+                }
+                Button("Microphone…") { showsSetupPopover = false; showsMicrophone = true }
+                if showsScript {
+                  Text("Reading text").font(.headline)
+                  HStack {
+                    Button("Smaller") { changeReadingSize(-4) }
+                    Button("Bigger") { changeReadingSize(4) }
+                  }
+                }
+              }.padding(Space.md)
+            }.frame(width: 380, height: 420).uiZoom(store.uiZoom)
+          }
+        if camera.presentsWithVideo { Button("Clean view") { camera.cleanView = true } }
+        moreMenu(compact: true)
+      }
+      .popover(isPresented: $showsMicrophone) { MicrophonePage(store: store, compact: true, recorder: recorder).uiZoom(store.uiZoom).frame(width: 500, height: 400) }
+      .popover(isPresented: $showsGuideSettings) { CameraGuideSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500) }
+      .popover(isPresented: $showsExposureSettings) { CameraExposureSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500) }
+    } else { wideTools(compact: compact) }
+  }
+
+  @ViewBuilder private func wideTools(compact: Bool) -> some View {
     let layout = compact ? AnyLayout(WrapLayout(spacing: Space.lg)) : AnyLayout(HStackLayout(spacing: Space.lg))
     layout {
       HStack(spacing: Space.sm) {
@@ -955,6 +1045,16 @@ struct PresenterView: View {
           .disabled(draft.isSaving).focused($focusedTool, equals: "Edit")
         if draft.isEditing { Button("Cancel editing") { draft.requestCancel() } }
       }
+      moreMenu(compact: compact)
+    }.controlSize(.regular)
+    .popover(isPresented: $showsGuideSettings) {
+      CameraGuideSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500)
+    }
+    .popover(isPresented: $showsExposureSettings) {
+      CameraExposureSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500)
+    }
+  }
+  private func moreMenu(compact: Bool) -> some View {
       Menu {
         if showsScript {
           Button("Back to start", systemImage: "arrow.counterclockwise", action: session.restart)
@@ -970,13 +1070,6 @@ struct PresenterView: View {
         Button("Presenter Full Screen") { controller.toggleFullScreen() }
         Button("Close Presenter") { controller.close() }.keyboardShortcut("w")
       } label: { if compact { Text("More") } else { Label("More", systemImage: "ellipsis") } }.menuIndicator(compact ? .hidden : .visible).focused($focusedTool, equals: "More")
-    }.controlSize(.regular)
-    .popover(isPresented: $showsGuideSettings) {
-      CameraGuideSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500)
-    }
-    .popover(isPresented: $showsExposureSettings) {
-      CameraExposureSettings(model: camera).uiZoom(store.uiZoom).frame(width: 500, height: 500)
-    }
   }
   private var followingMicrophoneName: String {
     AudioCapture.inputDevices().first { $0.uid == store.settings.audioDeviceUID }?.name ?? "System default"

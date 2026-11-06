@@ -21,6 +21,13 @@ final class CameraTests: XCTestCase {
     XCTAssertNil(CameraModel.resolve("uid-gone", in: cameras))
     XCTAssertEqual(CameraModel.resolve(nil, in: cameras)?.uid, "uid-built-in")
   }
+  func testFreshSetupSkipsVirtualDevicesButPreservesExplicitChoice() {
+    let virtual = CameraDevice(uid: "virtual", name: "OBS Virtual Camera", isPhysical: false)
+    let physical = CameraDevice(uid: "usb", name: "USB Capture", isPhysical: true)
+    XCTAssertEqual(CameraModel.resolve(nil, in: [virtual, physical]), physical)
+    XCTAssertNil(CameraModel.resolve(nil, in: [virtual]))
+    XCTAssertEqual(CameraModel.resolve("virtual", in: [virtual, physical]), virtual)
+  }
   func testNoCamerasResolveToNothing() {
     XCTAssertNil(CameraModel.resolve("uid-obs", in: []))
   }

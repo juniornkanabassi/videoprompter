@@ -43,8 +43,43 @@ struct CameraGuides: Codable, Equatable, Sendable {
   var shadeOpacity = 0.5
   /// Stripes over everything at or above `zebraLevel` IRE, or within ± `zebraRange` of it.
   var zebras = false
-  var zebraLevel = 95
-  var zebraRange = 0
+  var zebraLevel = 95 { didSet { if zebraLevel != oldValue { zebraPurpose = .custom } } }
+  var zebraRange = 0 { didSet { if zebraRange != oldValue { zebraPurpose = .custom } } }
+  var zebraPurpose = ZebraPurpose.brightAreas
+  enum ZebraPurpose: String, Codable, CaseIterable {
+    case brightAreas, faceReference, custom
+    var label: String {
+      switch self { case .brightAreas: "Bright areas"; case .faceReference: "Face reference"; case .custom: "Custom" }
+    }
+  }
+  // Never infer a face reference merely from the shape of a numerical band.
+  var validatedZebraPurpose: ZebraPurpose {
+    switch zebraPurpose {
+    case .faceReference: zebraLevel == 60 && zebraRange == 5 ? .faceReference : .custom
+    case .brightAreas: zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom
+    case .custom: .custom
+    }
+  }
+  mutating func useZebraPreset(_ purpose: ZebraPurpose) {
+    if purpose == .faceReference { zebraLevel = 60; zebraRange = 5 }
+    if purpose == .brightAreas { zebraLevel = 95; zebraRange = 0 }
+    zebraPurpose = purpose
+  }
+  var zebraMeasurement: String {
+    zebraRange == 0 ? "Stripes mark \(zebraLevel) IRE and above in the received picture."
+      : "Stripes mark \(max(0, zebraLevel - zebraRange))–\(min(100, zebraLevel + zebraRange)) IRE in the received picture."
+  }
+  var zebraWarning: String? {
+    guard validatedZebraPurpose == .custom, zebraLevel + zebraRange >= 90 else { return nil }
+    return "This custom level is near white. Do not brighten a face to make stripes appear; important detail may be lost."
+  }
+  var zebraGuidance: String {
+    switch validatedZebraPurpose {
+    case .faceReference: "Face reference for standard video only. Skin tones and camera profiles vary; this is not a target for every face. For log footage, follow your camera’s guidance."
+    case .brightAreas: "Check bright areas. Lower exposure on your camera if important parts of the picture lose detail."
+    case .custom: zebraWarning ?? "Custom measurement only, not a face exposure target."
+    }
+  }
   /// The picture repainted by brightness band, for setting exposure against a grey card.
   var falseColour = false
 
@@ -78,6 +113,8 @@ struct CameraGuides: Codable, Equatable, Sendable {
     zebras = try c.decodeIfPresent(Bool.self, forKey: .zebras) ?? false
     zebraLevel = try c.decodeIfPresent(Int.self, forKey: .zebraLevel) ?? 95
     zebraRange = try c.decodeIfPresent(Int.self, forKey: .zebraRange) ?? 0
+    zebraPurpose = try c.decodeIfPresent(ZebraPurpose.self, forKey: .zebraPurpose)
+      ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
     falseColour = try c.decodeIfPresent(Bool.self, forKey: .falseColour) ?? false
   }
 }

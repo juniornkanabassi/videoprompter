@@ -3,6 +3,14 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class CameraRecorderTests: XCTestCase {
+  func testUnknownRecordingFailuresGiveAnActionWithoutWriterInternals() {
+    let message = CameraRecorder.recoveryMessage(for: NSError(domain: "MovieWriter", code: 20,
+      userInfo: [NSLocalizedDescriptionKey: "writer failed with internal status -11800"]))
+    XCTAssertTrue(message.contains("try recording again"))
+    XCTAssertFalse(message.contains("writer"))
+    XCTAssertFalse(message.contains("11800"))
+  }
+
   func testRecordingTransformMatchesPreviewRotationAndHorizontalMirror() {
     for rotation in CameraRotation.allCases {
       let point = CGPoint(x: 3, y: 7)

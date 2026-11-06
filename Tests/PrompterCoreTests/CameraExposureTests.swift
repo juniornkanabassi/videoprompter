@@ -4,6 +4,26 @@ import XCTest
 
 /// The zebra mask from a luma plane, padding included, and the threshold scale.
 final class CameraExposureTests: XCTestCase {
+  func testCustomBandsNeverBecomeFaceAdvice() throws {
+    var guides = CameraGuides()
+    guides.zebraRange = 5
+    XCTAssertEqual(guides.validatedZebraPurpose, .custom)
+    XCTAssertEqual(guides.zebraMeasurement, "Stripes mark 90–100 IRE in the received picture.")
+    XCTAssertNotNil(guides.zebraWarning)
+    XCTAssertFalse(guides.zebraGuidance.contains("should show stripes"))
+    guides.useZebraPreset(.faceReference)
+    XCTAssertEqual(guides.validatedZebraPurpose, .faceReference)
+    XCTAssertNil(guides.zebraWarning)
+    guides.zebraLevel = 95
+    XCTAssertEqual(guides.validatedZebraPurpose, .custom)
+    guides.zebraPurpose = .faceReference
+    XCTAssertEqual(guides.validatedZebraPurpose, .custom, "Invalid saved presets cannot bypass validation")
+    let restored = try JSONDecoder().decode(CameraGuides.self, from: JSONEncoder().encode(guides))
+    XCTAssertEqual(restored.validatedZebraPurpose, .custom)
+    let legacy = try JSONDecoder().decode(CameraGuides.self, from: Data(#"{"zebraLevel":60,"zebraRange":5}"#.utf8))
+    XCTAssertEqual(legacy.validatedZebraPurpose, .custom)
+  }
+
   func testOnlyPixelsAtOrAboveTheLevelAreMasked() {
     // 3x2 picture in rows padded to 4 bytes; the padding byte is bright and must be ignored.
     let plane: [UInt8] = [10, 242, 255, 255, 241, 0, 243, 255]

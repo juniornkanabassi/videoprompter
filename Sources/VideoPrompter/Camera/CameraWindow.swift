@@ -7,6 +7,7 @@ import SwiftUI
 struct CameraDevice: Identifiable, Hashable, Sendable {
   let uid: String
   let name: String
+  var isPhysical = true
   var id: String { uid }
 }
 
@@ -85,7 +86,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
       userInfo: [.announcement: name + (on ? " on" : " off"), .priority: NSAccessibilityPriorityLevel.medium.rawValue])
   }
   func applySkinExposurePreset() {
-    guides.zebras = true; guides.zebraLevel = 60; guides.zebraRange = 5
+    guides.zebras = true; guides.useZebraPreset(.faceReference)
     guides.falseColour = false; exposureBypassed = false
   }
   @Published var alwaysOnTop: Bool { didSet { defaults.set(alwaysOnTop, forKey: "cameraAlwaysOnTop") } }
@@ -159,12 +160,18 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     AVCaptureDevice.DiscoverySession(
       deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera, .deskViewCamera],
       mediaType: .video, position: .unspecified
-    ).devices.map { CameraDevice(uid: $0.uniqueID, name: $0.localizedName) }
+    ).devices.map {
+      CameraDevice(uid: $0.uniqueID, name: $0.localizedName,
+        isPhysical: $0.deviceType == .builtInWideAngleCamera || $0.deviceType == .continuityCamera
+          // Only recognised physical transports may be chosen without the user's input.
+          || ($0.deviceType == .external && [0x626c746e, 0x70636920, 0x75736220, 0x31333934, 0x7468756e].contains($0.transportType))) // bltn, pci, usb, 1394, thun
+    }
   }
 
-  /// A saved camera must be explicitly replaced if missing. New setups choose the first device.
+  /// Preserve saved choices. A new setup must never silently choose a virtual camera.
   static func resolve(_ savedUID: String?, in devices: [CameraDevice]) -> CameraDevice? {
-    savedUID == nil ? devices.first : devices.first { $0.uid == savedUID }
+    if let savedUID { return devices.first { $0.uid == savedUID } }
+    return devices.first { $0.isPhysical && !$0.name.localizedCaseInsensitiveContains("virtual") }
   }
 
   func start() {
@@ -188,7 +195,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
       return "Allow camera access in System Settings > Privacy & Security > Camera."
     }
     if Self.resolve(selectedUID, in: devices) == nil {
-      return selectedUID == nil ? "Connect a camera, then choose it in the camera menu." : "The chosen camera is unavailable. Reconnect it or choose another camera."
+      return selectedUID == nil ? (devices.isEmpty ? "Connect a camera, then choose it in the camera menu." : "Choose a camera to show its picture. Virtual cameras are never selected automatically.") : "The chosen camera is unavailable. Reconnect it or choose another camera."
     }
     return nil
   }
@@ -197,7 +204,13 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     let previousMessage = unavailableMessage
     devices = Self.discovered()
     let resolved = Self.resolve(selectedUID, in: devices)?.uid
-    if selectedUID == nil, let resolved { selectedUID = resolved }
+    if selectedUID == nil, let resolved {
+      selectedUID = resolved
+      if let name = devices.first(where: { $0.uid == resolved })?.name {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [.announcement: "Camera chosen: \(name)", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      }
+    }
     if let message = unavailableMessage, message != previousMessage {
       NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
         userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -288,6 +301,7 @@ struct CameraView: View {
       ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model, zoom: zoom) }
       ToolbarItem {
         Menu {
+          Text("Second-display camera view. Shares camera and recording setup with the presenter.")
           Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
           Button("Framing Guides…") { showsGuideSettings = true }
             .help("Choose framing guides and a frame marker")
@@ -390,9 +404,10 @@ struct CameraSettingsSections: View {
     Section("Camera") {
       LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
         .disabled(model.recordingLocked).help("Stop recording to change this")
-      Picker("Rotation", selection: model.rotationChoice) {
+      Picker("Camera and saved-video rotation", selection: model.rotationChoice) {
         ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
       }.disabled(model.recordingLocked).help("Stop recording to change this")
+      Text("Rotation changes both the camera preview and the saved take.").font(.callout)
       if model.guides.automaticRotation { Text("Detected angle: \(model.guides.rotation.label)").font(.callout) }
       Toggle("Mirror camera preview", isOn: $model.mirrored)
     }
@@ -504,7 +519,7 @@ struct PresenterRecordButton: View {
           .font(.callout).fixedSize(horizontal: false, vertical: true)
       } else if recorder.isRecording {
         Button { Task { await recorder.stop() } } label: {
-          if compact { Text("Stop recording").fixedSize(horizontal: false, vertical: true) }
+          if compact { VStack(spacing: 0) { Text("Stop"); Text("recording") }.fixedSize() }
           else { Label("Stop recording", systemImage: "stop.circle.fill") }
         }.accessibilityLabel("Stop recording")
           .buttonStyle(PresenterButtonStyle(prominent: true)).tint(.red)
@@ -609,7 +624,7 @@ struct RecordingSettingsSections: View {
   @ObservedObject var camera: CameraModel
   var zoom = 1.0
   var body: some View {
-    Section("Saved video") {
+    Section("Recording setup") {
       Text(recorder.outputSummary(camera: camera)).font(.callout)
       if zoom >= 1.5 {
         VStack(alignment: .leading, spacing: Space.xs) {
@@ -684,12 +699,18 @@ struct ExposureToggle: View {
   enum Kind { case zebras, falseColour }
   @ObservedObject var model: CameraModel
   let kind: Kind
+  var compact = false
   private var on: Bool { kind == .zebras ? model.guides.zebras : model.guides.falseColour }
   private var title: String { kind == .zebras ? "Zebras" : "False colour" }
   var body: some View {
-    Button(title, systemImage: kind == .zebras ? "circle.lefthalf.striped.horizontal" : on ? "paintpalette.fill" : "paintpalette") {
+    Button {
       if kind == .zebras { model.guides.zebras.toggle() } else { model.guides.falseColour.toggle() }
-    }.tint(on ? Color.accentColor : nil).accessibilityValue(on ? "On" : "Off")
+    } label: {
+      if compact {
+        if kind == .falseColour { VStack(spacing: 0) { Text("False"); Text("colour") }.fixedSize() }
+        else { Text(title).fixedSize() }
+      } else { Label(title, systemImage: kind == .zebras ? "circle.lefthalf.striped.horizontal" : on ? "paintpalette.fill" : "paintpalette") }
+    }.tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
   }
 }
 
@@ -697,15 +718,13 @@ struct CameraExposureSections: View {
   @ObservedObject var model: CameraModel
   var body: some View {
     Section("Exposure") {
+      Text("Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours.").font(.callout)
       Toggle("Zebras", isOn: $model.guides.zebras)
       Toggle("False colour", isOn: $model.guides.falseColour)
-      Picker("Zebras show", selection: Binding(get: { model.guides.zebraRange > 0 }, set: { face in
-        if face { model.applySkinExposurePreset() } else { model.guides.zebraLevel = 95; model.guides.zebraRange = 0 }
-      })) {
-        Text("Bright areas").tag(false)
-        Text("Face brightness").tag(true)
+      Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
+        ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }
-      ExposureGuidance(zebras: true, face: model.guides.zebraRange > 0, falseColour: true)
+      ExposureGuidance(zebras: true, guides: model.guides, falseColour: true)
       Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout).foregroundStyle(.primary)
       DisclosureGroup("Custom levels") {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
@@ -818,10 +837,13 @@ struct RecordingReceipt: View {
     if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {
         if let file = recorder.savedTake {
-          Label(recorder.qualityWarning == nil ? "Saved \(file.lastPathComponent)" : "Saved with problems: \(file.lastPathComponent)",
+          Label(recorder.qualityWarning == nil ? (zoom >= 1.5 ? "Saved" : "Saved \(file.lastPathComponent)") : (zoom >= 1.5 ? "Saved with problems" : "Saved with problems: \(file.lastPathComponent)"),
             systemImage: recorder.qualityWarning == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
             .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).help(file.path)
           if let warning = recorder.qualityWarning { Text(warning).font(.callout).fixedSize(horizontal: false, vertical: true) }
+          if zoom >= 1.5 {
+            DisclosureGroup("Take details") { Text(file.lastPathComponent).font(.callout).textSelection(.enabled) }
+          }
           WrapLayout(spacing: Space.sm) {
             Button("Play") { NSWorkspace.shared.open(file) }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }

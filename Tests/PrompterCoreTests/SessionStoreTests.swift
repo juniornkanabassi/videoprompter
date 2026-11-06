@@ -411,6 +411,8 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .paused)
     XCTAssertFalse(session.isActivelyRunning)
     XCTAssertTrue(session.manualCompleted)
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.readingStatus, "End of script")
     XCTAssertEqual(session.lastConfirmedTokenIndex, 9)
     XCTAssertEqual(session.tokenIndex, 9)
     now = 300
@@ -419,6 +421,7 @@ final class SessionStoreTests: XCTestCase {
     // Play after completion starts from the beginning.
     session.play()
     XCTAssertFalse(session.manualCompleted)
+    XCTAssertFalse(session.reachedEnd)
     XCTAssertEqual(session.state, .running)
     XCTAssertEqual(session.tokenIndex, 0)
     XCTAssertNil(session.lastConfirmedTokenIndex)
@@ -568,6 +571,9 @@ final class SessionStoreTests: XCTestCase {
     session.acceptSpeechCandidate(candidate("forward", "eight nine ten"))
     try? await Task.sleep(for: .milliseconds(40))
     XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.readingStatus, "End of script")
+    XCTAssertFalse(session.isActivelyRunning)
   }
 
   func testOverlappingEnglishAndFrenchFinalsChooseTheStrongerCandidate() {

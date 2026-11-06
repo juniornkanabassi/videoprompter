@@ -18,17 +18,19 @@ enum WelcomeScript {
 
     ## Choose how to read
 
-    Voice follow keeps your place as you speak. **Listening** means your words are being received. Choose Automatic scroll in **Settings**, under **Reading**, for a steady speed without a microphone.
+    Voice follow keeps your place as you speak. **Listening** means your words are being received. Choose the reading status beside **Start reading** to switch mode or adjust the automatic speed. Before starting, it says **Follows your voice** or **Scrolls at** your chosen speed.
 
     ## Make yourself comfortable
 
     Use **Text** on the presenter bar to make the words bigger or smaller. **Settings**, under **Reading**, holds fonts, spacing, colours and Mirror for teleprompter glass.
 
-    Click a word to read from there. The arrow keys move between passages when the script has focus. **Back to start** returns to the beginning. **Edit script** lets you correct the words; choose **Save changes** when finished.
+    Click a word to read from there. The arrow keys move between passages when the script has focus. Open **More** for **Back to start** or **Edit script**; choose **Save changes** when finished. At **End of script**, **Back to start** is also beside the reading button.
 
     ## Camera and recording
 
-    **View** shows the script, the camera, or both. Choose a camera and use **Guides** to line up your shot. **Zebras** and **False colour** help check exposure. **Clean view** shows just the picture.
+    **View** shows the script, the camera, or both in this presenter. In a compact window, open **Setup** to choose your camera and **Framing Guides**. In a wide window these controls are on the bar. **Zebras** and **False colour** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
+
+    **Open Camera Monitor** in the Window menu opens a second-display view. Both windows share the camera and recording setup.
 
     **Record** sits beside **Start reading**. Each is a separate action. Choose **Stop recording** when finished, wait for **Saved**, then **Play** or **Show in Finder**. The library's **Recordings** button opens your takes.
 

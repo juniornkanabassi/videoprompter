@@ -3,8 +3,18 @@ import SwiftUI
 /// Meaning stays beside the monitor, numeric calibration stays in detailed help.
 struct ExposureGuidance: View {
   let zebras: Bool
-  let face: Bool
+  let guides: CameraGuides
   let falseColour: Bool
+
+  init(zebras: Bool, guides: CameraGuides, falseColour: Bool) {
+    self.zebras = zebras; self.guides = guides; self.falseColour = falseColour
+  }
+  // Compatibility for existing face-preset snapshots; arbitrary bands must pass their guides.
+  init(zebras: Bool, face: Bool, falseColour: Bool) {
+    var guides = CameraGuides()
+    if face { guides.useZebraPreset(.faceReference) }
+    self.init(zebras: zebras, guides: guides, falseColour: falseColour)
+  }
 
   static let colourMeanings = [
     "Purple: almost black. Detail may be lost in shadows.",
@@ -18,12 +28,8 @@ struct ExposureGuidance: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
       if zebras {
-        Text(face
-          ? "Face brightness: your face should show stripes on the lit cheek."
-          : "Stripes mark very bright areas. Lower exposure on your camera if important parts of the picture lose detail.")
-        if face {
-          Text("Standard video reference only. Skin tones vary; for log footage, follow your camera's guidance.")
-        }
+        Text(guides.zebraMeasurement)
+        Text(guides.zebraGuidance)
       }
       if falseColour {
         Text("Purple/blue: dark. Green/pink: mid-tones. Yellow/red: very bright. Open the key to judge each colour.")
@@ -37,8 +43,8 @@ struct ExposureLegend: View {
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
       VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras { Text("Zebras: " + (model.guides.zebraRange > 0 ? "face brightness, \(model.guides.zebraLevel) IRE ± \(model.guides.zebraRange)" : "bright areas, \(model.guides.zebraLevel) IRE and above")) }
-        ExposureGuidance(zebras: model.guides.zebras, face: model.guides.zebraRange > 0,
+        if model.guides.zebras { Text("Zebras · " + model.guides.validatedZebraPurpose.label) }
+        ExposureGuidance(zebras: model.guides.zebras, guides: model.guides,
           falseColour: model.guides.falseColour)
         if model.guides.falseColour {
           DisclosureGroup("False colour key") {

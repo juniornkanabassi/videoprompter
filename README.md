@@ -56,7 +56,7 @@ Scripts are stored as Markdown. When you import a Markdown file it stays linked 
 
 The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. The camera picker, **Guides**, **Zebras**, **False colour** and **Exposure…** are on the tools row. When space is limited, **Camera tools** groups them in one menu. **Clean view** temporarily hides the script, backdrop and all guides while reading continues. **Exit clean view** or Esc restores the script at its current reading position.
 
-Choose **Camera Only** in the library to check framing or record without a script. The **Camera Monitor** window provides a second view of the same camera for another display.
+Choose **Camera Only** in the library to check framing or record without a script. Choose **Window → Open Camera Monitor** for a second-display view of the same camera. It shares the presenter’s camera and recording setup. Fresh setups prefer a physical camera and name the choice; virtual cameras must be chosen explicitly.
 
 Drag across a passage in the presenter or editor, then choose **Pin Selected Text over Camera** from **More** or the Prompter menu (⌥⌘L). **Expand passage** reveals longer text. **Back to script** or Esc returns to reading. Clicking a word in the presenter moves the reading position. **Edit script** opens an unsaved draft; **Save changes** (⌘Return) saves it, and **Cancel editing** keeps the original wording.
 
@@ -64,7 +64,7 @@ Drag across a passage in the presenter or editor, then choose **Pin Selected Tex
 
 Choose **Record**, optionally **Start reading**, then **Stop recording**. While the camera starts, a cancellable Waiting message stays visible. REC appears only after the first video frame is written. The fixed transport row keeps Stop and the REC timer visible while the tools row recedes. **More controls** brings the tools back. The health line shows the recording microphone, its input level and any sound problem. Dropped audio buffers are reported during the take and retained with its saved message.
 
-Before Record, **Saved video** shows the recording format, dimensions when available, rotation, saved mirroring and whether a frame marker is only a guide.
+Before Record, **Recording setup** shows the recording format, dimensions when available, rotation, saved mirroring and whether a frame marker is only a guide.
 
 After a take, the app checks its stored video and sound before **Saved [file name]** offers **Play**, **Show in Finder** and **Hide**. Dropped picture or sound and interrupted takes keep a warning beside the file, with a retry action. A file that fails verification is labelled incomplete, with a route to it in Finder when available. The library's **Recordings** button and Prompter > **Show Recordings Folder** reopen the folder later. Settings > Camera & Recording holds H.264, HEVC and ProRes 422 recording formats, saved-video mirroring and take names. Frame markers and exposure aids only affect the preview.
 
@@ -145,3 +145,11 @@ Copyright (C) 2026 Junior Nkanabassi. Licensed under the GNU General Public Lice
 In plain terms, you can use, change and share this code, but anything you distribute that is built on it has to stay open source under the same licence.
 
 The bundled Lexend fonts are under the SIL Open Font License, in [Resources/Fonts/OFL.txt](Resources/Fonts/OFL.txt), and Sparkle, which handles updates, is under the MIT licence.
+
+### Reading and exposure controls
+
+The status beside **Start reading** always names the mode and says **Follows your voice** or **Scrolls at N wpm** before you start. Choose the status to change mode or speed. **End of script** is distinct from a pause, with **Back to start** and **Read again**; finishing a script never stops a recording.
+
+At compact sizes, **Setup** groups the camera picker, framing, exposure, microphone and text controls; **More** holds editing and restart. During a take, **Zebras**, **False colour** and **Clean view** remain one-click actions.
+
+Exposure presets distinguish bright areas, a qualified face reference, and custom measurements. Editing a level selects Custom. Custom bands are never presented as face targets, and near-white levels carry a warning. Camera rotation changes both the preview and saved take; frame markers do not crop the recording.

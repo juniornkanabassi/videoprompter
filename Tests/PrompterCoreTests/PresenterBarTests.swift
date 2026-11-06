@@ -116,6 +116,13 @@ import XCTest
             XCTAssertFalse(has("View", in: host)); XCTAssertFalse(has("More", in: host))
             XCTAssertFalse(has("Guides", in: host)); XCTAssertFalse(has("Edit script", in: host))
             _ = try button("More controls", in: host)
+            if mode != .prompterOnly {
+              for action in ["Zebras", "False colour", "Clean view"] {
+                let monitorButton = try button(action, in: host)
+                XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(monitorButton)))
+                XCTAssertFalse(insideScrollView(monitorButton))
+              }
+            }
           }
           if zoom == 2 && state == "recording" {
             let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
