@@ -710,7 +710,7 @@ struct ExposureToggle: View {
         if kind == .falseColour { VStack(spacing: 0) { Text("False"); Text("colour") }.fixedSize() }
         else { Text(title).fixedSize() }
       } else { Label(title, systemImage: kind == .zebras ? "circle.lefthalf.striped.horizontal" : on ? "paintpalette.fill" : "paintpalette") }
-    }.tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
+    }.help(kind == .zebras ? "Mark bright areas in the received picture" : "Show brightness levels in the received picture").tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
   }
 }
 
@@ -719,8 +719,8 @@ struct CameraExposureSections: View {
   var body: some View {
     Section("Exposure") {
       Text("Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours.").font(.callout)
-      Toggle("Zebras", isOn: $model.guides.zebras)
-      Toggle("False colour", isOn: $model.guides.falseColour)
+      Toggle("Zebras: mark bright areas", isOn: $model.guides.zebras)
+      Toggle("False colour: show brightness levels", isOn: $model.guides.falseColour)
       Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
         ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }
@@ -784,10 +784,11 @@ enum RecordingHealth: Equatable {
 struct RecordingAudioHealth: View {
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject private var meter: InputMeter
+  var compact = false
   @State private var beganAt = ProcessInfo.processInfo.systemUptime
   @State private var previousHealth = RecordingHealth.receiving
   @State private var lastWarningAt = -Double.infinity
-  init(recorder: CameraRecorder) { self.recorder = recorder; meter = recorder.inputMeter }
+  init(recorder: CameraRecorder, compact: Bool = false) { self.recorder = recorder; self.compact = compact; meter = recorder.inputMeter }
   nonisolated static func message(drops: Int, clipping: Bool, fresh: Bool) -> String {
     if drops > 0 { return "Sound dropped from the file (\(drops) times)" }
     return RecordingHealth.state(clipping: clipping, fresh: fresh).message
@@ -796,7 +797,8 @@ struct RecordingAudioHealth: View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
       let fresh = ProcessInfo.processInfo.systemUptime - (meter.lastAudibleSampleAt ?? beganAt) < 3
       let health = RecordingHealth.state(clipping: meter.isClipping && meter.isFresh(), fresh: fresh)
-      VStack(alignment: .leading, spacing: Space.xs) {
+      let layout = compact ? AnyLayout(HStackLayout(spacing: Space.sm)) : AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
+      layout {
         HStack(spacing: Space.sm) {
           Text("Mic: \(recorder.microphoneName)").lineLimit(2).help(recorder.microphoneName)
             .fixedSize(horizontal: false, vertical: true)
@@ -832,18 +834,17 @@ struct RecordingReceipt: View {
   @ObservedObject var camera: CameraModel = .shared
   var configure: (() -> Void)? = nil
   var zoom = 1.0
+  var compact = false
   @State private var recoverySettings = false
   var body: some View {
     if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {
         if let file = recorder.savedTake {
-          Label(recorder.qualityWarning == nil ? (zoom >= 1.5 ? "Saved" : "Saved \(file.lastPathComponent)") : (zoom >= 1.5 ? "Saved with problems" : "Saved with problems: \(file.lastPathComponent)"),
+          Label(recorder.qualityWarning == nil ? "Saved \(file.lastPathComponent)" : "Saved with problems: \(file.lastPathComponent)",
             systemImage: recorder.qualityWarning == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-            .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).help(file.path)
+            .font(.callout.weight(.semibold)).lineLimit(compact ? 1 : nil).truncationMode(.middle).help(file.path)
+            .accessibilityValue(file.lastPathComponent)
           if let warning = recorder.qualityWarning { Text(warning).font(.callout).fixedSize(horizontal: false, vertical: true) }
-          if zoom >= 1.5 {
-            DisclosureGroup("Take details") { Text(file.lastPathComponent).font(.callout).textSelection(.enabled) }
-          }
           WrapLayout(spacing: Space.sm) {
             Button("Play") { NSWorkspace.shared.open(file) }
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
@@ -862,7 +863,7 @@ struct RecordingReceipt: View {
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Space.md).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
+        .padding(compact ? Space.xs : Space.md).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
     }
   }
 }

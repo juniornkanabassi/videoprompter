@@ -110,7 +110,7 @@ struct SettingsPage: View {
             .help("Save the current presenter settings for reuse")
         }
         Section {
-          if store.presets.isEmpty { Text("Your reading presets appear here.").foregroundStyle(.secondary) }
+          if store.presets.isEmpty { Text("Your reading presets appear here.").font(.callout).foregroundStyle(.primary) }
           ForEach(store.presets) { preset in
             VStack(alignment: .leading, spacing: Space.sm) {
               HStack {

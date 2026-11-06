@@ -95,9 +95,9 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Open Camera View in Presenter") { PresenterController.shared.presentCamera(store: store) }
+          Button("Camera") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Open the floating presenter for framing; add a script later. Shares camera settings with the separate monitor.")
+            .help("Choose a camera, check framing or record. Camera Monitor is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
@@ -218,7 +218,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Camera Monitor (Second Window)") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

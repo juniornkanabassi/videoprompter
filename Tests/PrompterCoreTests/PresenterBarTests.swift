@@ -198,4 +198,62 @@ import XCTest
     }
   }
 
+  func testCompactWindowKeepsThreeQuartersForReadingIncludingWarnings() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("R8ReadingBudget")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let record = try await store.createScript(title: "Retake", markdown: String(repeating: "Read these words. ", count: 200))
+    store.settings.mode = "Manual"
+    store.session.present(record: record, settings: store.settings)
+    let camera = CameraModel(defaults: defaults); camera.displayMode = .prompterWithVideo
+    camera.recordingReadyOverride = true
+    let recorder = CameraRecorder(defaults: defaults)
+    let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder))
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 760, height: 520), styleMask: [.titled], backing: .buffered, defer: true)
+    window.isReleasedWhenClosed = false; window.contentView = host
+    host.frame = NSRect(x: 0, y: 0, width: 760, height: 520)
+    defer { store.session.pause(); window.contentView = nil; window.close() }
+    func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
+    func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+    for zoom in [1.0, 1.5, 2.0] {
+      store.uiZoom = zoom
+      for state in ["idle", "reading", "waiting", "recording", "warning"] {
+        store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil
+        if state == "reading" { store.session.play(captureAudio: false) }
+        if state == "waiting" { recorder.phase = .waitingForFrames }
+        if state == "recording" { recorder.phase = .recording }
+        if state == "warning" {
+          recorder.savedTake = URL(fileURLWithPath: "/tmp/Opening take 03.mov")
+          recorder.droppedFrames = 7
+        }
+        await settle()
+        let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
+        let viewport = try XCTUnwrap(script.enclosingScrollView)
+        XCTAssertGreaterThanOrEqual(viewport.frame.height, 390, "\(zoom) \(state): script viewport \(viewport.frame)")
+        let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
+        XCTAssertLessThanOrEqual(try frame(bar).height, 130, "\(zoom) \(state)")
+        _ = try button("Reading mode", in: host)
+        if state == "idle" {
+          for name in ["Camera", "Text", "Microphone", "Edit script", "Back to start"] { _ = try button(name, in: host) }
+          XCTAssertTrue(elements(host).contains { (label($0, "accessibilityValue") ?? label($0, "accessibilityLabel") ?? "").contains("Movies/Video Prompter") })
+        }
+        if state == "warning" { XCTAssertTrue(elements(host).contains { (label($0, "accessibilityValue") ?? "").contains("Opening take 03.mov") }) }
+        recorder.droppedFrames = 0
+      }
+      // A paused mid-script retake is one press and never changes recording state.
+      store.session.seek(to: 10); recorder.phase = .recording
+      await settle()
+      _ = try button("Back to start", in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
+      await settle()
+      XCTAssertEqual(store.session.tokenIndex, 0)
+      XCTAssertEqual(recorder.phase, .recording)
+    }
+    recorder.phase = .idle; camera.recordingReadyOverride = false
+    await settle()
+    XCTAssertFalse(try isEnabled(button("Record", in: host)))
+    _ = try button("Choose camera", in: host)
+    XCTAssertLessThanOrEqual(PresenterView.controlZoom(2), 1.1)
+  }
+
 }
