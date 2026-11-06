@@ -11,6 +11,7 @@ struct LibraryView: View {
   @State private var selection = Set<UUID>()
   @State private var showsDeleted = false
   @State private var showsPractice = false
+  @State private var showsReadingTip = true
   @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   @State private var importing = false
@@ -120,7 +121,7 @@ struct LibraryView: View {
           },
             camera: { PresenterController.shared.presentCamera(store: store) })
         } else if let script = store.selected {
-          EditorView(store: store, script: script).id(script.metadata.id)
+          EditorView(store: store, script: script, showsReadingTip: $showsReadingTip).id(script.metadata.id)
         } else {
           if !store.libraryAvailable {
             ContentUnavailableView("Library unavailable", systemImage: "exclamationmark.triangle",
@@ -342,6 +343,7 @@ private struct ScriptRow: View {
 private struct EditorView: View {
   @ObservedObject var store: AppStore
   let script: ScriptRecord
+  @Binding var showsReadingTip: Bool
   @State private var text = ""
   @State private var title = ""
   @State private var tags = ""
@@ -351,9 +353,10 @@ private struct EditorView: View {
   @Environment(\.colorScheme) private var colorScheme
   @StateObject private var saver = LibraryEditorSave()
 
-  init(store: AppStore, script: ScriptRecord) {
+  init(store: AppStore, script: ScriptRecord, showsReadingTip: Binding<Bool>) {
     self.store = store
     self.script = script
+    _showsReadingTip = showsReadingTip
     _text = State(initialValue: script.markdown)
     _title = State(initialValue: script.metadata.title)
     _tags = State(initialValue: script.metadata.tags.joined(separator: ", "))
@@ -403,6 +406,10 @@ private struct EditorView: View {
         }
       }.padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
       Divider()
+      if showsReadingTip {
+        ReadingFirstUseTip(dismiss: { showsReadingTip = false })
+          .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
+      }
       if let status = store.linkedSyncStatus {
         Text(status).font(.callout).accessibilityIdentifier("linked-sync-status")
           .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)

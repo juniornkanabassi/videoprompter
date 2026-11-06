@@ -132,7 +132,7 @@ import XCTest
     let (window, host) = await LibraryAX.host(CameraPickerList(model: camera, zoom: 2, startsPreview: false,
       devicesOverride: devices, close: {}).uiZoom(2), size: .init(width: 600, height: 700))
     defer { LibraryAX.close(window) }
-    let preview = try XCTUnwrap(LibraryAX.named("Live preview of Camera 10", in: host).first)
+    let preview = try XCTUnwrap(LibraryAX.named("Camera preview: Camera 10", in: host).first)
     let frame = try XCTUnwrap(preview.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame))
     XCTAssertFalse(LibraryAX.named("Camera 10", in: host).isEmpty)

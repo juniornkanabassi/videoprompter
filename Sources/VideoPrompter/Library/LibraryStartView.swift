@@ -24,7 +24,7 @@ struct LibraryStartView: View {
           }.buttonStyle(.borderedProminent)
           Text("Copy your script, then paste it here.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
-        Text("Then choose **Present**, then **Start reading**. Reading moves the words without recording. Choose **Record** to save a video.")
+        Text("Then choose **Present**, then **Start reading**. Voice follow moves the words as you speak. Reading does not record a video.")
           .font(.callout).fixedSize(horizontal: false, vertical: true)
           Button("Quick Reading Practice", action: practice).buttonStyle(.bordered)
             .help("Open a short guided practice, then choose Start reading")
@@ -41,5 +41,20 @@ struct LibraryStartView: View {
       }.foregroundStyle(.primary).frame(maxWidth: 620, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .topLeading).padding(Space.margin)
     }
+  }
+}
+
+/// Session-only guidance also reaches people who paste straight into a new script.
+struct ReadingFirstUseTip: View {
+  let dismiss: () -> Void
+  static let explanation = "Voice follow moves the words as you speak. Choose Present, then Start reading. Allow microphone and speech access when asked."
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Text(Self.explanation)
+      Text("Reading does not record a video. Choose Record separately to save a take.")
+      Button("Got it", action: dismiss)
+        .frame(minHeight: 24)
+        .accessibilityLabel("Got it, hide reading tip")
+    }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
   }
 }
