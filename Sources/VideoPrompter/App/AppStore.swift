@@ -33,6 +33,14 @@ private enum PresenterSaveError: LocalizedError {
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
   @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); CameraRecorder.shared.useSettings(settings) } }
+  @Published var shootSetupError: String? {
+    didSet {
+      if let shootSetupError {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [.announcement: shootSetupError, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+      }
+    }
+  }
   @Published var shootSetups: [ShootSetup] = [] {
     didSet { if let data = try? JSONEncoder().encode(shootSetups) { defaults.set(data, forKey: "shootSetups") } }
   }

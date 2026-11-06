@@ -1,0 +1,9 @@
+[
+  {
+    "name": "Legacy portrait",
+    "reading": { "fontSize": 68, "horizontalMirror": true },
+    "guides": { "thirds": true, "rotation": 90 },
+    "format": "retired-codec-name"
+  },
+  { "name": "Oldest setup" }
+]

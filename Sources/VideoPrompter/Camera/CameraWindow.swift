@@ -226,9 +226,12 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     return nil
   }
 
+  /// Inventory only: validating a setup must not select a camera or open capture.
+  func refreshDevices() { devices = Self.discovered() }
+
   func refresh() {
     let previousMessage = unavailableMessage
-    devices = Self.discovered()
+    refreshDevices()
     let resolved = Self.resolve(selectedUID, in: devices)?.uid
     if selectedUID == nil, let resolved {
       selectedUID = resolved

@@ -65,24 +65,58 @@ import XCTest
   }
   func testShootSetupRestoresAllChoicesAndRefusesActiveTakeOrMissingDevice() async throws {
     let (store, camera, recorder, defaults) = fixture()
-    store.settings.audioDeviceUID = nil; store.settings.fontSize = 68
+    let microphones = [AudioInputDevice(id: 1, uid: "voice", name: "Voice"), AudioInputDevice(id: 2, uid: "record", name: "Record")]
+    store.settings.audioDeviceUID = "voice"; store.settings.fontSize = 68
+    store.settings.horizontalMirror = true; store.settings.verticalMirror = true
     camera.guides.thirds = true; camera.guides.zebras = true; camera.setRotation(.quarter)
-    camera.displayMode = .prompterWithVideo; recorder.preset = .high
+    camera.mirrored = true; camera.displayMode = .prompterWithVideo
+    recorder.preset = .high; recorder.mirrorSavedVideo = true
+    recorder.usesSeparateMicrophone = true; recorder.microphoneUID = "record"; recorder.floatAudio = true
     store.saveShootSetup(named: "Portrait", camera: camera, recorder: recorder)
-    let setup = try XCTUnwrap(store.shootSetups.first)
+    let reloadRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: reloadRoot) }
+    let reloaded = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", reloadRoot.path], defaults: defaults))
+    let setup = try XCTUnwrap(reloaded.shootSetups.first)
+    XCTAssertEqual(setup.id, store.shootSetups.first?.id)
     camera.guides.thirds = false; camera.guides.zebras = false; camera.setRotation(.none)
-    recorder.preset = .standard; store.settings.fontSize = 30
+    camera.mirrored = false; camera.displayMode = .prompterOnly
+    recorder.preset = .standard; recorder.mirrorSavedVideo = false
+    recorder.usesSeparateMicrophone = false; recorder.microphoneUID = nil; recorder.floatAudio = false
+    store.settings.fontSize = 30; store.settings.audioDeviceUID = nil
+    store.settings.horizontalMirror = false; store.settings.verticalMirror = false
+    let beforeReading = store.settings
+    let beforeGuides = camera.guides
+    func assertUnchanged(file: StaticString = #filePath, line: UInt = #line) {
+      XCTAssertEqual(store.settings, beforeReading, file: file, line: line)
+      XCTAssertEqual(camera.guides, beforeGuides, file: file, line: line)
+      XCTAssertNil(camera.selectedUID, file: file, line: line)
+      XCTAssertFalse(camera.mirrored, file: file, line: line)
+      XCTAssertEqual(camera.displayMode, .prompterOnly, file: file, line: line)
+      XCTAssertEqual(recorder.preset, .standard, file: file, line: line)
+      XCTAssertFalse(recorder.mirrorSavedVideo, file: file, line: line)
+      XCTAssertFalse(recorder.usesSeparateMicrophone, file: file, line: line)
+      XCTAssertNil(recorder.microphoneUID, file: file, line: line)
+      XCTAssertFalse(recorder.floatAudio, file: file, line: line)
+    }
     recorder.phase = .recording
-    XCTAssertFalse(store.applyShootSetup(setup, camera: camera, recorder: recorder))
-    XCTAssertEqual(store.settings.fontSize, 30)
+    XCTAssertFalse(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: microphones))
+    assertUnchanged()
     recorder.phase = .idle
-    XCTAssertTrue(store.applyShootSetup(setup, camera: camera, recorder: recorder))
-    XCTAssertEqual(store.settings.fontSize, 68); XCTAssertTrue(camera.guides.thirds); XCTAssertTrue(camera.guides.zebras)
-    XCTAssertEqual(camera.guides.rotation, .quarter); XCTAssertEqual(recorder.preset, .high)
     var missing = setup; missing.cameraUID = "missing"
-    XCTAssertFalse(store.applyShootSetup(missing, camera: camera, recorder: recorder))
-    let data = try XCTUnwrap(defaults.data(forKey: "shootSetups"))
-    XCTAssertEqual(try JSONDecoder().decode([ShootSetup].self, from: data).first?.name, "Portrait")
+    XCTAssertFalse(store.applyShootSetup(missing, camera: camera, recorder: recorder, microphones: microphones))
+    assertUnchanged()
+    XCTAssertFalse(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: Array(microphones.prefix(1))))
+    assertUnchanged()
+    XCTAssertFalse(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: Array(microphones.suffix(1))))
+    assertUnchanged()
+    XCTAssertTrue(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: microphones))
+    XCTAssertEqual(store.settings.fontSize, 68); XCTAssertTrue(camera.guides.thirds); XCTAssertTrue(camera.guides.zebras)
+    XCTAssertTrue(store.settings.horizontalMirror); XCTAssertTrue(store.settings.verticalMirror)
+    XCTAssertEqual(camera.guides.rotation, .quarter); XCTAssertEqual(recorder.preset, .high)
+    XCTAssertTrue(camera.mirrored); XCTAssertEqual(camera.displayMode, .prompterWithVideo)
+    XCTAssertTrue(recorder.mirrorSavedVideo); XCTAssertTrue(recorder.usesSeparateMicrophone)
+    XCTAssertEqual(recorder.microphoneUID, "record"); XCTAssertEqual(store.settings.audioDeviceUID, "voice")
+    XCTAssertEqual(recorder.resolvedMicrophoneUID, "record"); XCTAssertTrue(recorder.floatAudio)
   }
   func testExposureHostUsesTheReplacementSectionWithoutOldControls() async throws {
     let (_, camera, _, _) = fixture()

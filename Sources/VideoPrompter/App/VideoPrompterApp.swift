@@ -226,6 +226,11 @@ private struct CameraCommands: Commands {
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+  private let presenter: PresenterController
+  init(presenter: PresenterController = .shared) {
+    self.presenter = presenter
+    super.init()
+  }
   private var controlServer: ControlServer?
   weak var store: AppStore? {
     didSet {
@@ -277,6 +282,7 @@ private struct CameraCommands: Commands {
     return true
   }
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+    guard presenter.prepareToQuit(then: { sender.terminate(nil) }) else { return .terminateCancel }
     guard let store else { return .terminateNow }
     store.session.pause()
     Task {

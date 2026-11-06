@@ -9,7 +9,7 @@ import SwiftUI
   var panel: PresenterPanel?
   private var screenObserver: NSObjectProtocol?
   private weak var activeSession: SessionStore?
-  private var draft: PresenterDraft?
+  private(set) var draft: PresenterDraft?
   private let camera: CameraModel
   private let recorder: CameraRecorder
   @Published var asksToCloseRecording = false
@@ -152,6 +152,14 @@ import SwiftUI
   func moveReading(_ action: (SessionStore) -> Void) {
     guard let session = activeSession, !isEditing, !isShowingWithoutScript, camera.displayMode != .videoOnly else { return }
     action(session)
+  }
+
+  /// Cancels termination until the draft has been saved or explicitly discarded.
+  func prepareToQuit(then quit: @escaping () -> Void) -> Bool {
+    guard let draft, draft.isEditing, draft.hasEdits || draft.isSaving else { return true }
+    draft.requestClose(then: quit)
+    panel?.makeKeyAndOrderFront(nil)
+    return false
   }
 
   var isEditing: Bool { draft?.isEditing == true }
@@ -540,6 +548,7 @@ class PresenterPanel: NSPanel {
   @Published var noticeMessage: String?
   private weak var session: SessionStore?
   private var resumeAfterEdit = false
+  private var closeAction: (() -> Void)?
   private var originalMarkdown: String
   var hasEdits: Bool { markdown != originalMarkdown }
 
@@ -576,6 +585,7 @@ class PresenterPanel: NSPanel {
   private func finishEditing(resuming: Bool = true) {
     isEditing = false
     closeRequested = false
+    closeAction = nil
     errorMessage = nil
     if resuming { resumeTracking() } else { resumeAfterEdit = false }
   }
@@ -585,12 +595,13 @@ class PresenterPanel: NSPanel {
     resumeAfterEdit = false
     session?.play()
   }
-  func requestClose() {
+  func requestClose(then action: @escaping () -> Void = { PresenterController.shared.closeNow() }) {
     guard !isSaving else {
       errorMessage = "Wait for the save to finish before closing the presenter."
       return
     }
     discardCloses = true
+    closeAction = action
     closeRequested = true
   }
   /// Escape used to throw typed edits away without asking. Typing goes through the same
@@ -599,9 +610,26 @@ class PresenterPanel: NSPanel {
     guard !isSaving else { return }
     guard hasEdits else { cancel(); return }
     discardCloses = false
+    closeAction = nil
     closeRequested = true
   }
-  func confirm(store: AppStore) async {
+  func keepEditing() {
+    closeRequested = false
+    closeAction = nil
+  }
+  func discardAndClose() {
+    guard !isSaving else { return }
+    let action = closeAction
+    cancel(resuming: !discardCloses)
+    action?()
+  }
+  func saveAndClose(store: AppStore) async {
+    let action = closeAction
+    await confirm(store: store, resuming: !discardCloses)
+    // A failed save or typing added during the save must keep the app open.
+    if !isEditing { action?() }
+  }
+  func confirm(store: AppStore, resuming: Bool = true) async {
     guard !isSaving else { return }
     let submitted = markdown
     isSaving = true
@@ -615,7 +643,7 @@ class PresenterPanel: NSPanel {
         expectedRevision = saved.metadata.revision
       }
       originalMarkdown = submitted
-      if markdown == submitted { finishEditing() }
+      if markdown == submitted { finishEditing(resuming: resuming) }
       let title = store.scripts.first(where: { $0.id == recordID })?.metadata.title ?? "script"
       NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
         userInfo: [.announcement: "Changes saved to \(title)", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -845,12 +873,10 @@ struct PresenterView: View {
       Button("Keep recording") { controller.keepRecordingAndClose() }
       Button("Cancel", role: .cancel) {}
     } message: { Text("Keep recording leaves a recording status window with a Stop button.") }
-    .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
-      Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
-        draft.cancel(resuming: !draft.discardCloses)
-        if draft.discardCloses { PresenterController.shared.closeNow() }
-      }
-      Button("Keep Editing", role: .cancel) {}
+    .confirmationDialog("Save changes to this script?", isPresented: $draft.closeRequested) {
+      Button("Save") { Task { await draft.saveAndClose(store: store) } }.disabled(draft.isSaving)
+      Button("Discard", role: .destructive) { draft.discardAndClose() }.disabled(draft.isSaving)
+      Button("Cancel", role: .cancel) { draft.keepEditing() }
     } message: {
       Text("The draft has not been saved to the script library.")
     }
@@ -927,6 +953,13 @@ struct PresenterView: View {
         Spacer(minLength: 0)
         if camera.cleanView { Button("Exit clean view") { camera.cleanView = false } }
         moreMenu.opacity(secondaryOpacity)
+      }
+      if let error = store.shootSetupError {
+        HStack(alignment: .top, spacing: Space.sm) {
+          Text(error).fixedSize(horizontal: false, vertical: true)
+          Button("Dismiss") { store.shootSetupError = nil }
+            .accessibilityLabel("Dismiss shoot setup message")
+        }.font(.callout)
       }
       if recorder.isRecording {
         HStack(spacing: Space.xs) {
