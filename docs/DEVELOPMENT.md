@@ -58,6 +58,8 @@ For a manual test with disposable data, launch the app executable with `--data-d
 
 ## Command line and AI control
 
+Automatic scroll `resume` honours the saved Start delay (3 seconds by default). During it, navigation and status replies include `state: "starting"` and integer `countdown` seconds remaining. Once running, `countdown` is 0. Repeating `resume` during the countdown does not reset it. CLI help and the MCP tool description share this contract.
+
 Video Prompter exposes its existing app actions through a private Unix socket, a bundled CLI and an MCP shim. It requires macOS 26; MCP requires Node 18 or later and uses protocol version 2025-06-18. The source installer links `~/.local/bin/videoprompter` after a verified local install. A downloaded app does not create that link.
 
 For a standard drag installation, set the real app path and use the bundled helper directly:

@@ -22,7 +22,8 @@ import Speech
   private func identity(_ script: ScriptRecord) -> [String: String] { ["id": script.id.uuidString, "title": script.metadata.title] }
   private var position: [String: Int] { ["word": store.session.document.spokenTokens.isEmpty ? 0 : store.session.tokenIndex + 1, "words": store.session.document.spokenTokens.count] }
   private var state: String {
-    switch store.session.state {
+    if store.session.isCountingDown { return "starting" }
+    return switch store.session.state {
     case .stopped: "stopped"
     case .paused: "paused"
     case .running: "running"
@@ -115,7 +116,7 @@ import Speech
       var result: [String: Any] = ["running": true, "headless": Headless.shared.active, "app": Bundle.main.bundleIdentifier ?? ControlProtocol.bundleID,
         "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev", "library": store.libraryAvailable, "scripts": store.scripts.count,
         "selected": store.selected.map(identity) as Any? ?? NSNull(), "presenter": presenter.isEditing ? "editing" : presenter.panel?.isVisible == true ? "visible" : "hidden",
-        "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "readingStatus": store.session.readingStatus, "nextReadingAction": store.session.readingNextAction, "state": state, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
+        "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "readingStatus": store.session.readingStatus, "nextReadingAction": store.session.readingNextAction, "state": state, "countdown": store.session.countdownRemaining, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
       result["linkedSyncWaiting"] = await store.library?.linkedSyncWaiting() ?? []
       result["speed"] = Int(store.settings.speed.rounded())
       result["camera"] = cameraState
@@ -530,7 +531,7 @@ import Speech
         presenter.moveReading { $0.previousPassage() }
       }
     }
-    return .ok(["state": state, "position": position])
+    return .ok(["state": state, "countdown": store.session.countdownRemaining, "position": position])
   }
 
   private struct Refusal: Error { let result: ControlResult }
@@ -703,7 +704,7 @@ import Speech
       else {
         let parts = marker.split(separator: ":")
         guard parts.count == 2, let width = Double(parts[0]), let height = Double(parts[1]),
-          width > 0, height > 0, width <= 100, height <= 100 else { return .error("invalid_params", "Marker must be off or W:H, such as 9:16.") }
+          CameraAspect(width: width, height: height).isValid else { return .error("invalid_params", "Marker must be off or W:H, such as 9:16.") }
         g.marker = CameraAspect(width: width, height: height)
       }
     }

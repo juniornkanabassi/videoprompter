@@ -53,6 +53,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     get { storedGuides }
     set {
       var value = newValue
+      if let marker = value.marker, !marker.isValid { value.marker = storedGuides.marker }
       if recordingLocked {
         value.rotation = storedGuides.rotation
         value.automaticRotation = storedGuides.automaticRotation
@@ -404,13 +405,33 @@ struct CameraSettingsSections: View {
 /// The guide and frame marker sections, shared by both panels above.
 struct CameraGuideSections: View {
   @ObservedObject var model: CameraModel
+  @State private var editingCustom = false
+  @State private var invalidDimension = false
+  private var shape: Binding<String> {
+    Binding(get: {
+      guard let marker = model.guides.marker else { return "Off" }
+      return editingCustom || !CameraAspect.presets.contains(marker) ? "Custom" : marker.label
+    }, set: { choice in
+      editingCustom = choice == "Custom"
+      invalidDimension = false
+      if choice == "Off" { model.guides.marker = nil }
+      else if choice == "Custom" { model.guides.marker = model.guides.marker ?? CameraAspect(width: 2.39, height: 1) }
+      else { model.guides.marker = CameraAspect.presets.first { $0.label == choice } }
+    })
+  }
+  private func updateMarker(width: Double, height: Double) {
+    editingCustom = true
+    let marker = CameraAspect(width: width, height: height)
+    invalidDimension = !marker.isValid
+    if marker.isValid { model.guides.marker = marker }
+  }
   private var customWidth: Binding<Double> {
     Binding(get: { model.guides.marker?.width ?? 2.39 },
-      set: { model.guides.marker = CameraAspect(width: $0, height: model.guides.marker?.height ?? 1) })
+      set: { updateMarker(width: $0, height: model.guides.marker?.height ?? 1) })
   }
   private var customHeight: Binding<Double> {
     Binding(get: { model.guides.marker?.height ?? 1 },
-      set: { model.guides.marker = CameraAspect(width: model.guides.marker?.width ?? 2.39, height: $0) })
+      set: { updateMarker(width: model.guides.marker?.width ?? 2.39, height: $0) })
   }
   var body: some View {
     Group {
@@ -422,18 +443,21 @@ struct CameraGuideSections: View {
         LabeledContent("Guide visibility") { Slider(value: $model.guides.opacity, in: 0...1).accessibilityLabel("Guide visibility").accessibilityValue("\(Int(model.guides.opacity * 100)) percent") }.help("Fade the guides; zero hides them")
       }
       Section("Frame marker") {
-        Picker("Frame shape", selection: $model.guides.marker) {
-          Text("Off").tag(nil as CameraAspect?)
-          ForEach(CameraAspect.presets) { Text($0.label).tag(Optional($0)) }
-          Text("Custom").tag(Optional(custom))
+        Picker("Frame shape", selection: shape) {
+          Text("Off").tag("Off")
+          ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
+          Text("Custom").tag("Custom")
         }.help("Mark the shape of your intended output without cropping the recording")
         if let marker = model.guides.marker { Text("\(marker.label) guide only. The full frame is recorded.").font(.callout) }
-        if let value = model.guides.marker, !CameraAspect.presets.contains(value) {
+        if shape.wrappedValue == "Custom" {
           HStack {
             TextField("Width", value: customWidth, format: .number).help("Set the width part of the custom frame ratio").frame(width: 64)
             Text(":")
             TextField("Height", value: customHeight, format: .number).help("Set the height part of the custom frame ratio").frame(width: 64)
           }
+        }
+        if invalidDimension {
+          Text("Enter a width and height greater than 0 and no more than 100.").font(.callout)
         }
         if model.guides.marker != nil {
           LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1).accessibilityLabel("Shade outside").accessibilityValue("\(Int(model.guides.shadeOpacity * 100)) percent") }.help("Darken the area outside the frame marker")
@@ -441,7 +465,6 @@ struct CameraGuideSections: View {
       }
     }
   }
-  private var custom: CameraAspect { model.guides.marker.flatMap { CameraAspect.presets.contains($0) ? nil : $0 } ?? CameraAspect(width: 2.39, height: 1) }
   private var guideColor: Binding<Color> {
     Binding(
       get: {
@@ -806,16 +829,6 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
-  func outputGlance(camera: CameraModel) -> String {
-    let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
-    guard let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) else {
-      return "Resolution pending camera · \(camera.guides.rotation.label) · \(codec)"
-    }
-    let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-    let width = camera.guides.rotation.swapsAxes ? size.height : size.width
-    let height = camera.guides.rotation.swapsAxes ? size.width : size.height
-    return "\(width) × \(height) · \(height > width ? "Portrait" : "Landscape") · \(codec)"
-  }
   func outputSummary(camera: CameraModel) -> String {
     let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
     var parts: [String] = []
@@ -905,9 +918,6 @@ struct RecordingReceipt: View {
   var compact = false
   @State private var recoverySettings = false
   @State private var showsDetails = false
-  @State private var focusRevision = 0
-  @FocusState private var receiptFocused: Bool
-  @AccessibilityFocusState private var receiptAXFocused: Bool
   private var receiptLabel: String { recorder.savedTake == nil ? "Take not saved" : recorder.qualityWarning == nil ? "Show saved take…" : "Saved with problems" }
   static func problemSummary(frames: Int, audio: Int, failure: String?) -> String {
     if let failure { return failure }
@@ -924,16 +934,7 @@ struct RecordingReceipt: View {
 
         }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain).labelStyle(.titleAndIcon).foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange).accessibilityLabel(receiptLabel)
-        .focusable().focused($receiptFocused).accessibilityFocused($receiptAXFocused)
-        .background(PresenterFocusReturn(target: receiptLabel, revision: focusRevision))
-        .onChange(of: showsDetails) { _, open in
-          if !open {
-            Task { @MainActor in
-              try? await Task.sleep(for: .milliseconds(150))
-              receiptFocused = true; receiptAXFocused = true; focusRevision += 1
-            }
-          }
-        }
+        .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-receipt")
         .accessibilityValue(recorder.savedTake?.lastPathComponent ?? recorder.takeFailure ?? "Take not saved")
         .accessibilityHint(recorder.qualityWarning ?? recorder.takeFailure ?? "Open take details")
         .help(recorder.qualityWarning ?? recorder.takeFailure ?? recorder.savedTake?.path ?? "")

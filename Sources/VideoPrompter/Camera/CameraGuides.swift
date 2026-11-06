@@ -8,9 +8,13 @@ struct CameraAspect: Codable, Equatable, Hashable, Identifiable, Sendable {
   var height: Double
   var id: String { label }
   var label: String { "\(trim(width)):\(trim(height))" }
-  var isValid: Bool { width > 0 && height > 0 }
+  // Match the public control boundary and reject non-finite or unusable ratios.
+  var isValid: Bool {
+    width.isFinite && height.isFinite && width > 0 && height > 0
+      && width <= 100 && height <= 100 && (width / height).isFinite && width / height > 0
+  }
   private func trim(_ value: Double) -> String {
-    value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+    String(format: "%g", value)
   }
   /// The largest rectangle of this shape that fits inside `rect`, centred. Nothing is cropped
   /// from the picture: the marker only draws where the delivered frame lands.
@@ -132,12 +136,18 @@ struct CameraGuideStore {
 
   func guides(for uid: String?) -> CameraGuides {
     guard let uid, let stored = defaults.dictionary(forKey: Self.key)?[uid] as? Data,
-      let value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
+      var value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
     else { return CameraGuides() }
+    if let marker = value.marker, !marker.isValid {
+      value.marker = nil
+      set(value, for: uid)
+    }
     return value
   }
   func set(_ guides: CameraGuides, for uid: String?) {
-    guard let uid, let data = try? JSONEncoder().encode(guides) else { return }
+    var safeGuides = guides
+    if let marker = safeGuides.marker, !marker.isValid { safeGuides.marker = nil }
+    guard let uid, let data = try? JSONEncoder().encode(safeGuides) else { return }
     var all = defaults.dictionary(forKey: Self.key) ?? [:]
     all[uid] = data
     defaults.set(all, forKey: Self.key)

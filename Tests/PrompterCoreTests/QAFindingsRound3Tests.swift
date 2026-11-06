@@ -29,7 +29,8 @@ import XCTest
     }
   }
 
-  func testKeepBothRelinkClearsUnsupportedStatusFromNowUnlinkedOriginal() async throws {
+  func testEveryRelinkChoiceClearsUnsupportedStatusImmediately() async throws {
+    for resolution in [RelinkResolution.keepBoth, .keepLibrary, .useFile] {
     let root = URL(fileURLWithPath: "/private/tmp/vp-qa3-relink-\(UUID())")
     defer { try? FileManager.default.removeItem(at: root) }
     let library = try MarkdownLibrary(rootURL: root.appendingPathComponent("library"))
@@ -49,14 +50,21 @@ import XCTest
     XCTAssertTrue(broken.isBroken)
     let newFile = root.appendingPathComponent("replacement.md")
     try Data("Replacement words".utf8).write(to: newFile)
-    let result = try await library.relink(id: record.id, to: newFile, resolution: .keepBoth)
-    XCTAssertNil(result.current.metadata.linkedPath)
-    XCTAssertNotNil(result.imported)
+    let result = try await library.relink(id: record.id, to: newFile, resolution: resolution)
+    if resolution == .keepBoth {
+      XCTAssertNil(result.current.metadata.linkedPath)
+      XCTAssertNotNil(result.imported)
+    } else {
+      XCTAssertEqual(result.current.metadata.linkedPath, newFile.standardizedFileURL.path)
+    }
+    let immediate = await library.linkedSyncWaiting()
+    XCTAssertTrue(immediate.isEmpty, "Stale status after \(resolution): \(immediate)")
     // Run ordinary future polls too: an unlinked script can never clear this warning itself.
     for metadata in await library.listScripts() { _ = try await library.externalChange(for: metadata.id) }
     let after = await library.linkedSyncWaiting()
     XCTAssertTrue(after.isEmpty,
       "Neither retained script is linked to unmarked.md, so it must not keep a permanent sync warning: \(after)")
     XCTAssertEqual(try Data(contentsOf: archived), original)
+    }
   }
 }

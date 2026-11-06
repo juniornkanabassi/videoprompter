@@ -62,7 +62,7 @@ Drag across a passage in the presenter or editor, then choose **Pin Selected Tex
 
 **Microphone** normally chooses one device for both Voice follow and recorded sound. In Settings > Microphone > Advanced, **Record from a different microphone** enables a separate recording input. Camera, rotation and saved-video settings are locked while a take is preparing, recording or saving.
 
-Choose **Record**, optionally **Start reading**, then **Stop recording**. While the camera starts, a cancellable Waiting message stays visible. REC appears only after the first video frame is written. The fixed transport keeps Stop visible and the REC timer sits just below it. Text, Camera, Exposure and Microphone remain directly available. The sound notice opens the recording microphone, level and complete recovery instructions. Dropped audio buffers are reported during the take and retained with its saved message.
+Choose **Record**, optionally **Start reading**, then **Stop recording**. While the camera starts, a cancellable Waiting message stays visible. REC appears only after the first video frame is written. The fixed transport keeps Stop visible and the REC timer sits just below it. Text, Camera, Exposure and Microphone remain directly available. A live microphone level remains beside REC. The sound notice opens the recording microphone and complete recovery instructions. Dropped audio buffers are reported during the take and retained with its saved message.
 
 Reading mode and status remain visible with the camera shown. **Camera** opens device choices directly; **Camera options** holds format, dimensions, rotation, mirroring, framing and the recordings folder. **Microphone** checks the input level only when opened. **Exposure** provides the monitoring aids and Clean view. All controls honour Interface size, including 150% and 200%. Only the secondary tools recede during reading; Pause, REC, sound health and reading status stay at full contrast. The reserved bar leaves at least 65% of the window for the script.
 
@@ -78,7 +78,7 @@ Voice tracking runs on your Mac. There is no hidden fallback to cloud transcript
 
 ## Command line and AI assistants
 
-The app includes a `videoprompter` command and an MCP server, so you can drive it from Terminal or from Claude, Codex and other assistants. They use the same actions as the buttons in the app, and the result shows in the app straight away.
+The app includes a `videoprompter` command and an MCP server, so you can drive it from Terminal or from Claude, Codex and other assistants. They use the same actions as the buttons in the app, and the result shows in the app straight away. Automatic scroll `resume` honours Start delay, normally three seconds. During that delay, replies report `state: "starting"` and `countdown` seconds remaining; `status` reports `running` once scrolling starts.
 
 The command lives inside the app:
 
@@ -89,6 +89,7 @@ VP="/Applications/Video Prompter.app/Contents/Helpers/videoprompter"
 "$VP" script import ./script.md --request-id take1
 "$VP" present 'My Script'
 "$VP" pause
+"$VP" resume # Automatic scroll waits for Start delay (3 seconds by default).
 ```
 
 To connect the MCP server to Claude Code:

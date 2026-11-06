@@ -424,6 +424,9 @@ public actor MarkdownLibrary {
       let old = index
       lastLinkSync[id] = nil
       lastExternalRead[id] = nil
+      waitingForLinks[id] = nil
+      unsupportedLinks[id] = nil
+      preservedEncodings[id] = nil
       switch resolution {
       case .keepLibrary:
         let original = try Data(contentsOf: target)
@@ -466,9 +469,6 @@ public actor MarkdownLibrary {
           let imported = try createScript(
             title: url.deletingPathExtension().lastPathComponent, markdown: external,
             folderID: metadata.folderID, tags: metadata.tags, link: (url.path, bookmark))
-          waitingForLinks[id] = nil
-          unsupportedLinks[id] = nil
-          preservedEncodings[id] = nil
           return RelinkOutcome(
             current: ScriptRecord(metadata: index.scripts[position], markdown: local), imported: imported)
         } catch { index = old; throw error }

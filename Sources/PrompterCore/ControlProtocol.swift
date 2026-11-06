@@ -90,7 +90,7 @@ public enum ControlProtocol {
     .init(action: "present", words: ["present"], summary: "Present a script without taking focus.", example: "videoprompter present 'My Script'", params: [.init("script", positional: true), .init("show", "boolean")]),
     .init(action: "presenter_close", words: ["presenter", "close"], summary: "Close the presenter and pause following.", example: "videoprompter presenter close", params: []),
     .init(action: "pause", words: ["pause"], summary: "Pause the presented script.", example: "videoprompter pause", params: []),
-    .init(action: "resume", words: ["resume"], summary: "Resume the presented script.", example: "videoprompter resume", params: []),
+    .init(action: "resume", words: ["resume"], summary: "Resume the presented script. Automatic scroll honours Start delay (3 seconds by default); state is starting with countdown seconds until running.", example: "videoprompter resume", params: []),
     .init(action: "back_to_start", words: ["back-to-start"], summary: "Reset the reading position.", example: "videoprompter back-to-start", params: []),
     .init(action: "next_passage", words: ["next-passage"], summary: "Move the reading position to the next passage.", example: "videoprompter next-passage", params: [requestID]),
     .init(action: "previous_passage", words: ["previous-passage"], summary: "Move the reading position to the previous passage.", example: "videoprompter previous-passage", params: [requestID]),

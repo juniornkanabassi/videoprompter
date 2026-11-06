@@ -39,7 +39,7 @@ import XCTest
   }
 
   func testCustomRatioRejectsZeroAndNegativeDimensions() async throws {
-    for input in ["0", "-1"] {
+    for input in ["0", "-1", "100000000000000000000"] {
       let defaults = freshDefaults("QA5InvalidFraming")
       let model = camera(defaults)
       let before = model.guides.marker
@@ -50,6 +50,37 @@ import XCTest
       let reopened = CameraModel(defaults: defaults)
       XCTAssertTrue(reopened.guides.marker?.isValid == true, "Invalid width must not survive reopening the settings")
     }
+  }
+
+  func testInvalidStoredRatiosAreRepairedWithoutLosingOtherGuides() throws {
+    for invalid in [0.0, -1, 1e20] {
+      let defaults = freshDefaults("QA5StoredFraming")
+      let uid = "qa5-saved-camera"
+      let invalidData = try JSONSerialization.data(withJSONObject: ["marker": ["width": invalid, "height": 1], "thirds": true])
+      defaults.set([uid: invalidData], forKey: "cameraGuides")
+      defaults.set(uid, forKey: "cameraDeviceUID")
+      let reopened = CameraModel(defaults: defaults)
+      XCTAssertNil(reopened.guides.marker)
+      XCTAssertTrue(reopened.guides.thirds)
+      let repaired = try XCTUnwrap(defaults.dictionary(forKey: "cameraGuides")?[uid] as? Data)
+      let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: repaired) as? [String: Any])
+      XCTAssertNil(stored["marker"], "The bad ratio must be repaired on disk too")
+      XCTAssertEqual(stored["thirds"] as? Bool, true)
+    }
+  }
+
+  func testRatioBoundaryRejectsNonFiniteAndOversizedValues() {
+    let model = camera()
+    let good = model.guides.marker
+    for invalid in [0.0, -1, 101, 1e20, Double.infinity, Double.nan] {
+      for ratio in [CameraAspect(width: invalid, height: 1), CameraAspect(width: 1, height: invalid)] {
+        XCTAssertFalse(ratio.isValid)
+        XCTAssertFalse(ratio.label.isEmpty, "Formatting untrusted values must never trap")
+        model.guides.marker = ratio
+        XCTAssertEqual(model.guides.marker, good)
+      }
+    }
+    XCTAssertTrue(CameraAspect(width: 100, height: 0.5).isValid)
   }
 
   func testOversizedCustomRatioDoesNotCrashTheSettingsProcess() async throws {

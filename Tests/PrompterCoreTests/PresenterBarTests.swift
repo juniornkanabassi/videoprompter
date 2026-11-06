@@ -162,10 +162,21 @@ import XCTest
     _ = try button("Presenter options", in: host)
     XCTAssertFalse(has("View", in: host))
     XCTAssertTrue(has("Text", in: host))
-    // Monitor state is retained while its controls are disclosed.
-    camera.guides.zebras = true; camera.guides.falseColour = true
+    window.makeKeyAndOrderFront(nil)
+    XCTAssertTrue(LibraryAX.bool(try button("Exposure", in: host), "accessibilityPerformPress"))
     await settle()
-    XCTAssertTrue(camera.guides.zebras); XCTAssertTrue(camera.guides.falseColour)
+    let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Zebras", in: $0).isEmpty } == true })
+    let content = try XCTUnwrap(popover.contentView)
+    for (title, read) in [("Zebras", { camera.guides.zebras }), ("False colour", { camera.guides.falseColour })] {
+      XCTAssertFalse(read())
+      let toggle = try XCTUnwrap(LibraryAX.named(title, in: content).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
+      _ = LibraryAX.bool(toggle, "accessibilityPerformPress")
+      await settle()
+      XCTAssertTrue(read(), "The real \(title) toggle changes the camera guides during a take")
+    }
+    XCTAssertTrue(LibraryAX.bool(try button("Exposure", in: host), "accessibilityPerformPress"))
+    await settle()
+    XCTAssertEqual(recorder.phase, .recording)
   }
 
   func testEverySettingsPageHasAnEnabledSetting() async throws {
@@ -253,7 +264,7 @@ import XCTest
       // A paused mid-script retake is one press and never changes recording state.
       store.session.seek(to: 10); recorder.phase = .recording
       await settle()
-      store.session.restart()
+      XCTAssertTrue(LibraryAX.bool(try button("Back to start", in: host), "accessibilityPerformPress"))
       await settle()
       XCTAssertEqual(store.session.tokenIndex, 0)
       XCTAssertEqual(recorder.phase, .recording)

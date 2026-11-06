@@ -191,3 +191,14 @@ Smaller text and Larger text with the current point value and disabled limits.
   selected reference, varied skin tones and flat-profile caveat. Custom ranges
   never imply a face target. None of these controls changes the saved picture.
 - The original app icon is unchanged; earlier icon-edit directions do not apply.
+
+
+## Review 2 corrections
+
+- While editing, Save changes (Command Return) and Cancel editing replace Start reading on the transport. The shortcut is active before More is opened.
+- A paused mid-script take has a direct Back to start arrow on the transport, including compact sizes. It resets reading without changing the take.
+- During recording, a compact live meter beside REC observes the recording input already being captured. It starts no second microphone. Health remains a separate named recovery control.
+- All popovers use the shared opener-based focus restoration.
+- Entering Camera only cancels reading and its countdown. Entering Clean view cancels a pending countdown, while an already running reading continues.
+
+- Custom frame dimensions must be finite, greater than 0 and no more than 100, using the same rule as CLI input. Invalid input retains the current marker and explains the range. Saved invalid markers are removed on load without changing other guide settings. The Custom editor stays open when an intermediate value matches a preset.

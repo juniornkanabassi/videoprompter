@@ -35,7 +35,6 @@ struct AppSettingsView: View {
     requestedTab = tab
     NotificationCenter.default.post(name: .init("VideoPrompter.microphoneSettings"), object: nil)
   }
-  static let width: CGFloat = 560
   private var availableSize: CGSize {
     let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 900)
     return CGSize(width: min(880 * store.uiZoom, screen.width - 80), height: min(600 * store.uiZoom, screen.height - 80))

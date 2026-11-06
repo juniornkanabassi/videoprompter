@@ -220,14 +220,14 @@ private final class ReviewSlowWriter: @unchecked Sendable {
         let key = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: code == 49 ? " " : "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code))
         panel.sendEvent(key)
         try await Task.sleep(for: .milliseconds(20))
+        XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible }.isEmpty,
+          "Key \(code), taking \(taking): no popover or other window may open")
       }
       host.layoutSubtreeIfNeeded()
       if taking {
         XCTAssertFalse(LibraryAX.named("Text", in: host).isEmpty, "Named tools remain reachable")
         XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
-        XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible }.allSatisfy { candidate in
-          candidate.contentView.map { LibraryAX.named("Larger text", in: $0).isEmpty } ?? true
-        }, "Reading keys must not open a tools popover")
+
       }
     }
   }
@@ -286,7 +286,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     let (panel, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
     panel.makeKeyAndOrderFront(nil)
     defer { LibraryAX.close(panel) }
-    for (title, content) in [("Camera", "Camera access needed"), ("Text", "Larger text")] {
+    for (title, content) in [("Camera", "Camera access needed"), ("Text", "Larger text"), ("Microphone", "Microphone volume")] {
       let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first, title)
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(180))
