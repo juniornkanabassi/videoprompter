@@ -962,7 +962,7 @@ struct PresenterView: View {
             .accessibilityHint("Change reading mode and speed")
             .restoringPopoverFocus(isPresented: $showsReadingControls, identifier: "presenter-reading-status")
         }
-        if camera.presentsWithVideo {
+        if camera.presentsWithVideo || recorder.isRecording || recorder.isBusy {
           Text(recordingStatusTitle).fontWeight(recorder.isRecording || recorder.isBusy ? .bold : .regular).monospacedDigit().fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("Recording status").accessibilityValue(recordingStatusTitle)
           if recorder.isRecording {
