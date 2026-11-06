@@ -9,19 +9,19 @@ palettes = {
     'Dark': dict(background='#1B1E23', page='#505A65', pageEdge='#B8C2CE', ink='#CFD4DA', marker='#F58D7D', micLight='#69747F', micDark='#303943', rim='#B6C0CB'),
     'Tinted': dict(background='#E6E6E6', page='#FFFFFF', pageEdge='#333333', ink='#666666', marker='#4B4B4B', micLight='#555555', micDark='#202020', rim='#929292'),
 }
-names = ['Background', 'Script page', 'Script lines', 'Reading marker', 'Microphone', 'Microphone support']
+names = ['Background', 'Script page', 'Script lines', 'Reading marker', 'Camera lens', 'Lens glass']
 groups = []
 for name in names:
     layers = []
     for appearance, c in palettes.items():
         svg = {
             'Background': f'<path fill="{c["background"]}" d="M0 0H1024V1024H0Z"/>',
-            'Script page': f'<rect x="144" y="164" width="480" height="596" rx="54" fill="{c["page"]}" stroke="{c["pageEdge"]}" stroke-width="12"/>',
-            'Script lines': f'<g fill="{c["ink"]}"><rect x="220" y="258" width="314" height="48" rx="24"/><rect x="220" y="474" width="192" height="48" rx="24"/></g>',
-            'Reading marker': f'<rect x="204" y="350" width="348" height="72" rx="36" fill="{c["marker"]}"/>',
-            'Microphone': f'''<defs><linearGradient id="body" x1="0" x2="1"><stop stop-color="{c['micLight']}"/><stop offset=".55" stop-color="{c['micDark']}"/><stop offset="1" stop-color="{c['micLight']}"/></linearGradient></defs>
-<g transform="rotate(36 612 565)"><rect x="498" y="198" width="228" height="518" rx="114" fill="url(#body)"/></g>''',
-            'Microphone support': f'''<g transform="rotate(36 612 565)" fill="none" stroke="{c['rim']}" stroke-width="44" stroke-linecap="round"><path d="M471 555V670C471 858 753 858 753 670V555"/></g><path d="M468 764V900" fill="none" stroke="{c['rim']}" stroke-width="44"/><path d="M386 900H558" fill="none" stroke="{c['micLight']}" stroke-width="44" stroke-linecap="round"/>''',
+            'Script page': f'<rect x="184" y="148" width="564" height="688" rx="54" fill="{c["page"]}" stroke="{c["pageEdge"]}" stroke-width="12"/>',
+            'Script lines': f'<g fill="{c["ink"]}"><rect x="260" y="256" width="404" height="48" rx="24"/><rect x="260" y="480" width="280" height="48" rx="24"/></g>',
+            'Reading marker': f'<rect x="244" y="360" width="424" height="72" rx="36" fill="{c["marker"]}"/>',
+            'Camera lens': f'<circle cx="678" cy="684" r="170" fill="{c["micDark"]}" stroke="{c["rim"]}" stroke-width="16"/><circle cx="678" cy="684" r="132" fill="{c["micLight"]}"/>',
+            'Lens glass': f'<circle cx="678" cy="684" r="100" fill="{c["micDark"]}" stroke="{c["rim"]}" stroke-width="10"/><circle cx="678" cy="684" r="56" fill="{c["ink"]}"/><circle cx="651" cy="655" r="20" fill="{c["page"]}"/>',
+
         }[name]
         filename = f'{name.replace(" ", "-")}-{appearance}.svg'
         (assets / filename).write_text(f'<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">{svg}</svg>\n')

@@ -360,35 +360,41 @@ private struct EditorView: View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: Space.sm) {
         LibraryTitleField(title: $title)
-        metadataLayout {
+        HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
           Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
-            .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+            .fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
-          if store.uiZoom < 1.5 { Spacer() }
-          Button("Editor text size") { showsTextSize = true }
+        }
+        HStack(alignment: .firstTextBaseline, spacing: Space.md) {
+          Button("Text size") { showsTextSize = true }
+            .accessibilityLabel("Editor text size")
             .buttonStyle(.link).help("Change the editor font and text size")
+            .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
-        }
-        if let path = script.metadata.linkedPath {
-          VStack(alignment: .leading, spacing: Space.xs) {
-            Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
-              .fixedSize(horizontal: false, vertical: true).help(path)
-            Button("Unlink file") { store.unlink(script.id) }.buttonStyle(.link)
-              .help("Keep this script in Video Prompter without changing the original file again")
-          }.font(UIType.secondary)
-        }
-        DisclosureGroup("Script details", isExpanded: $showsDetails) {
+          Button { showsDetails.toggle() } label: {
+            Label("Script details", systemImage: showsDetails ? "chevron.down" : "chevron.right")
+          }.buttonStyle(.plain).accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
+          if script.metadata.linkedPath != nil {
+            Label("Linked", systemImage: "link")
+              .foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+              .help("Edits also change the linked file. Open Script details to see the file or unlink it.")
+          }
+        }.font(.callout)
+        if showsDetails {
           VStack(alignment: .leading, spacing: Space.sm) {
             TextField("Tags, separated by commas", text: $tags).textFieldStyle(.roundedBorder)
               .accessibilityLabel("Script tags")
             if let path = script.metadata.linkedPath {
-              Label("Changes sync with \(URL(fileURLWithPath: path).lastPathComponent)", systemImage: "link")
+              Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
                 .fixedSize(horizontal: false, vertical: true).help(path)
+              Button("Unlink file") { store.unlink(script.id) }.buttonStyle(.link)
+                .help("Keep this script in Video Prompter without changing the original file again")
             } else {
               Text("Stored in Video Prompter")
             }
           }.font(.callout)
-        }.font(.callout)
+        }
       }.padding(.horizontal, Space.xxl).padding(.vertical, Space.md)
       Divider()
       if let editNotice {
@@ -419,12 +425,6 @@ private struct EditorView: View {
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
     .onChange(of: script.metadata.title) { _, value in if !saver.isSaving, value != title { title = value } }
 
-  }
-
-  private var metadataLayout: AnyLayout {
-    store.uiZoom >= 1.5
-      ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.sm))
-      : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: Space.sm))
   }
 
   private func scheduleSave() {

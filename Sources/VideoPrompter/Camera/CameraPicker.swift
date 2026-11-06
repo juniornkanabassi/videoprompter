@@ -45,6 +45,7 @@ struct CameraPicker: View {
     .accessibilityLabel("Camera")
     .accessibilityValue(label)
     .accessibilityHint(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : "Lists the cameras with a live preview of each")
+    .restoringPopoverFocus(isPresented: $isOpen, identifier: "camera-picker")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
       CameraPickerList(model: model, zoom: zoom) { isOpen = false }.uiZoom(zoom)
     }
