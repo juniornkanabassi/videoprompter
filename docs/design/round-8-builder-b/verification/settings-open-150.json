@@ -1,0 +1,182 @@
+{
+  "elements": [
+    {
+      "AXRole": "AXApplication",
+      "AXTitle": "Video Prompter"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXWindow",
+      "AXTitle": "Video Prompter \u00b7 Builder B final check"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXDescription": "Presenter script",
+      "AXFocused": "0",
+      "AXRole": "AXTextArea",
+      "AXValue": "Builder B final check\n\nRead at your own pace."
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXScrollBar",
+      "AXValue": "0.2866379310344828"
+    },
+    {
+      "AXRole": "AXValueIndicator",
+      "AXValue": "0.2866379310344828"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXDescription": "Automatic scroll \u00b7 Paused",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXDescription": "Start reading",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXDescription": "Show camera",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXTitle": "View",
+      "AXValue": "Script only"
+    },
+    {
+      "AXDescription": "Setup",
+      "AXEnabled": "1",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXTitle": "More"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXMenu"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "arrow.counterclockwise",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Back to start"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "pencil",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Edit script"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "ID(id: 239)",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Reading presets"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXMenu"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "menuAction:",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Settings\u2026"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "menuAction:",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Pin Selected Text over Camera"
+    },
+    {
+      "AXEnabled": "0",
+      "AXFocused": "0",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Match Camera Size"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "menuAction:",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Presenter Full Screen"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "menuAction:",
+      "AXRole": "AXMenuItem",
+      "AXTitle": "Close Presenter"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    }
+  ],
+  "frontmostPID": 13320,
+  "trusted": true
+}

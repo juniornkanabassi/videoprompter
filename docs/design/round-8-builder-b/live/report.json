@@ -1,0 +1,300 @@
+{
+  "sourceCommit": "efe4c971a299ab6a7a7132ea623b91dc3de9cb22",
+  "modifiedWorktree": true,
+  "actions": [
+    {
+      "args": [
+        "script",
+        "create",
+        "--title",
+        "Builder B verification",
+        "--text",
+        "# Builder B verification\n\nRead these words at your own pace."
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "folder": null,
+          "id": "66AD45A9-DED3-4A55-AB01-C011FCC27C70",
+          "linked": false,
+          "modified": "2026-11-06T14:23:42Z",
+          "repeated": false,
+          "tags": [],
+          "title": "Builder B verification"
+        }
+      }
+    },
+    {
+      "args": [
+        "set-mode",
+        "manual"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "mode": "manual"
+        }
+      }
+    },
+    {
+      "args": [
+        "present",
+        "66AD45A9-DED3-4A55-AB01-C011FCC27C70"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "id": "66AD45A9-DED3-4A55-AB01-C011FCC27C70",
+          "presenter": "visible",
+          "title": "Builder B verification"
+        }
+      }
+    },
+    {
+      "args": [
+        "set-zoom",
+        "100"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "zoom": 100
+        }
+      }
+    },
+    {
+      "args": [
+        "set-zoom",
+        "150"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "zoom": 150
+        }
+      }
+    },
+    {
+      "args": [
+        "set-zoom",
+        "200"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "zoom": 200
+        }
+      }
+    },
+    {
+      "args": [
+        "resume"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "position": {
+            "word": 1,
+            "words": 10
+          },
+          "state": "running"
+        }
+      }
+    },
+    {
+      "args": [
+        "pause"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "position": {
+            "word": 1,
+            "words": 10
+          },
+          "state": "paused"
+        }
+      }
+    },
+    {
+      "args": [
+        "back-to-start"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "position": {
+            "word": 1,
+            "words": 10
+          },
+          "state": "paused"
+        }
+      }
+    },
+    {
+      "args": [
+        "camera",
+        "list"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "access": "not_determined",
+          "cameras": [
+            {
+              "id": "7626645E-4425-469E-9D8B-97E0FA59AC75",
+              "name": "OBS Virtual Camera",
+              "selected": false
+            },
+            {
+              "id": "C8DB174F-4D65-437F-8134-A6582FA617F0",
+              "name": "Elgato Virtual Camera",
+              "selected": false
+            },
+            {
+              "id": "1F06D5FF-4C76-410E-9770-C04C467C1317",
+              "name": "FaceTime HD Camera",
+              "selected": true
+            },
+            {
+              "id": "1C6D9553-E57D-4B96-85D8-6FCA00000001",
+              "name": "Junior\u2019s iPhone 15 Pro Max Camera",
+              "selected": false
+            },
+            {
+              "id": "9417186E-FEFF-4F24-BB43-50BE00000002",
+              "name": "Junior\u2019s iPhone 12 Desk View Camera",
+              "selected": false
+            },
+            {
+              "id": "1C6D9553-E57D-4B96-85D8-6FCA00000002",
+              "name": "Junior\u2019s iPhone 15 Pro Max Desk View Camera",
+              "selected": false
+            },
+            {
+              "id": "9417186E-FEFF-4F24-BB43-50BE00000001",
+              "name": "Junior\u2019s iPhone 12 Camera",
+              "selected": false
+            }
+          ],
+          "guides": {
+            "centreCross": "off",
+            "centreTarget": "off",
+            "colour": "#3F8CFF",
+            "falseColour": "off",
+            "marker": "off",
+            "shade": 50,
+            "thirds": "off",
+            "visibility": 85,
+            "zebraLevel": 95,
+            "zebraRange": 0,
+            "zebras": "off"
+          },
+          "mirror": "off",
+          "rotation": "0",
+          "selected": {
+            "id": "1F06D5FF-4C76-410E-9770-C04C467C1317",
+            "name": "FaceTime HD Camera"
+          },
+          "view": "off"
+        }
+      }
+    },
+    {
+      "args": [
+        "microphone",
+        "list"
+      ],
+      "reply": {
+        "ok": true,
+        "result": {
+          "microphones": [
+            {
+              "id": "com.rogueamoeba.Loopback:BD4A15E8-F132-44C5-84AE-F4E492FA2D92",
+              "name": "Apple TV",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback:B9F1A0EC-22E8-4F38-8223-B99E4FD555E5",
+              "name": "Browser",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback::D3AA852D-2E55-4E63-BCE6-CEC4B5B72EE7",
+              "name": "Cam B",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback:A210A41F-E9EF-4D8C-96CE-C3A8E71D2FAB",
+              "name": "Guest",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "9417186E-FEFF-4F24-BB43-50BE00000003",
+              "name": "Junior\u2019s iPhone 12 Microphone",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "1C6D9553-E57D-4B96-85D8-6FCA00000003",
+              "name": "Junior\u2019s iPhone 15 Pro Max Microphone",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "BuiltInMicrophoneDevice",
+              "name": "MacBook Pro Microphone",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback:644A8EE2-09CC-4940-9A2C-3C47A800EE1C",
+              "name": "macOS Audio",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "MSLoopbackDriverDevice_UID",
+              "name": "Microsoft Teams Audio",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback:FBDD63D8-45F2-42E1-87D7-9CFF7DB363B8",
+              "name": "Music",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback:772657B3-9E03-4C8B-8B67-703FD6F6887F",
+              "name": "Sound FX & Alerts",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "com.rogueamoeba.Loopback::9FB2B6D8-A7AF-4598-863E-A6C5689C7CEA",
+              "name": "Virtual Mic",
+              "recording": true,
+              "voice": true
+            },
+            {
+              "id": "AppleUSBAudioEngine:ZOOM Corporation:UAC-232:1113000:1,2",
+              "name": "ZOOM UAC-232",
+              "recording": true,
+              "voice": true
+            }
+          ],
+          "recordingMicrophone": "AppleUSBAudioEngine:ZOOM Corporation:UAC-232:1113000:1,2",
+          "voiceMicrophone": "AppleUSBAudioEngine:ZOOM Corporation:UAC-232:1113000:1,2"
+        }
+      }
+    }
+  ],
+  "executableSHA256": "c5700a6a3b8b9febdafc0d52cb9c65fa0685b5acb1ca422cb54f0349b43675d1",
+  "frontmostUnchanged": true,
+  "passed": true
+}

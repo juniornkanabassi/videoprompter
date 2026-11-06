@@ -1,0 +1,276 @@
+ACTION 0
+FOCUS AXButton |  | Camera | Choose camera
+AXApplication | Video Prompter |  | 
+AXWindow | Video Prompter · Builder B verification |  | 
+AXGroup |  |  | 
+AXScrollArea |  |  | 
+AXTextArea |  | Presenter script | Builder B verification
+
+Read these words at your own pace.
+AXScrollBar |  |  | 0.3085774058577406
+AXValueIndicator |  |  | 0.3085774058577406
+AXButton |  |  | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXScrollArea |  |  | 
+AXButton |  | Automatic scroll · Paused | 
+AXButton |  | Start reading | 
+AXButton |  | Show camera | 
+AXScrollArea |  |  | 
+AXMenuButton | View |  | Script only
+AXButton |  | Setup | 
+AXMenuButton | More |  | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXGroup |  |  | 
+AXGroup |  |  | 
+AXButton |  |  | 
+AXWindow | Camera & Recording |  | 
+AXGroup |  |  | 
+AXScrollArea |  |  | 
+AXHeading |  | Camera access | 
+AXGroup |  |  | 
+AXStaticText |  |  | Allow access to choose and preview your camera here.
+AXButton |  | Allow Camera Access | 
+AXHeading |  | Camera | 
+AXGroup |  |  | 
+AXStaticText |  |  | Camera
+AXButton |  | Camera | Choose camera
+AXGroup |  |  | 
+AXScrollArea |  |  | 
+AXStaticText |  |  | Camera access needed
+AXStaticText |  |  | Choose Allow Camera Access to see and select your cameras here.
+AXButton |  | Allow Camera Access | 
+AXButton |  | Refresh Cameras | 
+AXUnknown |  | Previews appear once camera access is allowed. | 
+AXStaticText |  |  | Camera and saved-video rotation
+AXPopUpButton |  |  | 0°
+AXStaticText |  |  | Rotation changes both the camera preview and the saved take.
+AXStaticText |  |  | Mirror camera preview
+AXCheckBox |  |  | 0
+AXHeading |  | Recording setup | 
+AXGroup |  |  | 
+AXStaticText |  |  | 0° saved rotation · H.264 · unmirrored output · full frame
+AXStaticText |  |  | Recording format
+AXPopUpButton |  |  | H.264 (most compatible)
+AXStaticText |  |  | Mirror saved video
+AXCheckBox |  |  | 0
+AXStaticText |  |  | Take name
+AXTextField |  |  | 
+AXHeading |  | Framing guides | 
+AXGroup |  |  | 
+AXStaticText |  |  | Rule of thirds
+AXCheckBox |  |  | 0
+AXStaticText |  |  | Centre cross
+AXCheckBox |  |  | 0
+AXStaticText |  |  | Centre target
+AXCheckBox |  |  | 0
+AXStaticText |  |  | Colour
+AXColorWell |  |  | rgb 0.247059 0.54902 1 1
+AXStaticText |  |  | Guide visibility
+AXSlider |  | Guide visibility | 0.85
+AXValueIndicator |  |  | 
+AXHeading |  | Frame marker | 
+AXGroup |  |  | 
+AXStaticText |  |  | Frame shape
+AXPopUpButton |  |  | Off
+AXHeading |  | Exposure | 
+AXGroup |  |  | 
+AXStaticText |  |  | Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours.
+AXStaticText |  |  | Zebras
+AXCheckBox |  |  | 0
+AXStaticText |  |  | False colour
+AXCheckBox |  |  | 0
+AXStaticText |  |  | Zebras show
+AXPopUpButton |  |  | Bright areas
+AXStaticText |  |  | Check bright areas. Lower exposure on your camera if important parts of the picture lose detail.
+AXStaticText |  |  | Check dark and bright areas for detail. Adjust brightness on your camera, not here.
+AXStaticText |  |  | Exposure aids only change this preview. Adjust exposure on your camera.
+AXDisclosureTriangle |  | Custom levels | 0
+AXDisclosureTriangle |  | How exposure aids work | 0
+AXHeading |  | Recordings | 
+AXGroup |  |  | 
+AXButton |  | Show Recordings Folder | 
+AXScrollBar |  |  | 0
+AXValueIndicator |  |  | 0
+AXButton |  |  | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXToolbar |  |  | 
+AXButton | General | General | 
+AXButton | Reading | Reading | 
+AXButton | Reading presets | Reading presets | 
+AXButton | Microphone | Microphone | 
+AXButton | Camera & Recording | Camera & Recording | 
+AXButton |  |  | 
+AXButton |  |  | 
+AXGroup |  |  | 
+AXGroup |  |  | 
+AXButton |  |  | 
+AXStaticText |  |  | Camera & Recording
+AXMenuBar |  |  | 
+AXMenuBarItem | Video Prompter |  | 
+AXMenu |  |  | 
+AXMenuItem | About Video Prompter |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Settings… |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Services |  | 
+AXMenu |  |  | 
+AXMenuItem | Activity Monitor |  | 
+AXMenuItem | Allocations & Leaks |  | 
+AXMenuItem | File Activity |  | 
+AXMenuItem | System Trace |  | 
+AXMenuItem | Time Profile Active Application |  | 
+AXMenuItem | Time Profile App Under Mouse |  | 
+AXMenuItem | Time Profile Entire System |  | 
+AXMenuItem | Toggle Instruments Recording |  | 
+AXMenuItem | Services Settings… |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Hide Video Prompter |  | 
+AXMenuItem | Hide Others |  | 
+AXMenuItem | Show All |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Quit Video Prompter |  | 
+AXMenuBarItem | File |  | 
+AXMenu |  |  | 
+AXMenuItem | New Script |  | 
+AXMenuItem | New Library Window |  | 
+AXMenuItem | New Folder… |  | 
+AXMenuItem | Duplicate |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Import File… |  | 
+AXMenuItem | Paste Copied Text |  | 
+AXMenuItem | Import from Google Docs… |  | 
+AXMenuItem | Update from Google Docs |  | 
+AXMenuItem | Export Markdown… |  | 
+AXMenuItem | Show in Finder |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Link File… |  | 
+AXMenuItem | Unlink |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Move to Trash |  | 
+AXMenuItem |  |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Close |  | 
+AXMenuItem | Close All |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Keep Scripts in iCloud Drive for iPad |  | 
+AXMenuItem | Send Camera to iPad |  | 
+AXMenuItem | Control iPad… |  | 
+AXMenuItem | Also Connect over Wi-Fi |  | 
+AXMenuBarItem | Edit |  | 
+AXMenu |  |  | 
+AXMenuItem | Undo |  | 
+AXMenuItem | Redo |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Cut |  | 
+AXMenuItem | Copy |  | 
+AXMenuItem | Paste |  | 
+AXMenuItem | Delete |  | 
+AXMenuItem | Select All |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Find… |  | 
+AXMenuItem |  |  | 
+AXMenuItem | AutoFill |  | 
+AXMenu |  |  | 
+AXMenuItem | Contact… |  | 
+AXMenuItem | Passwords… |  | 
+AXMenuItem | Credit Card… |  | 
+AXMenuItem | Start Dictation |  | 
+AXMenuItem | Emoji & Symbols |  | 
+AXMenuBarItem | View |  | 
+AXMenu |  |  | 
+AXMenuItem | Zoom In |  | 
+AXMenuItem | Zoom Out |  | 
+AXMenuItem | Actual Size |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Make Text Bigger |  | 
+AXMenuItem | Make Text Smaller |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Script Only |  | 
+AXMenuItem | Script and Camera |  | 
+AXMenuItem | Camera Only |  | 
+AXMenuItem | Clean View |  | 
+AXMenuItem | Zebras |  | 
+AXMenuItem | False Colour |  | 
+AXMenuItem | Presenter Full Screen |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Show Sidebar |  | 
+AXMenuItem | Show Inspector |  | 
+AXMenuItem | Enter Full Screen |  | 
+AXMenuBarItem | Format |  | 
+AXMenu |  |  | 
+AXMenuItem | Bold |  | 
+AXMenuItem | Italic |  | 
+AXMenuItem | Heading |  | 
+AXMenuItem | Add or Edit Link… |  | 
+AXMenuBarItem | Prompter |  | 
+AXMenu |  |  | 
+AXMenuItem | Present Script |  | 
+AXMenuItem | Open Camera View in Presenter |  | 
+AXMenuItem | Start or Pause |  | 
+AXMenuItem | Back to Start |  | 
+AXMenuItem | Previous Passage |  | 
+AXMenuItem | Next Passage |  | 
+AXMenuItem | Record |  | 
+AXMenuItem | Show Recordings Folder |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Pin Selected Text over Camera |  | 
+AXMenuItem | Match Camera Size |  | 
+AXMenuBarItem | Window |  | 
+AXMenu |  |  | 
+AXMenuItem | Minimize |  | 
+AXMenuItem | Minimize All |  | 
+AXMenuItem | Zoom |  | 
+AXMenuItem | Zoom All |  | 
+AXMenuItem | Fill |  | 
+AXMenuItem | Center |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Move & Resize |  | 
+AXMenu |  |  | 
+AXMenuItem | Halves |  | 
+AXMenuItem | Left |  | 
+AXMenuItem | Right |  | 
+AXMenuItem | Top |  | 
+AXMenuItem | Bottom |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Quarters |  | 
+AXMenuItem | Top Left |  | 
+AXMenuItem | Top Right |  | 
+AXMenuItem | Bottom Left |  | 
+AXMenuItem | Bottom Right |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Arrange |  | 
+AXMenuItem | Left & Right |  | 
+AXMenuItem | Left & Quarters |  | 
+AXMenuItem | Right & Left |  | 
+AXMenuItem | Right & Quarters |  | 
+AXMenuItem | Top & Bottom |  | 
+AXMenuItem | Top & Quarters |  | 
+AXMenuItem | Bottom & Top |  | 
+AXMenuItem | Bottom & Quarters |  | 
+AXMenuItem | Quarters |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Return to Previous Size |  | 
+AXMenuItem | Full Screen Tile |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Import from Google Docs |  | 
+AXMenuItem | iPad Remote |  | 
+AXMenuItem | Camera Monitor |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Bring All to Front |  | 
+AXMenuItem | Arrange in Front |  | 
+AXMenuItem | Remove Window from Set |  | 
+AXMenuItem | Open Camera Monitor |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Camera & Recording |  | 
+AXMenuBarItem | Help |  | 
+AXMenu |  |  | 
+AXMenuItem | Send Video Prompter Feedback to Apple |  | 
+AXMenuItem |  |  | 
+AXMenuItem | Video Prompter Help |  | 
+AXMenuItem | Video Prompter Privacy Policy |  | 
+AXMenuItem | Practice Script |  | 

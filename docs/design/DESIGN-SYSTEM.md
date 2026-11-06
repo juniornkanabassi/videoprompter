@@ -137,3 +137,22 @@ These implement the council follow-up to the authoritative design specification.
 - Readability (section 8.5): evaluate both camera and script-only backdrops, including translucent backgrounds, dimmed words, stage directions and the active-word colour. Describe the complete proposed change before Make Readable. Prefer only increasing the relevant backdrop opacity. If impossible, use white text on solid black at full visibility, preserving highlighting and stage directions unless their dimming fails the threshold. Expose Undo Make Readable immediately.
 - Exposure legend: use practical decisions and plain brightness descriptions. A nonzero custom range never implies a face target. Numerical received-picture measurements are secondary details.
 - Icon: simplify the existing editable vector layers, strengthen page/reading-marker separation, and remove fine microphone seams so the modern renditions remain distinct at 16 and 32 points.
+
+
+## Round 8 Builder B refinement
+
+This section supersedes the earlier editor-header and icon wording above.
+
+| Surface | Visible by default | Disclosed detail |
+|---|---|---|
+| Editor header | Editable regular-weight title; one muted save-state/word-count line; Text size and Script details together; compact Linked indicator | Script details contains tags, linked filename, two-way editing explanation and Unlink file. Broken-link recovery stays visible. |
+| False-colour monitor key | Six colour swatches, short brightness labels and the renderer's ranges, labelled as the received picture | Help contains colour explanations, skin-tone/profile qualifications and zebra calibration. The swatches are a key, not a continuous scale. |
+| Preset empty state | Primary callout guidance | No detail required. Verify normal-size foreground/background pixels at 4.5:1 or above in each appearance. |
+| Library Text size and camera picker | Existing named opener | Dismissal returns keyboard and native accessibility focus to that exact instance, including nested and repeated openers. |
+| Icon | Script page, reading marker and lens | Layered Icon Composer source with default/dark/tinted artwork and matching optical ICNS. |
+
+Quiet metadata still needs readable contrast. Use 75% of the resolved primary
+label colour rather than the low-contrast system secondary label on plain editor
+backgrounds. Keep explanations in primary callout text. Reading-size button work
+in PresenterController.swift belongs to Builder A; its required labels are
+Smaller text and Larger text with the current point value and disabled limits.

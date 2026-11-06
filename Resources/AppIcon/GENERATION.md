@@ -1,5 +1,22 @@
 # Video Prompter icon
 
+## Current source, 6 November 2026, round 8
+
+The shipping icon now leads with a script page, coral reading marker and camera
+lens. This task supersedes the older microphone-led brief below. The editable
+source is `VideoPrompter.icon`, with three groups (lens, script, background),
+vector objects and explicit default, dark and tinted artwork. The system applies
+the tile mask and the tinted appearance. `build-layers.py` reproduces the source.
+
+The earlier round-8 attempt generated the legacy PNG, optical iconset and ICNS
+from this same geometry. Its native exports, including 16 and 32 pixels in four
+renditions, are in `docs/design/round-8-builder-b/icons`. The former raster
+masters remain under that folder's `previous` directory. `compile-icon.sh`
+compiles the modern catalogue and copies the matching optical ICNS. Neither
+requires launching Icon Composer or installing the app.
+
+## Historical provenance (superseded where it conflicts with the current source)
+
 Renamed from VidPrompt to Video Prompter on 8 October 2026; the same white microphone master is now `VideoPrompter.png`/`VideoPrompter.icns`. Earlier, on 1 October 2026, it was renamed from JuniorPrompter to VidPrompt and the amber Alpha variant was retired with the Alpha channel.
 
 Approved by Junior on 5 September 2026. Use the current white microphone-and-script master and ICNS going forward.

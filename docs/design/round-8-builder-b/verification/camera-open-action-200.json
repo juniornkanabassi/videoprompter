@@ -1,0 +1,450 @@
+{
+  "elements": [
+    {
+      "AXRole": "AXApplication",
+      "AXTitle": "Video Prompter"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXWindow",
+      "AXTitle": "Video Prompter \u00b7 Builder B final check"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXDescription": "Presenter script",
+      "AXFocused": "0",
+      "AXRole": "AXTextArea",
+      "AXValue": "Builder B final check\n\nRead at your own pace."
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXScrollBar",
+      "AXValue": "0.2636262513904338"
+    },
+    {
+      "AXRole": "AXValueIndicator",
+      "AXValue": "0.2636262513904338"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXDescription": "Automatic scroll \u00b7 Paused",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXDescription": "Start reading",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXDescription": "Show camera",
+      "AXEnabled": "1",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXIdentifier": "presenter-control-bar",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXTitle": "View",
+      "AXValue": "Script only"
+    },
+    {
+      "AXDescription": "Setup",
+      "AXEnabled": "1",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXTitle": "More"
+    },
+    {
+      "AXDescription": "",
+      "AXFocused": "0",
+      "AXRole": "AXPopover"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Settings page"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXPopUpButton",
+      "AXValue": "Camera & Recording"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXScrollArea"
+    },
+    {
+      "AXDescription": "Camera access",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Allow access to choose and preview your camera here."
+    },
+    {
+      "AXDescription": "Allow Camera Access",
+      "AXEnabled": "1",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXDescription": "Camera",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Camera"
+    },
+    {
+      "AXDescription": "Camera",
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXIdentifier": "camera-picker316C6E5E-8151-4B24-B6C3-2AB8D785BF95",
+      "AXRole": "AXButton",
+      "AXValue": "Choose camera"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Camera and saved-video rotation"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXPopUpButton",
+      "AXValue": "0\u00b0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Rotation changes both the camera preview and the saved take."
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Mirror camera preview"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXDescription": "Recording setup",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "0\u00b0 saved rotation \u00b7 H.264 \u00b7 unmirrored output \u00b7 full frame"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Recording format"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXMenuButton",
+      "AXTitle": "Recording format",
+      "AXValue": "H.264 (most compatible)"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Mirror saved video"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Take name"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXTextField",
+      "AXValue": ""
+    },
+    {
+      "AXDescription": "Framing guides",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Rule of thirds"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Centre cross"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Centre target"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Colour"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXColorWell",
+      "AXValue": "rgb 0.247059 0.54902 1 1"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Guide visibility"
+    },
+    {
+      "AXDescription": "Guide visibility",
+      "AXEnabled": "1",
+      "AXRole": "AXSlider",
+      "AXValue": "0.85"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXValueIndicator"
+    },
+    {
+      "AXDescription": "Frame marker",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Frame shape"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXPopUpButton",
+      "AXValue": "Off"
+    },
+    {
+      "AXDescription": "Exposure",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours."
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Zebras"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "False colour"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXCheckBox",
+      "AXValue": "0"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Zebras show"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXPopUpButton",
+      "AXValue": "Bright areas"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Check bright areas. Lower exposure on your camera if important parts of the picture lose detail."
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Check dark and bright areas for detail. Adjust brightness on your camera, not here."
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXStaticText",
+      "AXValue": "Exposure aids only change this preview. Adjust exposure on your camera."
+    },
+    {
+      "AXDescription": "Custom levels",
+      "AXEnabled": "1",
+      "AXRole": "AXDisclosureTriangle",
+      "AXValue": "0"
+    },
+    {
+      "AXDescription": "How exposure aids work",
+      "AXEnabled": "1",
+      "AXRole": "AXDisclosureTriangle",
+      "AXValue": "0"
+    },
+    {
+      "AXDescription": "Recordings",
+      "AXEnabled": "1",
+      "AXRole": "AXHeading"
+    },
+    {
+      "AXEnabled": "1",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXDescription": "Show Recordings Folder",
+      "AXEnabled": "1",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXScrollBar",
+      "AXValue": "0"
+    },
+    {
+      "AXRole": "AXValueIndicator",
+      "AXValue": "0"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXFocused": "0",
+      "AXRole": "AXGroup"
+    },
+    {
+      "AXEnabled": "1",
+      "AXFocused": "0",
+      "AXRole": "AXButton"
+    }
+  ],
+  "frontmostPID": 13320,
+  "trusted": true
+}

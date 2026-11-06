@@ -4,11 +4,11 @@
   },
   "groups": [
     {
-      "name": "Microphone",
+      "name": "Camera lens",
       "layers": [
         {
-          "name": "Microphone support Default",
-          "image-name": "Microphone-support-Default.svg",
+          "name": "Lens glass Default",
+          "image-name": "Lens-glass-Default.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -26,8 +26,8 @@
           ]
         },
         {
-          "name": "Microphone support Dark",
-          "image-name": "Microphone-support-Dark.svg",
+          "name": "Lens glass Dark",
+          "image-name": "Lens-glass-Dark.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -45,8 +45,8 @@
           ]
         },
         {
-          "name": "Microphone support Tinted",
-          "image-name": "Microphone-support-Tinted.svg",
+          "name": "Lens glass Tinted",
+          "image-name": "Lens-glass-Tinted.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -64,8 +64,8 @@
           ]
         },
         {
-          "name": "Microphone Default",
-          "image-name": "Microphone-Default.svg",
+          "name": "Camera lens Default",
+          "image-name": "Camera-lens-Default.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -83,8 +83,8 @@
           ]
         },
         {
-          "name": "Microphone Dark",
-          "image-name": "Microphone-Dark.svg",
+          "name": "Camera lens Dark",
+          "image-name": "Camera-lens-Dark.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -102,8 +102,8 @@
           ]
         },
         {
-          "name": "Microphone Tinted",
-          "image-name": "Microphone-Tinted.svg",
+          "name": "Camera lens Tinted",
+          "image-name": "Camera-lens-Tinted.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [

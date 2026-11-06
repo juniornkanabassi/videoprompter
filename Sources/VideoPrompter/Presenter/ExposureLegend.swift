@@ -28,11 +28,10 @@ struct ExposureGuidance: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
       if zebras {
-        Text(guides.zebraMeasurement)
         Text(guides.zebraGuidance)
       }
       if falseColour {
-        Text("See brightness colours: purple and blue are dark; green and pink are brighter; yellow and red are very bright. Check the key before changing your camera.")
+        Text("Check dark and bright areas for detail. Adjust brightness on your camera, not here.")
       }
     }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
   }
@@ -48,20 +47,51 @@ struct ExposureLegend: View {
 
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras { Text("Zebras · " + model.guides.validatedZebraPurpose.label) }
-        ExposureGuidance(zebras: model.guides.zebras, guides: model.guides,
-          falseColour: model.guides.falseColour)
-        if model.guides.falseColour {
-          DisclosureGroup("False colour key") {
-            ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
-              Label { Text(ExposureGuidance.colourMeanings[index]) } icon: {
-                Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-              }
-            }
-          }
+      VStack(alignment: .leading, spacing: Space.sm) {
+        if model.guides.zebras {
+          Text(model.guides.validatedZebraPurpose.label + " · Zebras")
+          ExposureGuidance(zebras: true, guides: model.guides, falseColour: false)
         }
-      }.frame(maxWidth: 360, alignment: .leading).font(.callout).foregroundStyle(.primary).padding(Space.sm).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
+        if model.guides.falseColour { FalseColourKey() }
+        DisclosureGroup("Help") {
+          VStack(alignment: .leading, spacing: Space.sm) {
+            if model.guides.zebras {
+              Text(Self.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+            }
+            if model.guides.falseColour {
+              ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
+              Text("Grey areas fall between the coloured bands. Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
+            }
+            Text("These guides show the received picture. They do not change your camera or saved video.")
+          }.fixedSize(horizontal: false, vertical: true)
+        }
+      }.frame(maxWidth: 480, alignment: .leading).font(.callout).foregroundStyle(.primary).padding(Space.sm).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
     }
+  }
+}
+
+/// Use the renderer's ranges, so the visible monitor key cannot drift from its colours.
+struct FalseColourKey: View {
+  static let labels = ["Black", "Dark", "Mid", "Bright", "High", "White"]
+  static func rangeLabel(_ range: ClosedRange<Double>) -> String {
+    "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
+  }
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Text("Brightness · received picture")
+      HStack(alignment: .top, spacing: Space.xs) {
+        ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
+          VStack(spacing: Space.xs) {
+            Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+              .frame(height: Space.md)
+            Text(Self.labels[index])
+            Text(Self.rangeLabel(band.range)).monospacedDigit()
+          }.frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(Self.labels[index]). \(band.name)")
+            .accessibilityValue(Self.rangeLabel(band.range))
+        }
+      }
+    }.font(.callout).fixedSize(horizontal: false, vertical: true)
   }
 }
