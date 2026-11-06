@@ -32,7 +32,7 @@ struct LibraryView: View {
           Menu {
             Button("New Folder…") { store.namingNewFolder = true }
           } label: { Image(systemName: "folder.badge.plus") }
-            .menuStyle(.borderlessButton).fixedSize()
+            .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
             .accessibilityLabel("Folder actions").help("Create a folder")
             .disabled(!store.libraryAvailable)
         }.padding(.horizontal, Space.md).padding(.top, Space.md)
@@ -53,7 +53,7 @@ struct LibraryView: View {
           scopeRow("Recently Deleted", symbol: "trash", scope: .deleted)
         }.listStyle(.inset)
           .accessibilityLabel("Script folders")
-          .frame(height: min(220, CGFloat(148 + store.folders.count * 28)))
+          .frame(height: min(220, CGFloat((store.folders.count + 2) * 28) + Space.lg))
         Divider()
         HStack {
           sidebarHeading(scriptScopeTitle)
@@ -148,7 +148,7 @@ struct LibraryView: View {
           Divider()
           Button("New Folder…") { store.namingNewFolder = true }
         } label: { Label("Add", systemImage: "plus") }
-          .labelStyle(.titleAndIcon).accessibilityLabel("Add script or folder")
+          .labelStyle(.titleAndIcon).menuIndicator(.visible).accessibilityLabel("Add script or folder")
           .help("Add a script or folder").disabled(!store.libraryAvailable)
       }
       ToolbarItemGroup(placement: .primaryAction) {
@@ -367,7 +367,7 @@ private struct EditorView: View {
           if saver.failed { Button("Retry Save") { scheduleSave() } }
         }
         HStack(alignment: .firstTextBaseline, spacing: Space.md) {
-          Button("Text size") { showsTextSize = true }
+          Button("Editor text size") { showsTextSize = true }
             .accessibilityLabel("Editor text size")
             .buttonStyle(.link).help("Change the editor font and text size")
             .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")

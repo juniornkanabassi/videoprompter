@@ -27,7 +27,7 @@ struct ReadingSettingsPage: View {
         slider("Reading text size", value: $store.settings.fontSize, range: AppStore.presenterFontSizes, readout: "\(Int(store.settings.fontSize)) pt", spoken: "\(Int(store.settings.fontSize)) points")
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
-        Button("Show Presenter") { PresenterController.shared.presentFromLibrary(store: store) }
+        Button("Present") { PresenterController.shared.presentFromLibrary(store: store) }
           .help("See your reading appearance settings in the presenter")
           .disabled(store.selected == nil)
       }
@@ -129,7 +129,7 @@ struct ReadingChoice<Value: Hashable>: View {
         } label: {
           Text(selectedName).fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
-        }.accessibilityLabel(title).accessibilityValue(selectedName)
+        }.menuIndicator(.visible).accessibilityLabel(title).accessibilityValue(selectedName)
       } else {
         InspectorChoice(title: title, values: values, names: names, selection: $selection)
       }

@@ -26,7 +26,7 @@ struct LibraryStartView: View {
             .font(.callout).fixedSize(horizontal: false, vertical: true)
         Text("Then choose **Present**, then **Start reading**. Voice follow moves the text as you speak.")
           .font(.callout).fixedSize(horizontal: false, vertical: true)
-          Button("Try the Practice Script", action: practice).buttonStyle(.link)
+          Button("Try the Practice Script", action: practice).buttonStyle(.bordered)
             .help("Open a short guided practice, then choose Start reading")
         }
         VStack(alignment: .leading, spacing: Space.md) {
