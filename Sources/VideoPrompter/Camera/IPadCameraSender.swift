@@ -385,11 +385,11 @@ struct IPadRemoteView: View {
       Text("None (presenter closed)").tag(UUID?.none)
       ForEach(state.scripts, id: \.id) { Text($0.title).tag(Optional($0.id)) }
     }
-    Picker("Follow", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
-      Text("Voice").tag("Voice")
-      Text("Manual").tag("Manual")
+    Picker("Reading mode", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
+      Text("Voice follow").tag("Voice")
+      Text("Automatic scroll").tag("Manual")
     }
-    .pickerStyle(.segmented)
+    .pickerStyle(.menu)
     Stepper("Speed \(state.speed) words a minute", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
     HStack {
       Button("Back to Start", systemImage: "backward.end.fill") { link.send(.backToStart) }

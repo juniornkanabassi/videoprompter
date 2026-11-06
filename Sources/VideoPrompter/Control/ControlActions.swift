@@ -312,6 +312,9 @@ import Speech
         return .ok(["id": found.id.uuidString, "name": name])
       }
     case "presenter_close":
+      if recorder.isRecording || recorder.isBusy {
+        return .error("recording_active", "Stop and save the take before closing: use record stop --recording <id> or --force.")
+      }
       if presenter.isEditing { return editing }
       guard presenter.panel?.isVisible == true else { return .ok(["presenter": "hidden", "changed": false, "state": state]) }
       presenter.close()
@@ -719,6 +722,8 @@ import Speech
     var value = recordingSettings
     value["active"] = recorder.isRecording
     value["busy"] = recorder.isBusy
+    value["phase"] = recorder.phase.rawValue
+    value["mirrorSavedVideo"] = recorder.mirrorSavedVideo
     if let id = recorder.recordingID { value["recording"] = id.uuidString }
     if let started = recorder.startedAt { value["startedAt"] = ISO8601DateFormatter().string(from: started) }
     if let file = recorder.lastFile { value["lastFile"] = file.path }

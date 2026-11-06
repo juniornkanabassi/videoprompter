@@ -9,16 +9,31 @@ struct InspectorView: View {
   @ObservedObject var store: AppStore
   @ObservedObject private var camera: CameraModel
   @State private var showsCameraSettings = false
+  @Environment(\.openSettings) private var openSettings
+  @State private var advancedText = false
+  @State private var advancedLayout = false
   init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
 
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-      InspectorSection("Presenter") {
+      InspectorSection("Reading mode") {
+        InspectorChoice(title: "Reading mode", values: ["Voice", "Manual"],
+          names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode)
+        Text(store.settings.mode == "Manual" ? "Automatic scroll" : "Voice follow").font(.callout)
+        if store.settings.mode == "Manual" {
+          ValueSlider("Speed", value: $store.settings.speed, in: 20...300, readout: "\(Int(store.settings.speed)) words per minute")
+        } else {
+          Text("Follows your spoken words.").font(.callout)
+          Button("Voice and microphone settings…") { AppSettingsView.requestVoiceTab(); openSettings() }.buttonStyle(.link)
+        }
+      }
+      InspectorSection("Presenter view") {
         VStack(alignment: .leading, spacing: Space.xs) {
           Text("What to show")
           InspectorChoice(title: "What to show", values: [.prompterOnly, .prompterWithVideo, .videoOnly],
             names: ["Script", "Script and camera", "Camera"], selection: $camera.displayMode)
+          Text(camera.displayMode.label).font(.callout).fixedSize(horizontal: false, vertical: true)
         }.help("Show the script, the camera picture, or both")
         if camera.presentsWithVideo {
           Button("Camera Settings…") { showsCameraSettings = true }
@@ -35,13 +50,14 @@ struct InspectorView: View {
           InspectorChoice(title: "Font", values: AvailableFonts.presenter, names: AvailableFonts.presenter,
             selection: $store.settings.fontName)
         }.help("Choose the font used in the presenter")
-        ValueSlider("Size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
+        ValueSlider("Reading text size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
           readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
           .accessibilityLabel("Mirror for teleprompter glass")
           .help("Flip text left to right for reflected glass")
       }
       InspectorSection("Layout") {
+        DisclosureGroup("Layout and reading guide", isExpanded: $advancedLayout) {
         ValueSlider("Text width", value: $store.settings.textWidth, in: PrompterSettings.textWidthRange, readout: "\(Int(store.settings.textWidth * 100))%")
           .help("Narrow or widen the centred script column")
         ValueSlider("Text visibility", value: $store.settings.textOpacity, in: 0.2...1, readout: "\(Int(store.settings.textOpacity * 100))%")
@@ -52,7 +68,9 @@ struct InspectorView: View {
         ValueSlider("Reading guide visibility", value: $store.settings.guideOpacity, in: 0...1, readout: "\(Int(store.settings.guideOpacity * 100))%")
           .help("Fade the reading line; zero hides it")
       }
+      }
       InspectorSection("Typography") {
+        DisclosureGroup("More text options", isExpanded: $advancedText) {
         VStack(alignment: .leading, spacing: Space.xs) {
           Text("Text weight")
           InspectorChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight)
@@ -61,11 +79,12 @@ struct InspectorView: View {
           Text("Alignment")
           InspectorChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment)
         }.help("Align the text within the script column")
-        Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
-        Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
+        ValueSlider("Line spacing", value: $store.settings.lineSpacing, in: 0...0.5, readout: "\(Int(store.settings.lineSpacing * 100))%").help("Adjust the space between lines")
+        ValueSlider("Paragraph spacing", value: $store.settings.paragraphSpacing, in: 0...1, readout: "\(Int(store.settings.paragraphSpacing * 100))%").help("Adjust the space between paragraphs")
         ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the script text colour")
         ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
           .help("Choose the background colour")
+      }
       }
       InspectorSection("Advanced") {
         DisclosureGroup("Mirroring and cues", isExpanded: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 })) {
@@ -96,10 +115,11 @@ struct InspectorView: View {
 }
 
 enum SettingsTab: String, CaseIterable {
-  case general = "General", voice = "Voice", editor = "Editor", presets = "Saved settings"
+  case general = "General", reading = "Reading", voice = "Voice", editor = "Editor", presets = "Saved settings"
   var symbol: String {
     switch self {
     case .general: "gearshape"
+    case .reading: "text.book.closed"
     case .voice: "mic"
     case .editor: "textformat"
     case .presets: "slider.horizontal.3"
@@ -118,14 +138,16 @@ struct AppSettingsView: View {
     _selection = State(initialValue: selectedTab ?? .general)
   }
   static var requestedTab: SettingsTab?
-  static func requestVoiceTab() {
-    requestedTab = .voice
+  static func requestVoiceTab() { requestTab(.voice) }
+  static func requestTab(_ tab: SettingsTab) {
+    requestedTab = tab
     NotificationCenter.default.post(name: .init("VideoPrompter.voiceSettings"), object: nil)
   }
   static let width: CGFloat = 560
   private var height: CGFloat {
     switch selection {
     case .general: 300
+    case .reading: 580
     case .voice: 520
     case .editor: 240
     case .presets: min(600, 280 + CGFloat(store.presets.count) * 40)
@@ -144,7 +166,7 @@ struct AppSettingsView: View {
         selection = Self.requestedTab ?? selectedTab ?? SettingsTab(rawValue: savedTab) ?? .general
         Self.requestedTab = nil
       }
-      .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.voiceSettings"))) { _ in selection = .voice; Self.requestedTab = nil }
+      .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.voiceSettings"))) { _ in selection = Self.requestedTab ?? .voice; Self.requestedTab = nil }
       .onChange(of: selection) { _, tab in savedTab = tab.rawValue }
   }
 }
@@ -158,27 +180,20 @@ struct SettingsPage: View {
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
   @State private var replacingPreset: PrompterSettings?
+  @State private var appliedPreset: PrompterSettings?
 
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
-    if tab == .voice { VoiceSettingsPage(store: store) } else { form }
+    if tab == .voice { VoiceSettingsPage(store: store) } else if tab == .reading { InspectorView(store: store) } else { form }
   }
 
   private var form: some View {
     Form {
       switch tab {
       case .general:
-        Section {
-          Picker("How it follows you", selection: $store.settings.mode) {
-            Text("Voice").tag("Voice"); Text("Manual").tag("Manual")
-          }.pickerStyle(.radioGroup).help("Follow spoken words or scroll at a steady speed")
-          if store.settings.mode == "Manual" {
-            ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
-              readout: "\(Int(store.settings.speed)) words per minute")
-              .help("Set how fast Manual moves through your script")
-          }
-        } header: { Text("Following") } footer: {
-          Text("Voice follows the words you say. Manual scrolls at a steady speed.")
+        Section("Reading") {
+          Button("Open Reading settings…") { AppSettingsView.requestTab(.reading) }
+          Text("Reading mode, text and layout have one home in Reading.").font(.callout)
         }
         Section("Windows") {
           Picker("Interface size", selection: $store.uiZoom) {
@@ -187,17 +202,18 @@ struct SettingsPage: View {
           Toggle("Align presenter to screen edges", isOn: $store.settings.presenterSnappingEnabled)
             .help("Snap the presenter to screen edges or centre after dragging")
         }
-      case .voice:
+      case .voice, .reading:
         EmptyView()
       case .editor:
         Section {
-          Picker("Editor font", selection: $store.previewFontName) {
-            ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
+          VStack(alignment: .leading) {
+            Text("Editor font")
+            InspectorChoice(title: "Editor font", values: AvailableFonts.editor, names: AvailableFonts.editor, selection: $store.previewFontName)
           }.help("Change the editor font; presenter text has its own settings")
           Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
             Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
           }.accessibilityLabel("Editor text size").help("Change text size while editing")
-        } header: { Text("Editor text") } footer: { Text("Change reading text with Reading controls in the presenter, or Text in the Presenter inspector.") }
+        } header: { Text("Editor text") } footer: { Text("Change the presenter text in Reading settings. Editor text only affects writing here.") }
       case .presets:
         Section("Save current presenter settings") {
           TextField("Settings name", text: $presetName, prompt: Text("For example, Studio"))
@@ -211,13 +227,25 @@ struct SettingsPage: View {
         Section {
           if store.presets.isEmpty { Text("Your saved settings appear here.").foregroundStyle(.secondary) }
           ForEach(store.presets) { preset in
-            HStack {
-              Button("Apply \(preset.name)") { store.applyPreset(preset) }.buttonStyle(.plain)
-                .lineLimit(1).truncationMode(.tail).help("Apply \(preset.name)")
-              Spacer()
-              Button("Delete \(preset.name)", systemImage: "trash") { store.deletePreset(preset.id, undoManager: undoManager) }
-                .labelStyle(.iconOnly).buttonStyle(.plain)
-                .help("Remove these saved settings; choose Edit > Undo to restore it")
+            VStack(alignment: .leading, spacing: Space.sm) {
+              HStack {
+                Text(preset.name).font(.headline)
+                Spacer()
+                if store.matchesPreset(preset) { Label("In use", systemImage: "checkmark.circle") }
+                Button("Apply") { store.applyPreset(preset); appliedPreset = preset }
+                  .accessibilityLabel("Apply \(preset.name)")
+                Menu {
+                  Button("Rename…") { renamePreset = preset; renameValue = preset.name }
+                  Button("Duplicate") { store.duplicatePreset(preset.id) }
+                  Button("Replace with Current Settings…") { replacingPreset = preset }
+                  Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
+                } label: { Label("Actions", systemImage: "ellipsis.circle") }
+                .accessibilityLabel("Actions for \(preset.name)")
+              }
+              Text(preset.readingSummary).font(.callout).fixedSize(horizontal: false, vertical: true)
+              if appliedPreset?.id == preset.id {
+                Text(store.matchesPreset(preset) ? "Applied \(preset.name)" : "Modified since applying \(preset.name)").font(.callout)
+              }
             }.contextMenu {
               Button("Rename…") { renamePreset = preset; renameValue = preset.name }
                 .help("Change the name of these saved settings")
@@ -231,7 +259,7 @@ struct SettingsPage: View {
         } header: { Text("Saved settings") } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.") }
       }
     }.formStyle(.grouped)
-      .confirmationDialog("Replace saved settings?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
+      .confirmationDialog("Replace \(replacingPreset?.name ?? "saved settings")?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
         Button("Replace", role: .destructive) { if let preset = replacingPreset { store.updatePreset(preset.id) }; replacingPreset = nil; presetName = "" }
         Button("Cancel", role: .cancel) { replacingPreset = nil }
       } message: { Text("This replaces the saved reading mode, speed, appearance and layout with your current settings. Your microphone and spoken language stay unchanged when you apply them.") }
@@ -251,6 +279,7 @@ private struct VoiceSettingsPage: View {
   @State private var deviceObserver: AudioInputDeviceObserver?
   @State private var supportedSpeechLocales: [Locale] = []
   @State private var gainDraft: Double?
+  @ObservedObject private var recorder = CameraRecorder.shared
   private var session: SessionStore { store.session }
 
   var body: some View {
@@ -283,8 +312,15 @@ private struct VoiceSettingsPage: View {
         }
         ForEach(devices) { Text($0.name).tag($0.uid) }
       }.help("Choose the microphone that Voice listens to")
+      Text("Used for following your words, not automatically for the saved take.").font(.callout)
+      Text("Recording mic: \(recorder.microphoneName)").fixedSize(horizontal: false, vertical: true)
+      Button("Use this microphone for recording") { recorder.microphoneUID = store.settings.audioDeviceUID }
+        .disabled(recorder.isRecording || recorder.isBusy || store.settings.audioDeviceUID == nil)
+      RecordingSettingsLink(store: store)
+      Text("Voice follow mic: \(devices.first(where: { $0.uid == store.settings.audioDeviceUID })?.name ?? "Choose a microphone")").fixedSize(horizontal: false, vertical: true)
       MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
-      LabeledContent("Voice-follow input level") {
+      VStack(alignment: .leading, spacing: Space.sm) {
+        Text("Microphone volume")
         Slider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
           set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
         ) { editing in if !editing { commitGain() } }
@@ -292,7 +328,7 @@ private struct VoiceSettingsPage: View {
           .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
       }.help("Reduce the volume if the sound distorts")
       LabeledContent("Loudest sound") { LoudestSoundReadout(meter: session.meter) }
-    } header: { Text("Microphone") } footer: { Text("Press Test microphone and speak normally. If you see Sound too loud, lower Voice-follow input level. The dBFS number is a technical level; 0 is the maximum.") }
+    } header: { Text("Microphone") } footer: { Text("Press Test microphone and speak normally. If you see Sound too loud, lower Microphone volume. The dBFS number is a technical level; 0 is the maximum.") }
     Section("Recognition") {
       Picker("Spoken language", selection: $store.settings.speechLanguage) {
         Text("Mixed English & French").tag("Mixed")
@@ -330,7 +366,7 @@ private struct ValueSlider: View {
         Text(readout).font(.caption).monospacedDigit().foregroundStyle(.primary)
           .multilineTextAlignment(.trailing)
       }
-      Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title)
+      Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title).accessibilityValue(readout.replacingOccurrences(of: "%", with: " percent").replacingOccurrences(of: " pt", with: " points"))
     }
   }
 }
@@ -371,7 +407,7 @@ private struct MicrophoneTestRow: View {
   let deviceUID: String?
   let gain: Double
   var body: some View {
-    HStack(spacing: 12) {
+    VStack(alignment: .leading, spacing: Space.sm) {
       Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
         if session.isTestingMicrophone { session.stopMicrophoneTest() }
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
@@ -381,7 +417,7 @@ private struct MicrophoneTestRow: View {
     }
     if deviceUID == nil { Text("Choose a microphone above to test it.").font(.callout) }
     if let notice = session.microphoneTestNotice {
-      Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
+      Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.primary)
     }
   }
 }
@@ -400,7 +436,7 @@ private struct LoudestSoundReadout: View {
     HStack {
       if meter.isClipping {
         Label("Sound too loud", systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.red).help("Lower Voice-follow input level if the input is distorted")
+          .foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
       }
       Text(meter.peakDBFS.isFinite ? "Sound detected · " + String(format: "%.1f dBFS", meter.peakDBFS) : "No sound yet")
         .monospacedDigit().lineLimit(1).fixedSize()
@@ -514,4 +550,17 @@ struct PeakHold {
     return result >= -60 ? result : nil
   }
   mutating func expire() { peak = nil; generation += 1 }
+}
+
+
+private struct RecordingSettingsLink: View {
+  @ObservedObject var store: AppStore
+  @State private var showsSettings = false
+  var body: some View {
+    Button("Recording input…") { showsSettings = true }
+      .accessibilityLabel("Recording microphone and input test")
+      .popover(isPresented: $showsSettings) {
+        RecordingSettingsPanel(recorder: .shared, camera: .shared, zoom: store.uiZoom).frame(width: 420, height: 560).uiZoom(store.uiZoom)
+      }
+  }
 }

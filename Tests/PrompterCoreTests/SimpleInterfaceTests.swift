@@ -76,9 +76,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       let restart = try buttonFrame("Back to start")
       let edit = try buttonFrame("Edit script")
       let reading = try buttonFrame("Reading")
-      let recording = try buttonFrame("Record camera")
+      XCTAssertFalse(labels(content).joined(separator: "|").contains("Record camera"), "Script-only reading omits recording setup")
       let screenBounds = panel.convertToScreen(content.bounds)
-      for frame in [start, close, restart, edit, reading, recording] {
+      for frame in [start, close, restart, edit, reading] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): grouped controls stay inside the presenter")
       }
       XCTAssertEqual(close.midY, edit.midY, accuracy: 2, "Editing and closing share the secondary row")
@@ -320,7 +320,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       return labels(host).joined(separator: "|")
     }
     let inspector = await rendered()
-    for label in ["Size", "Typography", "Mirror for teleprompter glass", "Mirroring and cues"] {
+    for label in ["Reading text size", "Typography", "Reading mode", "Mirror for teleprompter glass", "Mirroring and cues"] {
       XCTAssertTrue(inspector.contains(label), label)
     }
     for label in ["Spoken language", "Voice-follow input level", "Saved settings", "How it follows you", "Editor font"] {
@@ -335,8 +335,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertTrue(advanced.contains("Show stage directions"))
     XCTAssertTrue(advanced.contains("Highlight active word"))
     let expected: [(SettingsTab, [String])] = [
-      (.general, ["How it follows you", "Interface size", "Align presenter to screen edges"]),
-      (.voice, ["Voice-follow microphone", "Spoken language", "Voice-follow input level", "Loudest sound"]),
+      (.general, ["Open Reading settings", "Interface size", "Align presenter to screen edges"]),
+      (.reading, ["Reading mode", "Reading text size", "Mirror for teleprompter glass"]),
+      (.voice, ["Voice-follow microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
       (.editor, ["Editor font", "Editor size"]),
       (.presets, ["Settings name", "Save Settings", "Saved settings"])
     ]

@@ -63,3 +63,11 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     speed = min(max(speed, 20), 300)
   }
 }
+
+
+extension PrompterSettings {
+  var readingSummary: String {
+    let following = mode == "Manual" ? "Automatic scroll · \(Int(speed)) words/min" : "Voice follow"
+    return "\(following) · \(Int(fontSize)) pt · \(fontName)" + (horizontalMirror ? " · mirrored for glass" : "")
+  }
+}

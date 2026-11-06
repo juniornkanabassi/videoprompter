@@ -761,11 +761,22 @@ final class SessionStore: ObservableObject {
 @MainActor final class InputMeter: ObservableObject {
   @Published private(set) var peakDBFS: Float = -.infinity
   @Published private(set) var isClipping = false
+  @Published private(set) var channelPeaks: [Float] = []
+  private(set) var lastSampleAt: TimeInterval?
+  func isFresh(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+    lastSampleAt.map { now - $0 < 1.5 } ?? false
+  }
+  func show(channelPeaks: [Float]) {
+    if self.channelPeaks != channelPeaks { self.channelPeaks = channelPeaks }
+    let peak = channelPeaks.max() ?? 0
+    show(peakDBFS: AudioCapture.decibels(fullScalePeak: peak), isClipping: peak >= 0.99)
+  }
   func show(peakDBFS: Float, isClipping: Bool) {
+    lastSampleAt = ProcessInfo.processInfo.systemUptime
     if self.peakDBFS != peakDBFS { self.peakDBFS = peakDBFS }
     if self.isClipping != isClipping { self.isClipping = isClipping }
   }
-  func reset() { show(peakDBFS: -.infinity, isClipping: false) }
+  func reset() { show(peakDBFS: -.infinity, isClipping: false); if !channelPeaks.isEmpty { channelPeaks = [] }; lastSampleAt = nil }
 }
 
 private final class AudioFrameCounter: @unchecked Sendable {

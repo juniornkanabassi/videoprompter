@@ -67,6 +67,27 @@ import XCTest
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-camera-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       try await snapshot(LibraryView(store: store, camera: camera), name: "library-200-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
       try await snapshot(GoogleDocsSheet(google: GoogleDocs(), importDocument: { _ in nil }, zoom: 2), name: "google-docs-200-\(mode)", size: .init(width: 640, height: 560), scheme: scheme, destination: destination)
+      camera.displayMode = .videoOnly
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, hasScript: false, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "camera-only-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      camera.displayMode = .prompterWithVideo
+      recorder.phase = .recording
+      recorder.inputMeter.show(channelPeaks: [0.1, 0.5])
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-recording-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      try await snapshot(RecordingInputLevel(meter: recorder.inputMeter).padding().uiZoom(2), name: "recording-meter-200-\(mode)", size: .init(width: 700, height: 320), scheme: scheme, destination: destination)
+      recorder.phase = .idle
+      store.uiZoom = 1
+      try await snapshot(SettingsPage(store: store, tab: .voice).uiZoom(2), name: "settings-Voice-200-\(mode)", size: .init(width: 560, height: 700), scheme: scheme, destination: destination)
+      camera.guides.zebras = true; camera.guides.falseColour = true
+      try await snapshot(CameraExposureSettings(model: camera), name: "exposure-active-\(mode)", size: .init(width: 480, height: 900), scheme: scheme, destination: destination)
+      camera.guides.zebras = false; camera.guides.falseColour = false
+      try await snapshot(RecordingSettingsPanel(recorder: recorder, camera: camera), name: "recording-settings-\(mode)", size: .init(width: 500, height: 850), scheme: scheme, destination: destination)
+      try await snapshot(CameraExposureSettings(model: camera), name: "exposure-tools-\(mode)", size: .init(width: 480, height: 640), scheme: scheme, destination: destination)
+      store.settings.mode = "Manual"
+      store.session.updateSettings(store.settings)
+      store.session.play()
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-reading-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      store.session.pause()
+      camera.displayMode = .prompterOnly
       camera.displayMode = .prompterOnly
       store.uiZoom = 1
       try await snapshot(IPadRemoteView(link: link, startsLink: false), name: "ipad-remote-\(mode)", size: .init(width: 480, height: 420), scheme: scheme, destination: destination)

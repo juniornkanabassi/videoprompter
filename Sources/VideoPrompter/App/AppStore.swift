@@ -159,7 +159,7 @@ private enum PresenterSaveError: LocalizedError {
     do {
       library = try MarkdownLibrary(rootURL: root)
       libraryAvailable = true
-    } catch { errorMessage = "The script library could not be opened safely. \(error)" }
+    } catch { errorMessage = "The script library could not be opened safely. Check that its folder is available and readable, then reopen Video Prompter. Details: \(error.localizedDescription)" }
     initialLoad = Task { await reload() }
     if offersWelcomeScript ?? !arguments.contains("--data-directory") {
       welcomeTask = Task { [weak self] in await self?.addWelcomeScriptIfNew() }
@@ -215,7 +215,7 @@ private enum PresenterSaveError: LocalizedError {
         if Self.isMissingFile(error) {
           unavailableScriptIDs.insert(metadata.id)
         } else {
-          errorMessage = "The script could not be loaded. \(error)"
+          errorMessage = "The script could not be loaded. Check that its file is available, then select it again. Details: \(error.localizedDescription)"
         }
       }
     }
@@ -279,7 +279,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
     guard let library else { return }
-    Task { do { try await work(library) } catch { errorMessage = String(describing: error) } }
+    Task { do { try await work(library) } catch let error as PendingEditsError { errorMessage = error.description } catch { errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)" } }
   }
   func createFolder(named name: String) {
     withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
@@ -343,7 +343,7 @@ private enum PresenterSaveError: LocalizedError {
       } catch {
         change.failed = true
         undoManager?.removeAllActions(withTarget: change)
-        errorMessage = String(describing: error)
+        errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)"
       }
     }
   }
@@ -719,6 +719,13 @@ private enum PresenterSaveError: LocalizedError {
     defaults.set(1, forKey: Self.modeMigrationKey)
     defaults.removeObject(forKey: Self.modeMigrationPendingKey)
   }
+  func matchesPreset(_ preset: PrompterSettings) -> Bool {
+    var compared = preset
+    compared.id = settings.id; compared.name = settings.name
+    compared.audioDeviceUID = settings.audioDeviceUID
+    compared.speechLanguage = settings.speechLanguage
+    return compared == settings
+  }
   func applyPreset(_ preset: PrompterSettings) {
     var applied = preset
     applied.mode = PrompterSettings.normalisedMode(applied.mode)
@@ -783,7 +790,7 @@ private enum PresenterSaveError: LocalizedError {
           if session.activeScriptID == metadata.id { session.pause() }
           errorMessage = "The script file is unavailable. Restore the original file, or export and import a copy."
         } else if !missing {
-          errorMessage = String(describing: error)
+          errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)"
         }
       }
     }

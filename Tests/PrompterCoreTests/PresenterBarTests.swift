@@ -76,7 +76,7 @@ import XCTest
         camera.displayMode = mode
         await settle()
         _ = try button("Presenter view", in: host)
-        let labels = ["Start reading", "Close presenter", "Reading", "Record camera"]
+        let labels = mode == .videoOnly ? ["Close presenter", "Record camera"] : mode == .prompterOnly ? ["Start reading", "Close presenter", "Reading"] : ["Start reading", "Close presenter", "Reading", "Record camera"]
         for label in labels {
           let rect = try frame(button(label, in: host))
           XCTAssertGreaterThan(rect.width, 0)
@@ -85,6 +85,7 @@ import XCTest
         if camera.presentsWithVideo {
           let picker = try button("Camera", in: host)
           let guides = try button("Framing guides", in: host)
+          _ = try button("Exposure", in: host)
           XCTAssertTrue(try isEnabled(picker))
           XCTAssertTrue(try isEnabled(guides))
           for control in [picker, guides] {

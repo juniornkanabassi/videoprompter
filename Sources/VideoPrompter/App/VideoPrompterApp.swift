@@ -1,4 +1,5 @@
 import AppKit
+@preconcurrency import AVFoundation
 import PrompterCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -90,7 +91,7 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Present Camera Only") { PresenterController.shared.presentCamera(store: store) }
+          Button("Camera-only Presenter") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Open the presenter with just the camera; present a script later to add it")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
@@ -106,7 +107,7 @@ enum ScriptShortcuts {
           RecordingMenuItems()
           Divider()
           PresenterVideoItems()
-          Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
+          Button("Pin Selected Text over Camera") { PresenterController.shared.monitorSelection(store: store) }
             // Not Option-Command-M: that is Window > Minimise All.
             .keyboardShortcut("l", modifiers: [.command, .option])
             .help("Pin the selected passage over the camera picture, as a reference monitor")
@@ -119,10 +120,10 @@ enum ScriptShortcuts {
     Settings { AppSettingsView(store: store) }
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store) }
       .defaultSize(width: 520, height: 560)
-    Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared) }
+    Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Camera", id: "camera") { CameraView().background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
+    Window("Camera Monitor", id: "camera") { CameraView(zoom: store.uiZoom).background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
       .defaultSize(width: 760, height: 480)
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
   }
@@ -204,7 +205,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Camera") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }
@@ -335,9 +336,13 @@ struct MainWindowConfigurator: NSViewRepresentable {
 
 struct RecordingMenuItems: View {
   @ObservedObject private var recorder = CameraRecorder.shared
+  @ObservedObject private var camera = CameraModel.shared
   var body: some View {
     Button(recorder.isRecording ? "Stop Recording" : "Record Camera") {
-      Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: .shared) } }
-    }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy)
+      Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera) } }
+    }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy || (!recorder.isRecording && !camera.isReadyToRecord))
+      .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStartRunningNotification)) { _ in camera.objectWillChange.send() }
+      .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStopRunningNotification)) { _ in camera.objectWillChange.send() }
+    Button("Open Recordings Folder") { recorder.openRecordingsFolder() }
   }
 }

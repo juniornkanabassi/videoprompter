@@ -64,6 +64,7 @@ final class PresenterPresentTests: XCTestCase {
       NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
         windowNumber: shown.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
     }
+    shown.makeFirstResponder(shown) // Bare arrows are shortcuts only on the reading surface.
     let first = store.session.tokenIndex
     XCTAssertTrue(shown.handlePassageKey(arrow(124)))
     XCTAssertGreaterThan(store.session.tokenIndex, first)
