@@ -55,7 +55,7 @@ import XCTest
     let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped))
     defer { LibraryAX.close(window) }
     XCTAssertEqual(camera.guides, original)
-    for label in ["Zebras", "False colour", "Zebra reference", "Custom levels"] {
+    for label in [ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check brightness · False colour", "Zebra reference", "Custom levels"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
     XCTAssertTrue(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)

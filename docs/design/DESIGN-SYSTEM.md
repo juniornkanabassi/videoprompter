@@ -249,9 +249,11 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
 
 ## Settled round 14 contents (Builder B)
 
-- ExposureLegend is one line: six equal swatches and a small **Key** button with
+- ExposureLegend is one line: six swatches and a small **Key** button with
   a chevron. At 100/150/200% its height is determined only by the button and
-  padding. Its three short labels are Too dark, Face and Clipping, with no wrapping. Numerical measurements stay in Key. Builder A anchors it to
+  padding. Its four short labels are Too dark, Mid-tones, Bright and Clipping,
+  with no wrapping. Yellow belongs only to Bright; Clipping covers the red band.
+  Numerical measurements stay in Key. Builder A anchors it to
   the bottom of the camera picture, outside the reading lane.
 - Key opens a bounded scrolling popover. The first line says what to do on the
   camera; colour names, renderer ranges, received-picture calibration and
@@ -287,9 +289,9 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
   Face reference describes stripes on the lit side of a face before selection;
   skin-tone and flat-profile qualifications remain beside the camera advice.
 - The bottom-edge false-colour strip stays one row with all six renderer colours.
-  Too dark, Face and Clipping identify its key groups at callout size. Labels sit
+  Too dark, Mid-tones, Bright and Clipping identify its groups at callout size. Labels sit
   on an opaque-enough black backing for contrast, never on bare bright colours.
-  Face is a qualified reference, not a universal target. Key retains exact ranges,
+  No strip band names a face target. Key retains exact ranges,
   grey-gap explanation and the received-picture qualification. The host keeps
   this strip outside the reading lane and centre of the subject.
 
@@ -312,3 +314,25 @@ Authorised by round-16 UX, visual and creator findings. The fixed transport, sin
 QA round 10 adds unique-ID repair on load and every save, single-item deletion, unresolved guide transfer to the first selected camera, and inventory discovery on opening Choose camera without requesting access.
 
 Round 16 layout note: Check reading replaces the reading-status opener while a reading problem needs attention, retaining mode/state/problem in the accessible value.
+
+## Round 16 Builder B refinement
+
+- Keep the settled one-row, six-colour strip and Key popover. Four captions map
+  purple/blue to **Too dark**, green/pink to **Mid-tones**, yellow to **Bright**,
+  and red to **Clipping**. Clipping describes the near-white received picture,
+  not proof of camera sensor clipping. At narrow widths where the captions do
+  not fit, retain all six swatches and Key rather than clipping the opener or
+  shrinking the text. Key and accessible help make that limit
+  explicit; the colour engine and ranges stay unchanged.
+- Exposure controls lead with the job before the technique: **Find blown
+  highlights · Zebras** for bright-area checks, **Check brightness · Zebras**
+  for the qualified reference, **Check custom brightness · Zebras** for custom
+  levels, and **Check brightness · False colour**. Stripes flag areas to inspect;
+  they do not prove lost detail. Face guidance stays with the **Face reference**
+  explanation, including varied skin tones and flat-picture qualifications.
+- Editor and Reading sliders use native sliders with a verified minimum
+  24-point interactive height at 100%, scaling with Interface size. Preserve
+  native tracking, focus and spoken values.
+- The **Editor text size** opener has a disclosure chevron matching **Script
+  details**, with the existing 24-point target and exact-opener focus return.
+  Save state, word count and Linked remain quiet metadata.

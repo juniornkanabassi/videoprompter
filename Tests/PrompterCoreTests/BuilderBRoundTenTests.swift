@@ -98,7 +98,7 @@ import XCTest
       let original = camera.guides
       let (window, host) = await LibraryAX.host(Form { ExposureToolToggles(model: camera) }.formStyle(.grouped))
       defer { LibraryAX.close(window) }
-      for (label, meaning) in [("Zebras", ExposureGuidance.zebraPurpose(camera.guides)), ("False colour", ExposureGuidance.colourPurpose)] {
+      for (label, meaning) in [(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), ExposureGuidance.zebraPurpose(camera.guides)), ("Check brightness · False colour", ExposureGuidance.colourPurpose)] {
         XCTAssertFalse(LibraryAX.named(meaning, in: host).isEmpty)
         let toggle = try XCTUnwrap(LibraryAX.named(label, in: host).first {
           ["AXCheckBox", "AXSwitch"].contains(LibraryAX.value($0, "accessibilityRole"))

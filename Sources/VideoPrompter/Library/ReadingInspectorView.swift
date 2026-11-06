@@ -90,7 +90,7 @@ struct ReadingSettingsPage: View {
         Spacer()
         Text(readout).monospacedDigit().font(UIType.secondary)
       }
-      Slider(value: value, in: range).accessibilityLabel(title).accessibilityValue(spoken)
+      ReadingSlider(value: value, range: range, title: title, spokenValue: spoken)
     }
   }
   private func colour(_ value: Binding<String>) -> Binding<Color> {
