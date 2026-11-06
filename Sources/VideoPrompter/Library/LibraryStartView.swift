@@ -17,8 +17,10 @@ struct LibraryStartView: View {
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button { store.importClipboard() } label: {
-            Label("Paste a Script", systemImage: "doc.on.clipboard")
+            Label("Paste Copied Text", systemImage: "doc.on.clipboard")
           }.buttonStyle(.borderedProminent)
+          Text("Copy your script first. This pastes it straight into a new script.")
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
           HStack(spacing: Space.lg) {
             Button("Import a File…") { importing = true }
             Button("Write a Script") { store.create() }

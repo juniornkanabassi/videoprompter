@@ -30,7 +30,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
 
 @MainActor private func pressDisclosure(_ label: String, in host: NSView) throws {
   let action = NSSelectorFromString("accessibilityPerformPress")
-  let object = try XCTUnwrap(accessibilityObjects(host).first {
+  let object = try XCTUnwrap(accessibilityObjects(host).last {
     labels($0).first?.contains(label) == true && $0.responds(to: action)
   }, "Missing disclosure: \(label)")
   _ = object.perform(action)
@@ -291,7 +291,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Ready when you are", "Paste a Script", "Import a File", "Write a Script", "Camera Only", "Try the Practice Script"] {
+    for text in ["Ready when you are", "Paste Copied Text", "Import a File", "Write a Script", "Camera Only", "Try the Practice Script"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
@@ -310,7 +310,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")
   }
 
-  func testPreferencesUseSettingsPagesAndInspectorKeepsOnlyPresenterControls() async throws {
+  func testPreferencesUseSettingsPagesAndReadingInspectorOwnsTextControls() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-ui-\(UUID())")
@@ -330,10 +330,10 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       return labels(host).joined(separator: "|")
     }
     let inspector = await rendered()
-    for label in ["Reading text size", "Spacing and alignment", "Mirror for teleprompter glass", "Rotation and stage directions"] {
+    for label in ["Reading text size", "Spacing and alignment", "Mirror for teleprompter glass", "Rotation and stage directions", "Editor font", "Editor text size"] {
       XCTAssertTrue(inspector.contains(label), label)
     }
-    for label in ["Spoken language", "Voice-follow input level", "Saved settings", "How it follows you", "Editor font"] {
+    for label in ["Spoken language", "Voice-follow input level", "Saved settings", "How it follows you"] {
       XCTAssertFalse(inspector.contains(label), label)
     }
     store.simpleInterface = false
@@ -348,9 +348,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertTrue(advanced.contains("Highlight active word"))
     let expected: [(SettingsTab, [String])] = [
       (.general, ["Open Reading settings", "Interface size", "Align presenter to screen edges"]),
-      (.reading, ["Reading mode", "Reading text size", "Mirror for teleprompter glass"]),
+      (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
       (.voice, ["Voice-follow microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
-      (.editor, ["Editor font", "Editor size"]),
+      (.editor, ["Open Text Settings", "Reading settings holds both"]),
       (.presets, ["Settings name", "Save Settings", "Saved settings"])
     ]
     for (tab, pageLabels) in expected {

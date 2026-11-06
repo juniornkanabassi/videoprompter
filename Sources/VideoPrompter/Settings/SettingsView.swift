@@ -97,15 +97,11 @@ struct SettingsPage: View {
       case .voice, .reading:
         EmptyView()
       case .editor:
-        Section {
-          VStack(alignment: .leading) {
-            Text("Editor font")
-            InspectorChoice(title: "Editor font", values: AvailableFonts.editor, names: AvailableFonts.editor, selection: $store.previewFontName)
-          }.help("Change the editor font; presenter text has its own settings")
-          Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
-            Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
-          }.accessibilityLabel("Editor text size").help("Change text size while editing")
-        } header: { Text("Editor text") } footer: { Text("Change the presenter text in Reading settings. Editor text only affects writing here.") }
+        Section("Editor text") {
+          Button("Open Text Settings…") { AppSettingsView.requestTab(.reading) }
+          Text("Reading settings holds both reading and editor text sizes. Each keeps its own value.")
+            .foregroundStyle(.primary)
+        }
       case .presets:
         Section("Save current presenter settings") {
           TextField("Settings name", text: $presetName, prompt: Text("For example, Studio"))

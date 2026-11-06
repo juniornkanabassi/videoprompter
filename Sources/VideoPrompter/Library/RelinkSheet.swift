@@ -233,24 +233,83 @@ struct RelinkComparison {
   let fingerprint: String
 }
 
-struct RelinkComparisonView: View {
-  let comparison: RelinkComparison
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.md) {
-      Text(comparison.libraryText == comparison.fileText ? "Both versions contain the same text." : "These versions contain different text.")
-        .font(.headline)
-      preview("Script in Video Prompter", text: comparison.libraryText, date: comparison.libraryDate)
-      preview("Chosen file", text: comparison.fileText, date: comparison.fileDate)
+/// Whitespace is retained so the comparison never changes either original version.
+struct RelinkTextChanges {
+  let saved: [String]
+  let file: [String]
+  let removed: Set<Int>
+  let added: Set<Int>
+
+  init(saved: String, file: String) {
+    func tokens(_ text: String) -> [String] {
+      text.ranges(of: /\s+|[^\s]+/).map { String(text[$0]) }
+    }
+    self.saved = tokens(saved); self.file = tokens(file)
+    var prefix = 0
+    while prefix < min(self.saved.count, self.file.count), self.saved[prefix] == self.file[prefix] { prefix += 1 }
+    var endSaved = self.saved.count, endFile = self.file.count
+    while endSaved > prefix, endFile > prefix, self.saved[endSaved - 1] == self.file[endFile - 1] {
+      endSaved -= 1; endFile -= 1
+    }
+    let old = Array(self.saved[prefix..<endSaved]), new = Array(self.file[prefix..<endFile])
+    // Bound diff work on very large replacements; still show all changed text in both versions.
+    if old.count + new.count > 4000 {
+      removed = Set(prefix..<endSaved); added = Set(prefix..<endFile)
+    } else {
+      var removed = Set<Int>(), added = Set<Int>()
+      for change in new.difference(from: old) {
+        switch change {
+        case .remove(let offset, _, _): removed.insert(prefix + offset)
+        case .insert(let offset, _, _): added.insert(prefix + offset)
+        }
+      }
+      self.removed = removed; self.added = added
     }
   }
-  private func preview(_ title: String, text: String, date: Date?) -> some View {
+  var removedWords: Int { removed.filter { !saved[$0].allSatisfy(\.isWhitespace) }.count }
+  var addedWords: Int { added.filter { !file[$0].allSatisfy(\.isWhitespace) }.count }
+}
+
+struct RelinkComparisonView: View {
+  let comparison: RelinkComparison
+  @State private var fullVersions = false
+  private var changes: RelinkTextChanges { RelinkTextChanges(saved: comparison.libraryText, file: comparison.fileText) }
+  var body: some View {
+    let diff = changes
+    VStack(alignment: .leading, spacing: Space.md) {
+      Text(comparison.libraryText == comparison.fileText ? "Both versions contain the same text." : "\(diff.removedWords) words removed · \(diff.addedWords) words added")
+        .font(.headline)
+      if comparison.libraryText != comparison.fileText {
+        Text("Changed words are bold and underlined. Unchanged text is hidden until you show the full versions.")
+          .font(.callout).fixedSize(horizontal: false, vertical: true)
+        preview("− Removed from saved script", tokens: diff.saved, changed: diff.removed, date: comparison.libraryDate)
+        preview("+ Added in chosen file", tokens: diff.file, changed: diff.added, date: comparison.fileDate)
+        Toggle("Show full versions", isOn: $fullVersions)
+      }
+    }.foregroundStyle(.primary)
+  }
+  private func preview(_ title: String, tokens: [String], changed: Set<Int>, date: Date?) -> some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text(title).font(.headline)
       if let date { Text(date, format: .dateTime.day().month().year().hour().minute()).font(.callout) }
       ScrollView {
-        Text(text.isEmpty ? "Empty script" : text).textSelection(.enabled)
+        markedText(tokens, changed: changed).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
       }.frame(height: 120).padding(Space.sm).background(.background, in: .rect(cornerRadius: Space.xs))
-    }.foregroundStyle(.primary)
+    }
+  }
+  private func markedText(_ tokens: [String], changed: Set<Int>) -> Text {
+    if tokens.isEmpty { return Text("Empty script") }
+    if changed.isEmpty && !fullVersions { return Text("No removed or added words in this version.") }
+    var result = Text("")
+    var omitted = false
+    for (index, token) in tokens.enumerated() {
+      let joinsChanges = token.allSatisfy(\.isWhitespace) && changed.contains(index - 1) && changed.contains(index + 1)
+      if fullVersions || changed.contains(index) || joinsChanges {
+        if omitted { result = result + Text(" … "); omitted = false }
+        result = result + (changed.contains(index) ? Text(token).bold().underline() : Text(token))
+      } else { omitted = true }
+    }
+    return result
   }
 }

@@ -15,3 +15,24 @@ Run `python3 checks/check-grid.py` and `zsh checks/check-snapshots.sh`. Snapshot
 `Library/ReadingInspectorView.swift` is the shared reading configuration. `InspectorView` remains an alias for compatibility. Keep the view/mode/font/size decisions visible and the detailed spacing, guide, backdrop and cue controls disclosed. Enlarged popup controls must retain a full readable current-value label even when the native popup abbreviates its title. Slider values must include units in accessibility values.
 
 The first-launch library starts with the user's job, not appearance controls. Keep library scopes independent from the scrolling document list and keep routine metadata in Script details. Broken-link and failed-save recovery stays visible. In rendered Markdown, callout blocks use the available text width and primary text for their titles; colour is supporting decoration. Hidden presenter cues must also be absent from accessible/selectable text, with source mapping retained for seeking.
+
+## Round 3 library and reading controls
+
+The library sidebar has one compact scope selector and one document list. Folder
+management and the recordings-folder action live in the adjacent Folder actions
+menu. Scope is a filter, not a second highlighted document. The start page does
+not highlight Welcome until its script is displayed. Rows use two lines with a
+full-title tooltip so the list remains useful with hundreds of scripts.
+
+Reading settings is the single home for reading and editor typography. The
+editor and Settings > Editor link there. Interface size remains under General,
+with a link from Reading. At 150% and above, the library opens Reading settings
+in a wide sheet rather than narrowing the editor around three large columns.
+The shared groups resolve their background and label colours explicitly because
+native grouped Form surfaces can resolve white inside a dark split-view host.
+Section titles, labels and short explanations remain distinct without faint text.
+
+Relinking shows additions and removals first, using written labels, bold and
+underlines. Full original versions remain available. Camera keyboard previews
+scroll their highlighted row into view and empty states offer a privacy-settings
+route plus Refresh. No preview hover requests camera permission.

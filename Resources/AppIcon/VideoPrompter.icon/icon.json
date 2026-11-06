@@ -27,7 +27,7 @@
         },
         {
           "name": "Dark",
-          "image-name": "VideoPrompter-Dark.png",
+          "image-name": "VideoPrompter-Dark-R3.png",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -46,7 +46,7 @@
         },
         {
           "name": "Tinted",
-          "image-name": "VideoPrompter-Tinted.png",
+          "image-name": "VideoPrompter.png",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [

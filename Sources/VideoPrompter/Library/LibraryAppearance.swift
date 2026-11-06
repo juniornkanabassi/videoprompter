@@ -3,6 +3,9 @@ import SwiftUI
 
 /// Resolve semantic colours before a split view reparents its row hosts into vibrant surfaces.
 enum LibraryAppearance {
+  static func selectionBackground(scheme: ColorScheme) -> Color {
+    scheme == .dark ? Color(red: 0.18, green: 0.27, blue: 0.37) : Color(red: 0.81, green: 0.89, blue: 0.97)
+  }
   static func color(_ color: NSColor, scheme: ColorScheme) -> Color {
     var resolved = color
     NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {
@@ -13,6 +16,7 @@ enum LibraryAppearance {
 }
 
 struct InspectorSection<Content: View>: View {
+  @Environment(\.colorScheme) private var scheme
   let title: String
   @ViewBuilder let content: () -> Content
   init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
@@ -22,7 +26,10 @@ struct InspectorSection<Content: View>: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.md) {
       Text(title).font(.headline).accessibilityAddTraits(.isHeader)
-      content()
+      VStack(alignment: .leading, spacing: Space.md) { content() }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.md)
+        .background(scheme == .dark ? Color(white: 0.14) : Color(white: 0.97), in: .rect(cornerRadius: Space.md))
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
 }

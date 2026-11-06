@@ -12,4 +12,6 @@ DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}" /us
   --output-format human-readable-text
 test -s "$WORK/Assets.car"
 test -s "$WORK/VideoPrompter.icns"
-cp "$WORK/Assets.car" "$WORK/VideoPrompter.icns" "$DESTINATION/"
+cp "$WORK/Assets.car" "$DESTINATION/"
+# Legacy icon sizes have their own optical master; the modern appearance catalogue stays native.
+cp "$ROOT/VideoPrompter.icns" "$DESTINATION/"

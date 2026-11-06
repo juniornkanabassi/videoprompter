@@ -177,7 +177,7 @@ private struct FileItems: View {
     Button("Import File…") { NotificationCenter.default.post(name: .videoPrompterImport, object: nil) }
       .keyboardShortcut(ScriptShortcuts.importFile)
       .disabled(!store.libraryAvailable)
-    Button("Paste as New Script") { store.importClipboard() }
+    Button("Paste Copied Text") { store.importClipboard() }
       .disabled(!store.libraryAvailable)
     Button("Import from Google Docs…") { openWindow(id: "google-docs") }
       .disabled(!store.libraryAvailable)

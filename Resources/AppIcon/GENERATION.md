@@ -30,3 +30,22 @@ The approved artwork is retained. Two image-tool cutout attempts left exterior s
 `compile-icon.sh <destination>` compiles the three appearances with Apple's `actool` into `Assets.car` and `VideoPrompter.icns`. `build.sh` invokes this resource-only step; `Info.plist` names VideoPrompter. No release was built or installed during this change. Offscreen `ictool` exports at 16, 32 and 64 points are in `docs/design/round-2-library/icons/`.
 
 Generated source images: built-in image tool outputs `exec-65b91f39-a087-4a86-af41-75334e096961.png` (dark) and `exec-04b8ffa8-a953-4862-a112-9b6944401634.png` (tinted). Canonical copies live inside the Icon Composer Assets directory. These are bitmap appearance layers, not separate editable microphone/page geometry.
+
+## Round 3 finishing, 6 November 2026
+
+The approved large white master remains unchanged. A simplified optical variant
+(`VideoPrompter-Small.png`) strengthens the paper outline and suppresses tiny
+hardware reflections for the legacy 16/32/64-pixel representations. The variant
+was generated from the approved master, then exported through Icon Composer's
+native rounded mask. Raw generated outputs with exterior flecks were rejected.
+The legacy ICNS is retained by `compile-icon.sh` after compiling Assets.car.
+
+`VideoPrompter-Dark-R3.png` changes the tile while retaining lighting closer to
+the approved microphone. The tinted layer now reuses the exact approved default
+bitmap, so the system supplies tint without different geometry or exterior
+speckles. Older generated appearance sources are retained for provenance.
+
+Native Icon Composer exports at 16/32/64 points and a comparison are in
+`docs/design/round-3-library/icons`. The modern catalogue still derives all sizes
+from one bitmap per appearance. Per-size optical artwork is applied to the
+legacy ICNS only; a layered vector master remains future work.

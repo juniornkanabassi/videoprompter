@@ -92,6 +92,7 @@ struct ReferenceMonitorCaption: View {
   var readingSize: Double = 48
   var zoom = 1.0
   let end: () -> Void
+  @State private var expanded = false
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
@@ -113,10 +114,12 @@ struct ReferenceMonitorCaption: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Monitored passage")
         .accessibilityValue(passage)
-      }.frame(maxHeight: 240)
+      }.frame(maxHeight: expanded ? 240 : min(150, readingSize * 2.5))
+      Button(expanded ? "Collapse passage" : "Expand passage · scroll for more") { expanded.toggle() }
+        .buttonStyle(.plain).font(.callout).foregroundStyle(.white).uiZoom(zoom)
     }
     .padding(12)
-    .background(.black.opacity(0.90), in: RoundedRectangle(cornerRadius: 14))
+    .background(.black.opacity(0.90), in: RoundedRectangle(cornerRadius: Space.md))
     .padding(.horizontal, 16)
     .frame(maxWidth: 820)
   }
