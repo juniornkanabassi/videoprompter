@@ -52,24 +52,29 @@ struct InspectorView: View {
       Section("Typography") {
         Picker("Text weight", selection: $store.settings.fontWeight) {
           Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
-        }
+        }.help("Choose regular or bold presenter text")
         Picker("Alignment", selection: $store.settings.alignment) {
           Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
-        }
-        Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }
-        Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }
-        ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false)
+        }.help("Align the text within the script column")
+        Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
+        Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
+        ColorPicker("Text colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.textColorHex) ?? .white) }, set: { store.settings.textColorHex = NSColor($0).hex }), supportsOpacity: false).help("Choose the script text colour")
         ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
+          .help("Choose the background colour")
       }
       Section("Advanced") {
         DisclosureGroup("Mirroring and cues", isExpanded: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 })) {
           Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror)
+            .help("Flip text top to bottom for your teleprompter setup")
           Picker("Text rotation", selection: $store.settings.rotation) {
             Text("0°").tag(0); Text("180°").tag(180)
-          }
+          }.help("Rotate the script by half a turn")
           Toggle("Show stage directions", isOn: $store.settings.showCues)
+            .help("Show bracketed stage directions alongside spoken text")
           Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
-        }.help("Show the presenter's mirroring, rotation and cue options")
+            .help("Mark the current word as the script follows you")
+        }.accessibilityAction { store.simpleInterface.toggle() }
+          .help("Show the presenter's mirroring, rotation and cue options")
       }
     }.formStyle(.grouped)
   }
@@ -102,6 +107,7 @@ struct AppSettingsView: View {
     self.selectedTab = selectedTab
     _selection = State(initialValue: selectedTab ?? .general)
   }
+  static let width: CGFloat = 560
   private var height: CGFloat {
     switch selection {
     case .general: 300
@@ -113,10 +119,12 @@ struct AppSettingsView: View {
   var body: some View {
     TabView(selection: $selection) {
       ForEach(SettingsTab.allCases, id: \.self) { tab in
-        SettingsPage(store: store, tab: tab)
+        // Zoom inside the page, not the TabView: the window and its native tabs stay one size and
+        // the Form scrolls in its fixed viewport, rather than the window doubling at 200%.
+        SettingsPage(store: store, tab: tab).uiZoom(store.uiZoom)
           .tabItem { Label(tab.rawValue, systemImage: tab.symbol) }.tag(tab)
       }
-    }.frame(width: 560, height: height).uiZoom(store.uiZoom)
+    }.frame(width: Self.width, height: height)
       .onAppear { if selectedTab == nil { selection = SettingsTab(rawValue: savedTab) ?? .general } }
       .onChange(of: selection) { _, tab in savedTab = tab.rawValue }
   }
@@ -132,6 +140,11 @@ struct SettingsPage: View {
   @State private var renameValue = ""
 
   var body: some View {
+    // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
+    if tab == .voice { VoiceSettingsPage(store: store) } else { form }
+  }
+
+  private var form: some View {
     Form {
       switch tab {
       case .general:
@@ -142,6 +155,7 @@ struct SettingsPage: View {
           if store.settings.mode == "Manual" {
             ValueSlider("Speed", value: $store.settings.speed, in: 20...300,
               readout: "\(Int(store.settings.speed)) words per minute")
+              .help("Set how fast Manual moves through your script")
           }
         } header: { Text("Following") } footer: {
           Text("Voice follows the words you say. Manual scrolls at a steady speed.")
@@ -149,24 +163,27 @@ struct SettingsPage: View {
         Section("Windows") {
           Picker("Interface size", selection: $store.uiZoom) {
             ForEach(AppStore.uiZoomSteps, id: \.self) { Text("\(Int($0 * 100))%").tag($0) }
-          }
+          }.help("Make the library, inspector and Settings controls larger or smaller")
           Toggle("Align presenter to screen edges", isOn: $store.settings.presenterSnappingEnabled)
+            .help("Snap the presenter to screen edges or centre after dragging")
         }
       case .voice:
-        VoiceSettingsPage(store: store)
+        EmptyView()
       case .editor:
         Section {
           Picker("Editor font", selection: $store.previewFontName) {
             ForEach(AvailableFonts.editor, id: \.self) { Text($0).tag($0) }
-          }
+          }.help("Change the editor font; presenter text has its own settings")
           Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
             Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
-          }.accessibilityLabel("Editor text size")
+          }.accessibilityLabel("Editor text size").help("Change text size while editing")
         } header: { Text("Editor text") } footer: { Text("Presenter text is set separately in the Presenter inspector.") }
       case .presets:
         Section("Save current presenter settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
+            .help("Give the current presenter settings a name")
           Button("Save Preset") { store.savePreset(named: presetName); presetName = "" }
+            .help("Save the current presenter settings for reuse")
         }
         Section {
           if store.presets.isEmpty { Text("Saved presets appear here.").foregroundStyle(.secondary) }
@@ -180,16 +197,19 @@ struct SettingsPage: View {
                 .help("Remove this preset; choose Edit > Undo to restore it")
             }.contextMenu {
               Button("Rename…") { renamePreset = preset; renameValue = preset.name }
-              Button("Duplicate") { store.duplicatePreset(preset.id) }
+                .help("Change the name of these saved settings")
+              Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of these saved settings")
               Button("Replace with Current Settings") { store.updatePreset(preset.id) }
+                .help("Overwrite this preset with the settings in use")
               Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
+                .help("Remove this preset; choose Edit > Undo to restore it")
             }
           }
         } header: { Text("Saved settings") } footer: { Text("Applying a preset keeps your microphone and spoken language.") }
       }
     }.formStyle(.grouped)
       .alert("Rename Saved Settings", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
-        TextField("Preset name", text: $renameValue)
+        TextField("Preset name", text: $renameValue).help("Enter a new name for these saved settings")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
         Button("Cancel", role: .cancel) { renamePreset = nil }
       }
@@ -206,6 +226,24 @@ private struct VoiceSettingsPage: View {
   private var session: SessionStore { store.session }
 
   var body: some View {
+    Form { sections }.formStyle(.grouped)
+    .task { supportedSpeechLocales = await SpeechTranscriber.supportedLocales }
+    .task(id: gainDraft) {
+      guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
+      commitGain()
+    }
+    .onAppear {
+      devices = AudioCapture.inputDevices()
+      deviceObserver = AudioCapture.inputDeviceObserver {
+        let available = AudioCapture.inputDevices()
+        devices = available
+        session.microphoneDevicesDidChange(available)
+      }
+    }
+    .onDisappear { commitGain(); deviceObserver = nil; session.stopMicrophoneTest() }
+  }
+
+  @ViewBuilder private var sections: some View {
     Section {
       Picker("Microphone", selection: Binding(
         get: { store.settings.audioDeviceUID ?? "" },
@@ -235,23 +273,10 @@ private struct VoiceSettingsPage: View {
         ForEach(supportedSpeechLocales.filter { !["en-GB", "fr-FR"].contains($0.identifier) }, id: \.identifier) { locale in
           Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
         }
-      }
+      }.help("Choose the language you will speak; Automatic uses the script language")
       Toggle("Follow me when I repeat earlier words", isOn: $store.settings.allowsBackwardVoiceTracking)
+        .help("Allow the reading position to move back when you repeat a passage")
     }
-    .task { supportedSpeechLocales = await SpeechTranscriber.supportedLocales }
-    .task(id: gainDraft) {
-      guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
-      commitGain()
-    }
-    .onAppear {
-      devices = AudioCapture.inputDevices()
-      deviceObserver = AudioCapture.inputDeviceObserver {
-        let available = AudioCapture.inputDevices()
-        devices = available
-        session.microphoneDevicesDidChange(available)
-      }
-    }
-    .onDisappear { commitGain(); deviceObserver = nil; session.stopMicrophoneTest() }
   }
   private func commitGain() {
     guard let gain = gainDraft else { return }

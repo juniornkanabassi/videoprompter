@@ -96,6 +96,22 @@ final class UIZoomTests: XCTestCase {
     }
   }
 
+  /// Settings zooms each page inside a fixed viewport: the native TabView root stays unscaled, so
+  /// 200% does not double the window. The live Settings scene chrome still needs a visual check.
+  func testSettingsKeepsOneWindowSizeAtEveryZoom() {
+    for tab in SettingsTab.allCases {
+      store.uiZoom = 1
+      let actual = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
+      XCTAssertEqual(actual.width, AppSettingsView.width, accuracy: 1, "\(tab)")
+      for scale in [1.5, 2.0] {
+        store.uiZoom = scale
+        let zoomed = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
+        XCTAssertEqual(zoomed.width, actual.width, accuracy: 1, "\(tab) at \(scale): width")
+        XCTAssertEqual(zoomed.height, actual.height, accuracy: 1, "\(tab) at \(scale): height")
+      }
+    }
+  }
+
   /// The real library window at every step: the editor, sidebar and inspector scale together,
   /// no control spills out of the window, a click on every visible control reaches what it
   /// reaches at actual size, and the editor's own text size (Make Text Bigger) is untouched.

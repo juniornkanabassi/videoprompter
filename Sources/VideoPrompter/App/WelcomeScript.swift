@@ -16,13 +16,13 @@ enum WelcomeScript {
 
     Hello, and welcome to Video Prompter. If you are reading this in the presenter, you have already done the hardest part. [Look at the camera, not the screen.]
 
-    Words in square brackets are stage directions, such as a reminder to look at the camera. They are hidden in the presenter until you turn on Show stage directions under More in Settings, and Voice skips past them either way, so you never have to say them.
+    Words in square brackets are stage directions, such as a reminder to look at the camera. They are hidden in the presenter until you turn on Show stage directions in the Presenter pane on the right of the library window, under Advanced, Mirroring and cues, and Voice skips past them either way, so you never have to say them.
 
     ## Voice or Manual
 
     There are two ways for the script to move. In Voice, the app listens through your microphone and follows the words as you say them, all on your Mac. Pause for a moment and it waits for you. Skip a line or say something slightly different and it catches up when your words match the script again.
 
-    In Manual, the script scrolls at a steady speed that you set in words per minute, and no microphone is needed. You choose between them in Settings, on the right of the library window.
+    In Manual, the script scrolls at a steady speed that you set in words per minute, and no microphone is needed. You choose between them in Settings, under General. Open Settings from the Video Prompter menu or with Command and comma, and the Voice page there has your microphone and spoken language.
 
     ## Moving around
 
@@ -32,9 +32,9 @@ enum WelcomeScript {
 
     ## Making it comfortable
 
-    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In Settings you can change the text size and the font, and **More** shows extra options such as the colours, line spacing and the width of the text column.
+    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In the Presenter pane on the right of the library window you can change the text size and the font, the width of the text column, and under Typography the colours and line spacing.
 
-    If you read through teleprompter glass, turn on mirroring in Settings so the words read the right way round. For a large screen, choose **Presenter Full Screen** from the Prompter menu.
+    If you read through teleprompter glass, turn on Mirror for teleprompter glass in the same pane so the words read the right way round. More mirroring and rotation options are under Advanced, Mirroring and cues. For a large screen, choose **Presenter Full Screen** from the Prompter menu.
 
     ## Camera and recording
 

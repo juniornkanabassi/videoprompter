@@ -578,7 +578,6 @@ struct PresenterView: View {
   }
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
-  @State private var showsFramingGuides = false
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
   private var showsScript: Bool { hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
   var body: some View {
@@ -679,7 +678,8 @@ struct PresenterView: View {
               .buttonStyle(.borderedProminent)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          // Camera choices share one menu; framing guides remain directly reachable while filming.
+          // One View menu instead of a camera toggle, picker and guides button: the bar keeps the
+          // same width whether or not the camera is on. Framing guides are in Camera Settings.
           Menu {
             Picker("What to show", selection: $camera.displayMode) {
               ForEach(PresenterDisplayMode.allCases) { mode in
@@ -707,14 +707,6 @@ struct PresenterView: View {
           .background {
             Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
               CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
-            }
-          }
-          if camera.presentsWithVideo {
-            CapsuleButton("Framing guides", systemImage: "grid", help: "Set the camera's framing guides") {
-              showsFramingGuides = true
-            }
-            .popover(isPresented: $showsFramingGuides, arrowEdge: .top) {
-              CameraGuideSettings(model: camera).frame(width: 320).uiZoom(store.uiZoom)
             }
           }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
