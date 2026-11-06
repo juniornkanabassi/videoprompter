@@ -488,7 +488,7 @@ struct CameraGuideSections: View {
         Toggle("Centre cross", isOn: $model.guides.axes).help("Mark the horizontal and vertical centre of the picture")
         Toggle("Centre target", isOn: $model.guides.bullseye).help("Mark the centre with a target")
         ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")
-        LabeledContent("Guide visibility") { Slider(value: $model.guides.opacity, in: 0...1).accessibilityLabel("Guide visibility").accessibilityValue("\(Int(model.guides.opacity * 100)) percent") }.help("Fade the guides; zero hides them")
+        LabeledContent("Guide visibility") { ReadingSlider(value: $model.guides.opacity, range: 0...1, title: "Guide visibility", spokenValue: "\(Int(model.guides.opacity * 100)) percent") }.help("Fade the guides; zero hides them")
       }
       Section("Frame marker") {
         Picker("Frame shape", selection: shape) {
@@ -516,7 +516,7 @@ struct CameraGuideSections: View {
           Text("Enter a width and height greater than 0 and no more than 100.").font(.callout)
         }
         if model.guides.marker != nil {
-          LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1).accessibilityLabel("Shade outside").accessibilityValue("\(Int(model.guides.shadeOpacity * 100)) percent") }.help("Darken the area outside the frame marker")
+          LabeledContent("Shade outside") { ReadingSlider(value: $model.guides.shadeOpacity, range: 0...1, title: "Shade outside", spokenValue: "\(Int(model.guides.shadeOpacity * 100)) percent") }.help("Darken the area outside the frame marker")
         }
       }
     }

@@ -237,12 +237,10 @@ struct MicrophonePage: View {
       LoudestSoundReadout(meter: session.meter)
       VStack(alignment: .leading, spacing: Space.sm) {
         Text("Microphone volume")
-        Slider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
-          set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
-        ) { editing in if !editing { commitGain() } }
+        ReadingSlider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
+          set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), range: 0.25...4,
+          title: "Microphone volume", spokenValue: String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
           .initialPopoverFocus(when: recorder.settingsLocked && !recorder.usesSeparateMicrophone)
-          .accessibilityLabel("Microphone volume")
-          .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
       }.help("Reduce the volume if the sound distorts")
     }
     if !compact {
@@ -294,7 +292,7 @@ private struct ValueSlider: View {
         Text(readout).font(.body).monospacedDigit().foregroundStyle(.primary)
           .multilineTextAlignment(.trailing)
       }
-      Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title).accessibilityValue(readout.replacingOccurrences(of: "%", with: " percent").replacingOccurrences(of: " pt", with: " points"))
+      ReadingSlider(value: $value, range: range, title: title, spokenValue: readout.replacingOccurrences(of: "%", with: " percent").replacingOccurrences(of: " pt", with: " points"))
     }
   }
 }

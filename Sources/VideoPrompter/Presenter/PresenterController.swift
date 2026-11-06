@@ -1118,8 +1118,8 @@ struct PresenterView: View {
       if store.settings.mode == "Manual" {
         AutomaticScrollDelay(session: session)
         LabeledContent("Reading speed") {
-          Slider(value: $store.settings.speed, in: 20...300)
-            .accessibilityLabel("Reading speed").accessibilityValue("\(Int(store.settings.speed)) words per minute")
+          ReadingSlider(value: $store.settings.speed, range: 20...300, title: "Reading speed",
+            spokenValue: "\(Int(store.settings.speed)) words per minute")
           Text("\(Int(store.settings.speed)) wpm")
         }
       } else {
@@ -1202,8 +1202,8 @@ struct PresenterView: View {
       }
       if camera.presentsWithVideo {
         Section("Exposure") {
-          Toggle("Zebras", isOn: camera.exposureBinding(\.zebras))
-          Toggle("False colour", isOn: camera.exposureBinding(\.falseColour))
+          ExposureToolToggles(model: camera)
+            .environment(\.popoverEntryRequested, false)
           Button(camera.exposureBypassed || camera.cleanView ? "Restore exposure aids" : "Bypass exposure aids") {
             camera.toggleExposureCheck()
           }.disabled(!camera.exposureIsConfigured)
