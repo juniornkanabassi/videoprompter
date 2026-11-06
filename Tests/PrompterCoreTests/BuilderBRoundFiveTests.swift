@@ -93,7 +93,7 @@ import XCTest
     defer { LibraryAX.close(window) }
     let allText = LibraryAX.elements(host).map { LibraryAX.value($0, "accessibilityValue") }.joined(separator: " ")
     XCTAssertTrue(allText.contains("lit cheek"))
-    XCTAssertTrue(allText.contains("log footage"))
+    XCTAssertTrue(allText.contains("flat picture setting"))
     XCTAssertEqual(ExposureGuidance.colourMeanings.count, CameraExposure.bands.count)
     XCTAssertTrue(ExposureGuidance.colourMeanings.allSatisfy { $0.contains(".") })
     XCTAssertEqual(store.settings.mode, "Voice")

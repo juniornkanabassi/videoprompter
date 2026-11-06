@@ -64,3 +64,17 @@ bitmap masters and optical legacy ICNS remain intact for provenance and fallback
 The modern catalogue is compiled independently with `compile-icon.sh`; no release
 or installed app is changed. Native exports at 16, 32, 64 and 128 points are in
 `docs/design/round-5-builder-b/icons/`, including both tinted appearances.
+
+## Round 7 small-size definition
+
+The editable modern layers now use a stronger page edge, wider reading marker
+and simpler microphone body without the thin seam. The support is thicker and
+the dark page has clearer separation. The tinted edge uses a stronger tonal
+step. The concept and three editable groups are preserved; the large raster
+master and legacy ICNS have not been replaced.
+
+Native Icon Composer exports at actual 16, 32, 64 and 128 pixel sizes are kept in
+`docs/design/round-7-builder-b/icons/`. These are resource previews, not a release
+build or installation. Reproduce them with Icon Composer's bundled `ictool`,
+`--export-image --platform macOS --rendition Default` (or Dark/TintedDark),
+`--width <size> --height <size> --scale 1`.

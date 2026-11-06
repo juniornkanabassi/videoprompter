@@ -1,10 +1,13 @@
 import AppKit
 import SwiftUI
+import PrompterCore
 
 /// Shared by Settings and the presenter's Reading segment.
 struct ReadingSettingsPage: View {
   @ObservedObject var store: AppStore
   @ObservedObject var camera: CameraModel
+  @Environment(\.undoManager) private var undoManager
+  @State private var previousAppearance: PrompterSettings?
 
   init(store: AppStore, camera: CameraModel = .shared) {
     self.store = store
@@ -46,18 +49,24 @@ struct ReadingSettingsPage: View {
         percent(camera.presentsWithVideo ? "Background over camera" : "Script-only background", backdropOpacity, PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo))
         ColorPicker("Text colour", selection: colour($store.settings.textColorHex), supportsOpacity: false)
         ColorPicker("Background colour", selection: colour($store.settings.backgroundColorHex), supportsOpacity: false)
-        if camera.presentsWithVideo { ReadingContrastWarning(textHex: store.settings.textColorHex, textOpacity: store.settings.textOpacity,
+        let recovery = ReadingRecovery(current: store.settings, overVideo: camera.presentsWithVideo)
+        ReadingContrastWarning(textHex: store.settings.textColorHex, textOpacity: store.settings.textOpacity,
           backgroundHex: store.settings.backgroundColorHex, darkness: backdropOpacity,
           minimumOpacityScale: store.settings.showCues ? 0.42 : 0.5,
           threshold: store.settings.fontSize >= 24 ? 3 : 4.5,
-          highlightHex: store.settings.highlightActiveWord ? NSColor.systemYellow.hex : nil) {
-            store.settings.backgroundColorHex = "#000000"
-            store.settings.textColorHex = "#FFFFFF"
-            store.settings.textOpacity = 1
-            store.settings.videoDimming = 1
-            store.settings.showCues = false
-            store.settings.highlightActiveWord = false
-          } }
+          highlightHex: store.settings.highlightActiveWord ? NSColor.systemYellow.hex : nil,
+          makeReadable: {
+            previousAppearance = store.settings
+            store.applyPreset(recovery.settings, undoManager: undoManager)
+            undoManager?.setActionName("Make Readable")
+            LibraryAnnouncement.post("Readable colours applied. Undo Make Readable is available.")
+          }, overVideo: camera.presentsWithVideo, changeExplanation: recovery.explanation)
+        if let previousAppearance {
+          Button("Undo Make Readable") {
+            store.applyPreset(previousAppearance, undoManager: undoManager)
+            self.previousAppearance = nil
+          }
+        }
       }
       Section("Rotation and stage directions") {
         Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror)

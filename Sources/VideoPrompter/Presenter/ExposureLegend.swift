@@ -9,24 +9,22 @@ struct ExposureGuidance: View {
   static let colourMeanings = [
     "Purple: almost black. Detail may be lost in shadows.",
     "Blue: very dark. Brighten important shadow areas if you need to see detail.",
-    "Green: a mid-tone reference, not a pass or fail for your face.",
-    "Pink: a brighter mid-tone reference. Skin tones and camera profiles vary.",
+    "Green: medium brightness. Check your face still has natural detail.",
+    "Pink: brighter areas. Skin tones vary; this is not a target for every face.",
     "Yellow: nearly white. Check that bright areas still show detail.",
-    "Red: at the top of this feed's brightness range. Lower exposure if important areas lose detail."
+    "Red: the brightest areas. Lower brightness on the camera if important detail disappears."
   ]
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
       if zebras {
-        Text(face
-          ? "Face brightness: your face should show stripes on the lit cheek."
-          : "Stripes mark very bright areas. Lower exposure on your camera if important parts of the picture lose detail.")
+        Text("Check bright areas: stripes mark the brightness range you chose. Lower brightness on your camera if important parts lose detail.")
         if face {
-          Text("Standard video reference only. Skin tones vary; for log footage, follow your camera's guidance.")
+          Text("For faces, check detail on the lit cheek. Skin tones vary. If your camera uses a flat picture setting, follow its instructions. There is no single target for every face.")
         }
       }
       if falseColour {
-        Text("Purple/blue: dark. Green/pink: mid-tones. Yellow/red: very bright. Open the key to judge each colour.")
+        Text("See brightness colours: purple and blue are dark; green and pink are brighter; yellow and red are very bright. Check the key before changing your camera.")
       }
     }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
   }
@@ -34,11 +32,21 @@ struct ExposureGuidance: View {
 
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
+  static func measurement(level: Int, range: Int) -> String {
+    range > 0
+      ? "Stripes mark \(max(0, level - range))–\(min(100, level + range)) on a 0–100 brightness scale in the received picture."
+      : "Stripes mark \(level) and above on a 0–100 brightness scale in the received picture."
+  }
+
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
       VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras { Text("Zebras: " + (model.guides.zebraRange > 0 ? "face brightness, \(model.guides.zebraLevel) IRE ± \(model.guides.zebraRange)" : "bright areas, \(model.guides.zebraLevel) IRE and above")) }
-        ExposureGuidance(zebras: model.guides.zebras, face: model.guides.zebraRange > 0,
+        if model.guides.zebras {
+          DisclosureGroup("Zebras: selected brightness") {
+            Text(Self.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+          }
+        }
+        ExposureGuidance(zebras: model.guides.zebras, face: model.guides.zebraLevel == 60 && model.guides.zebraRange == 5,
           falseColour: model.guides.falseColour)
         if model.guides.falseColour {
           DisclosureGroup("False colour key") {

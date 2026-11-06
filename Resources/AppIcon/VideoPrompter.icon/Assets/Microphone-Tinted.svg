@@ -1,2 +1,2 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><linearGradient id="body" x1="0" x2="1"><stop stop-color="#555555"/><stop offset=".55" stop-color="#202020"/><stop offset="1" stop-color="#555555"/></linearGradient></defs>
-<g transform="rotate(36 612 565)"><rect x="498" y="198" width="228" height="518" rx="114" fill="url(#body)"/><path d="M503 546H721V602H503Z" fill="#202020"/><path d="M506 548H718" fill="none" stroke="#929292" stroke-width="5"/></g></svg>
+<g transform="rotate(36 612 565)"><rect x="498" y="198" width="228" height="518" rx="114" fill="url(#body)"/></g></svg>

@@ -299,7 +299,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
     let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     let guideFrame = window.convertFromScreen(frame)
-    XCTAssertGreaterThanOrEqual(guideFrame.minX, 400, "guide stays to the right of the zoomed sidebar")
+    XCTAssertGreaterThanOrEqual(guideFrame.minX, 320, "guide stays to the right of the bounded sidebar")
     XCTAssertLessThanOrEqual(guideFrame.maxX, window.contentView!.bounds.width, "start screen stays inside the detail column")
     XCTAssertGreaterThan(frame.height, 24, "the shorter next step stays readable inside its column")
     store.create()

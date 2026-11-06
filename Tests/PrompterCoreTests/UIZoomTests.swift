@@ -144,7 +144,7 @@ final class UIZoomTests: XCTestCase {
       XCTAssertEqual(font.pointSize, 18, accuracy: 0.5, "\(scale): the editor's text size is its own setting")
 
       let outline = try XCTUnwrap(views(of: NSOutlineView.self, in: window).first, "\(scale): no sidebar")
-      XCTAssertGreaterThanOrEqual(outline.convert(outline.visibleRect, to: nil).width, 200 * scale - 1, "\(scale): sidebar minimum is enforced")
+      XCTAssertGreaterThanOrEqual(outline.convert(outline.visibleRect, to: nil).width, min(320, 220 * scale) - 1, "\(scale): sidebar stays bounded while its labels grow")
       let row = outline.convert(outline.rect(ofRow: 0), to: nil).height
       if scale == 1 { rowHeightAtActualSize = row }
       XCTAssertEqual(row / rowHeightAtActualSize, scale, accuracy: 0.05, "\(scale): the sidebar is zoomed")
@@ -182,12 +182,8 @@ final class UIZoomTests: XCTestCase {
     window.contentView = nil
   }
 
-  /// The library window at its narrowest, sized the way SwiftUI's own window sizes it. The fixed
-  /// 760-point minimum let the window go narrower than the three columns need (SwiftUI asks twice
-  /// the inspector's ideal width on top of the sidebar and editor), and AppKit looped on
-  /// constraints until it crashed; showing the inspector in a narrowed window did the same.
-  /// Zoom must not raise that minimum either, or 200% would outgrow a laptop screen.
-  func testTheNarrowestLibraryWindowLaysOutWithTheInspectorShownOrHiddenAtEveryZoom() async throws {
+  /// Native sidebar collapse keeps the editor usable at the minimum width, at every zoom.
+  func testTheNarrowestLibraryWindowKeepsTheEditorAtEveryZoom() async throws {
     let record = try await store.library!.create(title: "Small", markdown: "A short script.")
     await store.reload()
     store.selectedID = record.id
@@ -200,15 +196,15 @@ final class UIZoomTests: XCTestCase {
     await settle(window)
     window.setContentSize(window.contentMinSize)   // as far as dragging the corner goes
     await settle(window)
-    XCTAssertEqual(window.contentMinSize.width, 1132, "the minimum does not shrink with the inspector hidden")
+    XCTAssertEqual(window.contentMinSize.width, 640, "the library supports a compact writing window")
     store.inspector = true
     for scale in AppStore.uiZoomSteps + AppStore.uiZoomSteps.reversed() {
       store.uiZoom = scale
       await settle(window)
       window.setContentSize(window.contentMinSize)
       await settle(window)
-      XCTAssertEqual(controller.view.frame.width, 1132, accuracy: 1, "\(scale)")
-      XCTAssertEqual(window.contentMinSize.width, 1132, "\(scale): enough space for readable sidebar titles")
+      XCTAssertEqual(controller.view.frame.width, 640, accuracy: 1, "\(scale)")
+      XCTAssertEqual(window.contentMinSize.width, 640, "\(scale): the sidebar can collapse without increasing the window minimum")
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("short") })
       XCTAssertEqual(editor.frame.width, editor.enclosingScrollView?.contentView.bounds.width ?? 0, accuracy: 0.5, "\(scale)")
     }

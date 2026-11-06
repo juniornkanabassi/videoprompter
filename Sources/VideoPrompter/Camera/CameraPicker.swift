@@ -68,7 +68,16 @@ struct CameraPickerList: View {
   var body: some View {
     Group {
       if zoom >= 1.5 {
-        VStack(alignment: .leading, spacing: Space.md) { choices; pane }
+        VStack(alignment: .leading, spacing: Space.md) {
+          pane
+          ScrollViewReader { proxy in
+            ScrollView { choiceRows }
+              .onChange(of: highlighted) { _, uid in
+                if let uid { proxy.scrollTo(uid) }
+              }
+              .onAppear { if let selected { proxy.scrollTo(selected) } }
+          }
+        }.frame(width: 240, height: 300)
       } else {
         HStack(alignment: .top, spacing: Space.md) { choices; pane }
       }
@@ -88,16 +97,20 @@ struct CameraPickerList: View {
   private var choices: some View {
     ScrollViewReader { proxy in
       ScrollView {
-        VStack(alignment: .leading, spacing: Space.xs) {
-          if devices.isEmpty { emptyState }
-          ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
-        }
+        choiceRows
       }
       .onChange(of: highlighted) { _, uid in
         if let uid { proxy.scrollTo(uid) }
       }
       .onAppear { if let selected { proxy.scrollTo(selected) } }
     }.frame(width: 240, height: devices.isEmpty ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
+  }
+
+  private var choiceRows: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      if devices.isEmpty { emptyState }
+      ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
+    }
   }
 
   private var emptyState: some View {
