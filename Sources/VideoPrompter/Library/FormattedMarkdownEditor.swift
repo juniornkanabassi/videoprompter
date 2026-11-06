@@ -163,6 +163,9 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       typography: EditorTypography = EditorTypography(), readThrough: Int? = nil)
     {
       textView = view
+      // Keep links legible on the actual editor surface, including the dark presenter.
+      view.linkTextAttributes = [.foregroundColor: typography.textColor,
+        .underlineStyle: NSUnderlineStyle.single.rawValue]
       let changedReading = self.readThrough?.offset != readThrough
       // Kept with the text it was measured in, so edits before it move the grey edge with them.
       if changedReading { self.readThrough = readThrough.map { ($0, markdown) } }

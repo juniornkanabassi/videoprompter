@@ -395,11 +395,11 @@ private enum PresenterSaveError: LocalizedError {
     (preview.sourceURL.deletingPathExtension().lastPathComponent,
      ["md", "markdown"].contains(preview.sourceURL.pathExtension.lowercased()) ? preview.sourceURL : nil)
   }
-  /// Paste as New Script, in the File and Add menus.
+  /// Paste Copied Text, in the File and Add menus.
   func importClipboard() {
     guard let markdown = NSPasteboard.general.string(forType: .string),
       !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-      errorMessage = "Copy some text first, then choose Paste as New Script."
+      errorMessage = "Copy some text first, then choose Paste Copied Text."
       return
     }
     create(title: "Pasted Script", markdown: markdown)

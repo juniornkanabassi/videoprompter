@@ -10,7 +10,7 @@ struct LibraryView: View {
   @State private var selection = Set<UUID>()
   @State private var showsDeleted = false
   @State private var showsPractice = false
-  @State private var showsFolders = true
+
   @State private var importing = false
   @State private var importPreview: ImportPreview?
   @State private var importError: String?
@@ -22,33 +22,29 @@ struct LibraryView: View {
   var body: some View {
     NavigationSplitView {
       VStack(spacing: 0) {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            scope("All Scripts", symbol: "tray.full", selected: !showsDeleted && store.selectedFolderID == nil) {
-              showsDeleted = false; store.selectFolder(nil)
+        HStack(spacing: Space.sm) {
+          Picker("Script folder", selection: scopeSelection) {
+            Text("All Scripts").tag(LibraryScope.all)
+            ForEach(store.folders) { folder in
+              Text(folder.name).tag(LibraryScope.folder(folder.id))
             }
-            DisclosureGroup("Folders", isExpanded: $showsFolders) {
-              ScrollView {
-                VStack(alignment: .leading, spacing: Space.xs) {
-              ForEach(store.folders) { folder in
-                scope(folder.name, symbol: "folder", selected: !showsDeleted && store.selectedFolderID == folder.id) {
-                  showsDeleted = false; store.selectFolder(folder.id)
-                }.contextMenu {
-                  Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
-                  Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id, undoManager: undoManager) }
-                }
-              }
-                }
-              }.frame(height: store.folders.isEmpty ? 0 : min(96, CGFloat(store.folders.count) * 36))
-              Button("New Folder…") { store.namingNewFolder = true }.buttonStyle(.link)
+            Text("Recently Deleted").tag(LibraryScope.deleted)
+          }.labelsHidden().frame(maxWidth: .infinity)
+            .help("Choose which scripts to show")
+          Menu {
+            Button("New Folder…") { store.namingNewFolder = true }
+            if let folder = store.folders.first(where: { $0.id == store.selectedFolderID }), !showsDeleted {
+              Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
+              Button("Remove Folder, Keep Scripts", role: .destructive) {
+                store.deleteFolder(folder.id, undoManager: undoManager)
+              }.help("Scripts stay in All Scripts. Undo restores the folder.")
             }
-            scope("Recently Deleted", symbol: "trash", selected: showsDeleted) { showsDeleted = true }
-            Button { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) } label: {
-              Label("Open Recordings Folder", systemImage: "film.stack")
-            }.buttonStyle(.link).help("Find takes saved in earlier sessions")
+            Divider()
+            Button("Open Recordings Folder") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
+          } label: { Image(systemName: "ellipsis.circle") }
+            .menuIndicator(.hidden).fixedSize().accessibilityLabel("Folder actions")
         }.padding(Space.md)
         Divider()
-        Text(showsDeleted ? "Recently Deleted" : store.folders.first(where: { $0.id == store.selectedFolderID })?.name ?? "All Scripts")
-          .font(.headline).frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
         List(selection: $selection) {
           if showsDeleted {
             ForEach(store.trash) { entry in
@@ -59,9 +55,9 @@ struct LibraryView: View {
             }
           } else {
             ForEach(store.visible) { script in
-              ScriptRow(script: script, link: store.linkStates[script.id], selected: selection.contains(script.id))
-                .listRowBackground(selection.contains(script.id) ? LibraryAppearance.color(.selectedContentBackgroundColor, scheme: colorScheme).opacity(0.18) : Color.clear)
-                .accessibilityAddTraits(selection.contains(script.id) ? .isSelected : [])
+              ScriptRow(script: script, link: store.linkStates[script.id], selected: !showsStart && selection.contains(script.id))
+                .listRowBackground(!showsStart && selection.contains(script.id) ? LibraryAppearance.selectionBackground(scheme: colorScheme) : Color.clear)
+                .accessibilityAddTraits(!showsStart && selection.contains(script.id) ? .isSelected : [])
                 .contextMenu { scriptActions(script) }
                 .simultaneousGesture(TapGesture().onEnded { showsPractice = true })
             }
@@ -74,10 +70,10 @@ struct LibraryView: View {
         Button("New Folder…") { store.namingNewFolder = true }
           .disabled(!store.libraryAvailable)
       }
-      .onAppear { selection = store.selectedID.map { [$0] } ?? [] }
+      .onAppear { selection = showsStart ? [] : store.selectedID.map { [$0] } ?? [] }
       .onChange(of: selection) { _, value in
         store.selectedIDs = value
-        if let id = value.first { store.selectedID = id }
+        if let id = value.first { showsPractice = true; store.selectedID = id }
       }
       .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
         guard !showsDeleted, press.modifiers == .command, !selection.isEmpty,
@@ -91,7 +87,7 @@ struct LibraryView: View {
       }
       .uiZoom(store.uiZoom)
       .frame(minWidth: 200 * store.uiZoom)
-      .navigationSplitViewColumnWidth(min: 200 * store.uiZoom, ideal: 240 * store.uiZoom, max: 320 * store.uiZoom)
+      .navigationSplitViewColumnWidth(min: 200 * store.uiZoom, ideal: 260 * store.uiZoom, max: 360 * store.uiZoom)
     } detail: {
       Group {
         if showsDeleted {
@@ -114,7 +110,7 @@ struct LibraryView: View {
       }.uiZoom(store.uiZoom)
     }
     .navigationSplitViewStyle(.balanced)
-    .inspector(isPresented: Binding(get: { store.inspector && !showsStart && !showsDeleted }, set: { store.inspector = $0 })) {
+    .inspector(isPresented: Binding(get: { store.inspector && store.uiZoom < 1.5 && !showsStart && !showsDeleted }, set: { store.inspector = $0 })) {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
       ReadingInspectorView(store: store, camera: camera)
@@ -123,33 +119,38 @@ struct LibraryView: View {
         // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
-    .navigationTitle("Video Prompter")
+    .sheet(isPresented: Binding(get: { store.inspector && store.uiZoom >= 1.5 && !showsStart && !showsDeleted }, set: { store.inspector = $0 })) {
+      ReadingSettingsSheet(store: store, camera: camera)
+    }
+    .navigationTitle(showsStart ? "Get started" : showsDeleted ? "Recently Deleted" : store.selected?.metadata.title ?? "Scripts")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
-      ToolbarItemGroup {
+      ToolbarItemGroup(placement: .navigation) {
         Menu {
           Button("New Script") { store.create() }
             .keyboardShortcut(ScriptShortcuts.newScript)
           Button("Import File…") { importing = true }
             .keyboardShortcut(ScriptShortcuts.importFile)
-          Button("Paste as New Script") { store.importClipboard() }
+          Button("Paste Copied Text") { store.importClipboard() }
           Divider()
           Button("New Folder…") { store.namingNewFolder = true }
         } label: { Label("Add", systemImage: "plus") }
           .labelStyle(.titleAndIcon).accessibilityLabel("Add script or folder")
           .help("Add a script or folder").disabled(!store.libraryAvailable)
-        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
-          .labelStyle(.titleAndIcon)
-          .buttonStyle(.borderedProminent)
-          .tint(.accentColor)
-          .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
-          .disabled(!store.libraryAvailable || showsDeleted)
+      }
+      ToolbarItemGroup(placement: .primaryAction) {
         Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
           .labelStyle(.titleAndIcon)
           .help("Check framing or record without a script")
         Button("Reading settings", systemImage: "sidebar.trailing") { store.inspector.toggle() }
           .labelStyle(.iconOnly)
           .help(store.inspector ? "Hide reading settings" : "Show reading settings")
+        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.borderedProminent)
+          .tint(.accentColor)
+          .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
+          .disabled(!store.libraryAvailable || showsDeleted)
       }
     }
     .alert(
@@ -241,16 +242,15 @@ struct LibraryView: View {
       (store.scripts.count == 1 && store.selected?.metadata.title == WelcomeScript.title && store.selected?.markdown == WelcomeScript.markdown))
   }
 
-  private func scope(_ title: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      HStack(spacing: Space.sm) {
-        Image(systemName: symbol).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
-        Text(title).fixedSize(horizontal: false, vertical: true)
-        Spacer(minLength: 0)
-      }.padding(Space.sm)
-        .background(selected ? Color.accentColor.opacity(0.15) : .clear, in: .rect(cornerRadius: Space.xs))
-        .contentShape(.rect)
-    }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+  private var scopeSelection: Binding<LibraryScope> {
+    Binding(get: { showsDeleted ? .deleted : store.selectedFolderID.map(LibraryScope.folder) ?? .all }, set: { scope in
+      showsDeleted = scope == .deleted
+      switch scope {
+      case .all: store.selectFolder(nil)
+      case .folder(let id): store.selectFolder(id)
+      case .deleted: break
+      }
+    })
   }
 
   @ViewBuilder private func scriptActions(_ script: ScriptRecord) -> some View {
@@ -294,7 +294,7 @@ private struct ScriptRow: View {
         Image(systemName: "doc.text").foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
         Text(script.metadata.title).fontWeight(selected ? .semibold : .regular)
           .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
-          .lineLimit(nil).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
+          .lineLimit(2).help(script.metadata.title).layoutPriority(1)
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
@@ -332,18 +332,15 @@ private struct EditorView: View {
   var body: some View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 8) {
-        TextField("Title", text: $title).textFieldStyle(.plain).font(.headline)
+        TextField("Title", text: $title, axis: .vertical).textFieldStyle(.plain).font(.body.weight(.medium)).lineLimit(1...3)
           .accessibilityLabel("Script title")
           .help("Title, tags and script text save automatically")
         HStack(alignment: .firstTextBaseline) {
           Text(saver.message).font(.caption)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
           Spacer()
-          Menu("Editor text size") {
-            ForEach([14.0, 18, 22, 28, 36], id: \.self) { size in
-              Button("\(Int(size)) pt") { store.previewFontSize = size }
-            }
-          }.fixedSize().help("Change the words in this editor; reading text has its own size")
+          Button("Text size…") { store.inspector = true }
+            .buttonStyle(.link).help("Open Reading settings for reading and editor text sizes")
         }
         DisclosureGroup("Script details", isExpanded: $showsDetails) {
           VStack(alignment: .leading, spacing: Space.sm) {
@@ -395,3 +392,5 @@ private struct EditorView: View {
   }
 
 }
+
+private enum LibraryScope: Hashable { case all, folder(UUID), deleted }

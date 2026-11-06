@@ -156,6 +156,15 @@ import XCTest
         try await snapshot(CameraPickerList(model: camera, zoom: zoom, startsPreview: false, close: {}).uiZoom(zoom), name: "camera-picker-\(Int(zoom * 100))-\(mode)", size: .init(width: 600, height: 700), scheme: scheme, destination: destination)
         try await snapshot(RelinkComparisonView(comparison: comparison).padding(24).uiZoom(zoom), name: "relink-comparison-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 800), scheme: scheme, destination: destination)
       }
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom
+        try await snapshot(ReadingSettingsSheet(store: store, camera: camera), name: "reading-settings-wide-\(Int(zoom * 100))-\(mode)", size: .init(width: min(880, 440 * zoom), height: 720), scheme: scheme, destination: destination)
+        let devices = (1...12).map { CameraDevice(uid: "fixture-\($0)", name: "Camera \($0) with a long descriptive studio name") }
+        camera.selectedUID = "fixture-10"
+        camera.authorization = .authorized
+        try await snapshot(CameraPickerList(model: camera, zoom: zoom, startsPreview: false, devicesOverride: devices, close: {}).uiZoom(zoom), name: "camera-picker-many-\(Int(zoom * 100))-\(mode)", size: .init(width: 600, height: 880), scheme: scheme, destination: destination)
+      }
+      camera.selectedUID = nil
       store.uiZoom = 1
       var markdown = WelcomeScript.markdown
       try await snapshot(FormattedMarkdownEditor(markdown: Binding(get: { markdown }, set: { markdown = $0 }), fontName: "Helvetica Neue", fontSize: 18).padding(24), name: "welcome-callout-\(mode)", size: .init(width: 650, height: 850), scheme: scheme, destination: destination)
@@ -188,6 +197,14 @@ import XCTest
     for _ in 0..<4 {
       host.layoutSubtreeIfNeeded()
       try await Task.sleep(for: .milliseconds(30))
+    }
+    if name.hasPrefix("library-100-scripts-200-") {
+      func outlines(_ view: NSView) -> [NSOutlineView] {
+        (view as? NSOutlineView).map { [$0] } ?? view.subviews.flatMap(outlines)
+      }
+      let list = try XCTUnwrap(outlines(host).first)
+      XCTAssertGreaterThanOrEqual(list.rows(in: list.visibleRect).length, 7,
+        "At 200%, document navigation retains a useful viewport")
     }
     XCTAssertFalse(window.isVisible)
     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))

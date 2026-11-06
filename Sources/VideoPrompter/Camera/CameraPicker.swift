@@ -50,13 +50,15 @@ struct CameraPickerList: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
   var startsPreview = true
+  var devicesOverride: [CameraDevice]? = nil
+  private var devices: [CameraDevice] { devicesOverride ?? model.devices }
   let close: () -> Void
   @StateObject private var preview = CameraPickerPreview()
   /// The row under the pointer or the keyboard, which is the camera previewed.
   @State private var highlighted: String?
   @FocusState private var focused: Bool
 
-  private var selected: String? { CameraModel.resolve(model.selectedUID, in: model.devices)?.uid }
+  private var selected: String? { CameraModel.resolve(model.selectedUID, in: devices)?.uid }
 
   var body: some View {
     Group {
@@ -79,14 +81,43 @@ struct CameraPickerList: View {
   }
 
   private var choices: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        if model.devices.isEmpty {
-          Text("No camera found").foregroundStyle(.primary).padding(Space.sm)
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          if devices.isEmpty { emptyState }
+          ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
         }
-        ForEach(model.devices, content: row)
       }
-    }.frame(width: 240, height: min(180, max(44, CGFloat(model.devices.count) * 52)))
+      .onChange(of: highlighted) { _, uid in
+        if let uid { proxy.scrollTo(uid) }
+      }
+      .onAppear { if let selected { proxy.scrollTo(selected) } }
+    }.frame(width: 240, height: devices.isEmpty ? 180 : min(240, max(44, CGFloat(devices.count) * 52)))
+  }
+
+  private var emptyState: some View {
+    let recovery = Self.recovery(for: model.authorization)
+    return VStack(alignment: .leading, spacing: Space.sm) {
+      Text(recovery.title).font(.headline)
+      Text(recovery.message).font(.callout).fixedSize(horizontal: false, vertical: true)
+      Button("Open Camera Privacy Settings") {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+          NSWorkspace.shared.open(url)
+        }
+      }
+      Button("Refresh Cameras") { model.refresh() }
+    }.padding(Space.sm)
+  }
+
+  static func recovery(for authorization: AVAuthorizationStatus) -> (title: String, message: String) {
+    switch authorization {
+    case .denied, .restricted:
+      return ("Camera access is off", "Allow Video Prompter in System Settings, then refresh cameras.")
+    case .notDetermined:
+      return ("Camera access needed", "Enable the camera in the presenter to request access, or open Camera Privacy Settings.")
+    default:
+      return ("No camera connected", "Connect or switch on your camera, then refresh. Check Camera Privacy Settings if it still does not appear.")
+    }
   }
 
   private func row(_ device: CameraDevice) -> some View {
@@ -141,12 +172,12 @@ struct CameraPickerList: View {
   }
 
   private var caption: String {
-    model.devices.first { $0.uid == highlighted }?.displayName ?? " "
+    devices.first { $0.uid == highlighted }?.displayName ?? " "
   }
 
   /// Read live, never requested: the picker must not raise the permission prompt by itself.
   private var note: String? {
-    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    switch model.authorization {
     case .authorized: break
     case .denied, .restricted: return "Camera access is off. Allow it in System Settings to see previews."
     default: return "Previews appear once camera access is allowed."
@@ -156,22 +187,24 @@ struct CameraPickerList: View {
   }
 
   private func move(_ step: Int) -> KeyPress.Result {
-    let uids = model.devices.map(\.uid)
-    if let highlighted, let index = uids.firstIndex(of: highlighted) {
-      self.highlighted = uids[min(max(index + step, 0), uids.count - 1)]
-    } else {
-      highlighted = selected ?? uids.first
-    }
-    if let device = model.devices.first(where: { $0.uid == highlighted }) {
+    highlighted = Self.nextHighlight(highlighted, selected: selected, devices: devices, step: step)
+    if let device = devices.first(where: { $0.uid == highlighted }) {
       LibraryAnnouncement.post("Previewing " + device.displayName)
     }
     return .handled
   }
 
+  static func nextHighlight(_ current: String?, selected: String?, devices: [CameraDevice], step: Int) -> String? {
+    let uids = devices.map(\.uid)
+    guard !uids.isEmpty else { return nil }
+    guard let current, let index = uids.firstIndex(of: current) else { return selected ?? uids.first }
+    return uids[min(max(index + step, 0), uids.count - 1)]
+  }
+
   /// The camera is handed to the shared session only once its preview session has let go of it:
   /// a DeckLink input cannot be open in two sessions at once.
   private func choose(_ uid: String) {
-    if let device = model.devices.first(where: { $0.uid == uid }) { LibraryAnnouncement.post("Camera selected: " + device.displayName) }
+    if let device = devices.first(where: { $0.uid == uid }) { LibraryAnnouncement.post("Camera selected: " + device.displayName) }
     if uid != model.selectedUID {
       preview.stop { [model] in model.selectedUID = uid }
     }

@@ -128,6 +128,7 @@ final class UIZoomTests: XCTestCase {
     // zoom must keep. SwiftUI may use an enclosing container as a native hit target.
     var editorAtActualSize = 0.0
     for scale in AppStore.uiZoomSteps {
+      store.inspector = scale < 1.5 // Larger reading controls have their own sheet, tested separately.
       store.uiZoom = scale
       await settle(window)
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("Passage 1 ") },
@@ -154,7 +155,7 @@ final class UIZoomTests: XCTestCase {
       let controls = views(of: NSControl.self, in: window).filter {
         !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 0 && ($0 as? NSScroller)?.scrollerStyle != .overlay
       }
-      XCTAssertGreaterThan(controls.count, 5, "\(scale): the inspector's controls are there")
+      XCTAssertGreaterThanOrEqual(controls.count, scale < 1.5 ? 6 : 3, "\(scale): visible pane controls are there")
       var clicked = 0
       for control in controls {
         let rect = control.convert(control.bounds, to: nil)

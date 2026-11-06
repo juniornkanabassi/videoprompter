@@ -20,9 +20,7 @@ struct ReadingInspectorView: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
-        InspectorSection("Reading settings") {
-          Text("These settings change the presenter. Editor text size is beside your script.")
-            .font(.callout).fixedSize(horizontal: false, vertical: true)
+        InspectorSection("Presenter") {
           choice("Presenter view", values: [.prompterOnly, .prompterWithVideo, .videoOnly],
             names: ["Script", "Script and camera", "Camera Only"], selection: $camera.displayMode)
           if camera.presentsWithVideo {
@@ -32,8 +30,8 @@ struct ReadingInspectorView: View {
               }
           }
         }
-        InspectorSection("Reading mode") {
-          choice("Reading mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode)
+        InspectorSection("Following") {
+          choice("Mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode)
           if store.settings.mode == "Manual" {
             slider("Reading speed", value: $store.settings.speed, range: 20...300,
               readout: "\(Int(store.settings.speed)) words/min", spoken: "\(Int(store.settings.speed)) words per minute")
@@ -58,6 +56,15 @@ struct ReadingInspectorView: View {
             }.padding(.top, Space.md)
           }
         }
+        InspectorSection("Editor text") {
+          choice("Editor font", values: AvailableFonts.editor, names: AvailableFonts.editor, selection: $store.previewFontName)
+          slider("Editor text size", value: $store.previewFontSize, range: AppStore.editorFontSizes,
+            readout: "\(Int(store.previewFontSize)) pt", spoken: "\(Int(store.previewFontSize)) points")
+          Text("Only changes the writing surface. Reading text size changes the presenter.")
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
+          Button("Interface size…") { AppSettingsView.requestTab(.general); openSettings() }.buttonStyle(.link)
+        }
+        InspectorSection("More reading options") {
         DisclosureGroup("Reading guide", isExpanded: $guide) {
           VStack(spacing: Space.md) {
             percent("Guide position", $store.settings.guideFraction, 0.1...0.85)
@@ -80,20 +87,27 @@ struct ReadingInspectorView: View {
             Toggle("Show stage directions", isOn: $store.settings.showCues)
           }.padding(.top, Space.md)
         }
+        }
       }.padding(Space.lg)
-    }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
+    }.disclosureGroupStyle(ReadingDisclosureStyle()).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
       .background(LibraryAppearance.color(.windowBackgroundColor, scheme: scheme))
   }
 
   private func choice<Value: Hashable>(_ title: String, values: [Value], names: [String], selection: Binding<Value>) -> some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text(title)
-      // A wrapping current value remains readable even when a native popup is too narrow.
       if store.uiZoom >= 1.5 {
-        Text(values.firstIndex(of: selection.wrappedValue).map { names[$0] } ?? "")
-          .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).accessibilityHidden(true)
+        Menu {
+          ForEach(values.indices, id: \.self) { index in
+            Button(names[index]) { selection.wrappedValue = values[index] }
+          }
+        } label: {
+          Text(values.firstIndex(of: selection.wrappedValue).map { names[$0] } ?? String(describing: selection.wrappedValue))
+            .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+        }.accessibilityLabel(title)
+      } else {
+        InspectorChoice(title: title, values: values, names: names, selection: selection)
       }
-      InspectorChoice(title: title, values: values, names: names, selection: selection)
     }
   }
   private func percent(_ title: String, _ value: Binding<Double>, _ range: ClosedRange<Double>) -> some View {
@@ -112,5 +126,40 @@ struct ReadingInspectorView: View {
   private var backdropOpacity: Binding<Double> {
     Binding(get: { store.settings.backdropOpacity(withVideo: camera.presentsWithVideo) },
       set: { store.settings.setBackdropOpacity($0, withVideo: camera.presentsWithVideo) })
+  }
+}
+
+/// Enlarged controls get a readable width without squeezing the script into a sliver.
+struct ReadingSettingsSheet: View {
+  @ObservedObject var store: AppStore
+  let camera: CameraModel
+  @Environment(\.dismiss) private var dismiss
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        Text("Reading settings").font(.headline)
+        Spacer()
+        Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
+      }.padding(Space.lg).uiZoom(store.uiZoom).fixedSize(horizontal: false, vertical: true)
+      Divider()
+      ReadingInspectorView(store: store, camera: camera).uiZoom(store.uiZoom)
+    }.frame(width: min(880, 440 * store.uiZoom), height: 720)
+  }
+}
+
+/// An explicit button also exposes expansion through Accessibility in grouped macOS forms.
+private struct ReadingDisclosureStyle: DisclosureGroupStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      Button { configuration.isExpanded.toggle() } label: {
+        HStack(spacing: Space.sm) {
+          Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+          configuration.label
+          Spacer(minLength: 0)
+        }.contentShape(.rect)
+      }.buttonStyle(.plain)
+        .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+      if configuration.isExpanded { configuration.content }
+    }
   }
 }
