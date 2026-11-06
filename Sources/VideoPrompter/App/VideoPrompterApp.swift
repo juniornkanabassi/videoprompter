@@ -310,6 +310,14 @@ extension View {
   func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
 }
 
+extension NSApplication {
+  /// Hidden agent copies (`--agent-screen`) must never come to the front and take focus from Junior.
+  func activateUnlessAgentScreen() {
+    guard !CommandLine.arguments.contains("--agent-screen") else { return }
+    activate(ignoringOtherApps: true)
+  }
+}
+
 extension NSWindow {
   /// `--agent-screen` (the packaged checks) runs the real app with nothing visible on any of Junior's displays:
   /// windows stay ordered in, so Accessibility still reads them, but are transparent and let clicks through.

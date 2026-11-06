@@ -182,7 +182,7 @@ import Speech
       }
       if show {
         Headless.shared.reveal()
-        NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil)
+        NSApp.activateUnlessAgentScreen(); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil)
       }
       return .ok(identity(record))
     case "script_rename", "script_tag", "script_move":

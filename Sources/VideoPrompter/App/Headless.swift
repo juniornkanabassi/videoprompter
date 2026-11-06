@@ -103,7 +103,7 @@ import SwiftUI
     windowHidden = false
     // Even with the presenter on screen, --show means the library comes forward.
     if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else if let openLibrary { openLibrary() } else { reopenSelf() }
-    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    if !NSApp.isActive { NSApp.activateUnlessAgentScreen() }
   }
   /// The fallback when the commands have not handed over `openLibrary`: asking LaunchServices to reopen this running
   /// copy makes SwiftUI open a library window, as a Dock click would, as long as no other window is on screen.

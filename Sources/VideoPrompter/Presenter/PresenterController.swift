@@ -196,7 +196,7 @@ import SwiftUI
     panel.contentView = hosting
     recoverVisibleFrame(panel)
     panel.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activateUnlessAgentScreen()
   }
 
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
@@ -232,7 +232,7 @@ import SwiftUI
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
-      if activate && !CommandLine.arguments.contains("--agent-screen") { panel.makeKey(); NSApp.activate(ignoringOtherApps: true) }
+      if activate && !CommandLine.arguments.contains("--agent-screen") { panel.makeKey(); NSApp.activateUnlessAgentScreen() }
       return
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
@@ -253,7 +253,7 @@ import SwiftUI
       panel.makeKey()
     } else {
       panel.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
+      NSApp.activateUnlessAgentScreen()
     }
   }
   func close() {
