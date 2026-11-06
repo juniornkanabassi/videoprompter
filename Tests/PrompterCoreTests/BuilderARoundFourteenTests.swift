@@ -84,6 +84,17 @@ import XCTest
     let data = try XCTUnwrap(defaults.data(forKey: "shootSetups"))
     XCTAssertEqual(try JSONDecoder().decode([ShootSetup].self, from: data).first?.name, "Portrait")
   }
+  func testExposureHostUsesTheReplacementSectionWithoutOldControls() async throws {
+    let (_, camera, _, _) = fixture()
+    camera.cleanView = true
+    let (window, host) = await LibraryAX.host(CameraExposureSettings(model: camera, presenter: false))
+    defer { LibraryAX.close(window) }
+    XCTAssertFalse(LibraryAX.named("Zebra reference", in: host).isEmpty)
+    XCTAssertTrue(LibraryAX.named("Zebras show", in: host).isEmpty)
+    XCTAssertTrue(LibraryAX.named("Show exposure aids", in: host).isEmpty, "Presenter Clean view must not hide monitor aids")
+    XCTAssertEqual(LibraryAX.named("Custom levels", in: host).filter { LibraryAX.value($0, "accessibilityIdentifier") == "exposure-custom-levels" }.count, 1)
+  }
+
   func testZoomRepairsToNearestSupportedStepAndKeepsFiniteFallback() {
     XCTAssertEqual(InputValidation.zoom.repair(1.3), 1.25)
     XCTAssertEqual(InputValidation.zoom.repair(1.48), 1.5)

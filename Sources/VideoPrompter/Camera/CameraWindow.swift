@@ -838,31 +838,7 @@ struct ExposureToggle: View {
 struct CameraExposureSections: View {
   @ObservedObject var model: CameraModel
   var presenter = true
-  var body: some View {
-    Section("Exposure") {
-      ExposureToolToggles(model: model, presenter: presenter)
-      if model.exposureIsConfigured {
-        LabeledContent("Exposure check", value: model.exposureCheckState)
-        if model.exposureBypassed || model.cleanView {
-          Button("Show exposure aids") { model.cleanView = false; model.exposureBypassed = false }
-        }
-      }
-      Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
-        ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
-      }
-      Text(model.guides.zebraGuidance).font(.callout).fixedSize(horizontal: false, vertical: true)
-      Text("Exposure aids only change this preview.").font(.callout).foregroundStyle(.primary)
-      DisclosureGroup("Custom levels") {
-        Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
-        Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
-      }
-      DisclosureGroup("How exposure aids work") {
-        Text("Adjust exposure on your camera while checking the lit cheek. For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 60 ± 5; skin tones vary. Camera profiles vary, so use it as a reference.")
-        Text("Bright-area zebras warn where detail may wash out. False colour compares the brightness of different areas.")
-        Text("These colours and zebras measure the brightness of the feed received by your Mac. They do not change the saved video. The right levels depend on your camera and picture profile.")
-      }.font(.callout)
-    }
-  }
+  var body: some View { ExposureSettingsContent(model: model, presenter: presenter) }
 }
 
 extension CameraModel {

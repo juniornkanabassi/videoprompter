@@ -130,7 +130,8 @@ struct LibraryView: View {
             showsPractice = true
             Task { await PracticeReading.present(store: store) }
           },
-            camera: { PresenterController.shared.presentCamera(store: store) })
+            camera: { PresenterController.shared.presentCamera(store: store) },
+            guide: { showsPractice = true })
         } else if let script = store.selected {
           EditorView(store: store, script: script, showsReadingTip: $showsReadingTip).id(script.metadata.id)
         } else {
@@ -445,7 +446,14 @@ private struct EditorView: View {
         }
       }.padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
       Divider()
-      if showsReadingTip {
+      if script.metadata.title == WelcomeScript.title {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Getting Started Guide").fontWeight(.semibold)
+          Text("The full guide to writing, reading and recording.")
+          Button("Quick Reading Practice") { Task { await PracticeReading.present(store: store) } }
+            .help("Try reading for 30 seconds")
+        }.font(.callout).padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
+      } else if showsReadingTip {
         ReadingFirstUseTip(dismiss: { showsReadingTip = false })
           .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
       }

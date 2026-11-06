@@ -71,17 +71,22 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       let (window, host) = await LibraryAX.host(ExposureLegend(model: camera, zoom: zoom), size: .init(width: 520, height: 900))
       defer { LibraryAX.close(window) }
-      XCTAssertFalse(LibraryAX.named("Received picture (%)", in: host).isEmpty)
-      XCTAssertFalse(LibraryAX.named(ExposureLegend.compactMeasurement(level: camera.guides.zebraLevel, range: camera.guides.zebraRange), in: host).isEmpty)
+      XCTAssertTrue(LibraryAX.named("Received picture (%)", in: host).isEmpty)
+      XCTAssertTrue(LibraryAX.named(ExposureLegend.measurement(level: camera.guides.zebraLevel, range: camera.guides.zebraRange), in: host).isEmpty)
       XCTAssertTrue(LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: host).isEmpty)
       for (index, band) in CameraExposure.bands.enumerated() {
         _ = try XCTUnwrap(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).first)
       }
-      let help = try XCTUnwrap(LibraryAX.named("How to read this", in: host).first)
+      window.makeKeyAndOrderFront(nil)
+      let help = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
       XCTAssertTrue(LibraryAX.bool(help, "accessibilityPerformPress"))
-      try await Task.sleep(for: .milliseconds(60))
-      XCTAssertFalse(LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: host).isEmpty)
-      XCTAssertFalse(LibraryAX.named(ExposureGuidance.colourMeanings[0], in: host).isEmpty)
+      try await Task.sleep(for: .milliseconds(150))
+      let panel = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.contentView.map {
+        !LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: $0).isEmpty
+      } == true })
+      XCTAssertFalse(LibraryAX.named(ExposureGuidance.colourMeanings[0], in: panel.contentView!).isEmpty)
+      // Close the owned popover through its opener, restoring focus there.
+      panel.close()
     }
   }
 }

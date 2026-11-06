@@ -709,7 +709,9 @@ struct PresenterView: View {
     VStack(spacing: 0) {
       readingStage
       if camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed {
-        PresenterExposureStrip(camera: camera, zoom: controlZoom)
+        ExposureLegend(model: camera, zoom: controlZoom)
+          .frame(maxWidth: .infinity).background(Color(white: 0.12))
+          .accessibilityIdentifier("presenter-exposure-strip")
       }
     }
   }
@@ -1049,6 +1051,7 @@ struct PresenterView: View {
       // Builder B contract: the picker suppresses its recovery; this is the single owner.
       if camera.needsRecovery {
         CameraRecoveryView(model: camera) { showsCameraOptions = true }
+          .environment(\.popoverEntryRequested, camera.devices.isEmpty)
       }
       if camera.recordingLocked {
         Text("Stop recording to change camera.").font(.callout)
@@ -1071,7 +1074,7 @@ struct PresenterView: View {
   }
 
   private var moreMenu: some View {
-    Menu {
+    PresenterToolsMenu {
       if hasScript && camera.displayMode != .videoOnly {
         Section("Text") {
           Button(hasBottomNotice ? "Check reading…" : "Reading mode…") { showsReadingControls = true }
@@ -1128,8 +1131,7 @@ struct PresenterView: View {
         Button("Presenter help…") { showsHelp = true }
         Button("Close Presenter") { controller.close() }.keyboardShortcut("w")
       }
-    } label: { Text("Tools") }
-      .accessibilityLabel("Tools").menuIndicator(.visible)
+    }
       .popover(isPresented: Binding(get: { overflowTool != nil }, set: { if !$0 { overflowTool = nil } })) {
         Group {
           switch overflowTool {
@@ -1476,33 +1478,5 @@ private struct RecordingBarLevel: View {
         .accessibilityLabel("Recording microphone level")
         .accessibilityValue(meter.isFresh() ? String(format: "%.1f dBFS", meter.peakDBFS) : "No recent audio")
     }
-  }
-}
-
-/// Presenter owns placement; the shared legend owns the expanded key and teaching.
-private struct PresenterExposureStrip: View {
-  @ObservedObject var camera: CameraModel
-  let zoom: Double
-  @State private var showsKey = false
-  var body: some View {
-    HStack(spacing: Space.sm) {
-      Text(camera.guides.falseColour ? "False colour" : "Zebras").lineLimit(1)
-      if camera.guides.falseColour {
-        HStack(spacing: 0) {
-          ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { _, band in
-            Color(red: Double(band.rgb.0) / 255, green: Double(band.rgb.1) / 255, blue: Double(band.rgb.2) / 255)
-          }
-        }.frame(maxWidth: .infinity).frame(height: 12)
-          .accessibilityLabel("False colour scale")
-      } else { Spacer(minLength: 0) }
-      Button("Key") { showsKey.toggle() }
-        .restoringPopoverFocus(isPresented: $showsKey, identifier: "presenter-exposure-key")
-        .popover(isPresented: $showsKey) {
-          ExposureLegend(model: camera, zoom: zoom).padding(Space.sm).popoverEntryFocus()
-        }
-    }.font(.callout).padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
-      .background(Color(white: 0.12)).environment(\.colorScheme, .dark)
-      .uiZoom(zoom).fixedSize(horizontal: false, vertical: true)
-      .accessibilityIdentifier("presenter-exposure-strip")
   }
 }

@@ -72,8 +72,8 @@ import XCTest
       camera.guides.falseColour = true
       let (window, host) = await LibraryAX.host(ExposureLegend(model: camera), size: .init(width: 520, height: 600))
       defer { LibraryAX.close(window) }
-      XCTAssertFalse(LibraryAX.named(ExposureLegend.zebraTitle(for: purpose), in: host).isEmpty)
-      XCTAssertFalse(LibraryAX.named("Check brightness · False colour", in: host).isEmpty)
+      XCTAssertFalse(LibraryAX.named("Key", in: host).isEmpty)
+      XCTAssertTrue(LibraryAX.named(ExposureLegend.zebraTitle(for: purpose), in: host).isEmpty)
       XCTAssertTrue(LibraryAX.named("Grey shows brightness between these bands.", in: host).isEmpty)
     }
     camera.guides.zebraLevel = 95
