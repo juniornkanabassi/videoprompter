@@ -64,7 +64,7 @@ One name per concept. UI text, help text, accessibility labels, menus, the Welco
 ### 8.1 Materials
 - Presenter bar: one `GlassEffectContainer` with `.glassEffect(.regular.tint(.black.opacity(0.35)), in: RoundedRectangle(cornerRadius: 20))`. Under Reduce Transparency, a solid `Color(white: 0.12)` fill. `.regularMaterial` is removed from the presenter.
 - Bar buttons: `.buttonStyle(.glass)`. Start reading uses `.glassProminent` with the accent tint. Record uses `.glass` with a red record symbol; while recording, the Stop button is `.glassProminent` tinted red.
-- Notices above the bar and the exposure legend: the same tinted glass, radius 12.
+- Notices above the bar retain tinted glass, radius 12. Exposure legend explanatory content uses an opaque dark panel, radius 12; Liquid Glass is reserved for controls.
 - Library, Settings and popovers: native materials and grouped forms only. No custom cards around Form sections; the Reading page uses `Form { Section }` with `.formStyle(.grouped)` like every other page.
 
 ### 8.2 Radii
@@ -217,3 +217,16 @@ Smaller text and Larger text with the current point value and disabled limits.
   key keeps its six swatches and quieter calibrated values after that guidance.
   Retain skin-tone, flat-profile and custom-range qualifications.
 - The Reading mode target remains Builder A's PresenterController responsibility.
+
+
+## Round 12 Builder B refinement
+
+This supersedes the earlier always-expanded folder height and glass exposure-legend treatment.
+
+| Surface | Visible treatment | Disclosed detail |
+|---|---|---|
+| Library folder navigation | Folders collapse control; expanded list capped at 30% of the available sidebar height after Interface size, and at 220 unscaled points | The current script scope stays visible above scripts even with folders collapsed; all scopes retain native list selection |
+| Exposure monitor key | Tool name, calibrated ranges, six labelled adaptive swatches when enabled, and received-picture/non-universal-face qualification on a stable opaque dark panel | How to read this holds coaching, camera actions, skin-tone and flat-profile qualifications in a bounded scrolling area |
+| Camera picker in a recovery host | Host supplies one explanation and one permission action; embedded list uses showsRecovery: false | Standalone pickers retain recovery, without a redundant Refresh action before camera access is granted |
+
+ExposureLegend accepts the actual Interface size as zoom, scales once, and constrains its content width before scaling. Presenter passes controlZoom; existing Camera Monitor outer scaling continues with the default internal scale. Library, import/relink and picker text wraps rather than truncates. Storage and linked-file behaviour are unchanged.

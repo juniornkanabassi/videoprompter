@@ -59,7 +59,7 @@ import XCTest
         let recovery = try XCTUnwrap(LibraryAX.named(action, in: host).first)
         let frame = try XCTUnwrap(recovery.value(forKey: "accessibilityFrame") as? NSValue).rectValue
         XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "Recovery must remain in view at \(zoom)")
-        XCTAssertFalse(LibraryAX.named("Refresh Cameras", in: host).isEmpty)
+        XCTAssertTrue(LibraryAX.named("Refresh Cameras", in: host).isEmpty)
         XCTAssertFalse(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityValue").contains("Previewing") })
       }
     }
