@@ -808,7 +808,7 @@ struct CameraExposureSections: View {
         ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }
       Text(model.guides.zebraGuidance).font(.callout).fixedSize(horizontal: false, vertical: true)
-      Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout).foregroundStyle(.primary)
+      Text("Exposure aids only change this preview.").font(.callout).foregroundStyle(.primary)
       DisclosureGroup("Custom levels") {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
