@@ -1036,8 +1036,8 @@ final class PresenterControllerTests: XCTestCase {
   func testDisplayModeMigratesTheStoredBoolAndKeepsItWritten() {
     for (legacy, expected) in [(false, PresenterDisplayMode.prompterOnly), (true, .prompterWithVideo)] {
       let suite = "VideoPrompter.presenter.\(UUID().uuidString)"
-      addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-      let store = UserDefaults(suiteName: suite)!
+      addTeardownBlock { TestDefaults.remove(suite) }
+      let store = TestDefaults.suite(named: suite)!
       store.set(legacy, forKey: "presenterWithVideo")
       let model = CameraModel(defaults: store)
       XCTAssertEqual(model.displayMode, expected, "stored \(legacy)")
@@ -1065,8 +1065,8 @@ final class PresenterControllerTests: XCTestCase {
     session.seek(to: target)
     let running = session.isActivelyRunning
     let suite = "VideoPrompter.presenter.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let model = CameraModel(defaults: UserDefaults(suiteName: suite)!)
+    addTeardownBlock { TestDefaults.remove(suite) }
+    let model = CameraModel(defaults: TestDefaults.suite(named: suite)!)
     model.presentsWithVideo = true
     model.presentsWithVideo = false
     XCTAssertEqual(session.tokenIndex, target)
@@ -1108,8 +1108,8 @@ final class PresenterControllerTests: XCTestCase {
 
   private func videoModel() -> (CameraModel, UserDefaults) {
     let suite = "VideoPrompter.presenter.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let defaults = UserDefaults(suiteName: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
+    let defaults = TestDefaults.suite(named: suite)!
     return (CameraModel(defaults: defaults), defaults)
   }
   private func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.05)) }

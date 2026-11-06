@@ -9,8 +9,8 @@ import XCTest
 final class CameraOrientationTests: XCTestCase {
   private func defaults() -> UserDefaults {
     let suite = "VideoPrompter.orientation.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    return UserDefaults(suiteName: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
+    return TestDefaults.suite(named: suite)!
   }
   private func segments(_ path: CGPath) -> [(CGPoint, CGPoint)] {
     var points: [CGPoint] = []

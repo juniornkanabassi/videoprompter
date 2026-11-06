@@ -9,7 +9,7 @@ import json, os, pathlib, plistlib, re, shutil, statistics, subprocess, sys, tem
 supplied = pathlib.Path(sys.argv[1]).resolve()
 visible = '--visible' in sys.argv[2:]
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
-root = pathlib.Path(tempfile.mkdtemp(prefix='vph-', dir='/private/tmp'))
+root = pathlib.Path(tempfile.mkdtemp(prefix='vph-', dir=os.environ.get('TMPDIR', '/private/tmp')))
 CHECK_ID = 'com.juniornkanabassi.VidPrompt.headless-check'
 app = root / 'Video Prompter.app'
 subprocess.run(['ditto', str(supplied), str(app)], check=True, timeout=120)
@@ -134,7 +134,9 @@ try:
         print('INFO --show skipped; pass --visible to check it on the Agent Screen')
 finally:
     for directory in (data, idle_data):
-        for stray in pids(directory): os.kill(stray, 9)
+        for stray in pids(directory):
+            try: os.kill(stray, 9)
+            except ProcessLookupError: pass  # it quit by itself after the listing
     # Only once every copy has exited can no settings writer recreate a suite removed below.
     for _ in range(100):
         if not any(pids(directory) for directory in (data, idle_data)): break

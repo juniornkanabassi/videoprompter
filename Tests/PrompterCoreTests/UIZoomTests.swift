@@ -25,14 +25,14 @@ final class UIZoomTests: XCTestCase {
     _ = NSApplication.shared
     root = FileManager.default.temporaryDirectory.appendingPathComponent("zoom-\(UUID().uuidString)")
     suite = "VideoPrompterTests.\(UUID().uuidString)"
-    defaults = UserDefaults(suiteName: suite)!
+    defaults = TestDefaults.suite(named: suite)!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
   }
 
   override func tearDown() async throws {
     await store.flushSettings()
     store = nil
-    defaults.removePersistentDomain(forName: suite)
+    TestDefaults.remove(suite)
     try? FileManager.default.removeItem(at: root)
     try await super.tearDown()
   }

@@ -24,7 +24,8 @@ SCRIPT="Link test $PORT"
 RUNTIME=$(xcrun simctl list runtimes -j | /usr/bin/python3 -c 'import json,sys; print([r["identifier"] for r in json.load(sys.stdin)["runtimes"] if r["platform"]=="iOS" and r["isAvailable"]][-1])')
 DEVICE=$(xcrun simctl create "Video Prompter link test" com.apple.CoreSimulator.SimDeviceType.iPad-Air-11-inch-M4 "$RUNTIME")
 cleanup() {
-  if [[ -n "${TEST:-}" ]] && kill -0 "$TEST" 2>/dev/null; then kill "$TEST" 2>/dev/null || true; fi
+  # The XCTest wrapper forwards TERM, waits for xctest, then removes its defaults suites: wait for that.
+  if [[ -n "${TEST:-}" ]] && kill -0 "$TEST" 2>/dev/null; then kill "$TEST" 2>/dev/null || true; wait "$TEST" 2>/dev/null || true; fi
   if [[ -n "${LOG:-}" ]]; then kill "$LOG" 2>/dev/null || true; fi
   xcrun simctl shutdown "$DEVICE" 2>/dev/null || true
   xcrun simctl delete "$DEVICE" 2>/dev/null || true
@@ -47,7 +48,7 @@ sleep 4
 TESTS="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"
 MARKER="$OUT/streaming"
 rm -f "$MARKER"
-VP_IPAD_E2E=1 VP_IPAD_E2E_PORT="$PORT" VP_IPAD_E2E_SCRIPT="$SCRIPT" VP_IPAD_E2E_MARKER="$MARKER" "$XCTEST" -XCTest PrompterCoreTests.IPadSimulatorEndToEndTests "$TESTS" &
+VP_IPAD_E2E=1 VP_IPAD_E2E_PORT="$PORT" VP_IPAD_E2E_SCRIPT="$SCRIPT" VP_IPAD_E2E_MARKER="$MARKER" zsh "$ROOT/checks/run-xctest.sh" "$XCTEST" -XCTest PrompterCoreTests.IPadSimulatorEndToEndTests "$TESTS" &
 TEST=$!
 for _ in {1..300}; do [[ -e "$MARKER" ]] && break; sleep 0.1; done
 sleep 1

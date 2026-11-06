@@ -52,7 +52,7 @@ Voice tracking is still a preview. It can hesitate when your wording differs fro
 
 Scripts are stored as Markdown. When you import a Markdown file it stays linked both ways with the original. Edits in Video Prompter change the file, and changes to the file appear in Video Prompter. Other formats are converted on import and are not linked.
 
-The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. **Camera Settings…** in the same menu holds the camera choice, rotation, mirroring and Framing guides (rule of thirds, a centre cross, a centre target and a frame marker).
+The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. When the camera is on, the bar's camera picker lets you preview and switch cameras, and **Framing guides** opens the rule of thirds, centre cross, centre target and frame marker controls. **Camera Settings…** in the View menu also holds rotation and mirroring.
 
 To record without a script, press **Present** with no script selected, or choose **Present Camera Only** from the Prompter menu. The presenter shows just the camera. Select a script and press **Present** again to add it over the same picture.
 

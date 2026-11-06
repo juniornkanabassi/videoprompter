@@ -8,8 +8,8 @@ import XCTest
 final class CameraTests: XCTestCase {
   private func defaults() -> UserDefaults {
     let suite = "VideoPrompter.camera.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    return UserDefaults(suiteName: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
+    return TestDefaults.suite(named: suite)!
   }
   private let cameras = [CameraDevice(uid: "uid-built-in", name: "FaceTime HD Camera"),
                          CameraDevice(uid: "uid-obs", name: "OBS Virtual Camera")]

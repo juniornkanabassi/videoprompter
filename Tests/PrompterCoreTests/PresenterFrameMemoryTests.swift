@@ -8,8 +8,8 @@ final class PresenterFrameMemoryTests: XCTestCase {
 
   private func defaults() -> UserDefaults {
     let suite = "VideoPrompter.frame.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    return UserDefaults(suiteName: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
+    return TestDefaults.suite(named: suite)!
   }
 
   func testAFrameOnThePrompterDisplayComesBackThere() {

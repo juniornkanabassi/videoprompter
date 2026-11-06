@@ -5,8 +5,8 @@ import XCTest
 final class ReferenceMonitorTests: XCTestCase {
   private func camera() -> CameraModel {
     let suite = "VideoPrompter.monitor.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    return CameraModel(defaults: UserDefaults(suiteName: suite)!)
+    addTeardownBlock { TestDefaults.remove(suite) }
+    return CameraModel(defaults: TestDefaults.suite(named: suite)!)
   }
 
   func testCleanKeepsWordsAndDropsMarkdownMarkers() {
@@ -18,8 +18,8 @@ final class ReferenceMonitorTests: XCTestCase {
 
   func testTemporaryCameraOnlyIsNeverSaved() {
     let suite = "VideoPrompter.monitor.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let defaults = UserDefaults(suiteName: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
+    let defaults = TestDefaults.suite(named: suite)!
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .prompterOnly
     let monitor = ReferenceMonitor()

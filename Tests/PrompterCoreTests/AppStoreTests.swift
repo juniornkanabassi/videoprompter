@@ -238,14 +238,14 @@ final class AppStoreTests: XCTestCase {
       let root = URL(fileURLWithPath: "/private/tmp/link-unavailable-\(UUID())")
       let outside = URL(fileURLWithPath: "/private/tmp/link-original-\(UUID())")
       let suite = "VideoPrompterTests.link-unavailable.\(UUID())"
-      let defaults = UserDefaults(suiteName: suite)!
+      let defaults = TestDefaults.suite(named: suite)!
       try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
       let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
       addTeardownBlock { @MainActor in
         await store.flushSettings()
         try? FileManager.default.removeItem(at: root)
         try? FileManager.default.removeItem(at: outside)
-        UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+        TestDefaults.remove(suite)
       }
       let library = try XCTUnwrap(store.library)
       let original = outside.appendingPathComponent("script.md")
@@ -662,7 +662,7 @@ final class AppStoreTests: XCTestCase {
     for root in [first, second] {
       // The generated per-directory suite AppStore.preferences(arguments:) opens.
       let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
-      addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+      removeDefaultsAtTeardown(suite)
     }
     let a = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", first.path]))
     a.settings.fontSize = 91

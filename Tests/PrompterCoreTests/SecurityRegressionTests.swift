@@ -104,13 +104,13 @@ final class LinkedSecurityTests: XCTestCase {
   func testOversizedStoredSettingsClampBeforeIntegerReadouts() throws {
     _ = NSApplication.shared
     let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")
-    let suite = "SecuritySettings.\(UUID())"; let defaults = UserDefaults(suiteName: suite)!
+    let suite = "SecuritySettings.\(UUID())"; let defaults = TestDefaults.suite(named: suite)!
     defaults.set(Data("{\"fontSize\":1e20,\"speed\":-1e20}".utf8), forKey: "settings")
     defaults.set(Data("{\"sourceFontName\":\"Lexend Deca\",\"previewFontName\":\"Lexend Deca\",\"sourceFontSize\":1e20,\"previewFontSize\":-1e20}".utf8), forKey: "editorTypography")
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       await store.flushSettings()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
     XCTAssertEqual(Int(store.settings.fontSize), 120); XCTAssertEqual(Int(store.settings.speed), 20)

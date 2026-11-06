@@ -277,12 +277,12 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory
       .appendingPathComponent("vp-core-qa-\(UUID().uuidString)", isDirectory: true)
     let suite = "VideoPrompterCoreQA.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
+    let defaults = TestDefaults.suite(named: suite)!
     let store = AppStore(arguments: ["tests", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       await store.flushSettings()
       try? FileManager.default.removeItem(at: root)
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
     }
     return store
   }
@@ -1064,8 +1064,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     let (store, _) = try await presenting(try fixture("173 script.md"))
     let session = store.session
     let suite = "VideoPrompterCoreQA.camera.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let camera = CameraModel(defaults: UserDefaults(suiteName: suite)!)
+    addTeardownBlock { TestDefaults.remove(suite) }
+    let camera = CameraModel(defaults: TestDefaults.suite(named: suite)!)
     let controller = PresenterController()
     session.play(captureAudio: false)
     let reader = Dictation(session, generation: 1)
@@ -1087,7 +1087,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
       said += PrompterDocument(markdown: phrase).spokenTokens.count
       XCTAssertEqual(session.lastConfirmedTokenIndex, said - 1, "tracking continued with video \(on)")
     }
-    XCTAssertTrue(CameraModel(defaults: UserDefaults(suiteName: suite)!).presentsWithVideo)
+    XCTAssertTrue(CameraModel(defaults: TestDefaults.suite(named: suite)!).presentsWithVideo)
   }
 
   // MARK: Full screen

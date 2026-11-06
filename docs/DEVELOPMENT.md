@@ -23,6 +23,18 @@ To make a download disk image from an app bundle that has already been verified,
 
 Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and `VIDEOPROMPTER_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
+`test.sh` records each disposable defaults suite and removes its plist after XCTest exits. Use the same runner for a Release test bundle, with testable imports enabled and a separate cache:
+
+```sh
+source env.sh
+release_tests=/private/tmp/vp-release-tests
+"$SWIFT" build --configuration release --build-tests -Xswiftc -enable-testing --scratch-path "$release_tests"
+test_bin=$("$SWIFT" build --configuration release --build-tests -Xswiftc -enable-testing --scratch-path "$release_tests" --show-bin-path)
+zsh checks/run-xctest.sh "$XCTEST" "$test_bin/PrompterCoreTests.xctest"
+```
+
+Run built XCTest bundles through `checks/run-xctest.sh`, which preserves failures and cleans recorded suites on cancellation too. The snapshot and iPad-link checks already use it.
+
 ## Install from source
 
 From a source checkout, install with `zsh install.sh`. The guarded installer refuses to run while the app is open, verifies the archive and keeps the previous installation if anything fails. It also links `~/.local/bin/videoprompter`. Keep the previous archive so you can roll back.
@@ -40,7 +52,7 @@ source env.sh
 python3 checks/check-built-app.py "$work/Video Prompter.app"
 ```
 
-The checker creates its own `--data-directory`, runs the packaged CLI and MCP, and reads the app's accessibility state without sending input or changing focus. The terminal needs Accessibility permission for the GUI checks; if it is denied, the check fails rather than passes. Only the checker's own disposable process is stopped. Evidence is kept in the temporary folder it prints. `test.sh` separately builds and runs the XCTest bundle; six external and audio acceptance tests are opt-in and reported as skipped unless configured.
+The checker creates its own `--data-directory`, runs the packaged CLI and MCP, and reads the app's accessibility state without sending input or changing focus. The terminal needs Accessibility permission for the GUI checks; if it is denied, the check fails rather than passes. Only the checker's own disposable process is stopped. Evidence is kept in the temporary folder it prints. `test.sh` separately builds and runs the XCTest bundle; external, simulator and audio acceptance tests are opt-in and reported as skipped unless configured.
 
 For a manual test with disposable data, launch the app executable with `--data-directory /private/tmp/vp-data`. This flag alone does not isolate all window restoration; use the packaged checker for its stronger disposable-home setup. `--agent-screen` uses an already-connected Agent Screen. `--capture-visible` lets the presenter be captured, for inspection only.
 

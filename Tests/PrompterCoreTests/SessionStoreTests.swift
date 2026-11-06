@@ -9,8 +9,8 @@ extension XCTestCase {
   /// A throwaway defaults suite, removed when the test ends.
   func freshDefaults(_ prefix: String = "VideoPrompterTests") -> UserDefaults {
     let name = "\(prefix).\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
-    return UserDefaults(suiteName: name)!
+    removeDefaultsAtTeardown(name)
+    return TestDefaults.suite(named: name)!
   }
 
   /// Registered after `freshDefaults`, so XCTest (last in, first out) stops this store's
@@ -63,8 +63,8 @@ final class SessionStoreTests: XCTestCase {
 
   func testReadingPositionsSurviveRelaunchAndRemapEditsPerScript() {
     let suite = "VideoPrompterPositionTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    let defaults = TestDefaults.suite(named: suite)!
+    addTeardownBlock { TestDefaults.remove(suite) }
     let now = 10.0
     let first = record()
     var second = record()

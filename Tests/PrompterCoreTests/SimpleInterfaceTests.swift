@@ -32,7 +32,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   private func cleanUp(_ store: AppStore, suite: String, root: URL) {
     addTeardownBlock { @MainActor in
       await store.flushSettings()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
   }
@@ -45,7 +45,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     defer { OffscreenPanels.uninstall() }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("bar-centre-\(UUID())")
     let suite = "BarCentre.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     cleanUp(store, suite: suite, root: root)
     let record = try await store.library!.create(title: "Centred", markdown: "Opening words.\n\nAnother passage.")
@@ -67,7 +67,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
     for scale in [1.0, 1.5] {
       store.uiZoom = scale
-      panel.setContentSize(NSSize(width: 760, height: 520))
+      // Wide enough for the restored camera picker and Framing guides to share one row at 150%;
+      // narrow-window wrapping is covered by UIZoomTests.
+      panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
       let start = try buttonFrame("Start")
       let close = try buttonFrame("Close presenter")
@@ -93,7 +95,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     _ = NSApplication.shared
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("menu-trash-\(UUID())")
     let suite = "MenuTrash.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     cleanUp(store, suite: suite, root: root)
     let library = try XCTUnwrap(store.library)
@@ -148,7 +150,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   func testContextMoveAndTrashKeepBulkSelectionOnlyForASelectedTarget() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("context-scope-\(UUID())")
     let suite = "ContextScope.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     cleanUp(store, suite: suite, root: root)
     let library = try XCTUnwrap(store.library)
@@ -193,7 +195,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   func testPublicRenameRetainsLegacyIsolatedPreferences() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("legacy-suite-\(UUID())")
     let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    removeDefaultsAtTeardown(suite)
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     var settings = PrompterSettings()
     settings.fontSize = 61
     defaults.set(try JSONEncoder().encode(settings), forKey: "settings")
@@ -219,7 +222,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     _ = NSApplication.shared
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("switch-ui-\(UUID())")
     let suite = "VideoPrompter.Switch.\(UUID())"
-    let defaults = UserDefaults(suiteName: suite)!
+    let defaults = TestDefaults.suite(named: suite)!
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     cleanUp(store, suite: suite, root: root)
     let alpha = try await store.library!.create(title: "Alpha title", markdown: "**Alpha** body", tags: ["alpha-tag"])
@@ -263,6 +266,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("empty-ui-\(UUID())")
     let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
+    TestDefaults.record(suite)
     let store = AppStore(arguments: ["test", "--data-directory", root.path])
     cleanUp(store, suite: suite, root: root)
     let host = NSHostingView(rootView: LibraryView(store: store))
@@ -299,7 +303,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-ui-\(UUID())")
     let suite = "SettingsUI.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     cleanUp(store, suite: suite, root: root)
     let camera = CameraModel(defaults: defaults)

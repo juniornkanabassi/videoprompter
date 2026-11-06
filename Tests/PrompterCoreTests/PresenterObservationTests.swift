@@ -12,8 +12,8 @@ final class PresenterObservationTests: XCTestCase {
   func testInPlaceEditorUpdatesReadThroughAfterSeekWithoutInvalidatingShell() async throws {
     _ = NSApplication.shared
     let suite = "PresenterEditorObservation.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite) }
     let session = SessionStore(defaults: defaults)
     var now = 100.0
     session.clock = { now }
@@ -64,8 +64,8 @@ final class PresenterObservationTests: XCTestCase {
 
   func testManualWordInvalidationBenchmark() {
     let suite = "PresenterObservationTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = TestDefaults.suite(named: suite)!
+    defer { TestDefaults.remove(suite) }
     let session = SessionStore(defaults: defaults)
     var now = 100.0
     session.clock = { now }
@@ -97,8 +97,8 @@ final class PresenterObservationTests: XCTestCase {
 
   func testSpeechWordsOnlyInvalidateTheTextAndLifecycleChangesStillReachTheShell() {
     let suite = "PresenterObservationSpeechTests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = TestDefaults.suite(named: suite)!
+    defer { TestDefaults.remove(suite) }
     let session = SessionStore(defaults: defaults)
     var settings = PrompterSettings()
     settings.mode = "Voice"

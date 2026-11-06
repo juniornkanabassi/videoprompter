@@ -130,8 +130,8 @@ final class CameraPickerTests: XCTestCase {
   /// portrait, while a camera with nothing saved stays as it is.
   func testThePreviewTakesEachCamerasOwnSavedRotation() throws {
     let suite = "VideoPrompter.picker.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let store = CameraGuideStore(defaults: UserDefaults(suiteName: suite)!)
+    addTeardownBlock { TestDefaults.remove(suite) }
+    let store = CameraGuideStore(defaults: TestDefaults.suite(named: suite)!)
     var turned = CameraGuides()
     turned.rotation = .quarter
     store.set(turned, for: "cam-b")

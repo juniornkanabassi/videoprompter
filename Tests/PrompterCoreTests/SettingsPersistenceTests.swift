@@ -6,8 +6,8 @@ import XCTest
   func testSliderBurstPerformance() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-\(UUID())")
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     await store.waitForInitialLoad()
     store.presets = (0..<100).map { index in
@@ -36,8 +36,8 @@ import XCTest
   }
   func testBurstCoalescesAndFlushWritesLatestSnapshotOffMainThread() async throws {
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite) }
     let log = WriteLog()
     let writer = SettingsPersistence(defaults: defaults, delay: 60, onWrite: { log.record() })
     var settings = PrompterSettings()
@@ -61,8 +61,8 @@ import XCTest
 
   func testWritesAfterQuietPeriodWithoutExplicitFlush() async throws {
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite) }
     let log = WriteLog()
     let writer = SettingsPersistence(defaults: defaults, delay: 0.02, onWrite: { log.record() })
     writer.schedule(SettingsSnapshot(settings: PrompterSettings(), presets: [],
@@ -78,8 +78,8 @@ import XCTest
 
   func testReleasingWriterFlushesBeforeItsDelayedWrite() async throws {
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite) }
     var writer: SettingsPersistence? = SettingsPersistence(defaults: defaults, delay: 60)
     weak var releasedWriter = writer
     writer?.schedule(SettingsSnapshot(settings: PrompterSettings(), presets: [],
@@ -92,7 +92,7 @@ import XCTest
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTAssertEqual(defaults.double(forKey: "uiZoom"), 1.25)
-    defaults.removePersistentDomain(forName: suite)
+    TestDefaults.remove(suite)
     try await Task.sleep(for: .milliseconds(50))
     XCTAssertNil(defaults.object(forKey: "uiZoom"), "Teardown must cancel delayed writes before fixture cleanup")
   }
@@ -100,8 +100,8 @@ import XCTest
   func testControlSettingsResponsesAreAlreadyPersisted() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-control-\(UUID())")
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera),
@@ -128,8 +128,8 @@ import XCTest
   func testReadOnlyControlResponseFlushesPendingSettings() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-status-\(UUID())")
     let suite = "SettingsPersistence.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite); try? FileManager.default.removeItem(at: root) }
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera),

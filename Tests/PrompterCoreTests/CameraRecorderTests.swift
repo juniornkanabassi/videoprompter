@@ -18,8 +18,11 @@ import XCTest
     XCTAssertTrue(first.lastPathComponent.hasPrefix("Video Prompter "))
     XCTAssertNotEqual(first, second); XCTAssertTrue(second.lastPathComponent.hasSuffix(" 2.mov"))
     XCTAssertEqual(try String(contentsOf: first, encoding: .utf8), "preserve")
-    let suite = "RecorderTests.\(UUID())"; let defaults = UserDefaults(suiteName: suite)!
-    defer { defaults.removePersistentDomain(forName: suite) }
+    let suite = "RecorderTests.\(UUID())"; let defaults = TestDefaults.suite(named: suite)!
+    defer { TestDefaults.remove(suite) }
+    // AppStore.preferences writes the derived suites of both data directories.
+    removeDerivedDefaultsAtTeardown(dataDirectory: root)
+    removeDerivedDefaultsAtTeardown(dataDirectory: root.appendingPathComponent("other"))
     let isolated = AppStore.preferences(arguments: ["app", "--data-directory", root.path])
 
     let camera = CameraModel(defaults: isolated)

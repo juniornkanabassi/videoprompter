@@ -11,10 +11,10 @@ func attribute(_ element: AXUIElement, _ name: String) -> Any? {
   var value: CFTypeRef?
   return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
 }
-func walk(_ element: AXUIElement, depth: Int = 0) -> [[String: String]] {
+func walk(_ element: AXUIElement, depth: Int = 0, windowTitle: String) -> [[String: String]] {
   guard depth < 30, seen.count < 5000, seen.insert(element).inserted else { return [] }
-  var row: [String: String] = [:]
-  for name in ["AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXSelected", "AXPlaceholderValue", "AXHelp"] {
+  var row: [String: String] = ["windowTitle": windowTitle]
+  for name in ["AXRole", "AXSubrole", "AXRoleDescription", "AXTitle", "AXDescription", "AXValue", "AXSelected", "AXPlaceholderValue", "AXHelp", "AXEnabled"] {
     if let value = attribute(element, name) { row[name] = String(describing: value) }
   }
   // SwiftUI Forms often name controls through a separate native title element.
@@ -30,8 +30,8 @@ func walk(_ element: AXUIElement, depth: Int = 0) -> [[String: String]] {
     if AXValueGetValue(value, .cgSize, &size) { row["width"] = String(Double(size.width)); row["height"] = String(Double(size.height)) }
   }
   let children = attribute(element, "AXChildren") as? [AXUIElement] ?? []
-  return [row] + children.flatMap { walk($0, depth: depth + 1) }
+  return [row] + children.flatMap { walk($0, depth: depth + 1, windowTitle: windowTitle) }
 }
 let windows = attribute(app, "AXWindows") as? [AXUIElement] ?? []
-let result: [String: Any] = ["pid": pid, "trusted": AXIsProcessTrusted(), "frontmostPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, "windows": windows.flatMap { walk($0) }]
+let result: [String: Any] = ["pid": pid, "trusted": AXIsProcessTrusted(), "frontmostPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0, "windows": windows.flatMap { walk($0, windowTitle: attribute($0, "AXTitle") as? String ?? "") }]
 print(String(data: try! JSONSerialization.data(withJSONObject: result, options: [.sortedKeys]), encoding: .utf8)!)

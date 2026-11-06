@@ -219,12 +219,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       let directory = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("videoprompter-rendered-replay-\(UUID().uuidString)", isDirectory: true)
       let suiteName = "VideoPrompter.rendered-replay.\(UUID().uuidString)"
-      let defaults = UserDefaults(suiteName: suiteName)!
-      defaults.removePersistentDomain(forName: suiteName)
+      let defaults = TestDefaults.suite(named: suiteName)!
+      TestDefaults.remove(suiteName)
       let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
       addTeardownBlock { @MainActor in
         await store.flushSettings()
-        UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
+        TestDefaults.remove(suiteName)
         try? FileManager.default.removeItem(at: directory)
       }
       guard let library = store.library else {

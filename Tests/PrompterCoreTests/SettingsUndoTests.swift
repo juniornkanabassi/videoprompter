@@ -20,11 +20,11 @@ import XCTest
   func testPresetDeletionSupportsRepeatedUndoAndRedoWithoutLosingOrder() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("preset-undo-\(UUID())")
     let suite = "PresetUndo.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       await store.flushSettings()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
     store.savePreset(named: "One"); store.savePreset(named: "Two"); store.savePreset(named: "Three")
@@ -53,11 +53,11 @@ import XCTest
   func testFolderDeletionRestoresIdentityAndMembershipAcrossUndoRedo() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("folder-undo-\(UUID())")
     let suite = "FolderUndo.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       await store.flushSettings()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
     let library = try XCTUnwrap(store.library)
@@ -209,11 +209,11 @@ import XCTest
   private func folderFixture(_ name: String) async throws -> (AppStore, ScriptFolder, ScriptRecord) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID())")
     let suite = "\(name).\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       _ = await store.flushPendingSaves()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
     let library = try XCTUnwrap(store.library)

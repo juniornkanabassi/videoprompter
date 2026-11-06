@@ -15,11 +15,11 @@ import XCTest
     NSApp.setActivationPolicy(.prohibited)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("VideoPrompter-snapshot-fixture-\(UUID())", isDirectory: true)
     let suite = "VideoPrompter.Appearance.\(UUID())"
-    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       _ = await store.flushPendingSaves()
-      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      TestDefaults.remove(suite)
       try? FileManager.default.removeItem(at: root)
     }
     let record = try await store.createScript(title: "A clear opening", markdown: "# A clear opening\n\nRead these opening words at your own pace.\n\nA second paragraph keeps the reading line easy to follow.\n\n**Important words** stay clear, with a [reference](https://example.com).")
@@ -59,6 +59,13 @@ import XCTest
       camera.displayMode = .prompterWithVideo
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-camera-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       camera.displayMode = .prompterOnly
+      // The bar at 200%, with the camera off (picker and guides dimmed) and on.
+      store.uiZoom = 2
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      camera.displayMode = .prompterWithVideo
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-camera-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      camera.displayMode = .prompterOnly
+      store.uiZoom = 1
       try await snapshot(IPadRemoteView(link: link, startsLink: false), name: "ipad-remote-\(mode)", size: .init(width: 480, height: 420), scheme: scheme, destination: destination)
     }
     XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "Snapshots must never order windows")

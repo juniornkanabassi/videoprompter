@@ -578,6 +578,9 @@ struct PresenterView: View {
   }
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
+  @State private var showsGuideSettings = false
+  /// The picker's fixed slot: a long camera name truncates instead of widening the bar.
+  static let cameraPickerWidth: CGFloat = 120
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
   private var showsScript: Bool { hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
   var body: some View {
@@ -678,8 +681,7 @@ struct PresenterView: View {
               .buttonStyle(.borderedProminent)
             CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
           }.disabled(!showsScript || draft.isEditing)
-          // One View menu instead of a camera toggle, picker and guides button: the bar keeps the
-          // same width whether or not the camera is on. Framing guides are in Camera Settings.
+          // The View menu's primary action shows or hides the camera; its arrow has every view.
           Menu {
             Picker("What to show", selection: $camera.displayMode) {
               ForEach(PresenterDisplayMode.allCases) { mode in
@@ -700,7 +702,7 @@ struct PresenterView: View {
             // One click still turns the camera on or off, as the old camera button did.
             PresenterController.shared.toggleVideo()
           }
-          .menuStyle(.button).menuIndicator(.visible).fixedSize()
+          .menuStyle(.button).menuIndicator(.visible).fixedSize().frame(width: 88)
           .accessibilityLabel("Presenter view")
           .accessibilityValue(camera.displayMode.label)
           .help("Click to show or hide the camera; the arrow has every view, Camera Settings and the monitor. \(camera.displayMode.label) now")
@@ -709,6 +711,18 @@ struct PresenterView: View {
               CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
             }
           }
+          // Always in the bar at a fixed width, dimmed while the camera is off, so the bar keeps
+          // the same width with the camera on or off.
+          Group {
+            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth)
+            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3",
+                          help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
+              showsGuideSettings = true
+            }
+            .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
+              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
+            }
+          }.disabled(!camera.presentsWithVideo)
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil",
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
@@ -722,7 +736,8 @@ struct PresenterView: View {
           }
         }
         .buttonStyle(.bordered).padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Space.xxl)).padding(Space.md)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Space.xxl))
+        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
       }.frame(maxWidth: .infinity, alignment: .center)
         .uiZoom(store.uiZoom)
         .fixedSize(horizontal: false, vertical: true)

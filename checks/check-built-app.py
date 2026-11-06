@@ -11,7 +11,7 @@ args = parser.parse_args()
 supplied = args.app.resolve()
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
-root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
+root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir=os.environ.get('TMPDIR', '/private/tmp')))
 (root / 'home').mkdir()
 # The shipped bundle must be validly signed. The check then runs a copy with its own bundle identifier, because
 # AppKit window and split-view autosave write to the standard defaults domain, which would otherwise be the real app's.
@@ -175,10 +175,17 @@ try:
         assert any(label in row.values() for row in rows), (label, rendered)
     for removed in ['Previous passage', 'Next passage']:
         assert not any(removed in row.values() for row in rows), ('Secondary action still in presenter chrome', removed)
-    # The camera toggle, camera picker and Framing guides all live in the presenter's View menu now.
-    assert any('Presenter view' in row.values() for row in rows), ('Presenter bar must offer the View menu', rendered)
-    for removed in ['Show camera', 'Hide camera', 'Framing guides']:
-        assert not any(removed in row.values() for row in rows), ('Camera control still loose in presenter chrome', removed)
+    # The View menu shows or hides the camera. The camera picker and Framing guides stay in the bar at a
+    # fixed width, dimmed while the camera is off (this disposable copy starts with it off).
+    presenter_rows = [row for row in rows if row.get('windowTitle') == 'Video Prompter · '+imported['title']]
+    assert presenter_rows, ('Presenter accessibility rows missing', rendered)
+    assert any('Presenter view' in row.values() for row in presenter_rows), ('Presenter bar must offer the View menu', rendered)
+    for label in ['Camera', 'Framing guides']:
+        found = [row for row in presenter_rows if row.get('AXRole') in ('AXButton', 'AXPopUpButton', 'AXMenuButton') and label in row.values()]
+        assert found, ('Presenter bar must offer '+label, rendered)
+        assert all(row.get('AXEnabled') == '0' for row in found), ('Camera control must be dimmed while the camera is off', label, found)
+    for removed in ['Show camera', 'Hide camera']:
+        assert not any(removed in row.values() for row in rows), ('Camera toggle still loose in presenter chrome', removed)
     selected = [row for row in rows if row.get('AXSelected') == '1']
     assert selected, 'No selected row in the running GUI'
     zoomed_rows = [row for row in rows if row.get('AXRole') == 'AXRow' and row.get('AXSelected') == '1']
@@ -210,10 +217,36 @@ finally:
         pid = matches[0] if len(matches) == 1 else None
     if pid:
         # Only the disposable PID owned by this check; no recordings or unsaved edits exist.
-        os.kill(pid, 15)
-    # The check bundle id has its own defaults domain and saved state; remove them so nothing outlives the check.
-    subprocess.run(['defaults', 'delete', CHECK_ID], capture_output=True)
+        try: os.kill(pid, 15)
+        except ProcessLookupError: pass  # already gone; the suite cleanup below must still run
+    def copies():
+        rows = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True).splitlines()
+        return [int(r.split(None, 1)[0]) for r in rows if str(app / 'Contents/MacOS/VideoPrompter') in r and str(data) in r]
+    # Only once every copy has exited can no settings writer recreate a domain removed below.
+    for _ in range(200):
+        if not copies(): break
+        time.sleep(0.05)
+    for stray in copies():
+        try: os.kill(stray, 9)
+        except ProcessLookupError: pass
+    for _ in range(100):
+        if not copies(): break
+        time.sleep(0.05)
+    # The check bundle id has its own defaults domain and saved state, and --data-directory opens the
+    # derived VidPrompt.<FNV-1a of the standardised path> suite: remove exactly those files, in both homes.
+    def suite_domains(directory):
+        path = str(directory)
+        for candidate in {path, path.removeprefix('/private') if path.startswith('/private/') else path}:
+            value = 14695981039346656037
+            for byte in candidate.encode():
+                value = ((value ^ byte) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+            yield 'VidPrompt.%016x' % value
     library = pathlib.Path.home() / 'Library'
-    (library / 'Preferences' / (CHECK_ID+'.plist')).unlink(missing_ok=True)
+    if copies():
+        raise RuntimeError('A check copy is still running; isolated defaults cleanup did not finish')
+    for domain in [CHECK_ID, *suite_domains(data)]:
+        subprocess.run(['defaults', 'delete', domain], capture_output=True)
+        for home in (library, root / 'home' / 'Library'):
+            (home / 'Preferences' / (domain+'.plist')).unlink(missing_ok=True)
     shutil.rmtree(library / 'Saved Application State' / (CHECK_ID+'.savedState'), ignore_errors=True)
     print('Disposable evidence retained at '+str(root), file=sys.stderr)
