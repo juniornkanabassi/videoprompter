@@ -29,8 +29,8 @@ struct ExposureGuidance: View {
     VStack(alignment: .leading, spacing: Space.md) {
       if zebras {
         VStack(alignment: .leading, spacing: Space.sm) {
-          Text(Self.zebraLookFor(guides))
           Text(Self.zebraAction(guides)).fontWeight(.semibold)
+          Text(Self.zebraLookFor(guides))
         }
       }
       if falseColour { Text(Self.colourLookFor) }
@@ -102,8 +102,14 @@ struct ExposureLegend: View {
 
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.sm) {
-        Text("Received picture. Not a universal face target.")
+      VStack(alignment: .leading, spacing: Space.xs) {
+        if model.guides.zebras {
+          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
+          Text(Self.compactMeasurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+            .monospacedDigit()
+        }
+        if model.guides.falseColour { FalseColourKey(showsExplanation: false) }
+        Text("Received picture (%)").foregroundStyle(Color.primary.opacity(0.75))
         DisclosureGroup("How to read this", isExpanded: $showsHelp) {
           ScrollView {
             VStack(alignment: .leading, spacing: Space.sm) {
@@ -113,6 +119,7 @@ struct ExposureLegend: View {
               }
               if model.guides.falseColour {
                 Text(ExposureGuidance.colourAction).fontWeight(.semibold)
+                Text("Grey shows brightness between these bands.")
                 ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
               }
               Text("Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
@@ -121,16 +128,6 @@ struct ExposureLegend: View {
               .fixedSize(horizontal: false, vertical: true)
           }.frame(maxHeight: 180 / zoom)
         }
-        ScrollView {
-          VStack(alignment: .leading, spacing: Space.sm) {
-            if model.guides.zebras {
-              Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
-              Text(Self.compactMeasurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
-                .monospacedDigit()
-            }
-            if model.guides.falseColour { FalseColourKey() }
-          }.frame(maxWidth: .infinity, alignment: .leading)
-        }.frame(maxHeight: 160 / zoom).scrollIndicators(.visible)
       }.font(.callout).foregroundStyle(.primary)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: 480 / zoom, alignment: .leading)
@@ -150,6 +147,7 @@ struct ExposureLegend: View {
 
 /// Use the renderer's ranges, so the visible monitor key cannot drift from its colours.
 struct FalseColourKey: View {
+  var showsExplanation = true
   static let labels = ["Black", "Dark", "Mid", "Bright", "High", "White"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
     "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
@@ -159,12 +157,35 @@ struct FalseColourKey: View {
       Text("Check brightness · False colour").fontWeight(.semibold)
       ViewThatFits(in: .horizontal) {
         bands(columns: 6)
-        bands(columns: 3)
-        bands(columns: 2)
+        compactBands
       }
-      Text("Grey shows brightness between these bands.")
-        .foregroundStyle(Color.primary.opacity(0.75))
+      if showsExplanation {
+        Text("Grey shows brightness between these bands.")
+          .foregroundStyle(Color.primary.opacity(0.75))
+      }
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
+  }
+
+  private var compactBands: some View {
+    Grid(alignment: .leading, horizontalSpacing: Space.sm, verticalSpacing: Space.sm) {
+      ForEach(0..<3, id: \.self) { row in
+        GridRow {
+          ForEach(0..<2, id: \.self) { column in
+            let index = row * 2 + column
+            let band = CameraExposure.bands[index]
+            HStack(spacing: Space.xs) {
+              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                .frame(width: Space.md, height: Space.md)
+              Text(Self.labels[index])
+              Text(Self.rangeLabel(band.range).dropLast()).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
+            }.fixedSize(horizontal: true, vertical: false)
+              .accessibilityElement(children: .ignore)
+              .accessibilityLabel("\(Self.labels[index]). \(band.name)")
+              .accessibilityValue(Self.rangeLabel(band.range))
+          }
+        }
+      }
+    }
   }
 
   private func bands(columns: Int) -> some View {

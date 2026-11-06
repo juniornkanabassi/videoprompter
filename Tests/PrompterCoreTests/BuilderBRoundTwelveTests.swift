@@ -71,7 +71,7 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       let (window, host) = await LibraryAX.host(ExposureLegend(model: camera, zoom: zoom), size: .init(width: 520, height: 900))
       defer { LibraryAX.close(window) }
-      XCTAssertFalse(LibraryAX.named("Received picture. Not a universal face target.", in: host).isEmpty)
+      XCTAssertFalse(LibraryAX.named("Received picture (%)", in: host).isEmpty)
       XCTAssertFalse(LibraryAX.named(ExposureLegend.compactMeasurement(level: camera.guides.zebraLevel, range: camera.guides.zebraRange), in: host).isEmpty)
       XCTAssertTrue(LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: host).isEmpty)
       for (index, band) in CameraExposure.bands.enumerated() {

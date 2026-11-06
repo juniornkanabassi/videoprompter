@@ -230,3 +230,19 @@ This supersedes the earlier always-expanded folder height and glass exposure-leg
 | Camera picker in a recovery host | Host supplies one explanation and one permission action; embedded list uses showsRecovery: false | Standalone pickers retain recovery, without a redundant Refresh action before camera access is granted |
 
 ExposureLegend accepts the actual Interface size as zoom, scales once, and constrains its content width before scaling. Presenter passes controlZoom; existing Camera Monitor outer scaling continues with the default internal scale. Library, import/relink and picker text wraps rather than truncates. Storage and linked-file behaviour are unchanged.
+
+
+## Round 13 Builder B refinement
+
+- Keep the exposure scale outside scrolling. All six named bands and their
+  limits, including the highlight and clipping bands, and the zebra threshold
+  stay visible at 100%, 150% and 200%. Only the initially collapsed How to read
+  this teaching section scrolls. Lead with the checking action; place the
+  received-picture qualification after the scale and face caveats in the help.
+- Folder actions offers New Folder, Rename Folder and Remove Folder, Keep
+  Scripts. The last two act on the selected folder; All Scripts and Recently
+  Deleted disable them. Row context menus remain shortcuts to the same actions.
+- Beside the editor-only size explanation, Reading text size… opens Settings >
+  Reading directly. Editor and presenter sizes remain independent.
+- The compact presenter's comparison should read Exposure check and state
+  whether aids are visible or bypassed. Its call site is owned by Builder A.

@@ -61,10 +61,10 @@ import XCTest
     })
     XCTAssertTrue(LibraryAX.bool(slider, "accessibilityPerformIncrement"))
     XCTAssertEqual(store.settings.fontSize, readingSize)
-    XCTAssertFalse(LibraryAX.named("Changes the writing surface. For reading, use Reading text size in Settings > Reading, or Text on the presenter.", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Changes only the writing surface.", in: host).isEmpty)
   }
 
-  func testExposureNamesPurposeAndExplainsGreyWithoutOpeningHelp() async throws {
+  func testExposureNamesPurposeAndKeepsTeachingCollapsed() async throws {
     let (_, camera) = fixture()
     for purpose in CameraGuides.ZebraPurpose.allCases {
       camera.guides.useZebraPreset(purpose)
@@ -74,7 +74,7 @@ import XCTest
       defer { LibraryAX.close(window) }
       XCTAssertFalse(LibraryAX.named(ExposureLegend.zebraTitle(for: purpose), in: host).isEmpty)
       XCTAssertFalse(LibraryAX.named("Check brightness · False colour", in: host).isEmpty)
-      XCTAssertFalse(LibraryAX.named("Grey shows brightness between these bands.", in: host).isEmpty)
+      XCTAssertTrue(LibraryAX.named("Grey shows brightness between these bands.", in: host).isEmpty)
     }
     camera.guides.zebraLevel = 95
     camera.guides.zebraRange = 5

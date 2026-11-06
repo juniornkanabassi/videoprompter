@@ -38,10 +38,12 @@ struct LibraryView: View {
             .accessibilityValue(showsFolders ? "Expanded" : "Collapsed")
           Spacer()
           Menu {
-            Button("New Folder…") { store.namingNewFolder = true }
+            LibraryFolderActions(store: store, folder: selectedFolder) {
+              renamingFolder = $0; renamedFolderName = $0.name
+            }
           } label: { Image(systemName: "folder.badge.plus") }
             .menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize()
-            .accessibilityLabel("Folder actions").help("Create a folder")
+            .accessibilityLabel("Folder actions").help("Create, rename or remove a folder")
             .disabled(!store.libraryAvailable)
         }.padding(.horizontal, Space.md).padding(.top, Space.md)
         if showsFolders {
@@ -263,6 +265,11 @@ struct LibraryView: View {
     return "All Scripts"
   }
 
+  private var selectedFolder: ScriptFolder? {
+    guard !showsDeleted, let id = store.selectedFolderID else { return nil }
+    return store.folders.first { $0.id == id }
+  }
+
   private func sidebarHeading(_ title: String) -> some View {
     Text(title).font(UIType.secondary.weight(.semibold))
       .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
@@ -325,6 +332,24 @@ struct LibraryView: View {
     guard !newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
     store.createFolder(named: newFolderName)
     newFolderName = ""
+  }
+}
+
+struct LibraryFolderActions: View {
+  @ObservedObject var store: AppStore
+  let folder: ScriptFolder?
+  let rename: (ScriptFolder) -> Void
+  @Environment(\.undoManager) private var undoManager
+
+  var body: some View {
+    Button("New Folder…") { store.namingNewFolder = true }
+    Divider()
+    Button("Rename Folder…") {
+      if let folder { rename(folder) }
+    }.disabled(folder == nil)
+    Button("Remove Folder, Keep Scripts", role: .destructive) {
+      if let folder { store.deleteFolder(folder.id, undoManager: undoManager) }
+    }.disabled(folder == nil)
   }
 }
 
