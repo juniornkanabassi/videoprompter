@@ -171,7 +171,10 @@ import XCTest
     await settle()
     _ = try button("More controls", in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
     await settle()
-    for name in ["View", "Guides", "Clean view", "More"] { _ = try button(name, in: host) }
+    // Expanded tools live in a popover so the reading viewport never changes size.
+    _ = try button("Fewer controls", in: host)
+    XCTAssertFalse(has("View", in: host))
+    _ = try button("Clean view", in: host)
     for name in ["Zebras", "False colour"] {
       XCTAssertEqual(label(try button(name, in: host), "accessibilityValue"), "Off")
       _ = try button(name, in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
@@ -209,24 +212,27 @@ import XCTest
     let camera = CameraModel(defaults: defaults); camera.displayMode = .prompterWithVideo
     camera.recordingReadyOverride = true
     let recorder = CameraRecorder(defaults: defaults)
-    let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder))
-    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 760, height: 520), styleMask: [.titled], backing: .buffered, defer: true)
+    let draft = PresenterDraft(record: record)
+    let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder))
+    host.sizingOptions = []
+    let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 720, height: 520), styleMask: [.titled], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false; window.contentView = host
-    host.frame = NSRect(x: 0, y: 0, width: 760, height: 520)
+    host.frame = NSRect(x: 0, y: 0, width: 720, height: 520)
     defer { store.session.pause(); window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
-      for state in ["idle", "reading", "waiting", "recording", "warning"] {
-        store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil
+      for state in ["idle", "reading", "waiting", "recording", "warning", "warning-and-notice"] {
+        store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil; draft.noticeMessage = nil
         if state == "reading" { store.session.play(captureAudio: false) }
         if state == "waiting" { recorder.phase = .waitingForFrames }
         if state == "recording" { recorder.phase = .recording }
-        if state == "warning" {
+        if state.hasPrefix("warning") {
           recorder.savedTake = URL(fileURLWithPath: "/tmp/Opening take 03.mov")
           recorder.droppedFrames = 7
         }
+        if state == "warning-and-notice" { draft.noticeMessage = "This script changed outside Video Prompter. Review the new wording before recording another take." }
         await settle()
         let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(script.enclosingScrollView)
@@ -236,9 +242,19 @@ import XCTest
         _ = try button("Reading mode", in: host)
         if state == "idle" {
           for name in ["Camera", "Text", "Microphone", "Edit script", "Back to start"] { _ = try button(name, in: host) }
-          XCTAssertTrue(elements(host).contains { (label($0, "accessibilityValue") ?? label($0, "accessibilityLabel") ?? "").contains("Movies/Video Prompter") })
+          for name in ["Camera", "Text", "Microphone", "Edit script", "Back to start", "Camera readiness", "Check microphone level"] {
+            let control = try button(name, in: host)
+            XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(control)), "Clipped \(name) at \(zoom)")
+            XCTAssertFalse(insideScrollView(control), "Preflight and session controls must not require scrolling")
+          }
+          XCTAssertTrue(elements(host).contains { (label($0, "accessibilityLabel") ?? label($0, "accessibilityValue") ?? "").contains("Saves to ") })
         }
-        if state == "warning" { XCTAssertTrue(elements(host).contains { (label($0, "accessibilityValue") ?? "").contains("Opening take 03.mov") }) }
+        if state.hasPrefix("warning") {
+          let saved = try button("Saved take", in: host)
+          XCTAssertTrue((label(saved, "accessibilityValue") ?? "").contains("Opening take 03.mov"))
+          XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(saved)))
+          _ = try button("Check microphone level", in: host)
+        }
         recorder.droppedFrames = 0
       }
       // A paused mid-script retake is one press and never changes recording state.

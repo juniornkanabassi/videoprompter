@@ -22,7 +22,7 @@ import XCTest
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
         for state in ["idle", "reading", "waiting", "recording", "warning", "unavailable"] {
-          store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil; recorder.droppedFrames = 0
+          store.session.pause(); store.session.restart(); recorder.phase = .idle; recorder.savedTake = nil; recorder.droppedFrames = 0
           camera.displayMode = .prompterWithVideo; camera.recordingReadyOverride = state != "unavailable"
           if state == "reading" { store.session.play(captureAudio: false) }
           if state == "waiting" { recorder.phase = .waitingForFrames }

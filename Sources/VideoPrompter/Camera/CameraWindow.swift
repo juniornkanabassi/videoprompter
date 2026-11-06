@@ -269,7 +269,7 @@ struct CameraView: View {
         ContentUnavailableView {
           Label("No camera access", systemImage: "video.slash")
         } description: {
-          Text("Allow Video Prompter in System Settings → Privacy & Security → Camera.").font(.callout).foregroundStyle(.primary)
+          Text("Shows the same camera and recording as the presenter. Allow Video Prompter in System Settings → Privacy & Security → Camera.").font(.callout).foregroundStyle(.primary)
         } actions: {
           Button("Open System Settings") {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
@@ -279,7 +279,7 @@ struct CameraView: View {
       default:
         if let message = model.unavailableMessage {
           ContentUnavailableView("Connect a camera", systemImage: "video",
-            description: Text(message).font(.callout).foregroundStyle(.primary))
+            description: Text("Shows the same camera and recording as the presenter. " + message).font(.callout).foregroundStyle(.primary))
             .uiZoom(zoom)
         } else {
           CameraPreview(model: model).background(.black)
@@ -836,8 +836,36 @@ struct RecordingReceipt: View {
   var zoom = 1.0
   var compact = false
   @State private var recoverySettings = false
+  @State private var showsDetails = false
+  @State private var focusRevision = 0
+  @FocusState private var receiptFocused: Bool
+  @AccessibilityFocusState private var receiptAXFocused: Bool
+  private var receiptLabel: String { recorder.savedTake == nil ? "Take not saved" : "Saved take" }
   var body: some View {
-    if recorder.savedTake != nil || recorder.takeFailure != nil {
+    if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
+      Button { showsDetails.toggle() } label: {
+        Label(recorder.savedTake.map { "Saved " + $0.lastPathComponent } ?? "Take not saved",
+          systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle")
+          .lineLimit(1).truncationMode(.middle)
+      }.labelStyle(.titleAndIcon).accessibilityLabel(receiptLabel)
+        .focusable().focused($receiptFocused).accessibilityFocused($receiptAXFocused)
+        .background(PresenterFocusReturn(target: receiptLabel, revision: focusRevision))
+        .onChange(of: showsDetails) { _, open in
+          if !open {
+            Task { @MainActor in
+              try? await Task.sleep(for: .milliseconds(150))
+              receiptFocused = true; receiptAXFocused = true; focusRevision += 1
+            }
+          }
+        }
+        .accessibilityValue(recorder.savedTake?.lastPathComponent ?? recorder.takeFailure ?? "Take not saved")
+        .accessibilityHint(recorder.qualityWarning ?? recorder.takeFailure ?? "Open take details")
+        .help(recorder.qualityWarning ?? recorder.takeFailure ?? recorder.savedTake?.path ?? "")
+        .popover(isPresented: $showsDetails) {
+          RecordingReceipt(recorder: recorder, camera: camera, configure: configure, zoom: zoom)
+            .frame(width: 440).padding(Space.sm).uiZoom(zoom)
+        }
+    } else if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {
         if let file = recorder.savedTake {
           Label(recorder.qualityWarning == nil ? "Saved \(file.lastPathComponent)" : "Saved with problems: \(file.lastPathComponent)",
