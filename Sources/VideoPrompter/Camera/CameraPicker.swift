@@ -475,7 +475,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   /// `.medium` first, the lightest preset worth trying: a 4K v210 feed is heavy for a thumbnail.
   /// `fallBack` moves to `.high`, which runs Cam B at 1920x1080.
   private func open(_ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ mirrored: Bool) {
-    guard !isStopped, let device = AVCaptureDevice(uniqueID: uid),
+    guard !isStopped, CaptureAccess.mayUse(.video), let device = AVCaptureDevice(uniqueID: uid),
       let input = try? AVCaptureDeviceInput(device: device)
     else { return }
     original = (device, device.activeFormat)

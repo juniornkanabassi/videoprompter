@@ -29,7 +29,7 @@ enum ScriptShortcuts {
     if Headless.shared.active { UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true]) }
     // The bundle starts as an agent (LSUIElement), so a headless launch never shows a Dock tile, not even for the
     // moment before this init runs. Every other launch becomes the ordinary app here, before it finishes launching.
-    if !Headless.shared.active { NSApplication.shared.setActivationPolicy(.regular) }
+    if !Headless.shared.active { NSApplication.shared.setActivationPolicy(AgentMode.isOn ? .accessory : .regular) }
     Headless.shared.start()
     if AgentMode.isOn { NSWindow.keepEveryWindowInvisible() }
     Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
@@ -316,6 +316,15 @@ extension NSResponder {
   @objc fileprivate func agentScreen_noResponder(for eventSelector: Selector) {}
 }
 
+extension NSWindow {
+  private func agentScreen_hide() { alphaValue = 0; ignoresMouseEvents = true }
+  // After the exchange these names call the original AppKit implementations.
+  @objc fileprivate func agentScreen_orderFront(_ sender: Any?) { agentScreen_hide(); agentScreen_orderFront(sender) }
+  @objc fileprivate func agentScreen_orderFrontRegardless() { agentScreen_hide(); agentScreen_orderFrontRegardless() }
+  @objc fileprivate func agentScreen_makeKeyAndOrderFront(_ sender: Any?) { agentScreen_hide(); agentScreen_makeKeyAndOrderFront(sender) }
+  @objc fileprivate func agentScreen_order(_ place: NSWindow.OrderingMode, relativeTo otherWin: Int) { agentScreen_hide(); agentScreen_order(place, relativeTo: otherWin) }
+}
+
 extension NSApplication {
   /// Hidden agent copies (`--agent-screen`) must never come to the front and take focus from Junior.
   func activateUnlessAgentScreen() {
@@ -328,6 +337,17 @@ extension NSWindow {
   /// `--agent-screen` (the packaged checks) runs the real app with nothing visible on any of Junior's displays:
   /// windows stay ordered in, so Accessibility still reads them, but are transparent and let clicks through.
   static func keepEveryWindowInvisible() {
+    // Hide before a window is ordered in, so not even one visible frame reaches the screen.
+    for (original, replacement) in [
+      (#selector(NSWindow.orderFront(_:)), #selector(NSWindow.agentScreen_orderFront(_:))),
+      (#selector(NSWindow.orderFrontRegardless), #selector(NSWindow.agentScreen_orderFrontRegardless)),
+      (#selector(NSWindow.makeKeyAndOrderFront(_:)), #selector(NSWindow.agentScreen_makeKeyAndOrderFront(_:))),
+      (#selector(NSWindow.order(_:relativeTo:)), #selector(NSWindow.agentScreen_order(_:relativeTo:))),
+    ] {
+      if let old = class_getInstanceMethod(NSWindow.self, original), let new = class_getInstanceMethod(NSWindow.self, replacement) {
+        method_exchangeImplementations(old, new)
+      }
+    }
     // Unhandled key presses from agent checks would otherwise play the system alert sound.
     if let old = class_getInstanceMethod(NSResponder.self, #selector(NSResponder.noResponder(for:))),
       let new = class_getInstanceMethod(NSResponder.self, #selector(NSResponder.agentScreen_noResponder(for:))) {

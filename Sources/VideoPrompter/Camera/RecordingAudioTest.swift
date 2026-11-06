@@ -9,6 +9,7 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
   init(device: AVCaptureDevice, floatAudio: Bool, onLevels: @escaping @Sendable ([Float]) -> Void) throws {
     self.onLevels = onLevels
     super.init()
+    guard CaptureAccess.mayUse(.audio) else { throw CocoaError(.userCancelled) }
     let input = try AVCaptureDeviceInput(device: device)
     let output = AVCaptureAudioDataOutput()
     let format = CMAudioFormatDescriptionGetStreamBasicDescription(device.activeFormat.formatDescription)?.pointee

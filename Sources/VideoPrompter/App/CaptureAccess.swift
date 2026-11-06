@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import PrompterCore
 
 /// Hidden agent copies (`--agent-screen`) and tests have their own app identity, so macOS would ask Junior
 /// for camera and microphone access again for every copy. They never ask and never open a device unless
@@ -7,9 +8,12 @@ import Foundation
 /// Anything other than Junior's real installed app (an agent's re-identified copy, a bare debug build) runs
 /// as a hidden agent copy, even if someone forgets `--agent-screen`: invisible, never activating, silent.
 enum AgentMode {
-  static let realBundleID = "com.juniornkanabassi.VidPrompt"
-  static let isOn = NSClassFromString("XCTestCase") == nil
-    && (CommandLine.arguments.contains("--agent-screen") || Bundle.main.bundleIdentifier != realBundleID)
+  static let realBundleID = ControlProtocol.bundleID
+  static let isOn = rule(arguments: CommandLine.arguments, bundleID: Bundle.main.bundleIdentifier,
+    underTest: NSClassFromString("XCTestCase") != nil)
+  static func rule(arguments: [String], bundleID: String?, underTest: Bool) -> Bool {
+    !underTest && (arguments.contains("--agent-screen") || bundleID != realBundleID)
+  }
 }
 
 enum CaptureAccess {

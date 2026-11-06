@@ -26,8 +26,10 @@ import XCTest
 
 /// Tests never trigger macOS camera or microphone prompts: each test binary is a new app identity to macOS.
 final class CaptureAccessTests: XCTestCase {
-  func testTestsNeverAskForCameraOrMicrophone() async {
+  func testTestsNeverAskForCameraOrMicrophone() async throws {
     XCTAssertTrue(CaptureAccess.isAgentOrTest)
+    let undecided = [AVMediaType.video, .audio].filter { AVCaptureDevice.authorizationStatus(for: $0) != .authorized }
+    try XCTSkipIf(undecided.isEmpty, "this Mac already granted both, so there is no prompt to prove absent")
     for media in [AVMediaType.video, .audio] where AVCaptureDevice.authorizationStatus(for: media) != .authorized {
       XCTAssertFalse(CaptureAccess.mayUse(media))
       let granted = await CaptureAccess.request(media)
@@ -40,5 +42,11 @@ final class AgentModeTests: XCTestCase {
   func testOnlyTheRealBundleRunsVisibleOutsideTests() {
     XCTAssertEqual(AgentMode.realBundleID, "com.juniornkanabassi.VidPrompt")
     XCTAssertFalse(AgentMode.isOn, "tests keep their own window and focus guards")
+    let real = AgentMode.realBundleID
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, underTest: false), "the installed app runs normally")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, underTest: false))
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", underTest: false), "a re-identified copy is hidden")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, underTest: false), "a bare debug build is hidden")
+    XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, underTest: true))
   }
 }
