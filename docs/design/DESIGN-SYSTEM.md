@@ -235,7 +235,7 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
 ## Round 13 Builder B refinement
 
 - Keep the exposure scale outside scrolling. All six named bands and their
-  limits, including the highlight and clipping bands, and the zebra threshold
+  limits, including the bright and near-white bands, and the zebra threshold
   stay visible at 100%, 150% and 200%. Only the initially collapsed How to read
   this teaching section scrolls. Lead with the checking action; place the
   received-picture qualification after the scale and face caveats in the help.
@@ -251,8 +251,8 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
 
 - ExposureLegend is one line: six swatches and a small **Key** button with
   a chevron. At 100/150/200% its height is determined only by the button and
-  padding. Its four short labels are Too dark, Mid-tones, Bright and Clipping,
-  with no wrapping. Yellow belongs only to Bright; Clipping covers the red band.
+  padding. Its four short labels are Very dark, Mid-tones, Bright and Near white,
+  with no wrapping. Yellow belongs only to Bright; Near white covers the red band.
   Numerical measurements stay in Key. Builder A anchors it to
   the bottom of the camera picture, outside the reading lane.
 - Key opens a bounded scrolling popover. The first line says what to do on the
@@ -289,8 +289,8 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
   Face reference describes stripes on the lit side of a face before selection;
   skin-tone and flat-profile qualifications remain beside the camera advice.
 - The bottom-edge false-colour strip stays one row with all six renderer colours.
-  Too dark, Mid-tones, Bright and Clipping identify its groups at callout size. Labels sit
-  on an opaque-enough black backing for contrast, never on bare bright colours.
+  Very dark, Mid-tones, Bright and Near white identify its groups at callout size. Labels sit
+  below a thin bar with ticks on the opaque dark backing, never on bare bright colours.
   No strip band names a face target. Key retains exact ranges,
   grey-gap explanation and the received-picture qualification. The host keeps
   this strip outside the reading lane and centre of the subject.
@@ -318,14 +318,14 @@ Round 16 layout note: Check reading replaces the reading-status opener while a r
 ## Round 16 Builder B refinement
 
 - Keep the settled one-row, six-colour strip and Key popover. Four captions map
-  purple/blue to **Too dark**, green/pink to **Mid-tones**, yellow to **Bright**,
-  and red to **Clipping**. Clipping describes the near-white received picture,
+  purple/blue to **Very dark**, green/pink to **Mid-tones**, yellow to **Bright**,
+  and red to **Near white**. Near white describes the near-white received picture,
   not proof of camera sensor clipping. At narrow widths where the captions do
   not fit, retain all six swatches and Key rather than clipping the opener or
   shrinking the text. Key and accessible help make that limit
   explicit; the colour engine and ranges stay unchanged.
-- Exposure controls lead with the job before the technique: **Find blown
-  highlights · Zebras** for bright-area checks, **Check brightness · Zebras**
+- Exposure controls lead with the job before the technique: **Check bright
+  areas · Zebras** for bright-area checks, **Check brightness · Zebras**
   for the qualified reference, **Check custom brightness · Zebras** for custom
   levels, and **Check brightness · False colour**. Stripes flag areas to inspect;
   they do not prove lost detail. Face guidance stays with the **Face reference**
@@ -336,3 +336,25 @@ Round 16 layout note: Check reading replaces the reading-status opener while a r
 - The **Editor text size** opener has a disclosure chevron matching **Script
   details**, with the existing 24-point target and exact-opener focus return.
   Save state, word count and Linked remain quiet metadata.
+
+
+## Round 17 Builder B refinement
+
+- Keep the bottom-edge key, six original measurement colours and their exact
+  received-picture ranges. The key is a quiet, discrete scale: a thin colour
+  bar, small ticks and neutral labels below it. It never implies a continuous
+  range; the detailed Key explains grey gaps. At narrow widths, keep all six
+  colours and Key without shrinking captions.
+- The four captions are Very dark, Mid-tones, Bright and Near white. The red
+  band describes received brightness, never a verdict that detail is lost.
+  Bright-area zebras are labelled Check bright areas · Zebras. Key begins with
+  “Your camera’s own monitor is the final judge of exposure.” Face-reference,
+  flat-picture and custom-range qualifications remain with their guidance.
+- First use demonstrates Add text, Present and Read with three clickable
+  illustrated steps. The labelled example never changes scripts or settings,
+  starts capture or requests permission. Paste stays primary and Quick Reading
+  Practice remains directly available; Camera Only remains in the first
+  enlarged viewport. Reading and recording remain separate.
+- Reading settings explicitly apply to all scripts. The editor’s Reading text
+  size link uses underlined primary text with a 24-point target, aiming for
+  at least 7:1 contrast in both appearances.

@@ -4,8 +4,8 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class BuilderBRoundSixteenTests: XCTestCase {
-  func testStripSeparatesNearWhiteFromClippingWithoutAFaceTarget() async throws {
-    XCTAssertEqual(FalseColourStrip.captions, ["Too dark", "Mid-tones", "Bright", "Clipping"])
+  func testStripNamesReceivedBrightnessWithoutAFaceTarget() async throws {
+    XCTAssertEqual(FalseColourStrip.captions, ["Very dark", "Mid-tones", "Bright", "Near white"])
     XCTAssertEqual(FalseColourStrip.bandGroups, [0..<2, 2..<4, 4..<5, 5..<6])
     let camera = CameraModel(defaults: freshDefaults("BuilderBSixteenStrip"))
     camera.guides.falseColour = true
@@ -13,7 +13,7 @@ import XCTest
     defer { LibraryAX.close(window) }
     XCTAssertTrue(LibraryAX.named("Face", in: host).isEmpty)
     let bright = try XCTUnwrap(LibraryAX.named("Bright", in: host).first)
-    let clipping = try XCTUnwrap(LibraryAX.named("Clipping", in: host).first)
+    let clipping = try XCTUnwrap(LibraryAX.named("Near white", in: host).first)
     XCTAssertLessThanOrEqual(frame(bright).maxX, frame(clipping).minX)
     XCTAssertTrue(LibraryAX.value(clipping, "accessibilityHelp").contains("not proof of camera sensor clipping"))
   }
@@ -36,7 +36,7 @@ import XCTest
 
   func testSharedExposureSwitchesLeadWithTheJobAndRetainReferenceQualifications() async throws {
     let camera = CameraModel(defaults: freshDefaults("BuilderBSixteenExposure"))
-    XCTAssertEqual(ExposureLegend.zebraTitle(for: .brightAreas), "Find blown highlights · Zebras")
+    XCTAssertEqual(ExposureLegend.zebraTitle(for: .brightAreas), "Check bright areas · Zebras")
     XCTAssertTrue(ExposureGuidance.zebraLookFor(camera.guides).contains("do not prove"))
     camera.guides.useZebraPreset(.faceReference)
     let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped))

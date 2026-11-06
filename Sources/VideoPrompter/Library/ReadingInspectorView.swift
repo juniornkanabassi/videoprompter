@@ -17,6 +17,9 @@ struct ReadingSettingsPage: View {
   var body: some View {
     Form {
       Section("Following") {
+        Text("Reading settings apply to all scripts. Save a reading preset to reuse a look.")
+          .font(.callout).foregroundStyle(.primary)
+          .fixedSize(horizontal: false, vertical: true)
         if store.settings.mode == "Manual" { AutomaticScrollDelay(session: store.session) }
         ReadingChoice(title: "Mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode, zoom: store.uiZoom)
         if store.settings.mode == "Manual" {

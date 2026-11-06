@@ -116,7 +116,8 @@ import XCTest
       let button = try XCTUnwrap(LibraryAX.named("Reading text size…", in: host).first)
       let linkFrame = try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       XCTAssertTrue(window.convertToScreen(host.bounds).contains(linkFrame), "Reading link must stay visible at \(zoom)")
-      XCTAssertEqual(LibraryAX.value(button, "accessibilityRole"), "AXLink")
+      XCTAssertEqual(LibraryAX.value(button, "accessibilityRole"), "AXButton")
+      XCTAssertGreaterThanOrEqual(linkFrame.height, 24 * zoom)
       XCTAssertTrue(LibraryAX.bool(button, "isAccessibilityEnabled"))
       let readingSize = store.settings.fontSize
       let slider = try XCTUnwrap(LibraryAX.named("Editor text size", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXSlider" })
