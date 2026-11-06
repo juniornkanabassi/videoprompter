@@ -46,7 +46,7 @@ public struct PhraseMatcher: Sendable {
       let phrase = Array(words.suffix(min(words.count, 10)))
       let informative = phrase.filter { $0.count > 2 && !common.contains($0) }
       guard informative.count >= minimumBackwardTokens else {
-        if let match = localForwardMatch(words: words, script: script, current: current) { return match }
+        if let match = localForwardMatch(words: words, target: target, current: current) { return match }
         return forwardMatch(words: words, script: script, current: current)
       }
       let lo = max(0, current - backwardWindow)
@@ -62,7 +62,7 @@ public struct PhraseMatcher: Sendable {
         return PhraseMatch(tokenIndex: behind[0] + phrase.count - 1, score: 1, direction: .backward)
       }
     }
-    if let match = localForwardMatch(words: words, script: script, current: current) { return match }
+    if let match = localForwardMatch(words: words, target: target, current: current) { return match }
     return forwardMatch(words: words, script: script, current: current)
   }
   /// The tail of a fresh revision, when it continues the script exactly from the next token, is
@@ -94,9 +94,8 @@ public struct PhraseMatcher: Sendable {
     return nil
   }
   private func localForwardMatch(
-    words: [String], script: [DocumentToken], current: Int
+    words: [String], target: [String], current: Int
   ) -> PhraseMatch? {
-    let target = script.map(\.normalised)
     let start = current + 1
     guard start < target.count else { return nil }
     for wordStart in words.indices {
