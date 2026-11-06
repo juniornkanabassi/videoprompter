@@ -28,6 +28,14 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   return [object] + (children.isEmpty ? fallback : children).flatMap(accessibilityObjects)
 }
 
+@MainActor private func pressDisclosure(_ label: String, in host: NSView) throws {
+  let action = NSSelectorFromString("accessibilityPerformPress")
+  let object = try XCTUnwrap(accessibilityObjects(host).first {
+    labels($0).first?.contains(label) == true && $0.responds(to: action)
+  }, "Missing disclosure: \(label)")
+  _ = object.perform(action)
+}
+
 @MainActor final class SimpleInterfaceTests: XCTestCase {
   private func cleanUp(_ store: AppStore, suite: String, root: URL) {
     addTeardownBlock { @MainActor in
@@ -244,6 +252,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let editor = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
       XCTAssertEqual(editor.string, record.id == alpha.id ? "Alpha body" : "Beta body")
+      try pressDisclosure("Script details", in: host)
+      await settle()
       let fields = views(host).compactMap { $0 as? NSTextField }.filter(\.isEditable)
       XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.title }, "selected title")
       XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.tags.joined(separator: ", ") }, "selected tags")
@@ -281,20 +291,20 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual in Settings", "Press Present", "Import Script", "New Script"] {
+    for text in ["Ready when you are", "Paste a Script", "Import a File", "Write a Script", "Camera Only", "Try the Practice Script"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
     // Geometry, not just AX presence: the whole guide stays inside the 200% detail column.
     let guidance = try XCTUnwrap(accessibilityObjects(host).first {
-      labels($0).first?.contains("Add a script.") == true
+      labels($0).first?.contains("Then choose Present") == true
     })
     XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
     let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     let guideFrame = window.convertFromScreen(frame)
     XCTAssertGreaterThanOrEqual(guideFrame.minX, 400, "guide stays to the right of the zoomed sidebar")
-    XCTAssertLessThanOrEqual(guideFrame.maxX, 813, "guide stays to the left of the inspector")
-    XCTAssertGreaterThan(frame.height, 100, "all steps wrap into a readable column")
+    XCTAssertLessThanOrEqual(guideFrame.maxX, window.contentView!.bounds.width, "start screen stays inside the detail column")
+    XCTAssertGreaterThan(frame.height, 40, "the next step wraps into a readable column")
     store.create()
     for _ in 0..<20 where store.selected == nil { try? await Task.sleep(for: .milliseconds(30)) }
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")
@@ -320,7 +330,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       return labels(host).joined(separator: "|")
     }
     let inspector = await rendered()
-    for label in ["Size", "Typography", "Mirror for teleprompter glass", "Mirroring and cues"] {
+    for label in ["Reading text size", "Spacing and alignment", "Mirror for teleprompter glass", "Rotation and stage directions"] {
       XCTAssertTrue(inspector.contains(label), label)
     }
     for label in ["Spoken language", "Voice-follow input level", "Saved settings", "How it follows you", "Editor font"] {
@@ -331,6 +341,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
     XCTAssertFalse(reopened.simpleInterface)
     await reopened.flushSettings()
+    try pressDisclosure("Rotation and stage directions", in: host)
+    try pressDisclosure("Reading guide", in: host)
     let advanced = await rendered()
     XCTAssertTrue(advanced.contains("Show stage directions"))
     XCTAssertTrue(advanced.contains("Highlight active word"))

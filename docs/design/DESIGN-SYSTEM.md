@@ -9,3 +9,9 @@ Use `UIType.heading`, `body`, `secondary` and `caption` for application copy. Th
 The grid check rejects off-grid literal padding, stack spacing and corner radii in the audited application chrome. Runtime text/camera positioning and the established reading line are excluded so the typography cleanup cannot alter scrolling or speech following.
 
 Run `python3 checks/check-grid.py` and `zsh checks/check-snapshots.sh`. Snapshot output is intentionally offscreen native content, not a screen capture. Review the emitted PNGs; toolbar glass, active-window appearance and hardware video still require a live check.
+
+## Reading and library hierarchy
+
+`Library/ReadingInspectorView.swift` is the shared reading configuration. `InspectorView` remains an alias for compatibility. Keep the view/mode/font/size decisions visible and the detailed spacing, guide, backdrop and cue controls disclosed. Enlarged popup controls must retain a full readable current-value label even when the native popup abbreviates its title. Slider values must include units in accessibility values.
+
+The first-launch library starts with the user's job, not appearance controls. Keep library scopes independent from the scrolling document list and keep routine metadata in Script details. Broken-link and failed-save recovery stays visible. In rendered Markdown, callout blocks use the available text width and primary text for their titles; colour is supporting decoration. Hidden presenter cues must also be absent from accessible/selectable text, with source mapping retained for seeking.

@@ -315,7 +315,7 @@ struct ScriptTextView: NSViewRepresentable {
           attributed.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask), range: range)
         }
       }
-      let visible = model.visibleIndices()
+      var visible = model.visibleIndices()
       var blockRanges: [UUID: NSRange] = [:]
       for block in document.blocks {
         let source = block.sourceRange
@@ -326,22 +326,35 @@ struct ScriptTextView: NSViewRepresentable {
       }
       mappings = []
       dropScrollGeometry()
-      let plain = attributed.string as NSString
-      let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
+      var plain = attributed.string as NSString
+      var cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
         attributed.addAttribute(.foregroundColor, value: showCues ? textColour.withAlphaComponent(textOpacity * 0.42) : .clear, range: range)
       }
       if !showCues {
-        // ponytail: retain character ranges with subpixel cue width; use glyph suppression if long cues measurably affect wrapping.
-        for range in cueRanges {
-          var hiddenRange = range
-          let end = NSMaxRange(range)
-          if end < plain.length, let scalar = UnicodeScalar(plain.character(at: end)),
-            CharacterSet.whitespaces.contains(scalar)
-          { hiddenRange.length += 1 }
-          attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: hiddenRange)
-          attributed.addAttribute(.kern, value: CGFloat(0), range: hiddenRange)
+        // Remove hidden cues from the actual selectable/accessible string, then remap source
+        // offsets. Transparent glyphs still leak stage directions to assistive technology.
+        let removed = cueRanges.map { range -> NSRange in
+          var range = range
+          if NSMaxRange(range) < plain.length,
+            let scalar = UnicodeScalar(plain.character(at: NSMaxRange(range))),
+            CharacterSet.whitespaces.contains(scalar) { range.length += 1 }
+          return range
         }
+        visible = visible.compactMapValues { offset in
+          if removed.contains(where: { NSLocationInRange(offset, $0) }) { return nil }
+          return offset - removed.filter { NSMaxRange($0) <= offset }.reduce(0) { $0 + $1.length }
+        }
+        for range in removed.sorted(by: { $0.location > $1.location }) { attributed.deleteCharacters(in: range) }
+        plain = attributed.string as NSString
+        blockRanges.removeAll()
+        for block in document.blocks {
+          let indices = (block.sourceRange.location..<(block.sourceRange.location + block.sourceRange.length)).compactMap { visible[$0] }
+          if let low = indices.min(), let high = indices.max() {
+            blockRanges[block.id] = NSRange(location: low, length: high - low + 1)
+          }
+        }
+        cueRanges = []
       }
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
@@ -408,7 +421,7 @@ struct ScriptTextView: NSViewRepresentable {
     /// Read words dim; the current word is highlighted when that is on.
     private func readColour(_ index: Int) -> NSColor {
       let confirmed = lastConfirmedTokenIndex.map { index <= $0 } ?? false
-      let alpha = confirmed ? textOpacity * 0.38 : textOpacity
+      let alpha = confirmed ? textOpacity * 0.5 : textOpacity
       return index == tokenIndex && !confirmed && highlightActiveWord
         ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
     }

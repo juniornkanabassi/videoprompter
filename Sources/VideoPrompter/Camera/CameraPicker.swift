@@ -30,7 +30,7 @@ struct CameraPicker: View {
     let label = Self.label(for: model.selectedUID, in: model.devices)
     Button { isOpen.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text(label).lineLimit(1).truncationMode(.middle)
+        Text(label).fixedSize(horizontal: false, vertical: true)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
         Image(systemName: "chevron.up.chevron.down").imageScale(.small)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
@@ -41,13 +41,15 @@ struct CameraPicker: View {
     .accessibilityValue(label)
     .accessibilityHint("Lists the cameras with a live preview of each")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-      CameraPickerList(model: model) { isOpen = false }.uiZoom(zoom)
+      CameraPickerList(model: model, zoom: zoom) { isOpen = false }.uiZoom(zoom)
     }
   }
 }
 
-private struct CameraPickerList: View {
+struct CameraPickerList: View {
   @ObservedObject var model: CameraModel
+  var zoom = 1.0
+  var startsPreview = true
   let close: () -> Void
   @StateObject private var preview = CameraPickerPreview()
   /// The row under the pointer or the keyboard, which is the camera previewed.
@@ -57,15 +59,12 @@ private struct CameraPickerList: View {
   private var selected: String? { CameraModel.resolve(model.selectedUID, in: model.devices)?.uid }
 
   var body: some View {
-    HStack(alignment: .top, spacing: Space.md) {
-      VStack(alignment: .leading, spacing: 1) {
-        if model.devices.isEmpty {
-          Text("No camera found").foregroundStyle(.secondary).padding(Space.sm)
-        }
-        ForEach(model.devices, content: row)
+    Group {
+      if zoom >= 1.5 {
+        VStack(alignment: .leading, spacing: Space.md) { choices; pane }
+      } else {
+        HStack(alignment: .top, spacing: Space.md) { choices; pane }
       }
-      .frame(minWidth: 200, alignment: .leading)
-      pane
     }
     .padding(Space.md)
     .focusable()
@@ -75,8 +74,19 @@ private struct CameraPickerList: View {
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
     .onAppear { focused = true; highlighted = selected }
-    .onChange(of: highlighted) { _, uid in preview.show(uid, mirrored: model.mirrored) }
+    .onChange(of: highlighted) { _, uid in if startsPreview { preview.show(uid, mirrored: model.mirrored) } }
     .onDisappear { preview.stop() }
+  }
+
+  private var choices: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        if model.devices.isEmpty {
+          Text("No camera found").foregroundStyle(.primary).padding(Space.sm)
+        }
+        ForEach(model.devices, content: row)
+      }
+    }.frame(width: 240, height: min(180, max(44, CGFloat(model.devices.count) * 52)))
   }
 
   private func row(_ device: CameraDevice) -> some View {
@@ -85,7 +95,7 @@ private struct CameraPickerList: View {
     return Button { choose(device.uid) } label: {
       HStack(spacing: Space.sm) {
         Image(systemName: "checkmark").fontWeight(.semibold).opacity(isSelected ? 1 : 0)
-        Text(device.displayName).lineLimit(1)
+        Text(device.displayName).fixedSize(horizontal: false, vertical: true)
         Spacer(minLength: 0)
       }
       .padding(.horizontal, Space.sm)
@@ -125,7 +135,7 @@ private struct CameraPickerList: View {
       .clipShape(.rect(cornerRadius: Space.sm))
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(note ?? "Live preview of \(caption)")
-      Text(caption).font(UIType.caption).foregroundStyle(.secondary).lineLimit(1).frame(width: 240)
+      Text(caption).font(UIType.caption).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).frame(width: 240)
         .accessibilityHidden(true)
     }
   }

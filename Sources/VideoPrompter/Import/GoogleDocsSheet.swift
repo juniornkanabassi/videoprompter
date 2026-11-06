@@ -49,7 +49,7 @@ struct GoogleDocsSheet: View {
           ? "Any document your Google account can open."
           : google.canSignIn
             ? "Works for shared links. For private documents, sign in below."
-            : "This build imports shared links only. For a private document, download it from Google Docs as Word or text, then choose Add > Import File. You do not need to change sharing permissions.")
+            : "Paste a shared Google Docs link. For a private document, download it from Google Docs as Word or text, then choose Add > Import File. You do not need to change sharing permissions.")
           .foregroundStyle(.primary)
       }
 

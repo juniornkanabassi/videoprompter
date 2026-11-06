@@ -37,7 +37,7 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # Everything taken from the source tree is copied before the commit is stamped below.
-if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
+zsh "$ROOT/Resources/AppIcon/compile-icon.sh" "$APP/Contents/Resources"
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
 ENTITLEMENTS="$WORK/Entitlements.plist"   # signed from this copy, so a later edit to the source cannot reach the app
 cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"

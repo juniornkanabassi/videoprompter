@@ -514,14 +514,14 @@ final class FormattedMarkdownEditorTests: XCTestCase {
       let at = (view.string as NSString).range(of: word).location
       return (view.textStorage?.attribute(.foregroundColor, at: at, effectiveRange: nil) as? NSColor)?.alphaComponent ?? -1
     }
-    XCTAssertEqual(alpha("First"), 0.9 * 0.38, accuracy: 0.01, "read: greyed")
-    XCTAssertEqual(alpha("already"), 0.9 * 0.38, accuracy: 0.01)
+    XCTAssertEqual(alpha("First"), 0.9 * 0.5, accuracy: 0.01, "read: greyed")
+    XCTAssertEqual(alpha("already"), 0.9 * 0.5, accuracy: 0.01)
     XCTAssertEqual(alpha("Then"), 0.9, accuracy: 0.01, "not read yet: full")
     XCTAssertEqual(view.selectedRange().length, 0, "nothing is selected")
 
     value = "A new opening. " + value
     coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24, typography: white, readThrough: readThrough)
-    XCTAssertEqual(alpha("First"), 0.9 * 0.38, accuracy: 0.01, "an edit before it moves the edge with the text")
+    XCTAssertEqual(alpha("First"), 0.9 * 0.5, accuracy: 0.01, "an edit before it moves the edge with the text")
     XCTAssertEqual(alpha("Then"), 0.9, accuracy: 0.01)
 
     coordinator.configure(view, markdown: value, fontName: "Helvetica", fontSize: 24, typography: white)
@@ -556,7 +556,7 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     XCTAssertEqual(rendered.string, "Before.\n\nGraphic — the quote\nOn screen, his words.\nSource: Opta.\n\nAfter.")
     let text = rendered.string as NSString
     let title = text.range(of: "Graphic")
-    XCTAssertEqual(rendered.attribute(.foregroundColor, at: title.location, effectiveRange: nil) as? NSColor, .systemBlue)
+    XCTAssertEqual(rendered.attribute(.foregroundColor, at: title.location, effectiveRange: nil) as? NSColor, .labelColor)
     XCTAssertTrue((rendered.attribute(.font, at: title.location, effectiveRange: nil) as? NSFont)?
       .fontDescriptor.symbolicTraits.contains(.bold) == true)
     let his = text.range(of: "his")
@@ -574,7 +574,7 @@ final class FormattedMarkdownEditorTests: XCTestCase {
     // Title-less callouts show their type; other types take their colour family.
     let bare = FormattedMarkdownEditModel(markdown: "> [!warning]\n> Careful").rendered()
     XCTAssertEqual(bare.string, "Warning\nCareful")
-    XCTAssertEqual(bare.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .systemOrange)
+    XCTAssertEqual(bare.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor, .labelColor)
     // A plain quote keeps its current rendering.
     XCTAssertEqual(FormattedMarkdownEditModel(markdown: "> just a quote").rendered().string, "just a quote")
   }

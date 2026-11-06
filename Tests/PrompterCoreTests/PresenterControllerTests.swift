@@ -46,7 +46,7 @@ final class PresenterControllerTests: XCTestCase {
       for (range, index) in coordinator.mappings {
         let colour = try XCTUnwrap(view.textStorage?.attribute(.foregroundColor, at: range.location,
           effectiveRange: nil) as? NSColor)
-        XCTAssertEqual(colour.alphaComponent, index <= (confirmed ?? -1) ? 0.8 * 0.38 : 0.8,
+        XCTAssertEqual(colour.alphaComponent, index <= (confirmed ?? -1) ? 0.8 * 0.5 : 0.8,
           accuracy: 0.02, "current \(current), confirmed \(String(describing: confirmed)), word \(index)")
         if index == current, confirmed.map({ index > $0 }) ?? true {
           XCTAssertEqual(colour, NSColor.systemYellow.withAlphaComponent(0.8))
@@ -345,7 +345,7 @@ final class PresenterControllerTests: XCTestCase {
     let plain = rendered("Hello world", showCues: false, width: 220)
     let hidden = rendered("Hello [pause] world", showCues: false, width: 220)
     let visible = rendered("Hello [pause] world", showCues: true, width: 220)
-    XCTAssertEqual(hidden.0.string, "Hello [pause] world")
+    XCTAssertEqual(hidden.0.string, "Hello world")
     XCTAssertEqual(hidden.1.mappings.count, 2)
     XCTAssertEqual(rect(of: "world", in: hidden).minX, rect(of: "world", in: plain).minX, accuracy: 1)
     XCTAssertEqual(rect(of: "world", in: hidden).minY, rect(of: "world", in: plain).minY, accuracy: 1)
@@ -371,7 +371,7 @@ final class PresenterControllerTests: XCTestCase {
     coordinator.updateReadState()
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let second = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
-    XCTAssertEqual(first?.alphaComponent ?? 0, 0.6 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(first?.alphaComponent ?? 0, 0.6 * 0.5, accuracy: 0.02)
     XCTAssertEqual(second?.alphaComponent ?? 0, 0.6, accuracy: 0.02)
   }
 
@@ -446,11 +446,7 @@ final class PresenterControllerTests: XCTestCase {
       alignment: "Right", showCues: false, highlightActiveWord: false)
     XCTAssertEqual(coordinator.mappings.count, 3)
     let cue = (view.string as NSString).range(of: "[pause]")
-    XCTAssertNotEqual(cue.location, NSNotFound)
-    for position in [cue.location, cue.location + cue.length - 1] {
-      XCTAssertEqual((view.textStorage?.attribute(.foregroundColor, at: position, effectiveRange: nil) as? NSColor)?.alphaComponent ?? -1, 0, accuracy: 0.01)
-    }
-    XCTAssertEqual((view.textStorage?.attribute(.foregroundColor, at: cue.location + 1, effectiveRange: nil) as? NSColor)?.alphaComponent ?? 0, 0, accuracy: CGFloat(0.01))
+    XCTAssertEqual(cue.location, NSNotFound, "Hidden cues must not remain in accessible text")
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     XCTAssertEqual(first?.greenComponent ?? 0, 1, accuracy: 0.01)
     coordinator.tokenIndex = 1
@@ -458,7 +454,7 @@ final class PresenterControllerTests: XCTestCase {
     coordinator.updateReadState()
     let dimmed = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let current = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
-    XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.8 * 0.5, accuracy: 0.02)
     XCTAssertEqual(current?.greenComponent ?? 0, 1, accuracy: 0.01)
     let paragraph = view.textStorage?.attribute(.paragraphStyle, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSParagraphStyle
     XCTAssertEqual(paragraph?.alignment, .right)
@@ -482,7 +478,7 @@ final class PresenterControllerTests: XCTestCase {
     let first = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let second = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
     let third = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[2].0.location, effectiveRange: nil) as? NSColor
-    XCTAssertEqual(first?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(first?.alphaComponent ?? 0, 0.8 * 0.5, accuracy: 0.02)
     XCTAssertEqual(second?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
     XCTAssertEqual(third?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
   }
@@ -503,8 +499,8 @@ final class PresenterControllerTests: XCTestCase {
     let word = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[0].0.location, effectiveRange: nil) as? NSColor
     let punctuation = view.textStorage?.attribute(.foregroundColor, at: comma, effectiveRange: nil) as? NSColor
     let next = view.textStorage?.attribute(.foregroundColor, at: coordinator.mappings[1].0.location, effectiveRange: nil) as? NSColor
-    XCTAssertEqual(word?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
-    XCTAssertEqual(punctuation?.alphaComponent ?? 0, 0.8 * 0.38, accuracy: 0.02)
+    XCTAssertEqual(word?.alphaComponent ?? 0, 0.8 * 0.5, accuracy: 0.02)
+    XCTAssertEqual(punctuation?.alphaComponent ?? 0, 0.8 * 0.5, accuracy: 0.02)
     XCTAssertEqual(next?.alphaComponent ?? 0, 0.8, accuracy: 0.02)
     coordinator.tokenIndex = 1
     coordinator.lastConfirmedTokenIndex = nil
@@ -554,7 +550,7 @@ final class PresenterControllerTests: XCTestCase {
     let marker = try shown(one)
     XCTAssertEqual(plain.substring(with: marker), "1.")
     let dimmed = text.textStorage?.attribute(.foregroundColor, at: marker.location, effectiveRange: nil) as? NSColor
-    XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.38, accuracy: 0.02, "a read number dims like a read word")
+    XCTAssertEqual(dimmed?.alphaComponent ?? 0, 0.5, accuracy: 0.02, "a read number dims like a read word")
 
   }
 
@@ -625,8 +621,10 @@ final class PresenterControllerTests: XCTestCase {
         coordinator.render(document: PrompterDocument(markdown: markdown), fontName: "Helvetica", fontSize: 24,
           textOpacity: 1, lineSpacing: 0.5, paragraphSpacing: 0.8, showCues: showCues)
         let actual = measure(presenter)
-        XCTAssertEqual(presenter.string, editor.string, name)
-        XCTAssertEqual(actual.styles.count, expected.styles.count, name)
+        if showCues {
+          XCTAssertEqual(presenter.string, editor.string, name)
+          XCTAssertEqual(actual.styles.count, expected.styles.count, name)
+        }
         for (left, right) in zip(actual.styles, expected.styles) {
           XCTAssertEqual(left[0], right[0], accuracy: 0.001, name)  // line spacing
           XCTAssertEqual(left[1], right[1], accuracy: 0.001, name)  // paragraph spacing
@@ -1498,7 +1496,7 @@ final class PresenterControllerTests: XCTestCase {
       for (range, index) in coordinator.mappings {
         XCTAssertTrue(plain.substring(with: range).hasPrefix(document.spokenTokens[index].text))
         let colour = view.textStorage?.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor
-        XCTAssertEqual(colour?.alphaComponent ?? 0, index <= graphic ? 0.38 : 1, accuracy: 0.02, "\(index)")
+        XCTAssertEqual(colour?.alphaComponent ?? 0, index <= graphic ? 0.5 : 1, accuracy: 0.02, "\(index)")
       }
     }
   }
