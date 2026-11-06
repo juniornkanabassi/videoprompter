@@ -484,8 +484,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(headings.lastConfirmedTokenIndex, 5)
     let drawn = outlineSurface.text.string as NSString
     let cue = drawn.range(of: "[INTRO MUSIC]")
-    XCTAssertNotEqual(cue.location, NSNotFound)
-    XCTAssertEqual(outlineSurface.alpha(at: cue.location + 1), 0, accuracy: 0.01, "hidden cues stay hidden")
+    XCTAssertEqual(cue.location, NSNotFound, "hidden cues are absent from selectable and accessible text")
   }
 
   // MARK: Transport
@@ -690,8 +689,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     let drawn = surface.text.string as NSString
     for cue in ["[WALK IN]", "[PAUSE]", "[BEAT]"] {
       let range = drawn.range(of: cue)
-      XCTAssertNotEqual(range.location, NSNotFound, cue)
-      XCTAssertEqual(surface.alpha(at: range.location + 1), 0, accuracy: 0.01, "\(cue) must stay hidden after reading past it")
+      XCTAssertEqual(range.location, NSNotFound, "\(cue) must be absent after reading past it")
     }
     // Shown cues are dimmed, not read.
     store.settings.showCues = true

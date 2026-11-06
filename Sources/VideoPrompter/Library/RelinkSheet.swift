@@ -22,22 +22,41 @@ struct RelinkSheet: View {
   @State private var searching = false
   @State private var chosen: URL?
   @State private var problem: String?
+  @State private var comparison: RelinkComparison?
+  @State private var committing = false
+  @State private var completed = false
+  @State private var preservedVersion = false
 
   private var savedPath: String { script.metadata.linkedPath ?? "" }
   private var isNewLink: Bool { script.metadata.linkedPath == nil }
 
   var body: some View {
+    ScrollView {
     VStack(alignment: .leading, spacing: Space.md) {
       Text("\(isNewLink ? "Link" : "Relink") “\(script.metadata.title)”").font(UIType.heading)
       Text(isNewLink ? "Choose the Markdown file this script should follow." : "The linked file is no longer at \(savedPath).")
-        .font(UIType.secondary).foregroundStyle(.secondary)
-      if let chosen { confirmation(chosen) } else { picker }
-      if let problem { Text(problem).font(UIType.secondary).foregroundStyle(.orange) }
+        .font(UIType.secondary).foregroundStyle(.primary)
+      if completed {
+        Label("Your scripts are saved.", systemImage: "checkmark.circle")
+        if preservedVersion {
+          Button("Show Preserved Versions") {
+            Task {
+              guard let library = store.library else { return }
+              let root = await library.rootURL
+              NSWorkspace.shared.open(root.appendingPathComponent("Conflicts"))
+            }
+          }.help("Open the folder containing the version saved before replacement")
+        } else {
+          Text("Both versions are available in your script library.")
+        }
+      } else if let chosen { confirmation(chosen) } else { picker }
+      if let problem { Label(problem, systemImage: "exclamationmark.triangle").font(UIType.secondary).foregroundStyle(.primary) }
       HStack {
         Spacer()
-        Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).help("Close without linking a file")
+        Button(completed ? "Done" : "Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).help(completed ? "Close this confirmation" : "Close without linking a file")
       }
-    }.padding(Space.xxl).frame(minWidth: 640)
+    }.padding(Space.xxl)
+    }.frame(minWidth: 520, idealWidth: 640, minHeight: 320, idealHeight: 600)
   }
 
   private var picker: some View {
@@ -71,22 +90,46 @@ struct RelinkSheet: View {
   private func confirmation(_ url: URL) -> some View {
     VStack(alignment: .leading, spacing: Space.md) {
       Label(url.path, systemImage: "doc.text").lineLimit(2).truncationMode(.middle)
-      Text("Which text should win? The other side is first copied into the library's Conflicts folder.")
-        .font(UIType.secondary)
-      HStack {
-        choice("Keep Library Text", .keepLibrary, url)
-        choice("Use File Text", .useFile, url)
-        choice("Keep Both", .keepBoth, url)
+      if let comparison {
+        RelinkComparisonView(comparison: comparison)
+        Text("Choose which version to use. A replaced version is preserved before anything changes.")
+          .font(UIType.secondary)
+        ViewThatFits(in: .horizontal) {
+          HStack { choices(url) }
+          VStack(alignment: .leading, spacing: Space.sm) { choices(url) }
+        }.disabled(committing)
+        Text("Keep Both leaves this script unchanged and imports the file as a separate linked script.")
+          .font(UIType.secondary)
       }
-      Text("Keep Both leaves this script as it is, unlinked, and imports the file as a new linked script.")
-        .font(UIType.caption).foregroundStyle(.secondary)
-      Button("Choose a Different File") { chosen = nil; problem = nil }.buttonStyle(.link).help("Return to the file choices")
+      Button("Choose a Different File") { chosen = nil; comparison = nil; problem = nil }.buttonStyle(.link).help("Return to the file choices")
     }
   }
+  @ViewBuilder private func choices(_ url: URL) -> some View {
+    choice("Use Script Text", .keepLibrary, url)
+    choice("Use File Text", .useFile, url)
+    choice("Keep Both", .keepBoth, url)
+  }
+
   private func choice(_ title: String, _ resolution: RelinkResolution, _ url: URL) -> some View {
     Button(title) {
       Task {
-        if await store.relink(script.metadata.id, to: url, resolution: resolution) { dismiss() }
+        guard let comparison else { return }
+        committing = true
+        defer { committing = false }
+        guard await store.library?.relinkTargetFingerprint(url) == comparison.fingerprint,
+          store.scripts.first(where: { $0.id == script.id })?.markdown == comparison.libraryText else {
+          problem = "A version changed while you were comparing. Choose the file again to review the latest text."
+          chosen = nil; self.comparison = nil
+          return
+        }
+        if await store.relink(script.metadata.id, to: url, resolution: resolution) {
+          switch resolution {
+          case .keepBoth: preservedVersion = false
+          default: preservedVersion = true
+          }
+          completed = true
+          LibraryAnnouncement.post("Your scripts are saved.")
+        }
       }
     }.help("Resolve the differing text; the other version is copied before any replacement")
   }
@@ -105,12 +148,22 @@ struct RelinkSheet: View {
 
   /// Only a file the library itself would accept can be selected.
   private func select(_ url: URL) async {
-    guard await store.library?.relinkTargetFingerprint(url) != nil else {
+    guard let fingerprint = await store.library?.relinkTargetFingerprint(url) else {
       problem = "That file cannot be linked. It must be a regular Markdown file under 20 MB, not a shortcut, and outside the library."
       return
     }
-    problem = nil
-    chosen = url
+    do {
+      let fileText = try String(contentsOf: url, encoding: .utf8)
+      guard await store.library?.relinkTargetFingerprint(url) == fingerprint else {
+        problem = "The file changed while opening it. Choose it again to compare the latest text."
+        return
+      }
+      let date = try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+      comparison = RelinkComparison(libraryText: script.markdown, fileText: fileText,
+        libraryDate: script.metadata.modifiedAt, fileDate: date, fingerprint: fingerprint)
+      problem = nil
+      chosen = url
+    } catch { problem = "The file could not be read. Choose it again or select a different file." }
   }
 
   private func search() async {
@@ -169,5 +222,35 @@ struct RelinkSheet: View {
     query.stop()
     if let observer { NotificationCenter.default.removeObserver(observer) }
     continuation.resume(returning: items.compactMap { $0.value(forAttribute: NSMetadataItemPathKey) as? String })
+  }
+}
+
+struct RelinkComparison {
+  let libraryText: String
+  let fileText: String
+  let libraryDate: Date
+  let fileDate: Date?
+  let fingerprint: String
+}
+
+struct RelinkComparisonView: View {
+  let comparison: RelinkComparison
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.md) {
+      Text(comparison.libraryText == comparison.fileText ? "Both versions contain the same text." : "These versions contain different text.")
+        .font(.headline)
+      preview("Script in Video Prompter", text: comparison.libraryText, date: comparison.libraryDate)
+      preview("Chosen file", text: comparison.fileText, date: comparison.fileDate)
+    }
+  }
+  private func preview(_ title: String, text: String, date: Date?) -> some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Text(title).font(.headline)
+      if let date { Text(date, format: .dateTime.day().month().year().hour().minute()).font(.callout) }
+      ScrollView {
+        Text(text.isEmpty ? "Empty script" : text).textSelection(.enabled)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }.frame(height: 120).padding(Space.sm).background(.background, in: .rect(cornerRadius: Space.xs))
+    }.foregroundStyle(.primary)
   }
 }

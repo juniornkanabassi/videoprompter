@@ -50,7 +50,7 @@ final class PresenterObservationTests: XCTestCase {
     func alpha() -> CGFloat {
       (text.textStorage?.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor)?.alphaComponent ?? 0
     }
-    XCTAssertEqual(alpha(), 0.38, accuracy: 0.01)
+    XCTAssertEqual(alpha(), 0.5, accuracy: 0.01)
     session.seek(to: 0)
     for _ in 0..<30 where alpha() < 0.99 {
       host.layoutSubtreeIfNeeded()

@@ -366,7 +366,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       let range = NSRange(location: 0, length: min(end, greyed.length))
       greyed.enumerateAttribute(.foregroundColor, in: range) { value, part, _ in
         let colour = (value as? NSColor) ?? typography.textColor
-        greyed.addAttribute(.foregroundColor, value: colour.withAlphaComponent(colour.alphaComponent * 0.38), range: part)
+        greyed.addAttribute(.foregroundColor, value: colour.withAlphaComponent(colour.alphaComponent * 0.5), range: part)
       }
       return greyed
     }
@@ -655,6 +655,7 @@ struct FormattedMarkdownEditModel {
     let key = "\(colour)|\(padding)|\(alternate)"
     if let box = calloutBoxes[key] { return box }
     let box = NSTextBlock()
+    box.setValue(100, type: .percentageValueType, for: .width)
     box.backgroundColor = colour.withAlphaComponent(0.12)
     box.setBorderColor(colour)
     box.setWidth(3, type: .absoluteValueType, for: .border, edge: .minX)
@@ -842,7 +843,7 @@ struct FormattedMarkdownEditModel {
         output.addAttribute(.paragraphStyle, value: style, range: range)
       }
       guard callout.title.length > 0 else { continue }
-      output.addAttribute(.foregroundColor, value: callout.colour, range: callout.title)
+      output.addAttribute(.foregroundColor, value: typography.textColor, range: callout.title)
       output.enumerateAttribute(.font, in: callout.title) { value, range, _ in
         guard let font = value as? NSFont else { return }
         output.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask), range: range)

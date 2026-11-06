@@ -1,0 +1,83 @@
+{
+  "fill": {
+    "solid": "srgb:0,0,0,0"
+  },
+  "groups": [
+    {
+      "name": "Approved microphone and script",
+      "layers": [
+        {
+          "name": "Default",
+          "image-name": "VideoPrompter.png",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Dark",
+          "image-name": "VideoPrompter-Dark.png",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Tinted",
+          "image-name": "VideoPrompter-Tinted.png",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "specular": false
+    }
+  ],
+  "supported-platforms": {
+    "squares": [
+      "macOS"
+    ]
+  }
+}

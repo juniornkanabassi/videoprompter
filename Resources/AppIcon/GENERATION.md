@@ -22,3 +22,11 @@ Junior approved an amber tile retaining the dark microphone and white script as 
 ## 6 November 2026 alpha repair
 
 The approved artwork is retained. Two image-tool cutout attempts left exterior speckles, so the packaged master uses a deterministic border-connected exterior mask. Only near-black pixels connected to the image boundary are made transparent; the microphone's enclosed dark pixels remain intact. Every legacy ICNS representation is regenerated with high-quality downsampling and transparent corners. This is an alpha/export repair, not new icon artwork.
+
+## 6 November 2026 appearance variants
+
+`VideoPrompter.icon` is now the shipping Icon Composer source. Its default layer contains the unchanged approved white master. Separate Dark and Tinted layers were generated from that master using the built-in image tool, preserving the microphone/page composition. The tinted layer has no coral; Icon Composer applies the chosen system tint. The exterior is masked by the native icon renderer. The original master, iconset and ICNS remain available for provenance.
+
+`compile-icon.sh <destination>` compiles the three appearances with Apple's `actool` into `Assets.car` and `VideoPrompter.icns`. `build.sh` invokes this resource-only step; `Info.plist` names VideoPrompter. No release was built or installed during this change. Offscreen `ictool` exports at 16, 32 and 64 points are in `docs/design/round-2-library/icons/`.
+
+Generated source images: built-in image tool outputs `exec-65b91f39-a087-4a86-af41-75334e096961.png` (dark) and `exec-04b8ffa8-a953-4862-a112-9b6944401634.png` (tinted). Canonical copies live inside the Icon Composer Assets directory. These are bitmap appearance layers, not separate editable microphone/page geometry.

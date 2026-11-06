@@ -7,7 +7,9 @@
 	<key>CFBundleExecutable</key>
 	<string>VideoPrompter</string>
 	<key>CFBundleIconFile</key>
-	<string>AppIcon</string>
+	<string>VideoPrompter</string>
+	<key>CFBundleIconName</key>
+	<string>VideoPrompter</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.juniornkanabassi.VidPrompt</string>
 	<key>CFBundleName</key>

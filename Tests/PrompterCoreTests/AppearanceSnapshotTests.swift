@@ -14,12 +14,15 @@ import XCTest
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.prohibited)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("VideoPrompter-snapshot-fixture-\(UUID())", isDirectory: true)
+    let previousCloud = ICloudScripts.cloudDocsOverride
+    ICloudScripts.cloudDocsOverride = root.appendingPathComponent("UnavailableCloud")
     let suite = "VideoPrompter.Appearance.\(UUID())"
     let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
     let store = AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults)
     addTeardownBlock { @MainActor in
       _ = await store.flushPendingSaves()
       TestDefaults.remove(suite)
+      ICloudScripts.cloudDocsOverride = previousCloud
       try? FileManager.default.removeItem(at: root)
     }
     let record = try await store.createScript(title: "A clear opening", markdown: "# A clear opening\n\nRead these opening words at your own pace.\n\nA second paragraph keeps the reading line easy to follow.\n\n**Important words** stay clear, with a [reference](https://example.com).")
@@ -93,6 +96,60 @@ import XCTest
       try await snapshot(IPadRemoteView(link: link, startsLink: false), name: "ipad-remote-\(mode)", size: .init(width: 480, height: 420), scheme: scheme, destination: destination)
     }
     XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible }, "Snapshots must never order windows")
+  }
+
+  func testFirstLaunchRecoveryAndGrowingLibrary() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.prohibited)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("LibraryRoundTwo-\(UUID())")
+    let previousCloud = ICloudScripts.cloudDocsOverride
+    ICloudScripts.cloudDocsOverride = root.appendingPathComponent("UnavailableCloud")
+    let suite = "LibraryRoundTwo.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    let store = AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    await store.waitForWelcomeScript()
+    let camera = CameraModel(defaults: defaults)
+    let destination = URL(fileURLWithPath: output)
+    let previous = NSApp.appearance
+    defer { NSApp.appearance = previous }
+    addTeardownBlock { @MainActor in
+      _ = await store.flushPendingSaves()
+      TestDefaults.remove(suite)
+      ICloudScripts.cloudDocsOverride = previousCloud
+      try? FileManager.default.removeItem(at: root)
+    }
+    let comparison = RelinkComparison(libraryText: "# Opening\n\nBonjour à tous. Here is the saved draft.\n\nThe second paragraph contains the original ending.",
+      fileText: "# Opening\n\nBonjour à tous. Here is the revised draft.\n\nA different ending for today's recording.",
+      libraryDate: Date(timeIntervalSince1970: 1793966400), fileDate: Date(timeIntervalSince1970: 1793970000), fingerprint: "fixture")
+    for (mode, appearance, scheme) in [("light", NSAppearance.Name.aqua, ColorScheme.light), ("dark", .darkAqua, .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      NSApp.appearance = NSAppearance(named: appearance)
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom
+        try await snapshot(LibraryView(store: store, camera: camera), name: "first-launch-\(Int(zoom * 100))-\(mode)", size: .init(width: 1132, height: 800), scheme: scheme, destination: destination)
+        try await snapshot(CameraPickerList(model: camera, zoom: zoom, startsPreview: false, close: {}).uiZoom(zoom), name: "camera-picker-\(Int(zoom * 100))-\(mode)", size: .init(width: 600, height: 700), scheme: scheme, destination: destination)
+        try await snapshot(RelinkComparisonView(comparison: comparison).padding(24).uiZoom(zoom), name: "relink-comparison-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 800), scheme: scheme, destination: destination)
+      }
+      store.uiZoom = 1
+      var markdown = WelcomeScript.markdown
+      try await snapshot(FormattedMarkdownEditor(markdown: Binding(get: { markdown }, set: { markdown = $0 }), fontName: "Helvetica Neue", fontSize: 18).padding(24), name: "welcome-callout-\(mode)", size: .init(width: 650, height: 850), scheme: scheme, destination: destination)
+    }
+    for index in 1...100 {
+      _ = try await store.createScript(title: "Episode \(index): A longer title about football and recording", markdown: "Script \(index)")
+    }
+    for index in 1...12 { _ = try await store.createLibraryFolder(named: "Series \(index)") }
+    store.selectedID = store.scripts.first?.id
+    store.inspector = false
+    for (mode, appearance, scheme) in [("light", NSAppearance.Name.aqua, ColorScheme.light), ("dark", .darkAqua, .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      NSApp.appearance = NSAppearance(named: appearance)
+      for zoom in [1.0, 2.0] {
+        store.uiZoom = zoom
+        try await snapshot(LibraryView(store: store, camera: camera), name: "library-100-scripts-\(Int(zoom * 100))-\(mode)", size: .init(width: 1132, height: 800), scheme: scheme, destination: destination)
+      }
+    }
+    XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible })
   }
 
   private func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
