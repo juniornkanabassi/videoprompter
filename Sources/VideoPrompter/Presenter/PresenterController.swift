@@ -952,7 +952,7 @@ struct PresenterView: View {
   private var barContent: some View {
     VStack(spacing: 0) {
       transport
-      HStack(alignment: .top, spacing: Space.sm) {
+      HStack(alignment: .center, spacing: Space.sm) {
         if hasScript && camera.displayMode != .videoOnly {
           Button { showsReadingControls.toggle() } label: {
             Text(hasBottomNotice ? "Check reading…" : visibleReadingStatus)
@@ -1164,7 +1164,7 @@ struct PresenterView: View {
       HStack(spacing: Space.xs) {
         Text("Tools")
         Image(systemName: "chevron.down").imageScale(.small)
-      }.fixedSize()
+      }.fixedSize().frame(minHeight: 24).contentShape(Rectangle())
     }.accessibilityLabel("Tools")
       .accessibilityHint("Text, Camera, Exposure and Microphone controls")
       .focused($focusedTool, equals: "Tools")

@@ -49,7 +49,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(view, size: .init(width: 720, height: 520))
       host.sizingOptions = []; host.frame = .init(x: 0, y: 0, width: 720, height: 520)
       for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      for name in ["Guides", "Exposure check", "Switch camera"] {
+      for name in ["Guides", "Exposure check", "Switch camera", "Tools"] {
         let action = try XCTUnwrap(LibraryAX.named(name, in: host).first, name)
         XCTAssertTrue(LibraryAX.bool(action, "isAccessibilityEnabled"))
         let frame = try XCTUnwrap(action.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -121,6 +121,7 @@ extension AppearanceSnapshotTests {
       for state in ["ready", "camera", "exposure", "failed", "clean", "recording", "saved"] {
         let recorder = CameraRecorder(defaults: defaults)
         camera.recorder = recorder
+        camera.displayMode = state == "camera" ? .videoOnly : .prompterWithVideo
         camera.cleanView = state == "clean"; camera.guides.falseColour = state == "exposure"
         recorder.phase = state == "recording" ? .recording : .idle
         recorder.phase = .recording; recorder.errorMessage = state == "failed" ? "Camera disconnected." : nil
