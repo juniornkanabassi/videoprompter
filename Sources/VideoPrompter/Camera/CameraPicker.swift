@@ -65,7 +65,9 @@ struct CameraPickerList: View {
   /// The row under the pointer or the keyboard, which is the camera previewed.
   @State private var highlighted: String?
   @State private var navigated = false
-  @FocusState private var focused: Bool
+  @FocusState private var emptyFocused: Bool
+  @FocusState private var keyboardCameraUID: String?
+  @AccessibilityFocusState private var focusedCameraUID: String?
 
   private var selected: String? { CameraModel.resolve(model.selectedUID, in: devices)?.uid }
 
@@ -79,7 +81,7 @@ struct CameraPickerList: View {
               .onChange(of: highlighted) { _, uid in
                 if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
               }
-              .onAppear { if let selected, model.authorization == .authorized { proxy.scrollTo(selected) } }
+              .onAppear { if let selected { proxy.scrollTo(selected) } }
           }
         }.frame(width: 240, height: 300)
       } else {
@@ -87,13 +89,20 @@ struct CameraPickerList: View {
       }
     }
     .padding(Space.md)
-    .focusable()
-    .focused($focused)
+    .focusable(devices.isEmpty)
+    .focused($emptyFocused)
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .onAppear { focused = true; highlighted = selected }
+    .onAppear {
+      highlighted = selected ?? devices.first?.uid
+      DispatchQueue.main.async {
+        emptyFocused = devices.isEmpty
+        keyboardCameraUID = highlighted
+        focusedCameraUID = highlighted
+      }
+    }
     .onChange(of: highlighted) { _, uid in if startsPreview { preview.show(uid, mirrored: model.mirrored) } }
     .onChange(of: model.authorization) { _, _ in
       if startsPreview { preview.show(highlighted, mirrored: model.mirrored) }
@@ -109,7 +118,7 @@ struct CameraPickerList: View {
       .onChange(of: highlighted) { _, uid in
         if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
       }
-      .onAppear { if let selected, model.authorization == .authorized { proxy.scrollTo(selected) } }
+      .onAppear { if let selected { proxy.scrollTo(selected) } }
     }.frame(width: 240, height: devices.isEmpty || model.authorization != .authorized ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
   }
 
@@ -168,7 +177,8 @@ struct CameraPickerList: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .focusable(false)
+    .focusable()
+    .focused($keyboardCameraUID, equals: device.uid)
     .onHover { inside in
       if inside {
         navigated = true
@@ -178,6 +188,7 @@ struct CameraPickerList: View {
       }
     }
     .accessibilityLabel(device.displayName)
+    .accessibilityFocused($focusedCameraUID, equals: device.uid)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
     .accessibilityValue(Self.rowStatus(selected: isSelected, highlighted: isHighlighted, authorization: model.authorization))
   }
@@ -230,6 +241,8 @@ struct CameraPickerList: View {
   private func move(_ step: Int) -> KeyPress.Result {
     navigated = true
     highlighted = Self.nextHighlight(highlighted, selected: selected, devices: devices, step: step)
+    keyboardCameraUID = highlighted
+    focusedCameraUID = highlighted
     if let device = devices.first(where: { $0.uid == highlighted }) {
       LibraryAnnouncement.post(device.displayName + ". " + Self.rowStatus(selected: device.uid == selected, highlighted: true, authorization: model.authorization))
     }

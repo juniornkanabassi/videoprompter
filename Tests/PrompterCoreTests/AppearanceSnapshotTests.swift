@@ -396,7 +396,8 @@ import XCTest
       host.displayIfNeeded()
       host.cacheDisplay(in: host.bounds, to: bitmap)
     }
-    if name.hasPrefix("r8-") {
+    // The exposure fixture is now a colour strip, not a reading heading.
+    if name.hasPrefix("r8-") && !name.hasPrefix("r8-exposure-key-") {
       func headingSamples() -> Int {
         stride(from: 40, to: bitmap.pixelsHigh / 2, by: 4).reduce(0) { total, y in
           total + stride(from: 50, to: bitmap.pixelsWide - 50, by: 4).filter { x in

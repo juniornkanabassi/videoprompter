@@ -4,7 +4,7 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class BuilderBRoundThirteenTests: XCTestCase {
-  func testEveryBandAndZebraLimitAreVisibleWithoutScrollingAtEveryZoom() async throws {
+  func testEveryBandStaysOnOneLineWithNumbersDisclosedAtEveryZoom() async throws {
     let camera = CameraModel(defaults: freshDefaults("BuilderBThirteen"))
     camera.guides.zebras = true
     camera.guides.falseColour = true
@@ -19,7 +19,6 @@ import XCTest
       let bounds = host.convert(host.bounds, to: nil)
       let screenBounds = window.convertToScreen(bounds)
       let labels = CameraExposure.bands.enumerated().map { "\(FalseColourKey.labels[$0.offset]). \($0.element.name)" }
-        + [ExposureLegend.compactMeasurement(level: camera.guides.zebraLevel, range: camera.guides.zebraRange)]
       for label in labels {
         let element = try XCTUnwrap(LibraryAX.named(label, in: host).first, label)
         let frame = try XCTUnwrap(element.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -56,7 +55,7 @@ import XCTest
       try await Task.sleep(for: .milliseconds(100))
       let record = try XCTUnwrap(LibraryAX.named("Record", in: host).first)
       let transportFrame = try XCTUnwrap(record.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      let help = try XCTUnwrap(LibraryAX.named("How to read this", in: host).first)
+      let help = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
       let helpFrame = try XCTUnwrap(help.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       XCTAssertGreaterThan(helpFrame.minY, transportFrame.maxY, "Help must stay above the transport at \(zoom)")
       for (index, band) in CameraExposure.bands.enumerated() {

@@ -83,6 +83,44 @@ struct ExposureToolToggles: View {
   }
 }
 
+/// Full exposure contents, shared by the settings page and the presenter's Exposure job.
+/// Intended for CameraExposureSections so both hosts keep exactly the same controls.
+struct ExposureSettingsContent: View {
+  @ObservedObject var model: CameraModel
+  @State private var showsCustom = false
+  var body: some View {
+    Section("Exposure") {
+      ExposureToolToggles(model: model)
+      Picker("Zebra reference", selection: Binding(
+        get: { model.guides.validatedZebraPurpose },
+        set: { model.guides.useZebraPreset($0) }
+      )) {
+        Text("Face reference").tag(CameraGuides.ZebraPurpose.faceReference)
+        Text("Bright areas").tag(CameraGuides.ZebraPurpose.brightAreas)
+        if model.guides.validatedZebraPurpose == .custom {
+          Text("Custom levels").tag(CameraGuides.ZebraPurpose.custom)
+        }
+      }
+      Text(ExposureGuidance.zebraAction(model.guides)).fontWeight(.semibold)
+      Text(ExposureGuidance.zebraLookFor(model.guides))
+      if model.exposureBypassed || model.cleanView {
+        Button("Show exposure aids") { model.cleanView = false; model.exposureBypassed = false }
+      }
+      DisclosureGroup("Custom levels", isExpanded: $showsCustom) {
+        Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
+        Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
+        Text("Custom levels measure brightness; they are not a face target.")
+      }.accessibilityIdentifier("exposure-custom-levels")
+        .accessibilityValue(showsCustom ? "Expanded" : "Collapsed")
+        .accessibilityAction { showsCustom.toggle() }
+      DisclosureGroup("How exposure aids work") {
+        ExposureKeyHelp(model: model)
+      }
+      Text("Exposure aids only change the preview, not your camera or saved video.")
+    }.font(.callout)
+  }
+}
+
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
@@ -102,52 +140,94 @@ struct ExposureLegend: View {
 
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras {
-          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
-          Text(Self.compactMeasurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
-            .monospacedDigit()
+      HStack(spacing: Space.sm) {
+        if model.guides.falseColour { FalseColourStrip() }
+        else {
+          Image(systemName: "circle.lefthalf.striped.horizontal")
+            .accessibilityLabel("Zebras on")
         }
-        if model.guides.falseColour { FalseColourKey(showsExplanation: false) }
-        Text("Received picture (%)").foregroundStyle(Color.primary.opacity(0.75))
-        DisclosureGroup("How to read this", isExpanded: $showsHelp) {
-          ScrollView {
-            VStack(alignment: .leading, spacing: Space.sm) {
-              ExposureGuidance(zebras: model.guides.zebras, guides: model.guides, falseColour: model.guides.falseColour)
-              if model.guides.zebras {
-                Text(Self.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
-              }
-              if model.guides.falseColour {
-                Text(ExposureGuidance.colourAction).fontWeight(.semibold)
-                Text("Grey shows brightness between these bands.")
-                ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
-              }
-              Text("Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
-              Text("These guides show the received picture. They do not change your camera or saved video.")
-            }.frame(maxWidth: .infinity, alignment: .leading)
-              .fixedSize(horizontal: false, vertical: true)
-          }.frame(maxHeight: 180 / zoom)
+        Button { showsHelp.toggle() } label: {
+          HStack(spacing: Space.xs) {
+            Text("Key")
+            Image(systemName: "chevron.down").imageScale(.small)
+          }.fixedSize()
+        }
+        .accessibilityLabel("Key")
+        .accessibilityHint("Shows camera actions, colour meanings and brightness levels")
+        .restoringPopoverFocus(isPresented: $showsHelp, identifier: "exposure-key")
+        .popover(isPresented: $showsHelp) {
+          ExposureKeyPanel(model: model, zoom: zoom)
         }
       }.font(.callout).foregroundStyle(.primary)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: 480 / zoom, alignment: .leading)
-        .padding(Space.sm)
+        .padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
         .background(Color(white: 0.12), in: .rect(cornerRadius: 12))
         .environment(\.colorScheme, .dark)
         .uiZoom(zoom)
         .fixedSize(horizontal: false, vertical: true)
+        .accessibilityIdentifier("exposure-key-strip")
     }
   }
 
-  static func compactMeasurement(level: Int, range: Int) -> String {
-    range > 0 ? "Stripes: \(max(0, level - range))–\(min(100, level + range)) / 100"
-      : "Stripes: \(level) and above / 100"
+
+}
+
+/// The strip has no text that can wrap. Names, calibration and actions belong in Key.
+struct FalseColourStrip: View {
+  var body: some View {
+    HStack(spacing: 0) {
+      ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
+        Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+          .frame(minWidth: Space.xs, maxWidth: .infinity)
+          .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
+      }
+    }.frame(maxWidth: 240).frame(height: Space.sm)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("False colour strip")
   }
 }
 
-/// Use the renderer's ranges, so the visible monitor key cannot drift from its colours.
+/// Keep explanatory text on the same opaque dark surface as the monitor key.
+struct ExposureKeyPanel: View {
+  @ObservedObject var model: CameraModel
+  var zoom = 1.0
+  var body: some View {
+    ScrollView { ExposureKeyHelp(model: model).padding(Space.md) }
+      .frame(width: 320, height: 300)
+      .background(Color(white: 0.12))
+      .environment(\.colorScheme, .dark)
+      .uiZoom(zoom)
+  }
+}
+
+/// Action first; measurements and the received-picture qualification follow it.
+struct ExposureKeyHelp: View {
+  @ObservedObject var model: CameraModel
+  @AccessibilityFocusState private var actionFocused: Bool
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.md) {
+      Text(model.guides.zebras ? ExposureGuidance.zebraAction(model.guides) : ExposureGuidance.colourAction)
+        .fontWeight(.semibold).accessibilityFocused($actionFocused)
+      if model.guides.zebras { Text(ExposureGuidance.zebraLookFor(model.guides)) }
+      if model.guides.falseColour { Text(ExposureGuidance.colourLookFor) }
+      if model.guides.zebras {
+        Text(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
+        Text(ExposureLegend.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+      }
+      if model.guides.falseColour {
+        FalseColourKey()
+        ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
+      }
+      Text("Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
+      Text("These guides show the received picture. They do not change your camera or saved video.")
+    }.font(.callout).foregroundStyle(.primary)
+      .fixedSize(horizontal: false, vertical: true)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .onAppear { actionFocused = true }
+  }
+}
+
+/// Use the renderer's ranges, so the detailed key cannot drift from its colours.
 struct FalseColourKey: View {
-  var showsExplanation = true
   static let labels = ["Black", "Dark", "Mid", "Bright", "High", "White"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
     "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
@@ -155,58 +235,19 @@ struct FalseColourKey: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text("Check brightness · False colour").fontWeight(.semibold)
-      ViewThatFits(in: .horizontal) {
-        bands(columns: 6)
-        compactBands
+      ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
+        HStack(spacing: Space.sm) {
+          Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+            .frame(width: Space.md, height: Space.md)
+          Text(Self.labels[index])
+          Spacer(minLength: Space.xs)
+          Text(Self.rangeLabel(band.range)).monospacedDigit()
+            .foregroundStyle(Color.primary.opacity(0.75))
+        }.accessibilityElement(children: .ignore)
+          .accessibilityLabel("\(Self.labels[index]). \(band.name)")
+          .accessibilityValue(Self.rangeLabel(band.range))
       }
-      if showsExplanation {
-        Text("Grey shows brightness between these bands.")
-          .foregroundStyle(Color.primary.opacity(0.75))
-      }
+      Text("Grey shows brightness between these bands.")
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
-  }
-
-  private var compactBands: some View {
-    Grid(alignment: .leading, horizontalSpacing: Space.sm, verticalSpacing: Space.sm) {
-      ForEach(0..<3, id: \.self) { row in
-        GridRow {
-          ForEach(0..<2, id: \.self) { column in
-            let index = row * 2 + column
-            let band = CameraExposure.bands[index]
-            HStack(spacing: Space.xs) {
-              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-                .frame(width: Space.md, height: Space.md)
-              Text(Self.labels[index])
-              Text(Self.rangeLabel(band.range).dropLast()).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
-            }.fixedSize(horizontal: true, vertical: false)
-              .accessibilityElement(children: .ignore)
-              .accessibilityLabel("\(Self.labels[index]). \(band.name)")
-              .accessibilityValue(Self.rangeLabel(band.range))
-          }
-        }
-      }
-    }
-  }
-
-  private func bands(columns: Int) -> some View {
-    Grid(horizontalSpacing: Space.xs, verticalSpacing: Space.xs) {
-      ForEach(0..<(6 / columns), id: \.self) { row in
-        GridRow(alignment: .top) {
-          ForEach(0..<columns, id: \.self) { column in
-            let index = row * columns + column
-            let band = CameraExposure.bands[index]
-            VStack(spacing: Space.xs) {
-              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-                .frame(height: Space.md)
-              Text(Self.labels[index])
-              Text(Self.rangeLabel(band.range)).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
-            }.frame(minWidth: 68, maxWidth: .infinity)
-              .accessibilityElement(children: .ignore)
-              .accessibilityLabel("\(Self.labels[index]). \(band.name)")
-              .accessibilityValue(Self.rangeLabel(band.range))
-          }
-        }
-      }
-    }
   }
 }

@@ -246,3 +246,27 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
   Reading directly. Editor and presenter sizes remain independent.
 - The compact presenter's comparison should read Exposure check and state
   whether aids are visible or bypassed. Its call site is owned by Builder A.
+
+## Settled round 14 contents (Builder B)
+
+- ExposureLegend is one line: six equal swatches and a small **Key** button with
+  a chevron. At 100/150/200% its height is determined only by the button and
+  padding. It has no wrapping labels or measurements. Builder A anchors it to
+  the bottom of the camera picture, outside the reading lane.
+- Key opens a bounded scrolling popover. The first line says what to do on the
+  camera; colour names, renderer ranges, received-picture calibration and
+  skin/profile qualifications follow. Closing returns to the exact Key opener.
+- ExposureSettingsContent is the shared Exposure form contents: two switches,
+  Face reference first in Zebra reference, Bright areas second. Existing custom
+  settings are preserved. Custom levels and explanatory details are disclosed.
+  Host integration: CameraExposureSections in CameraWindow.swift delegates to
+  ExposureSettingsContent(model: model), replacing its old Section contents.
+- PresenterToolsMenu supplies a word-labelled **Tools** opener with an explicit
+  chevron and accessibility hint. Builder A supplies the Text, Camera, Exposure
+  and Microphone job sections and places the menu in the enlarged presenter.
+- The editor's session-only tip is one muted, dismissible line. It does not
+  change script text. Quick Reading Practice says “Try reading for 30 seconds”.
+  Getting Started Guide names the full guide to writing, reading and recording,
+  both at entry and when selected. Neither is required before pasting a script.
+- Camera picker entry focuses the selected camera row, falling back to the first
+  row, while retaining arrow navigation and exact-opener focus on exit.

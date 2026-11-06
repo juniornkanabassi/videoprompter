@@ -1,3 +1,4 @@
+import PrompterCore
 import SwiftUI
 
 /// The first success is choosing a job, before configuring the tools for it.
@@ -6,6 +7,7 @@ struct LibraryStartView: View {
   @Binding var importing: Bool
   let practice: () -> Void
   let camera: () -> Void
+  var guide: () -> Void = {}
 
   @ViewBuilder private var otherScriptActions: some View {
     Button("Import a File…") { importing = true }
@@ -28,11 +30,16 @@ struct LibraryStartView: View {
           .font(.callout).fixedSize(horizontal: false, vertical: true)
           Button("Quick Reading Practice", action: practice).buttonStyle(.bordered)
             .help("Open a short guided practice, then choose Start reading")
+          Text("Try reading for 30 seconds.").font(.callout)
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button(action: camera) { Label("Camera Only", systemImage: "video") }
           Text("Check your framing or record without a script.")
             .fixedSize(horizontal: false, vertical: true)
+        }
+        VStack(alignment: .leading, spacing: Space.sm) {
+          Button("Getting Started Guide") { store.showWelcomeScript(); guide() }
+          Text("Read the full guide to writing, reading and recording.").font(.callout)
         }
         ViewThatFits(in: .horizontal) {
           HStack(spacing: Space.lg) { otherScriptActions }
@@ -47,14 +54,19 @@ struct LibraryStartView: View {
 /// Session-only guidance also reaches people who paste straight into a new script.
 struct ReadingFirstUseTip: View {
   let dismiss: () -> Void
-  static let explanation = "Voice follow moves the words as you speak. Choose Present, then Start reading. Allow microphone and speech access when asked."
+  static let explanation = "Present, then Start reading. Recording is separate."
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.xs) {
-      Text(Self.explanation)
-      Text("Reading does not record a video. Choose Record separately to save a take.")
-      Button("Got it", action: dismiss)
-        .frame(minHeight: 24)
+    HStack(spacing: Space.sm) {
+      ViewThatFits(in: .horizontal) {
+        Text(Self.explanation).fixedSize()
+        Text("Present to read. Record to film.").fixedSize()
+      }.lineLimit(1)
+      Spacer(minLength: 0)
+      Button(action: dismiss) { Image(systemName: "xmark") }
+        .buttonStyle(.plain).frame(minWidth: 24, minHeight: 24)
         .accessibilityLabel("Got it, hide reading tip")
-    }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+        .help("Hide reading tip")
+    }.font(.callout).foregroundStyle(.primary.opacity(0.75))
+      .accessibilityElement(children: .contain)
   }
 }
