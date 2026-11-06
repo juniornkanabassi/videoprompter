@@ -105,6 +105,15 @@ struct CameraGuides: Codable, Equatable, Sendable {
       blue: CGFloat(number & 255) / 255, alpha: alpha)
   }
 
+  mutating func sanitise() {
+    if let marker, !marker.isValid { self.marker = nil }
+    opacity = opacity.isFinite ? min(1, max(0, opacity)) : 0.85
+    shadeOpacity = shadeOpacity.isFinite ? min(1, max(0, shadeOpacity)) : 0.5
+    zebraLevel = min(100, max(0, zebraLevel))
+    zebraRange = min(10, max(0, zebraRange))
+    colorHex = PrompterSettings.normalisedHexColour(colorHex) ?? "#3F8CFF"
+  }
+
   init() {}
   /// Lenient, so a preference written by an older build keeps whatever it did set.
   init(from decoder: Decoder) throws {
@@ -124,6 +133,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     zebraPurpose = try c.decodeIfPresent(ZebraPurpose.self, forKey: .zebraPurpose)
       ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
     falseColour = try c.decodeIfPresent(Bool.self, forKey: .falseColour) ?? false
+    sanitise()
   }
 }
 
@@ -138,15 +148,14 @@ struct CameraGuideStore {
     guard let uid, let stored = defaults.dictionary(forKey: Self.key)?[uid] as? Data,
       var value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
     else { return CameraGuides() }
-    if let marker = value.marker, !marker.isValid {
-      value.marker = nil
-      set(value, for: uid)
-    }
+    value.sanitise()
+    // Persist every repair, including those applied by the decoder.
+    if (try? JSONEncoder().encode(value)) != stored { set(value, for: uid) }
     return value
   }
   func set(_ guides: CameraGuides, for uid: String?) {
     var safeGuides = guides
-    if let marker = safeGuides.marker, !marker.isValid { safeGuides.marker = nil }
+    safeGuides.sanitise()
     guard let uid, let data = try? JSONEncoder().encode(safeGuides) else { return }
     var all = defaults.dictionary(forKey: Self.key) ?? [:]
     all[uid] = data

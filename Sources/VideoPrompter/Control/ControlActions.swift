@@ -60,9 +60,7 @@ import Speech
   private func percent(_ value: Double) -> Int { Int((value * 100).rounded()) }
   private func number(_ params: [String: String], _ key: String) -> Double? { params[key].flatMap(Double.init) }
   private static func hexColour(_ value: String) -> String? {
-    let digits = value.hasPrefix("#") ? String(value.dropFirst()) : value
-    guard digits.count == 6, digits.allSatisfy(\.isHexDigit) else { return nil }
-    return "#" + digits.uppercased()
+    PrompterSettings.normalisedHexColour(value)
   }
   private var unavailable: ControlResult { .error("library_unavailable", "The script library is unavailable.") }
   private var editing: ControlResult { .error("presenter_editing", "Finish or cancel the presenter edit first.") }

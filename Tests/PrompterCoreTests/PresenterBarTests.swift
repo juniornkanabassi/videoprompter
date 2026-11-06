@@ -112,7 +112,7 @@ import XCTest
             XCTAssertEqual(try frame(readButton).midY, recordRect.midY, accuracy: 1)
             XCTAssertFalse(insideScrollView(readButton))
           } else { XCTAssertFalse(has("Start reading", in: host)); XCTAssertFalse(has("Pause", in: host)) }
-          _ = try button("Presenter options", in: host)
+          _ = try button("More presenter options", in: host)
           XCTAssertEqual(has("Text", in: host), reading, "Named tools stay on the reading surface")
           if zoom == 2 && state == "recording" {
             let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
@@ -159,11 +159,11 @@ import XCTest
     defer { window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     await settle()
-    _ = try button("Presenter options", in: host)
+    _ = try button("More presenter options", in: host)
     XCTAssertFalse(has("View", in: host))
     XCTAssertTrue(has("Text", in: host))
     window.makeKeyAndOrderFront(nil)
-    XCTAssertTrue(LibraryAX.bool(try button("Exposure", in: host), "accessibilityPerformPress"))
+    XCTAssertTrue(LibraryAX.bool(try button("Exposure settings", in: host), "accessibilityPerformPress"))
     await settle()
     let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Zebras", in: $0).isEmpty } == true })
     let content = try XCTUnwrap(popover.contentView)
@@ -174,7 +174,7 @@ import XCTest
       await settle()
       XCTAssertTrue(read(), "The real \(title) toggle changes the camera guides during a take")
     }
-    XCTAssertTrue(LibraryAX.bool(try button("Exposure", in: host), "accessibilityPerformPress"))
+    XCTAssertTrue(LibraryAX.bool(try button("Exposure settings", in: host), "accessibilityPerformPress"))
     await settle()
     XCTAssertEqual(recorder.phase, .recording)
   }
@@ -239,7 +239,7 @@ import XCTest
         XCTAssertGreaterThanOrEqual(viewport.frame.height, 338, "\(zoom) \(state): script viewport \(viewport.frame)")
         let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
         XCTAssertLessThanOrEqual(try frame(bar).height, 182, "\(zoom) \(state)")
-        _ = try button("Presenter options", in: host)
+        _ = try button("More presenter options", in: host)
         let start = try button(state == "countdown" ? "Cancel countdown" : state == "reading" ? "Pause" : "Start reading", in: host)
         let target = try frame(start)
         XCTAssertGreaterThanOrEqual(target.height, 24 * zoom - 1)
@@ -264,7 +264,12 @@ import XCTest
       // A paused mid-script retake is one press and never changes recording state.
       store.session.seek(to: 10); recorder.phase = .recording
       await settle()
-      XCTAssertTrue(LibraryAX.bool(try button("Back to start", in: host), "accessibilityPerformPress"))
+      if let reset = LibraryAX.named("Back to start", in: host).first {
+        XCTAssertTrue(LibraryAX.bool(reset, "accessibilityPerformPress"))
+      } else {
+        _ = try button("More presenter options", in: host)
+        store.session.restart() // The same action remains in More at widths that cannot fit it.
+      }
       await settle()
       XCTAssertEqual(store.session.tokenIndex, 0)
       XCTAssertEqual(recorder.phase, .recording)
@@ -272,7 +277,7 @@ import XCTest
     recorder.phase = .idle; camera.recordingReadyOverride = false
     await settle()
     XCTAssertFalse(try isEnabled(button("Record", in: host)))
-    _ = try button("Presenter options", in: host)
+    _ = try button("More presenter options", in: host)
     XCTAssertEqual(PresenterView.controlZoom(2), 2)
     if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
       try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))

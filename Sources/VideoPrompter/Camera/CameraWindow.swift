@@ -454,9 +454,17 @@ struct CameraGuideSections: View {
         if let marker = model.guides.marker { Text("\(marker.label) guide only. The full frame is recorded.").font(.callout) }
         if shape.wrappedValue == "Custom" {
           HStack {
-            TextField("Width", value: customWidth, format: .number).help("Set the width part of the custom frame ratio").frame(width: 64)
+            VStack(alignment: .leading) {
+              Text("Width").fixedSize()
+              TextField("Width", value: customWidth, format: .number).labelsHidden()
+                .help("Set the width part of the custom frame ratio")
+            }.frame(minWidth: 80)
             Text(":")
-            TextField("Height", value: customHeight, format: .number).help("Set the height part of the custom frame ratio").frame(width: 64)
+            VStack(alignment: .leading) {
+              Text("Height").fixedSize()
+              TextField("Height", value: customHeight, format: .number).labelsHidden()
+                .help("Set the height part of the custom frame ratio")
+            }.frame(minWidth: 80)
           }
         }
         if invalidDimension {
@@ -759,9 +767,8 @@ struct RecordingHealthNotice: View {
       let warning = recorder.droppedAudioBuffers > 0 || recorder.droppedFrames > 0 || health == .clipping || health == .silence
       Button { showsDetails = true } label: {
         Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : health == .waiting ? "Waiting for sound" : "Sound OK")
-          .lineLimit(2).fixedSize(horizontal: !compact, vertical: true)
-          .frame(maxWidth: compact ? 86 : nil)
-      }
+          .font(.callout).fixedSize().frame(minHeight: 24)
+      }.buttonStyle(.plain)
         .accessibilityValue(recorder.droppedAudioBuffers > 0 ? "Sound dropped from the file (\(recorder.droppedAudioBuffers) times)" : health.message)
         .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-health")
         .popover(isPresented: $showsDetails) {
@@ -844,7 +851,7 @@ extension CameraRecorder {
       dimensions = "\(width) × \(height)"
       orientation = height > width ? "Portrait" : width > height ? "Landscape" : "Square"
     }
-    return "\(dimensions) · \(orientation) · Saves to \(Self.recordingsFolder().lastPathComponent)"
+    return "\(dimensions) · \(orientation) · Folder: \(Self.recordingsFolder().deletingLastPathComponent().lastPathComponent) › \(Self.recordingsFolder().lastPathComponent)"
   }
   func outputSummary(camera: CameraModel) -> String {
     let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
@@ -952,7 +959,7 @@ struct RecordingReceipt: View {
       HStack(alignment: .center, spacing: Space.sm) {
       Button { showsDetails.toggle() } label: {
         VStack(alignment: .leading, spacing: 0) {
-          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill").lineLimit(1)
+          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill").fixedSize()
 
         }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain).labelStyle(.titleAndIcon).foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange).accessibilityLabel(receiptLabel)
@@ -994,7 +1001,7 @@ struct RecordingReceipt: View {
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? Space.xs : Space.md).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
+        .padding(compact ? Space.xs : Space.md).background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
     }
   }
 }

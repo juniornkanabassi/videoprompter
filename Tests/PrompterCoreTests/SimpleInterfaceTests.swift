@@ -81,7 +81,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let start = try buttonFrame("Start reading")
       let camera = try buttonFrame("Show camera")
-      let edit = try buttonFrame("Presenter options")
+      let edit = try buttonFrame("More presenter options")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, camera, edit] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")

@@ -29,10 +29,14 @@ enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
   /// Nothing is cropped: a rotated 16:9 feed shows as 9:16 with bars down the sides, and the
   /// composition guides are drawn on this rectangle so they turn with the picture.
   func fittedRect(aspect: CGSize, in bounds: CGRect) -> CGRect {
-    guard aspect.width > 0, aspect.height > 0, !bounds.isEmpty else { return bounds }
+    guard aspect.width.isFinite, aspect.height.isFinite, aspect.width > 0, aspect.height > 0,
+      bounds.width.isFinite, bounds.height.isFinite, !bounds.isEmpty else { return bounds }
     let shown = swapsAxes ? CGSize(width: aspect.height, height: aspect.width) : aspect
-    let scale = min(bounds.width / shown.width, bounds.height / shown.height)
-    return bounds.centred(CGSize(width: shown.width * scale, height: shown.height * scale))
+    // Normalise first: bounds / a subnormal dimension can overflow even for a square.
+    let longest = max(shown.width, shown.height)
+    let unit = CGSize(width: shown.width / longest, height: shown.height / longest)
+    let scale = min(bounds.width / unit.width, bounds.height / unit.height)
+    return bounds.centred(CGSize(width: unit.width * scale, height: unit.height * scale))
   }
 }
 

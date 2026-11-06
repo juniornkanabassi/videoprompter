@@ -254,6 +254,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     store.session.play(captureAudio: false)
     defer { store.session.pause() }
     let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
+    host.sizingOptions = [] // Match the presenter's fixed-size production host.
     panel.contentView = host
     defer { panel.contentView = nil }
     func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
@@ -265,6 +266,12 @@ private final class ReviewSlowWriter: @unchecked Sendable {
         for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
         let text = try XCTUnwrap(descendants(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(text.enclosingScrollView)
+        if viewport.frame.height < panel.frame.height * 0.65 {
+          print("Reading floor geometry: host=\(host.frame) panel=\(panel.frame) viewport=\(viewport.frame)")
+          for node in LibraryAX.elements(host) where ["AXButton", "AXMenuButton", "AXPopUpButton"].contains(LibraryAX.value(node, "accessibilityRole")) {
+            print("control", LibraryAX.value(node, "accessibilityLabel"), node.value(forKey: "accessibilityFrame") ?? "")
+          }
+        }
         XCTAssertGreaterThanOrEqual(viewport.frame.height, panel.frame.height * 0.65, "\(zoom), \(frame)")
       }
     }
@@ -286,7 +293,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     let (panel, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
     panel.makeKeyAndOrderFront(nil)
     defer { LibraryAX.close(panel) }
-    for (title, content) in [("Camera", "Camera access needed"), ("Text", "Larger text"), ("Microphone", "Microphone volume")] {
+    for (title, content) in [("Camera", "Allow your camera"), ("Text", "Larger text"), ("Microphone", "Microphone volume")] {
       let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first, title)
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(180))

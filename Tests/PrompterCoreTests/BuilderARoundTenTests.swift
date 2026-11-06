@@ -26,7 +26,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
         draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
       defer { LibraryAX.close(window) }
-      for label in ["Start reading", "Stop recording", "Reading mode", "Text", "Camera", "Exposure", "Microphone"] {
+      for label in ["Start reading", "Stop recording", "Reading mode", "Camera", "Exposure", "More presenter options"] {
         XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "\(label) at \(zoom)")
       }
       XCTAssertTrue(LibraryAX.named("Controls", in: host).isEmpty)
@@ -65,7 +65,7 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
-        draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder))
+        draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 1400, height: 800))
       defer { LibraryAX.close(window) }
       // TestOffscreen keeps this transparent, click-through and unable to activate the app.
       window.makeKeyAndOrderFront(nil)

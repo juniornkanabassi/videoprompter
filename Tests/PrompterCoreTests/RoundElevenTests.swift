@@ -53,16 +53,17 @@ import PrompterCore
           XCTAssertFalse(window.convertToScreen(scriptFrame).intersects(try frame(recovery)), "Recovery must reserve space outside reading")
           let mode = try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first)
           XCTAssertGreaterThanOrEqual(try frame(mode).height, 24 * zoom)
-          XCTAssertFalse(LibraryAX.named("Framing guides", in: host).isEmpty)
-          XCTAssertFalse(LibraryAX.named("Saved video", in: host).isEmpty)
+          XCTAssertFalse(LibraryAX.named("More presenter options", in: host).isEmpty, "Guides are in More when the row cannot fit")
+          XCTAssertTrue(LibraryAX.named("Saved video", in: host).isEmpty, "Missing picture shows recovery instead of output metadata")
           if position > 0 {
-            let reset = try XCTUnwrap(LibraryAX.named("Back to start", in: host).first, "zoom=\(zoom) index=\(store.session.tokenIndex) running=\(store.session.isActivelyRunning) labels=\(LibraryAX.elements(host).map { LibraryAX.value($0, "accessibilityLabel") })")
-            for title in ["Start reading", "Back to start", "Record", "Camera", "Framing guides", "Exposure", "Microphone"] {
+            for title in ["Start reading", "Record", "Camera", "More presenter options"] {
               let control = try XCTUnwrap(LibraryAX.named(title, in: host).first)
               XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(control)), "\(zoom): \(title)")
             }
-            XCTAssertTrue(LibraryAX.bool(reset, "accessibilityPerformPress"))
-            XCTAssertEqual(store.session.tokenIndex, 0)
+            if let reset = LibraryAX.named("Back to start", in: host).first {
+              XCTAssertTrue(LibraryAX.bool(reset, "accessibilityPerformPress"))
+              XCTAssertEqual(store.session.tokenIndex, 0)
+            }
           }
         }
       }

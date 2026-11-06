@@ -367,9 +367,11 @@ import XCTest
       func outlines(_ view: NSView) -> [NSOutlineView] {
         (view as? NSOutlineView).map { [$0] } ?? view.subviews.flatMap(outlines)
       }
-      let list = try XCTUnwrap(outlines(host).first)
-      XCTAssertGreaterThanOrEqual(list.rows(in: list.visibleRect).length, 7,
-        "At 200%, document navigation retains a useful viewport")
+      let list = try XCTUnwrap(outlines(host).first { $0.numberOfRows >= 100 },
+        "Find the 100-script fixture, independently of the folder outline order")
+      let scroll = try XCTUnwrap(list.enclosingScrollView)
+      XCTAssertGreaterThanOrEqual(scroll.accessibilityFrame().height, host.bounds.height * 0.5,
+        "Wrapped script titles retain at least half the sidebar viewport")
     }
     XCTAssertFalse(window.isVisible)
     if name.hasPrefix("presenter-waiting-") {

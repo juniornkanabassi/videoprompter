@@ -69,6 +69,16 @@ final class SessionStore: ObservableObject {
     if case .uncertain = state { return "Matching words" }
     return "Listening"
   }
+  /// Short, explicit state for the persistent presenter label at every interface size.
+  var visibleReadingState: String {
+    if isCountingDown { return "Starts in \(countdownRemaining)" }
+    if reachedEnd { return "Finished" }
+    if isPreparingVoice { return "Preparing" }
+    if readingStatus == "Needs microphone" { return "Needs microphone" }
+    if !isActivelyRunning { return "Paused" }
+    if isManual { return "Scrolling" }
+    return hasLiveRecognition ? "Following" : "Listening"
+  }
   var readingDetail: String? {
     if case .uncertain(let message) = state { return message }
     return nil

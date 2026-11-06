@@ -41,11 +41,12 @@ struct AppSettingsView: View {
     return CGSize(width: min(880 * store.uiZoom, screen.width - 80), height: min(600 * store.uiZoom, screen.height - 80))
   }
   private func navigationLabel(_ tab: SettingsTab) -> some View {
-    Label { Text(tab.rawValue).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: tab.symbol) }
+    Label { Text(tab.rawValue).fixedSize() } icon: { Image(systemName: tab.symbol) }
   }
   var body: some View {
     GeometryReader { geometry in
     HStack(spacing: 0) {
+      if geometry.size.width >= 760 * store.uiZoom {
       List(selection: $selection) {
         ForEach(SettingsTab.allCases, id: \.self) { tab in
           Group {
@@ -55,10 +56,18 @@ struct AppSettingsView: View {
           }.tag(tab)
         }
       }.listStyle(.sidebar).uiZoom(store.uiZoom)
-        .frame(width: min(240 * store.uiZoom, geometry.size.width * 0.3))
+        .frame(width: 250 * store.uiZoom)
         .accessibilityLabel("Settings page")
-      SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
+      VStack(spacing: Space.sm) {
+        if geometry.size.width < 760 * store.uiZoom {
+          Picker("Settings page", selection: $selection) {
+            ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+          }.pickerStyle(.menu).fixedSize().uiZoom(store.uiZoom).padding(Space.sm)
+        }
+        SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     }
     }.frame(idealWidth: availableSize.width, idealHeight: availableSize.height)
       .onAppear {
@@ -480,7 +489,7 @@ struct PresenterSettingsPopover: View {
     VStack(spacing: Space.sm) {
       Picker("Settings page", selection: $tab) {
         ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-      }.pickerStyle(.menu).padding(Space.sm)
+      }.pickerStyle(.menu).fixedSize().padding(Space.sm)
       SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
     }.uiZoom(store.uiZoom).frame(width: 560, height: 600)
       .onAppear { tab = initialTab }
@@ -497,17 +506,11 @@ struct CameraRecordingPage: View {
     VStack(spacing: Space.sm) {
       Picker("Camera & Recording section", selection: $section) {
         ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
-      }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Camera & Recording section")
+      }.pickerStyle(.menu).fixedSize(horizontal: false, vertical: true).accessibilityLabel("Camera & Recording section")
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
       Form {
         switch section {
         case "Camera":
-          if camera.authorization == .notDetermined {
-            Section("Camera access") {
-              Text("Allow access to choose and preview your camera here.").font(.callout)
-              Button("Allow Camera Access") { camera.start() }
-            }
-          }
           CameraSettingsSections(model: camera, zoom: store.uiZoom)
         case "Recording":
           RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
