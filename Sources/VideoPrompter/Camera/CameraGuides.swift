@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import PrompterCore
 
 /// A frame marker's shape. Junior shoots open gate, so the sensor frame is wider than what he
 /// delivers: the marker is the delivery aspect drawn inside the picture he actually gets.
@@ -10,8 +11,7 @@ struct CameraAspect: Codable, Equatable, Hashable, Identifiable, Sendable {
   var label: String { "\(trim(width)):\(trim(height))" }
   // Match the public control boundary and reject non-finite or unusable ratios.
   var isValid: Bool {
-    width.isFinite && height.isFinite && width > 0 && height > 0
-      && width <= 100 && height <= 100 && (width / height).isFinite && width / height > 0
+    InputValidation.frameDimension.accepts(width) && InputValidation.frameDimension.accepts(height) && (width / height).isFinite && width / height > 0
   }
   private func trim(_ value: Double) -> String {
     String(format: "%g", value)
@@ -98,8 +98,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
   /// Everything outside the frame marker goes this much darker.
   var shadeColor: CGColor { CGColor(red: 0, green: 0, blue: 0, alpha: shadeOpacity) }
   static func color(_ hex: String, alpha: Double) -> CGColor? {
-    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-    guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+    guard let value = InputValidation.hexColour(hex), let number = UInt64(value.dropFirst(), radix: 16) else { return nil }
     return CGColor(
       red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255,
       blue: CGFloat(number & 255) / 255, alpha: alpha)
@@ -107,10 +106,10 @@ struct CameraGuides: Codable, Equatable, Sendable {
 
   mutating func sanitise() {
     if let marker, !marker.isValid { self.marker = nil }
-    opacity = opacity.isFinite ? min(1, max(0, opacity)) : 0.85
-    shadeOpacity = shadeOpacity.isFinite ? min(1, max(0, shadeOpacity)) : 0.5
-    zebraLevel = min(100, max(0, zebraLevel))
-    zebraRange = min(10, max(0, zebraRange))
+    opacity = InputValidation.guideVisibility.repair(opacity)
+    shadeOpacity = InputValidation.shade.repair(shadeOpacity)
+    zebraLevel = Int(InputValidation.zebraLevel.repair(Double(zebraLevel)))
+    zebraRange = Int(InputValidation.zebraRange.repair(Double(zebraRange)))
     colorHex = PrompterSettings.normalisedHexColour(colorHex) ?? "#3F8CFF"
   }
 
@@ -118,21 +117,21 @@ struct CameraGuides: Codable, Equatable, Sendable {
   /// Lenient, so a preference written by an older build keeps whatever it did set.
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    rotation = CameraRotation(rawValue: try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0) ?? .none
-    automaticRotation = try c.decodeIfPresent(Bool.self, forKey: .automaticRotation) ?? false
-    thirds = try c.decodeIfPresent(Bool.self, forKey: .thirds) ?? false
-    axes = try c.decodeIfPresent(Bool.self, forKey: .axes) ?? false
-    bullseye = try c.decodeIfPresent(Bool.self, forKey: .bullseye) ?? false
-    colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex) ?? "#3F8CFF"
-    opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.85
-    marker = try c.decodeIfPresent(CameraAspect.self, forKey: .marker)
-    shadeOpacity = try c.decodeIfPresent(Double.self, forKey: .shadeOpacity) ?? 0.5
-    zebras = try c.decodeIfPresent(Bool.self, forKey: .zebras) ?? false
-    zebraLevel = try c.decodeIfPresent(Int.self, forKey: .zebraLevel) ?? 95
-    zebraRange = try c.decodeIfPresent(Int.self, forKey: .zebraRange) ?? 0
-    zebraPurpose = try c.decodeIfPresent(ZebraPurpose.self, forKey: .zebraPurpose)
+    rotation = CameraRotation(rawValue: c.preference(.rotation, default: 0)) ?? .none
+    automaticRotation = c.preference(.automaticRotation, default: false)
+    thirds = c.preference(.thirds, default: false)
+    axes = c.preference(.axes, default: false)
+    bullseye = c.preference(.bullseye, default: false)
+    colorHex = c.preference(.colorHex, default: "#3F8CFF")
+    opacity = c.preference(.opacity, default: 0.85)
+    marker = c.preference(.marker, default: Optional<CameraAspect>.none)
+    shadeOpacity = c.preference(.shadeOpacity, default: 0.5)
+    zebras = c.preference(.zebras, default: false)
+    zebraLevel = c.preference(.zebraLevel, default: 95)
+    zebraRange = c.preference(.zebraRange, default: 0)
+    zebraPurpose = c.preference(.zebraPurpose, default: Optional<ZebraPurpose>.none)
       ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
-    falseColour = try c.decodeIfPresent(Bool.self, forKey: .falseColour) ?? false
+    falseColour = c.preference(.falseColour, default: false)
     sanitise()
   }
 }

@@ -1,10 +1,24 @@
 import Foundation
+import PrompterCore
 
 struct EditorTypographyPreferences: Codable, Sendable {
   var sourceFontName = "Lexend Deca"
   var sourceFontSize = 17.0
   var previewFontName = "Lexend Deca"
   var previewFontSize = 18.0
+
+  init(sourceFontName: String = "Lexend Deca", sourceFontSize: Double = 17,
+       previewFontName: String = "Lexend Deca", previewFontSize: Double = 18) {
+    self.sourceFontName = sourceFontName; self.sourceFontSize = InputValidation.editorSize.repair(sourceFontSize)
+    self.previewFontName = previewFontName; self.previewFontSize = InputValidation.editorSize.repair(previewFontSize)
+  }
+  init(from decoder: Decoder) throws {
+    let c = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(sourceFontName: c.preference(.sourceFontName, default: "Lexend Deca"),
+      sourceFontSize: c.preference(.sourceFontSize, default: 17),
+      previewFontName: c.preference(.previewFontName, default: "Lexend Deca"),
+      previewFontSize: c.preference(.previewFontSize, default: 18))
+  }
 }
 
 struct SettingsSnapshot: Sendable {

@@ -229,7 +229,7 @@ public actor MarkdownLibrary {
     let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !clean.isEmpty else { throw PrompterCoreError.invalidTitle }
     let id = UUID()
-    let file = "\(safeStem(clean))-\(id.uuidString.lowercased()).md"
+    let file = InputValidation.filename(safeStem(clean), fallback: "script", suffix: "-\(id.uuidString.lowercased()).md")
     let now = Date()
     let fingerprint = Self.fingerprint(markdown)
     let metadata = ScriptMetadata(
@@ -699,7 +699,8 @@ public actor MarkdownLibrary {
   /// Keeps the in-app version beside the library as `<name>-local-<uuid>.md`; returns the file name.
   private func writeConflict(_ markdown: String, for metadata: ScriptMetadata, label: String = "local") throws -> String {
     let url = conflictsURL.appendingPathComponent(
-      "\(metadata.fileName.dropLast(3))-\(label)-\(UUID().uuidString.lowercased()).md")
+      InputValidation.filename(String(metadata.fileName.dropLast(3)), fallback: "script",
+        suffix: "-\(label)-\(UUID().uuidString.lowercased()).md"))
     try Self.writeAtomic(markdown, to: url, coordinated: false)
     return url.lastPathComponent
   }

@@ -95,10 +95,8 @@ import SwiftUI
 
   /// A title made safe as a file or folder name.
   static func safeName(_ title: String) -> String {
-    let cleaned = title.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
-      .joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-    let stem = cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(120))
-    return stem.hasPrefix(".") ? "Script " + stem : stem
+    let visibleTitle = title.hasPrefix(".") ? "Script " + title : title
+    return String(InputValidation.filename(visibleTitle, fallback: "Untitled", suffix: ".md").dropLast(3))
   }
 
   /// A file name for a title that is not taken in `directory`, counting files iCloud has not
@@ -108,7 +106,7 @@ import SwiftUI
     var candidate = directory.appendingPathComponent(stem + ".md")
     var n = 2
     while exists(candidate) {
-      candidate = directory.appendingPathComponent("\(stem) \(n).md")
+      candidate = directory.appendingPathComponent(InputValidation.filename(stem, fallback: "Untitled", suffix: " \(n).md"))
       n += 1
     }
     return candidate

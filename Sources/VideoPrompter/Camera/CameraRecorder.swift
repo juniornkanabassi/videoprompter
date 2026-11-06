@@ -147,11 +147,13 @@ import PrompterCore
   }
   static func fileURL(in folder: URL, date: Date = Date(), label: String = "") -> URL {
     let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
-    let cleaned = label.components(separatedBy: CharacterSet(charactersIn: "/:\\|\n\r")).joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    let prefix = cleaned.isEmpty ? "Video Prompter" : String(cleaned.prefix(100))
-    let stem = "\(prefix) \(formatter.string(from: date))"
-    var url = folder.appendingPathComponent(stem + ".mov"); var number = 2
-    while FileManager.default.fileExists(atPath: url.path) { url = folder.appendingPathComponent("\(stem) \(number).mov"); number += 1 }
+    let stamp = " " + formatter.string(from: date)
+    var url = folder.appendingPathComponent(InputValidation.filename(label, fallback: "Video Prompter", suffix: stamp + ".mov", separator: " "))
+    var number = 2
+    while FileManager.default.fileExists(atPath: url.path) {
+      url = folder.appendingPathComponent(InputValidation.filename(label, fallback: "Video Prompter", suffix: stamp + " \(number).mov", separator: " "))
+      number += 1
+    }
     return url
   }
   func openRecordingsFolder() {
