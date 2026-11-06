@@ -8,7 +8,11 @@ import { fileURLToPath } from 'node:url';
 const bundled = resolve(dirname(fileURLToPath(import.meta.url)), '../../Helpers/videoprompter');
 const cli = process.env.VIDEOPROMPTER_CLI || (existsSync(bundled) ? bundled : 'videoprompter');
 const options = process.argv.slice(2);
-const run = args => new Promise(resolve => execFile(cli, args, { timeout: 45000, maxBuffer: 20 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ error, stdout, stderr })));
+// Matches ControlProtocol.maxResponseBytes, including JSON escape expansion.
+const run = args => new Promise(resolve => {
+  const child = execFile(cli, args, { timeout: 45000, maxBuffer: 128 * 1024 * 1024 }, (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+  child.stdin.end();
+});
 const start = await run(['mcp-manifest']);
 let manifest;
 try {

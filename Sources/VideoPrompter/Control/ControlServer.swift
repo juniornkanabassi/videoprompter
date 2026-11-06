@@ -20,6 +20,9 @@ final class ControlServer: @unchecked Sendable {
     var buffer = Data()
     var lines: [Data] = []
     var busy = false
+    var writer: DispatchSourceWrite?
+    var reply: Data?
+    var sent = 0
     init(_ fd: Int32) { self.fd = fd }
   }
   private var clients: [Int32: Connection] = [:]
@@ -92,9 +95,7 @@ final class ControlServer: @unchecked Sendable {
       guard clients.count < 8, getpeereid(peer, &uid, &gid) == 0, uid == getuid(),
         setsockopt(peer, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size)) == 0
       else { Darwin.close(peer); continue }
-      guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) & ~O_NONBLOCK) == 0 else { Darwin.close(peer); continue }
-      var timeout = timeval(tv_sec: 1, tv_usec: 0)
-      setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+      guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) | O_NONBLOCK) == 0 else { Darwin.close(peer); continue }
       let client = Connection(peer)
       let source = DispatchSource.makeReadSource(fileDescriptor: peer, queue: queue)
       let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -103,7 +104,7 @@ final class ControlServer: @unchecked Sendable {
       source.setCancelHandler { Darwin.close(peer) }
       // An in-flight handler is not idleness; its reply re-arms the deadline.
       timer.setEventHandler { [weak self, weak client] in
-        guard let self, let client, self.clients[client.fd] === client, !client.busy else { return }
+        guard let self, let client, self.clients[client.fd] === client, (!client.busy || client.reply != nil) else { return }
         self.close(client)
       }
       arm(client); timer.resume(); source.resume()
@@ -111,13 +112,15 @@ final class ControlServer: @unchecked Sendable {
   }
   private func arm(_ client: Connection) { client.timer?.schedule(deadline: .now() + idleTimeout) }
   private func close(_ client: Connection) {
-    clients.removeValue(forKey: client.fd); client.timer?.cancel(); client.timer = nil; client.source?.cancel(); client.source = nil
+    guard clients[client.fd] === client else { return }
+    clients.removeValue(forKey: client.fd); client.writer?.cancel(); client.writer = nil; client.reply = nil; client.timer?.cancel(); client.timer = nil; client.source?.cancel(); client.source = nil
   }
   private func read(_ client: Connection) {
     var bytes = [UInt8](repeating: 0, count: 8192)
     let count = recv(client.fd, &bytes, bytes.count, 0)
+    if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
     guard count > 0 else { close(client); return }
-    arm(client)
+    if client.reply == nil { arm(client) }
     client.buffer.append(contentsOf: bytes.prefix(count))
     while let end = client.buffer.firstIndex(of: 10) {
       let line = client.buffer.prefix(upTo: end)
@@ -147,22 +150,31 @@ final class ControlServer: @unchecked Sendable {
       let reply = result.wire(id: requestID)
       queue.async { [self] in
         guard clients[client.fd] === client else { return }
-        let sent = reply.withUnsafeBytes { raw -> Bool in
-          let deadline = ContinuousClock.now + .seconds(5)
-          var offset = 0
-          while offset < raw.count {
-            guard ContinuousClock.now < deadline else { return false }
-            let n = send(client.fd, raw.baseAddress!.advanced(by: offset), raw.count - offset, 0)
-            if n < 0 && errno == EINTR { continue }
-            guard n > 0 else { return false }; offset += n
-          }
-          return true
-        }
-        guard sent else { close(client); return }
-        client.busy = false; arm(client); process(client)
+        client.reply = reply.count <= ControlProtocol.maxResponseBytes ? reply
+          : ControlResult.error("response_too_large", "Response exceeds 128 MiB. Export the script to a file instead.").wire(id: requestID)
+        client.sent = 0
+        client.timer?.schedule(deadline: .now() + .seconds(5))
+        let writer = DispatchSource.makeWriteSource(fileDescriptor: client.fd, queue: queue)
+        writer.setEventHandler { [weak self] in self?.write(client) }
+        client.writer = writer
+        writer.resume()
       }
     }
   }
+  private func write(_ client: Connection) {
+    guard clients[client.fd] === client, let reply = client.reply else { return }
+    // Nonblocking sends and a bounded chunk keep slow peers off the shared control queue.
+    let count = reply.withUnsafeBytes { raw in
+      send(client.fd, raw.baseAddress!.advanced(by: client.sent), min(262_144, raw.count - client.sent), 0)
+    }
+    if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
+    guard count > 0 else { close(client); return }
+    client.sent += count
+    guard client.sent == reply.count else { return }
+    client.writer?.cancel(); client.writer = nil; client.reply = nil
+    client.busy = false; arm(client); process(client)
+  }
+
 }
 
 struct ControlResult: @unchecked Sendable {

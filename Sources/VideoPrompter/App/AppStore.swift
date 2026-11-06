@@ -47,6 +47,7 @@ private enum PresenterSaveError: LocalizedError {
   static let editorFontSizes = 12.0...40.0
   @Published var libraryNotice: String?
   @Published var errorMessage: String?
+  private var linkedSyncNotice: String?
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
@@ -829,6 +830,10 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
     await refreshLinkStates()
+    let waiting = await library.linkedSyncWaiting()
+    if let previous = linkedSyncNotice, errorMessage == previous { errorMessage = nil }
+    linkedSyncNotice = waiting.isEmpty ? nil : waiting.joined(separator: "\n")
+    if let notice = linkedSyncNotice { errorMessage = notice }
     let conflicts = await library.takeLinkConflicts()
     if !conflicts.isEmpty {
       let notice =
