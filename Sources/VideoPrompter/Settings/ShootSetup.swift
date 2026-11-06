@@ -6,6 +6,8 @@ struct ShootSetup: Codable, Identifiable {
   var id = UUID()
   var name: String
   var reading = PrompterSettings()
+  // Legacy setups did not save the cue; applying them keeps the user's current delay.
+  var startDelay: Int?
   var cameraUID: String?
   var guides = CameraGuides()
   var mirrored = false
@@ -38,6 +40,8 @@ extension ShootSetup {
     self.init(name: try c.decode(String.self, forKey: .name))
     id = c.preference(.id, default: id)
     reading = c.preference(.reading, default: reading)
+    startDelay = c.preference(.startDelay, default: startDelay)
+    if let startDelay, ![0, 3, 5].contains(startDelay) { self.startDelay = nil }
     cameraUID = c.preference(.cameraUID, default: cameraUID)
     guides = c.preference(.guides, default: guides)
     mirrored = c.preference(.mirrored, default: mirrored)
@@ -107,7 +111,7 @@ extension AppStore {
   }
 
   private func currentShootSetup(named name: String, camera: CameraModel, recorder: CameraRecorder) -> ShootSetup {
-    ShootSetup(name: name, reading: settings, cameraUID: camera.selectedUID,
+    ShootSetup(name: name, reading: settings, startDelay: session.startDelay, cameraUID: camera.selectedUID,
       guides: camera.guides, mirrored: camera.mirrored, displayMode: camera.displayMode,
       format: recorder.preset, mirrorSavedVideo: recorder.mirrorSavedVideo,
       separateMicrophone: recorder.usesSeparateMicrophone, microphoneUID: recorder.microphoneUID,
@@ -128,6 +132,7 @@ extension AppStore {
 
   private func setShootSetup(_ setup: ShootSetup, camera: CameraModel, recorder: CameraRecorder) {
     session.pause()
+    if let startDelay = setup.startDelay { session.startDelay = startDelay }
     camera.selectedUID = setup.cameraUID
     camera.guides = setup.guides
     camera.mirrored = setup.mirrored

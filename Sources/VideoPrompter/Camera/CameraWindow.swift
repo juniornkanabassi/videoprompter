@@ -41,8 +41,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     get { storedSelectedUID }
     set {
       guard !recordingLocked, newValue != storedSelectedUID else { return }
+      let transferringGuides = pendingGuides != nil && newValue != nil
       storedSelectedUID = newValue
-      defaults.set(newValue, forKey: "cameraDeviceUID")
       if let pendingGuides, newValue != nil {
         self.pendingGuides = nil
         guides = pendingGuides
@@ -52,6 +52,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
         guides = guideStore.guides(for: newValue)
         loadingGuides = false
       }
+      defaults.set(newValue, forKey: "cameraDeviceUID")
+      if transferringGuides { guideStore.clearPendingGuides() }
     }
   }
   @Published private var storedGuides = CameraGuides()
@@ -67,7 +69,10 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       value.sanitise()
       let old = storedGuides
       // Keep unresolved choices until discovery (or an explicit choice) supplies a camera.
-      if !loadingGuides && selectedUID == nil { pendingGuides = value }
+      if !loadingGuides && selectedUID == nil {
+        pendingGuides = value
+        guideStore.set(value, for: nil)
+      }
       guard value != old else { return }
       if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) {
         exposureBypassed = false
@@ -166,12 +171,14 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   }
   var recordingReadyOverride: Bool?
   @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
+  var pictureSize: CGSize? { SharedCameraSession.shared.pictureSize }
   private let defaults: UserDefaults
   private let guideStore: CameraGuideStore
   private var loadingGuides = false
   private var pendingGuides: CameraGuides?
   // nonisolated so `deinit` can take the observers back out again.
   nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
+  nonisolated(unsafe) private var pictureSizeObserver: NSObjectProtocol?
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -179,13 +186,23 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     let uid = defaults.string(forKey: "cameraDeviceUID")
     storedSelectedUID = uid
     storedGuides = guideStore.guides(for: uid)
+    if uid == nil { pendingGuides = guideStore.savedGuides(for: nil) }
     mirrored = defaults.bool(forKey: "cameraMirrored")
     alwaysOnTop = defaults.bool(forKey: "cameraAlwaysOnTop")
     displayMode = defaults.string(forKey: "presenterDisplayMode").flatMap(PresenterDisplayMode.init)
       ?? (defaults.bool(forKey: "presenterWithVideo") ? .prompterWithVideo : .prompterOnly)
+    // Output summaries read the delivered size, which can change without a camera setting changing.
+    pictureSizeObserver = NotificationCenter.default.addObserver(
+      forName: .cameraPictureSizeDidChange, object: nil, queue: .main
+    ) { [weak self] _ in
+      MainActor.assumeIsolated { self?.objectWillChange.send() }
+    }
   }
 
-  deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+  deinit {
+    observers.forEach(NotificationCenter.default.removeObserver)
+    if let pictureSizeObserver { NotificationCenter.default.removeObserver(pictureSizeObserver) }
+  }
 
   /// A rotation chosen by hand turns Auto back off; one Vision picked leaves it on.
   func setRotation(_ rotation: CameraRotation, automatic: Bool = false) {
@@ -901,7 +918,7 @@ extension CameraRecorder {
     "Mic: \(microphoneName) · \(recordingFormatName)"
   }
   func compactOutputConfirmation(camera: CameraModel) -> String {
-    guard let size = SharedCameraSession.shared.pictureSize else { return "Orientation unknown · resolution unknown" }
+    guard let size = camera.pictureSize else { return "Orientation unknown · resolution unknown" }
     let rotated = camera.guides.rotation.swapsAxes ? CGSize(width: size.height, height: size.width) : size
     let orientation = rotated.width < rotated.height ? "Portrait" : rotated.width > rotated.height ? "Landscape" : "Square"
     return "\(orientation) · \(Int(rotated.width)) × \(Int(rotated.height))" + (camera.guides.marker == nil ? "" : " · guide only")

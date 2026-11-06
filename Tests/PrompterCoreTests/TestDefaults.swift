@@ -108,7 +108,7 @@ final class StandardDomainCleanup: NSObject, XCTestObservation {
 
   /// The app's own keys never belong to the runner's domain, even if written before registration.
   static let appKeys: Set<String> = [
-    "readingPositions", "cameraGuides", "cameraDeviceUID", "cameraMirrored", "cameraAlwaysOnTop",
+    "readingPositions", "cameraGuides", "cameraPendingGuides", "cameraDeviceUID", "cameraMirrored", "cameraAlwaysOnTop",
     "presenterDisplayMode", "presenterWithVideo", "recordingPreset", "recordingFloatAudio",
     "recordingMicrophoneUID", "sendCameraOverWiFi", "sendCameraPairingCodes",
     // ICloudScripts' keys, spelled out because that type is main-actor isolated.

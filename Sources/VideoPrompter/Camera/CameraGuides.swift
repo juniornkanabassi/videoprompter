@@ -140,13 +140,19 @@ struct CameraGuides: Codable, Equatable, Sendable {
 /// repeat across identical cameras, unique IDs do not.
 struct CameraGuideStore {
   private static let key = "cameraGuides"
+  private static let pendingKey = "cameraPendingGuides"
   private let defaults: UserDefaults
   init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
   func guides(for uid: String?) -> CameraGuides {
-    guard let uid, let stored = defaults.dictionary(forKey: Self.key)?[uid] as? Data,
+    savedGuides(for: uid) ?? CameraGuides()
+  }
+  func savedGuides(for uid: String?) -> CameraGuides? {
+    let stored = uid.flatMap { defaults.dictionary(forKey: Self.key)?[$0] as? Data }
+      ?? (uid == nil ? defaults.data(forKey: Self.pendingKey) : nil)
+    guard let stored,
       var value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
-    else { return CameraGuides() }
+    else { return nil }
     value.sanitise()
     // Persist every repair, including those applied by the decoder.
     if (try? JSONEncoder().encode(value)) != stored { set(value, for: uid) }
@@ -155,11 +161,13 @@ struct CameraGuideStore {
   func set(_ guides: CameraGuides, for uid: String?) {
     var safeGuides = guides
     safeGuides.sanitise()
-    guard let uid, let data = try? JSONEncoder().encode(safeGuides) else { return }
+    guard let data = try? JSONEncoder().encode(safeGuides) else { return }
+    guard let uid else { defaults.set(data, forKey: Self.pendingKey); return }
     var all = defaults.dictionary(forKey: Self.key) ?? [:]
     all[uid] = data
     defaults.set(all, forKey: Self.key)
   }
+  func clearPendingGuides() { defaults.removeObject(forKey: Self.pendingKey) }
 }
 
 /// The overlay's geometry. Two paths, both rebuilt only on layout or a settings change — the
