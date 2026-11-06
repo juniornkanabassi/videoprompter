@@ -66,6 +66,7 @@ struct CameraPickerList: View {
   @State private var highlighted: String?
   @State private var navigated = false
   @FocusState private var focused: Bool
+  @Environment(\.popoverEntryRequested) private var entryRequested
 
   private var selected: String? { CameraModel.resolve(model.selectedUID, in: devices)?.uid }
 
@@ -93,7 +94,7 @@ struct CameraPickerList: View {
     .onKeyPress(.upArrow) { move(-1) }
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .onAppear { focused = true; highlighted = selected }
+    .onAppear { if !entryRequested { focused = true }; highlighted = selected }
     .onChange(of: highlighted) { _, uid in if startsPreview { preview.show(uid, mirrored: model.mirrored) } }
     .onChange(of: model.authorization) { _, _ in
       if startsPreview { preview.show(highlighted, mirrored: model.mirrored) }
@@ -168,7 +169,7 @@ struct CameraPickerList: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .focusable(false)
+    .initialPopoverFocus(when: isSelected || (selected == nil && devices.first?.uid == device.uid))
     .onHover { inside in
       if inside {
         navigated = true

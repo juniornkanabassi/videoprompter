@@ -185,26 +185,26 @@ import PrompterCore
     store.session.play(captureAudio: false)
     try await settle(host)
     // Warm the layer cache, then compare the actual button pixels, not a state flag.
-    _ = try pixels("Text"); _ = try pixels("Pause")
+    _ = try pixels("Tools"); _ = try pixels("Pause")
     try await settle(host)
-    let visibleTools = try pixels("Text")
+    let visibleTools = try pixels("Tools")
     let visibleTransport = try pixels("Pause")
     try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertNotEqual(try pixels("Text"), visibleTools)
+    XCTAssertNotEqual(try pixels("Tools"), visibleTools)
     XCTAssertEqual(try pixels("Pause"), visibleTransport, "Transport never fades")
     let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
       windowNumber: panel.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
     let previousWindows = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
     panel.sendEvent(event)
     try await settle(host)
-    XCTAssertEqual(try pixels("Text"), visibleTools, "A real local key reveals the tools")
+    XCTAssertEqual(try pixels("Tools"), visibleTools, "A real local key reveals the tools")
     XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible && !previousWindows.contains(ObjectIdentifier($0)) }.isEmpty,
       "Revealing the tools cannot open any window or popover")
     try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertNotEqual(try pixels("Text"), visibleTools, "The idle timer rearms")
+    XCTAssertNotEqual(try pixels("Tools"), visibleTools, "The idle timer rearms")
     store.session.pause()
     try await settle(host)
-    XCTAssertEqual(try pixels("Text"), visibleTools, "Pausing restores full contrast")
+    XCTAssertEqual(try pixels("Tools"), visibleTools, "Pausing restores full contrast")
   }
 }
 

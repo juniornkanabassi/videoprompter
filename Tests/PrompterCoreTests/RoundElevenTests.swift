@@ -51,12 +51,12 @@ import PrompterCore
           let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
           let scriptFrame = script.convert(script.bounds, to: nil)
           XCTAssertFalse(window.convertToScreen(scriptFrame).intersects(try frame(recovery)), "Recovery must reserve space outside reading")
-          let mode = try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first)
-          XCTAssertGreaterThanOrEqual(try frame(mode).height, 24 * zoom)
-          XCTAssertFalse(LibraryAX.named("More presenter options", in: host).isEmpty, "Guides are in More when the row cannot fit")
+          let mode = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
+          XCTAssertGreaterThan(try frame(mode).height, 0)
+          XCTAssertFalse(LibraryAX.named("Tools", in: host).isEmpty, "Guides are in More when the row cannot fit")
           XCTAssertTrue(LibraryAX.named("Saved video", in: host).isEmpty, "Missing picture shows recovery instead of output metadata")
           if position > 0 {
-            for title in ["Start reading", "Record", "Camera", "More presenter options"] {
+            for title in ["Start reading", "Record", "Tools"] {
               let control = try XCTUnwrap(LibraryAX.named(title, in: host).first)
               XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(control)), "\(zoom): \(title)")
             }

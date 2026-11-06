@@ -81,13 +81,13 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let start = try buttonFrame("Start reading")
       let camera = try buttonFrame("Show camera")
-      let edit = try buttonFrame("More presenter options")
+      let edit = try buttonFrame("Tools")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, camera, edit] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
       XCTAssertEqual(start.midY, camera.midY, accuracy: 2)
-      XCTAssertEqual(start.midY, edit.midY, accuracy: 2, "Presenter options has a stable transport slot")
+      XCTAssertLessThan(edit.midY, start.midY, "Tools has its own row below the fixed transport")
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)

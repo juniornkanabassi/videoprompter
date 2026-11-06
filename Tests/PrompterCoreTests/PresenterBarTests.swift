@@ -112,8 +112,8 @@ import XCTest
             XCTAssertEqual(try frame(readButton).midY, recordRect.midY, accuracy: 1)
             XCTAssertFalse(insideScrollView(readButton))
           } else { XCTAssertFalse(has("Start reading", in: host)); XCTAssertFalse(has("Pause", in: host)) }
-          _ = try button("More presenter options", in: host)
-          XCTAssertEqual(has("Text", in: host), reading, "Named tools stay on the reading surface")
+          _ = try button("Tools", in: host)
+          XCTAssertFalse(has("Text", in: host), "Secondary controls live in Tools")
           if zoom == 2 && state == "recording" {
             let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
             XCTAssertLessThanOrEqual(try frame(bar).height, 280)
@@ -159,23 +159,14 @@ import XCTest
     defer { window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     await settle()
-    _ = try button("More presenter options", in: host)
+    _ = try button("Tools", in: host)
     XCTAssertFalse(has("View", in: host))
-    XCTAssertTrue(has("Text", in: host))
-    window.makeKeyAndOrderFront(nil)
-    XCTAssertTrue(LibraryAX.bool(try button("Exposure settings", in: host), "accessibilityPerformPress"))
-    await settle()
-    let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Zebras", in: $0).isEmpty } == true })
-    let content = try XCTUnwrap(popover.contentView)
-    for (title, read) in [("Zebras", { camera.guides.zebras }), ("False colour", { camera.guides.falseColour })] {
-      XCTAssertFalse(read())
-      let toggle = try XCTUnwrap(LibraryAX.named(title, in: content).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
-      _ = LibraryAX.bool(toggle, "accessibilityPerformPress")
-      await settle()
-      XCTAssertTrue(read(), "The real \(title) toggle changes the camera guides during a take")
+    XCTAssertFalse(has("Text", in: host))
+    // The menu uses the same live bindings as the old direct switches.
+    for key in [\CameraGuides.zebras, \CameraGuides.falseColour] {
+      camera.exposureBinding(key).wrappedValue = true
+      XCTAssertTrue(camera.previewGuides[keyPath: key])
     }
-    XCTAssertTrue(LibraryAX.bool(try button("Exposure settings", in: host), "accessibilityPerformPress"))
-    await settle()
     XCTAssertEqual(recorder.phase, .recording)
   }
 
@@ -239,7 +230,7 @@ import XCTest
         XCTAssertGreaterThanOrEqual(viewport.frame.height, 338, "\(zoom) \(state): script viewport \(viewport.frame)")
         let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
         XCTAssertLessThanOrEqual(try frame(bar).height, 182, "\(zoom) \(state)")
-        _ = try button("More presenter options", in: host)
+        _ = try button("Tools", in: host)
         let start = try button(state == "countdown" ? "Cancel countdown" : state == "reading" ? "Pause" : "Start reading", in: host)
         let target = try frame(start)
         XCTAssertGreaterThanOrEqual(target.height, 24 * zoom - 1)
@@ -267,7 +258,7 @@ import XCTest
       if let reset = LibraryAX.named("Back to start", in: host).first {
         XCTAssertTrue(LibraryAX.bool(reset, "accessibilityPerformPress"))
       } else {
-        _ = try button("More presenter options", in: host)
+        _ = try button("Tools", in: host)
         store.session.restart() // The same action remains in More at widths that cannot fit it.
       }
       await settle()
@@ -277,7 +268,7 @@ import XCTest
     recorder.phase = .idle; camera.recordingReadyOverride = false
     await settle()
     XCTAssertFalse(try isEnabled(button("Record", in: host)))
-    _ = try button("More presenter options", in: host)
+    _ = try button("Tools", in: host)
     XCTAssertEqual(PresenterView.controlZoom(2), 2)
     if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
       try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))

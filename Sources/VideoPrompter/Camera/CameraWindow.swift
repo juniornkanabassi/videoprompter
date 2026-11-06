@@ -12,14 +12,14 @@ struct CameraDevice: Identifiable, Hashable, Sendable {
 }
 
 /// What the presenter shows. Older versions stored only whether video was on, as a Bool.
-enum PresenterDisplayMode: String, CaseIterable, Identifiable {
+enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   case prompterOnly, prompterWithVideo, videoOnly
   var id: String { rawValue }
   var label: String {
     switch self {
     case .prompterOnly: "Script only"
     case .prompterWithVideo: "Script and camera"
-    case .videoOnly: "Camera only"
+    case .videoOnly: "Camera view"
     }
   }
   var systemImage: String {
@@ -62,7 +62,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
       let old = storedGuides
       guard value != old else { return }
       if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) {
-        exposureBypassed = false; cleanView = false
+        exposureBypassed = false
       }
       storedGuides = value
       if !loadingGuides {
@@ -80,9 +80,14 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   @Published var cleanView = false
   @Published var exposureBypassed = false
   var exposureIsConfigured: Bool { guides.zebras || guides.falseColour }
-  var previewGuides: CameraGuides {
+  var monitorGuides: CameraGuides {
     var value = guides
-    if exposureBypassed || cleanView { value.zebras = false; value.falseColour = false }
+    if exposureBypassed { value.zebras = false; value.falseColour = false }
+    return value
+  }
+  var previewGuides: CameraGuides {
+    var value = monitorGuides
+    if cleanView { value.zebras = false; value.falseColour = false }
     if cleanView { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
     return value
   }
@@ -91,9 +96,9 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     if !exposureIsConfigured { return "Off" }
     return exposureBypassed ? "Aids bypassed" : "Aids visible"
   }
-  func exposureBinding(_ key: WritableKeyPath<CameraGuides, Bool>) -> Binding<Bool> {
-    Binding(get: { self.previewGuides[keyPath: key] }, set: { enabled in
-      if enabled { self.exposureBypassed = false; self.cleanView = false }
+  func exposureBinding(_ key: WritableKeyPath<CameraGuides, Bool>, presenter: Bool = true) -> Binding<Bool> {
+    Binding(get: { (presenter ? self.previewGuides : self.monitorGuides)[keyPath: key] }, set: { enabled in
+      if enabled { self.exposureBypassed = false; if presenter { self.cleanView = false } }
       self.guides[keyPath: key] = enabled
     })
   }
@@ -261,9 +266,10 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
 /// `CameraStageView`, so the session is opened once and the guides cannot drift apart.
 struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
+  var presenter = false
   func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
-    view.apply(uid: model.selectedUID, guides: model.previewGuides, mirrored: model.mirrored)
+    view.apply(uid: model.selectedUID, guides: presenter ? model.previewGuides : model.monitorGuides, mirrored: model.mirrored)
   }
   static func dismantleNSView(_ view: CameraStageView, coordinator: ()) { view.stop() }
 }
@@ -294,20 +300,20 @@ struct CameraView: View {
           }
       }
     }
-    .overlay(alignment: .topTrailing) { ExposureLegend(model: model).padding(Space.sm).uiZoom(zoom) }
-    .popover(isPresented: $showsExposureSettings) { CameraExposureSettings(model: model).frame(width: 360, height: 500).uiZoom(zoom) }
+    .overlay(alignment: .topTrailing) { ExposureLegend(model: model, respectsPresenterCleanView: false).padding(Space.sm).uiZoom(zoom) }
+    .popover(isPresented: $showsExposureSettings) { CameraExposureSettings(model: model, presenter: false).frame(width: 360, height: 500).uiZoom(zoom) }
     .frame(minWidth: 320, minHeight: 200)
     .task { if startsCamera { model.start() } }
 
     .background(CameraWindowLevel(alwaysOnTop: model.alwaysOnTop))
     .toolbar {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
-      ToolbarItemGroup { ExposureToggle(model: model, kind: .zebras); ExposureToggle(model: model, kind: .falseColour) }
+      ToolbarItemGroup { ExposureToggle(model: model, kind: .zebras, presenter: false); ExposureToggle(model: model, kind: .falseColour, presenter: false) }
       ToolbarItem {
         Button("Framing guides") { showsGuideSettings = true }
           .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "monitor-guides")
           .popover(isPresented: $showsGuideSettings) {
-            CameraGuideSettings(model: model).frame(width: 340, height: 480).uiZoom(zoom)
+            CameraGuideSettings(model: model).frame(width: 340, height: 480).uiZoom(zoom).popoverEntryFocus()
           }
       }
       ToolbarItem {
@@ -412,7 +418,7 @@ struct CameraSettingsSections: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
   var body: some View {
-    Section("Camera") {
+    Section("Device") {
       LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
         .disabled(model.recordingLocked).help("Stop recording to change this")
       Picker("Camera and saved-video rotation", selection: model.rotationChoice) {
@@ -459,7 +465,7 @@ struct CameraGuideSections: View {
   var body: some View {
     Group {
       Section("Framing guides") {
-        Toggle("Rule of thirds", isOn: $model.guides.thirds).help("Divide the picture into thirds to help compose your shot")
+        Toggle("Rule of thirds", isOn: $model.guides.thirds).initialPopoverFocus().help("Divide the picture into thirds to help compose your shot")
         Toggle("Centre cross", isOn: $model.guides.axes).help("Mark the horizontal and vertical centre of the picture")
         Toggle("Centre target", isOn: $model.guides.bullseye).help("Mark the centre with a target")
         ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")
@@ -750,10 +756,10 @@ struct CameraRecoveryView: View {
       if model.authorization == .denied || model.authorization == .restricted {
         Button("Open System Settings") {
           NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
-        }
+        }.initialPopoverFocus()
       } else if model.authorization == .notDetermined {
-        Button("Allow Camera Access") { model.start() }
-      } else { Button("Choose camera", action: chooseCamera) }
+        Button("Allow Camera Access") { model.start() }.initialPopoverFocus()
+      } else { Button("Choose camera", action: chooseCamera).initialPopoverFocus() }
     }.foregroundStyle(.white).padding(Space.md)
       .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 12))
       .frame(maxWidth: 420).accessibilityIdentifier("camera-recovery")
@@ -795,8 +801,8 @@ struct RecordingHealthNotice: View {
           VStack(alignment: .leading, spacing: Space.md) {
             RecordingAudioHealth(recorder: recorder)
             Text("Check the microphone connection and input level. Stop recording before changing the recording microphone.")
-              .font(.callout).fixedSize(horizontal: false, vertical: true)
-          }.padding(Space.md).frame(width: 320).uiZoom(zoom)
+              .initialPopoverFocus().font(.callout).fixedSize(horizontal: false, vertical: true)
+          }.padding(Space.md).frame(width: 320).uiZoom(zoom).popoverEntryFocus()
         }
     }
   }
@@ -804,7 +810,8 @@ struct RecordingHealthNotice: View {
 
 struct CameraExposureSettings: View {
   @ObservedObject var model: CameraModel
-  var body: some View { Form { CameraExposureSections(model: model) }.formStyle(.grouped) }
+  var presenter = true
+  var body: some View { Form { CameraExposureSections(model: model, presenter: presenter) }.formStyle(.grouped) }
 }
 
 struct ExposureToggle: View {
@@ -812,7 +819,8 @@ struct ExposureToggle: View {
   @ObservedObject var model: CameraModel
   let kind: Kind
   var compact = false
-  private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour) }
+  var presenter = true
+  private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour, presenter: presenter) }
   private var on: Bool { binding.wrappedValue }
   private var title: String { kind == .zebras ? "Zebras" : "False colour" }
   var body: some View {
@@ -829,9 +837,10 @@ struct ExposureToggle: View {
 
 struct CameraExposureSections: View {
   @ObservedObject var model: CameraModel
+  var presenter = true
   var body: some View {
     Section("Exposure") {
-      ExposureToolToggles(model: model)
+      ExposureToolToggles(model: model, presenter: presenter)
       if model.exposureIsConfigured {
         LabeledContent("Exposure check", value: model.exposureCheckState)
         if model.exposureBypassed || model.cleanView {
@@ -868,6 +877,12 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
+  func compactOutputConfirmation(camera: CameraModel) -> String {
+    guard let size = SharedCameraSession.shared.pictureSize else { return "Orientation unknown · resolution unknown" }
+    let rotated = camera.guides.rotation.swapsAxes ? CGSize(width: size.height, height: size.width) : size
+    let orientation = rotated.width < rotated.height ? "Portrait" : rotated.width > rotated.height ? "Landscape" : "Square"
+    return "\(orientation) · \(Int(rotated.width)) × \(Int(rotated.height))" + (camera.guides.marker == nil ? "" : " · guide only")
+  }
   func outputConfirmation(camera: CameraModel) -> String {
     var dimensions = "Resolution unknown"
     var orientation = "Orientation unknown"
@@ -1018,7 +1033,7 @@ struct RecordingReceipt: View {
       .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-receipt")
       .popover(isPresented: $showsDetails) {
         RecordingReceipt(recorder: recorder, camera: camera, configure: configure, zoom: zoom)
-          .frame(width: 440).padding(Space.sm).uiZoom(zoom)
+          .frame(width: 440).padding(Space.sm).uiZoom(zoom).popoverEntryFocus()
       }
     } else if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {
@@ -1029,13 +1044,13 @@ struct RecordingReceipt: View {
             .accessibilityValue(file.lastPathComponent)
           if let warning = recorder.qualityWarning { Text(warning).font(.callout).fixedSize(horizontal: false, vertical: true) }
           WrapLayout(spacing: Space.sm) {
-            Button("Play") { NSWorkspace.shared.open(file) }
+            Button("Play") { NSWorkspace.shared.open(file) }.initialPopoverFocus()
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
             if recorder.qualityWarning != nil { Button("Try recording again") { Task { await recorder.start(camera: camera) } } }
             Button("Hide") { recorder.savedTake = nil }
           }
         } else if let failure = recorder.takeFailure {
-          Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout).fixedSize(horizontal: false, vertical: true)
+          Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isStaticText).initialPopoverFocus()
           if let file = recorder.incompleteTake {
             Button("Show incomplete take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
           }

@@ -161,7 +161,7 @@ public actor MarkdownLibrary {
   }
   public func listFolders() -> [ScriptFolder] { index.folders.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending } }
   public func createFolder(name: String) throws -> ScriptFolder {
-    let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let clean = InputValidation.folderName(name)
     guard !clean.isEmpty else { throw PrompterCoreError.invalidTitle }
     let old = index
     let folder = ScriptFolder(name: clean)
@@ -170,7 +170,7 @@ public actor MarkdownLibrary {
     return folder
   }
   public func renameFolder(_ id: UUID, name: String) throws {
-    let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let clean = InputValidation.folderName(name)
     guard !clean.isEmpty, let i = index.folders.firstIndex(where: { $0.id == id }) else { throw PrompterCoreError.invalidTitle }
     let old = index
     index.folders[i].name = clean

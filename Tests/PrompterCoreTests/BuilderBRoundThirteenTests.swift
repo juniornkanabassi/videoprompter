@@ -56,14 +56,11 @@ import XCTest
       try await Task.sleep(for: .milliseconds(100))
       let record = try XCTUnwrap(LibraryAX.named("Record", in: host).first)
       let transportFrame = try XCTUnwrap(record.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      let help = try XCTUnwrap(LibraryAX.named("How to read this", in: host).first)
-      let helpFrame = try XCTUnwrap(help.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      XCTAssertGreaterThan(helpFrame.minY, transportFrame.maxY, "Help must stay above the transport at \(zoom)")
-      for (index, band) in CameraExposure.bands.enumerated() {
-        let node = try XCTUnwrap(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).first)
-        let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertGreaterThan(frame.minY, transportFrame.maxY, "\(band.name) overlaps transport at \(zoom): \(frame), \(transportFrame)")
-      }
+      let key = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
+      let keyFrame = try XCTUnwrap(key.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+      XCTAssertGreaterThan(keyFrame.minY, transportFrame.maxY, "The strip stays above transport at \(zoom)")
+      XCTAssertTrue(LibraryAX.named("How to read this", in: host).isEmpty, "Teaching opens from Key")
+      XCTAssertFalse(LibraryAX.named("False colour scale", in: host).isEmpty)
     }
   }
 

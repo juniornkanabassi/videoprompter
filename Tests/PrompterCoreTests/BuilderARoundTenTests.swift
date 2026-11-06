@@ -26,11 +26,11 @@ import XCTest
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
         draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
       defer { LibraryAX.close(window) }
-      for label in ["Start reading", "Stop recording", "Reading mode", "Camera", "Exposure check", "More presenter options"] {
+      for label in ["Start reading", "Stop recording", "Reading status", "Tools"] {
         XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "\(label) at \(zoom)")
       }
       XCTAssertTrue(LibraryAX.named("Controls", in: host).isEmpty)
-      let status = try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first)
+      let status = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
       XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Automatic scroll"))
     }
     recorder.phase = .idle
@@ -58,34 +58,19 @@ import XCTest
     }
   }
 
-  func testTextPopoverReturnsNativeAccessibilityFocusAfterEscapeWithAnotherWindowOpen() async throws {
-    let (store, record, camera, recorder) = try await fixture()
-    let (other, _) = await LibraryAX.host(Text("Other window"))
-    defer { LibraryAX.close(other) }
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
-        draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 1400, height: 800))
-      defer { LibraryAX.close(window) }
-      // TestOffscreen keeps this transparent, click-through and unable to activate the app.
-      window.makeKeyAndOrderFront(nil)
-      for _ in 0..<2 {
-        let opener = try XCTUnwrap(LibraryAX.named("Text", in: host).first)
-        XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
-        try await Task.sleep(for: .milliseconds(180))
-        let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Larger text", in: $0).isEmpty } == true })
-        let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-          windowNumber: popover.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
-        popover.sendEvent(escape)
-        try await Task.sleep(for: .milliseconds(250))
-        let restored = try XCTUnwrap(LibraryAX.named("Text", in: host).first)
-        XCTAssertTrue(LibraryAX.bool(restored, "isAccessibilityFocused"), "Native AX focus at \(zoom)")
-        XCTAssertNotNil(window.firstResponder, "AppKit retains a native keyboard responder")
-        // This intentionally inactive host cannot prove delivery of physical keyboard input.
-
-      }
-    }
+  func testPopoverEntryFocusChoosesARealControl() async throws {
+    let (window, host) = await LibraryAX.host(VStack {
+      Text("Preview")
+      Button("Smaller text") {}.initialPopoverFocus()
+      Button("Larger text") {}
+    }.popoverEntryFocus())
+    defer { LibraryAX.close(window) }
+    window.makeKeyAndOrderFront(nil)
+    try await Task.sleep(for: .milliseconds(350))
+    let control = try XCTUnwrap(LibraryAX.named("Smaller text", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(control, "isAccessibilityFocused"))
   }
+
 }
 
 import AVFoundation

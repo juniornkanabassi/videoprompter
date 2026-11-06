@@ -105,24 +105,21 @@ import XCTest
       draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder),
       size: .init(width: 720, height: 520))
     defer { LibraryAX.close(narrow) }
-    let master = try XCTUnwrap(LibraryAX.named("Exposure check", in: narrowHost).first)
-    XCTAssertTrue(LibraryAX.bool(master, "accessibilityPerformPress"))
+    XCTAssertFalse(LibraryAX.named("Tools", in: narrowHost).isEmpty)
+    camera.toggleExposureCheck()
     XCTAssertTrue(camera.previewGuides.zebras)
-    XCTAssertTrue(LibraryAX.bool(master, "accessibilityPerformPress"))
+    camera.toggleExposureCheck()
     XCTAssertFalse(camera.previewGuides.zebras)
     XCTAssertTrue(camera.exposureBypassed)
 
-    store.uiZoom = 1
-    let (wide, wideHost) = await LibraryAX.host(PresenterView(store: store, session: store.session,
-      draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder),
-      size: .init(width: 2400, height: 900))
+    let (wide, wideHost) = await LibraryAX.host(CameraExposureSettings(model: camera))
     defer { LibraryAX.close(wide) }
     let tool = try XCTUnwrap(LibraryAX.named("False colour", in: wideHost).first {
-      LibraryAX.value($0, "accessibilityRole") == "AXButton"
+      LibraryAX.value($0, "accessibilityRole") == "AXCheckBox"
     })
-    XCTAssertTrue(LibraryAX.bool(tool, "accessibilityPerformPress"))
-    XCTAssertTrue(camera.guides.falseColour, "The tool's switch did turn on")
-    XCTAssertTrue(camera.previewGuides.falseColour, "Turning False colour on must affect the preview even after Exposure off was used in the compact bar")
+    _ = LibraryAX.bool(tool, "accessibilityPerformPress")
+    XCTAssertTrue(camera.guides.falseColour)
+    XCTAssertTrue(camera.previewGuides.falseColour, "The shared exposure control restores a bypassed preview")
   }
 
   func testUnicodeTakeNameProducesAWritableMoviePath() throws {

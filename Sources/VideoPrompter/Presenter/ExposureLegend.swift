@@ -67,14 +67,15 @@ struct ExposureGuidance: View {
 /// Shared settings rows keep each tool's purpose beside its switch, even when off.
 struct ExposureToolToggles: View {
   @ObservedObject var model: CameraModel
+  var presenter = true
   var body: some View {
-    Toggle(isOn: model.exposureBinding(\.zebras)) {
+    Toggle(isOn: model.exposureBinding(\.zebras, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("Zebras").fontWeight(.semibold)
         Text(ExposureGuidance.zebraPurpose(model.guides))
       }
-    }.accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
-    Toggle(isOn: model.exposureBinding(\.falseColour)) {
+    }.initialPopoverFocus().accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
+    Toggle(isOn: model.exposureBinding(\.falseColour, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("False colour").fontWeight(.semibold)
         Text(ExposureGuidance.colourPurpose)
@@ -86,6 +87,7 @@ struct ExposureToolToggles: View {
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
+  var respectsPresenterCleanView = true
   @State private var showsHelp = false
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
@@ -101,7 +103,7 @@ struct ExposureLegend: View {
   }
 
   var body: some View {
-    if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
+    if model.exposureIsConfigured && (!respectsPresenterCleanView || !model.cleanView) && !model.exposureBypassed {
       VStack(alignment: .leading, spacing: Space.xs) {
         if model.guides.zebras {
           Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
@@ -127,7 +129,7 @@ struct ExposureLegend: View {
             }.frame(maxWidth: .infinity, alignment: .leading)
               .fixedSize(horizontal: false, vertical: true)
           }.frame(maxHeight: 180 / zoom)
-        }
+        }.initialPopoverFocus()
       }.font(.callout).foregroundStyle(.primary)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: 480 / zoom, alignment: .leading)

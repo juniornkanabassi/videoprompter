@@ -225,8 +225,8 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       }
       host.layoutSubtreeIfNeeded()
       if taking {
-        XCTAssertFalse(LibraryAX.named("Text", in: host).isEmpty, "Named tools remain reachable")
-        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
+        XCTAssertFalse(LibraryAX.named("Tools", in: host).isEmpty, "Named tools remain reachable")
+        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading status", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
 
       }
     }
@@ -285,25 +285,34 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     XCTAssertEqual(LibraryAX.value(opener, "accessibilityIdentifier"), "camera-picker")
   }
 
-  func testPresenterPopoverButtonsOpenAndRestoreTheirOwnFocus() async throws {
-    let (store, preferences, _) = try await fixture()
-    let record = try await store.createScript(title: "Anchors", markdown: "Read this script.")
-    store.settings.mode = "Manual"
-    store.session.present(record: record, settings: store.settings)
-    let (panel, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
+  func testPopoverFocusInfrastructureEntersAndReturnsToTools() async throws {
+    struct FocusFixture: View {
+      @State var open = false
+      var body: some View {
+        Button("Tools") { open.toggle() }
+          .restoringPopoverFocus(isPresented: $open, identifier: "tools-focus-fixture")
+          .popover(isPresented: $open) {
+            VStack {
+              Button("Smaller text") {}.initialPopoverFocus()
+              Button("Done") { open = false }
+            }.padding().popoverEntryFocus()
+          }
+      }
+    }
+    let (panel, host) = await LibraryAX.host(FocusFixture())
     panel.makeKeyAndOrderFront(nil)
     defer { LibraryAX.close(panel) }
-    for (title, content) in [("Camera", "Allow your camera"), ("Text", "Larger text"), ("Microphone", "Microphone volume")] {
-      let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first, title)
-      XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
-      try await Task.sleep(for: .milliseconds(180))
-      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named(content, in: $0).isEmpty } == true })
-      XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"), "The opener closes its own popover")
-      try await Task.sleep(for: .milliseconds(350))
-      XCTAssertFalse(popover.isVisible, title)
-      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: host).first), "isAccessibilityFocused"), title)
-    }
-
+    let opener = try XCTUnwrap(LibraryAX.named("Tools", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(350))
+    let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named("Smaller text", in: $0).isEmpty } == true })
+    let first = try XCTUnwrap(LibraryAX.named("Smaller text", in: popover.contentView!).first)
+    XCTAssertTrue(LibraryAX.bool(first, "isAccessibilityFocused"))
+    let done = try XCTUnwrap(LibraryAX.named("Done", in: popover.contentView!).first)
+    XCTAssertTrue(LibraryAX.bool(done, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(350))
+    XCTAssertFalse(popover.isVisible)
+    XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Tools", in: host).first), "isAccessibilityFocused"))
   }
 
   func testResponseBudgetRejectsEscapingBeforeSerialisingOversizedReply() throws {

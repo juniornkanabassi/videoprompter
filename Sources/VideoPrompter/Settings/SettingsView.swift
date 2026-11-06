@@ -112,6 +112,7 @@ struct SettingsPage: View {
       case .microphone, .reading, .camera:
         EmptyView()
       case .presets:
+        ShootSetupSection(store: store, camera: .shared, recorder: .shared)
         Section("Save current reading settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
@@ -227,6 +228,7 @@ struct MicrophonePage: View {
       } label: { Text(microphoneName).fixedSize(horizontal: false, vertical: true) }
         .accessibilityLabel("Microphone").accessibilityValue(microphoneName).help(microphoneName)
         .disabled(recorder.settingsLocked && !recorder.usesSeparateMicrophone)
+        .initialPopoverFocus(when: !recorder.settingsLocked || recorder.usesSeparateMicrophone)
       if compact { LiveInputLevelMeter(meter: session.meter) }
       else { MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
       Text("Loudest sound").font(.callout)
@@ -236,6 +238,7 @@ struct MicrophonePage: View {
         Slider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
           set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
         ) { editing in if !editing { commitGain() } }
+          .initialPopoverFocus(when: recorder.settingsLocked && !recorder.usesSeparateMicrophone)
           .accessibilityLabel("Microphone volume")
           .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
       }.help("Reduce the volume if the sound distorts")
@@ -447,10 +450,8 @@ struct InputLevelMeter: View {
       }
     }
     .frame(height: showsScale ? 30 : 12)
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Microphone peak level")
-    .accessibilityValue(peakDBFS.isFinite ? String(format: "%.1f dBFS", peakDBFS) : "silence")
-    .accessibilityHint(isClipping ? "Input is clipping." : "Marks from minus 60 to 0 dBFS, with warning zones at minus 20 and minus 9.")
+    .accessibilityHidden(true)
+    .overlay { AccessibleInputLevel(peakDBFS: peakDBFS, isClipping: isClipping).allowsHitTesting(false) }
     // `ingest` ignores silence.
     .onChange(of: peakDBFS) { _, value in peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime) }
     .task(id: peakHold.generation) {
@@ -488,9 +489,9 @@ struct PresenterSettingsPopover: View {
     VStack(spacing: Space.sm) {
       Picker("Settings page", selection: $tab) {
         ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-      }.pickerStyle(.menu).fixedSize().padding(Space.sm)
+      }.pickerStyle(.menu).fixedSize().padding(Space.sm).initialPopoverFocus()
       SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
-    }.uiZoom(store.uiZoom).frame(width: 560, height: 600)
+    }.uiZoom(store.uiZoom).frame(width: 560, height: 600).popoverEntryFocus()
       .onAppear { tab = initialTab }
   }
 }
@@ -504,7 +505,6 @@ struct CameraRecordingPage: View {
   var body: some View {
     VStack(spacing: Space.sm) {
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text("Camera & Recording section").fixedSize(horizontal: false, vertical: true)
         Picker("Camera & Recording section", selection: $section) {
           ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
         }.pickerStyle(.menu).labelsHidden().fixedSize()
@@ -531,23 +531,21 @@ struct ReadingAppearancePreview: View {
   let overVideo: Bool
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Text("Reading preview · scaled sample").font(.callout)
-      GeometryReader { geometry in
-        ZStack {
-          Color.gray
-          Color(nsColor: NSColor(hex: settings.backgroundColorHex) ?? .black)
-            .opacity(settings.backdropOpacity(withVideo: overVideo))
-          Text("Read at your own pace.\nLeave room for a natural pause.")
-            .font(.custom(settings.fontName, size: settings.fontSize * 0.65))
-            .fontWeight(settings.fontWeight == "Bold" ? .bold : .regular)
-            .foregroundStyle(Color(nsColor: NSColor(hex: settings.textColorHex) ?? .white).opacity(settings.textOpacity))
-            .multilineTextAlignment(settings.alignment == "Left" ? .leading : settings.alignment == "Right" ? .trailing : .center)
-            .lineSpacing(settings.lineSpacing * 30)
-            .frame(width: geometry.size.width * settings.textWidth)
-            .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
-            .rotationEffect(.degrees(Double(settings.rotation)))
-        }
-      }.frame(height: 140).clipped().accessibilityLabel("Sample of current reading appearance")
+      Text("Reading preview · scaled sample").font(.callout).fixedSize(horizontal: false, vertical: true)
+      Text("Read.")
+        .font(.custom(settings.fontName, size: settings.fontSize * 0.65))
+        .fontWeight(settings.fontWeight == "Bold" ? .bold : .regular)
+        .foregroundStyle(Color(nsColor: NSColor(hex: settings.textColorHex) ?? .white).opacity(settings.textOpacity))
+        .multilineTextAlignment(settings.alignment == "Left" ? .leading : settings.alignment == "Right" ? .trailing : .center)
+        .fixedSize()
+        .rotationEffect(.degrees(Double(settings.rotation)))
+        .padding(Space.md)
+        .frame(maxWidth: .infinity, minHeight: max(140, settings.fontSize * 3))
+        .background(Color(nsColor: NSColor(hex: settings.backgroundColorHex) ?? .black)
+          .opacity(settings.backdropOpacity(withVideo: overVideo)), in: Rectangle())
+        .background(.gray)
+        .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
+        .accessibilityLabel("Sample of current reading appearance")
     }
   }
 }

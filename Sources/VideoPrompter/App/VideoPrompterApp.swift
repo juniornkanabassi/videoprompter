@@ -69,15 +69,15 @@ enum ScriptShortcuts {
         }
         CommandGroup(replacing: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
-          Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
+          Button("Increase Interface Size for All Scripts") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
             .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
-          Button("Zoom Out") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)
+          Button("Decrease Interface Size for All Scripts") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)
             .disabled(store.uiZoom <= AppStore.uiZoomSteps.first!)
-          Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
+          Button("Reset Interface Size for All Scripts") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
             .disabled(store.uiZoom == 1)
           Divider()
-          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
-          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
+          Button("Make Text Bigger for All Scripts") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
+          Button("Make Text Smaller for All Scripts") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
           Divider()
           PresenterVideoItems()
           ExposureMenuItems()
@@ -114,7 +114,9 @@ enum ScriptShortcuts {
             // Not Option-Command-M: that is Window > Minimise All.
             .keyboardShortcut("l", modifiers: [.command, .option])
             .help("Pin the selected passage over the camera picture, as a reference monitor")
+            .disabled(!PresenterController.shared.hasSelectedText)
           Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
+            .help("Resize the presenter window to the camera picture’s proportions")
         }
         CameraCommands()
         UpdateCommands()
@@ -151,7 +153,7 @@ struct PresenterVideoItems: View {
     Toggle("Script Only", isOn: choice(.prompterOnly))
     Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
-    Toggle("Camera Only", isOn: choice(.videoOnly))
+    Toggle("Camera view", isOn: choice(.videoOnly))
   }
 }
 

@@ -33,6 +33,9 @@ private enum PresenterSaveError: LocalizedError {
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
   @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); CameraRecorder.shared.useSettings(settings) } }
+  @Published var shootSetups: [ShootSetup] = [] {
+    didSet { if let data = try? JSONEncoder().encode(shootSetups) { defaults.set(data, forKey: "shootSetups") } }
+  }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
   @Published var sourceFontSize = 17.0 { didSet { let safe = InputValidation.editorSize.repair(sourceFontSize); if sourceFontSize != safe { sourceFontSize = safe }; persistSettings() } }
@@ -42,7 +45,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published var uiZoom = 1.0 { didSet { let safe = InputValidation.zoom.repair(uiZoom); if uiZoom != safe { uiZoom = safe }; persistSettings() } }
   /// Nothing below 100%: zoomed out, a pane's AppKit views are laid out wider than their column,
   /// and AppKit then refuses clicks on the part that would overlap the next column.
-  static let uiZoomSteps = [1, 1.1, 1.25, 1.5, 1.75, 2]
+  static let uiZoomSteps = InputValidation.zoom.choices
   static let presenterFontSizes = InputValidation.fontSize.range
   static let editorFontSizes = InputValidation.editorSize.range
   @Published var libraryNotice: String?
@@ -143,7 +146,15 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
     // Read all three first: a @Published didSet runs even here, and it saves all three.
-    let savedPresets: [PrompterSettings]? = stored("presets")
+    if let data = isolatedDefaults.data(forKey: "shootSetups") {
+      if (try? JSONDecoder().decode([ShootSetup].self, from: data)) == nil { isolatedDefaults.set(data, forKey: "shootSetupsRecoveryBackup") }
+      shootSetups = InputValidation.savedEntries(ShootSetup.self, from: data) ?? []
+    }
+    let presetData = isolatedDefaults.data(forKey: "presets")
+    if let presetData, (try? JSONDecoder().decode([PrompterSettings].self, from: presetData)) == nil {
+      isolatedDefaults.set(presetData, forKey: "presetsRecoveryBackup")
+    }
+    let savedPresets = presetData.flatMap { InputValidation.savedEntries(PrompterSettings.self, from: $0) }
     let savedTypography: EditorTypographyPreferences? = stored("editorTypography")
     let savedSettings: PrompterSettings? = stored("settings")
     let savedSimple = isolatedDefaults.object(forKey: "simpleInterface") == nil || isolatedDefaults.bool(forKey: "simpleInterface")
@@ -299,7 +310,7 @@ private enum PresenterSaveError: LocalizedError {
   func renameLibraryFolder(_ id: UUID, name: String) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
     try await library.renameFolder(id, name: name)
-    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
+    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = InputValidation.folderName(name) }
   }
   private var folderChangeTask: Task<Void, Never>?
   private var folderChangeRevision = 0

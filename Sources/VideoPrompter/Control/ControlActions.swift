@@ -331,7 +331,7 @@ import Speech
       store.settings.mode = mode
       return .ok(["mode": store.settings.mode.lowercased()])
     case "set_zoom":
-      guard let zoom = Double(params["zoom"] ?? ""), AppStore.uiZoomSteps.contains(zoom / 100) else { return .error("invalid_params", "Zoom must be 100, 110, 125, 150, 175 or 200.") }
+      guard let zoom = Double(params["zoom"] ?? ""), InputValidation.zoom.accepts(zoom / 100) else { return .error("invalid_params", "Zoom must be 100, 110, 125, 150, 175 or 200.") }
       store.uiZoom = zoom / 100; return .ok(["zoom": Int(zoom)])
     case "settings_get": return .ok(settingsSnapshot)
     case "settings_set": return await setSettings(params, example: command.example)

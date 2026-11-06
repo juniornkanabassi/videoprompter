@@ -26,7 +26,29 @@ public enum InputValidation {
   public static let inputGain = NumberRule(0.25...4, fallback: 1)
   public static let textWidth = NumberRule(0.3...1, fallback: 1)
   public static let editorSize = NumberRule(12...40, fallback: 18)
-  public static let zoom = NumberRule(1...2, fallback: 1)
+  public struct ChoiceRule: Sendable {
+    public let choices: [Double]
+    public let fallback: Double
+    public func accepts(_ value: Double) -> Bool { choices.contains(value) }
+    public func repair(_ value: Double) -> Double {
+      guard value.isFinite else { return fallback }
+      return choices.min { abs($0 - value) < abs($1 - value) } ?? fallback
+    }
+  }
+  public static let zoom = ChoiceRule(choices: [1, 1.1, 1.25, 1.5, 1.75, 2], fallback: 1)
+
+  public static func folderName(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Decode each saved entry independently so a corrupt neighbour cannot erase it.
+  public static func savedEntries<T: Decodable>(_ type: T.Type, from data: Data) -> [T]? {
+    guard let entries = try? JSONSerialization.jsonObject(with: data) as? [Any] else { return nil }
+    return entries.compactMap { entry in
+      guard let encoded = try? JSONSerialization.data(withJSONObject: entry, options: [.fragmentsAllowed]) else { return nil }
+      return try? JSONDecoder().decode(type, from: encoded)
+    }
+  }
   public static let guideVisibility = NumberRule(0...1, fallback: 0.85)
   public static let shade = NumberRule(0...1, fallback: 0.5)
   public static let zebraLevel = NumberRule(0...100, fallback: 95)
