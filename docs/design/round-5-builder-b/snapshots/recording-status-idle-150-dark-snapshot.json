@@ -1,9 +1,0 @@
-{
-  "height" : 440,
-  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
-  "page" : "recording-status-idle-150-dark",
-  "presenterAppearance" : "Solid Reduce Transparency fallback",
-  "renderer" : "NSHostingView.cacheDisplay",
-  "visible" : false,
-  "width" : 700
-}

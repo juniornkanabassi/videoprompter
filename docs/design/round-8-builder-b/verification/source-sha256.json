@@ -1,9 +1,0 @@
-{
-  "Sources/VideoPrompter/Library/LibraryView.swift": "1b1bf1fb9d5b646d53cdfa694200339cba30e60ca8e8d515651e5b7f9c80e1ba",
-  "Sources/VideoPrompter/Library/LibraryTitleField.swift": "27870a5d54f3528e9b2d385bb9fa2c21fba8f287fd406232a1fab784286abd37",
-  "Sources/VideoPrompter/Library/PopoverFocus.swift": "dddf8e2c9917ef807a63dfa2c62c4cb077ca3ce9ae2c78eded1cd6075ab4a15c",
-  "Sources/VideoPrompter/Camera/CameraPicker.swift": "c37ab76a4e8374dda94fbe20ba4003512130d19fb47912b5b5a7146409be92f3",
-  "Sources/VideoPrompter/Presenter/ExposureLegend.swift": "e4f5e631322fb81ededa21eac65b9f018547eb2d04918c337212ced0c06dfbc5",
-  "Sources/VideoPrompter/Settings/SettingsView.swift": "81a9d09c6c0da9bc4e0e66d5c08834838dc4ae985a10c3aa9c63ddc857e2851e",
-  "Resources/AppIcon/VideoPrompter.icon/icon.json": "ab9617fefeaf5f1de1c8b32c88afe5a7404b6b21082617be3498967ac84e1898"
-}

@@ -1,9 +1,0 @@
-/Users/junior.nkanabassi/.t3/worktrees/Source/t3-6aac90ec/Tests/PrompterCoreTests/BuilderBLibraryTests.swift:113: -[PrompterCoreTests.BuilderBLibraryTests testDeleteKeyHandlerUsesUndoAndUndoRestoresBatch] : Test skipped - Builder A has supplied the delete signature but not its undo implementation yet. Library Delete-key routing is verified separately.
-Test Suite 'BuilderBLibraryTests' passed at 2026-11-06 12:22:18.179.
-	 Executed 10 tests, with 1 test skipped and 0 failures (0 unexpected) in 6.473 (6.475) seconds
-Test Suite 'ReadingAccessibilityTests' passed at 2026-11-06 12:22:21.590.
-	 Executed 3 tests, with 0 failures (0 unexpected) in 3.410 (3.411) seconds
-Test Suite 'PrompterCoreTests.xctest' passed at 2026-11-06 12:22:21.590.
-	 Executed 13 tests, with 1 test skipped and 0 failures (0 unexpected) in 9.883 (9.886) seconds
-Test Suite 'Selected tests' passed at 2026-11-06 12:22:21.590.
-	 Executed 13 tests, with 1 test skipped and 0 failures (0 unexpected) in 9.883 (9.887) seconds

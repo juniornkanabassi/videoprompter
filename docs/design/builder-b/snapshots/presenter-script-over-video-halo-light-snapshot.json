@@ -1,8 +1,0 @@
-{
-  "height" : 650,
-  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
-  "page" : "presenter-script-over-video-halo-light",
-  "renderer" : "NSHostingView.cacheDisplay",
-  "visible" : false,
-  "width" : 1000
-}

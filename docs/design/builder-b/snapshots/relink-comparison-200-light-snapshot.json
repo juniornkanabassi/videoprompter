@@ -1,8 +1,0 @@
-{
-  "height" : 800,
-  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
-  "page" : "relink-comparison-200-light",
-  "renderer" : "NSHostingView.cacheDisplay",
-  "visible" : false,
-  "width" : 700
-}
