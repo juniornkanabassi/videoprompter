@@ -227,7 +227,7 @@ struct MicrophonePage: View {
           if let uid = store.settings.audioDeviceUID, !devices.contains(where: { $0.uid == uid }) { Text("Selected microphone unavailable").tag(uid) }
           ForEach(devices) { Text($0.name).tag($0.uid) }
         }.pickerStyle(.inline)
-      } label: { Text(microphoneName).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
+      } label: { Text(microphoneName).fixedSize(horizontal: false, vertical: true) }
         .accessibilityLabel("Microphone").accessibilityValue(microphoneName).help(microphoneName)
         .disabled(recorder.settingsLocked && !recorder.usesSeparateMicrophone)
       if compact { LiveInputLevelMeter(meter: session.meter) }
@@ -504,10 +504,13 @@ struct CameraRecordingPage: View {
   @State var section = "Camera"
   var body: some View {
     VStack(spacing: Space.sm) {
-      Picker("Camera & Recording section", selection: $section) {
-        ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
-      }.pickerStyle(.menu).fixedSize(horizontal: false, vertical: true).accessibilityLabel("Camera & Recording section")
-        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text("Camera & Recording section").fixedSize(horizontal: false, vertical: true)
+        Picker("Camera & Recording section", selection: $section) {
+          ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
+        }.pickerStyle(.menu).labelsHidden().fixedSize()
+          .accessibilityLabel("Camera & Recording section")
+      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
       Form {
         switch section {
         case "Camera":
