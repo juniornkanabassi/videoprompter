@@ -163,3 +163,5 @@ view, and **Second monitor window** is the separate window. **Clean presenter vi
 the script, framing guides and exposure aids in the presenter only. The Camera
 window keeps its overlays. Bypassing exposure aids preserves their configuration
 and displays a **Restore exposure aids** action until restored.
+
+Presenter picture checks are directly available whenever a camera is shown: **Guides** toggles framing guides, **Exposure check** toggles the selected aids, and **Switch camera** opens the picker. First use chooses thirds for guides and brightness colours for exposure. Switching a check off retains its configuration. **Tools** shows one job section at a time; its **More** menu contains Shoot setups, Presenter help and Recording settings. Reading settings apply to all scripts. Microphone volume displays a percentage with one-percent steps and Reset to 100%; it changes voice following and its test meter, not saved audio or speaker volume.

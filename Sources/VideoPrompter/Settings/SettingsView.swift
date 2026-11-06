@@ -235,13 +235,9 @@ struct MicrophonePage: View {
       else { MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
       Text("Loudest sound").font(.callout)
       LoudestSoundReadout(meter: session.meter)
-      VStack(alignment: .leading, spacing: Space.sm) {
-        Text("Microphone volume")
-        ReadingSlider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
-          set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), range: 0.25...4,
-          title: "Microphone volume", spokenValue: String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
-          .initialPopoverFocus(when: recorder.settingsLocked && !recorder.usesSeparateMicrophone)
-      }.help("Reduce the volume if the sound distorts")
+      MicrophoneVolumeControl(value: Binding(get: { gainDraft ?? store.settings.inputGain }, set: {
+        gainDraft = $0; session.setMicrophoneTestGain($0)
+      })).initialPopoverFocus(when: recorder.settingsLocked && !recorder.usesSeparateMicrophone)
     }
     if !compact {
     Section("Recognition") {
@@ -272,6 +268,37 @@ struct MicrophonePage: View {
     guard let gain = gainDraft else { return }
     gainDraft = nil
     store.settings.inputGain = gain
+  }
+}
+
+/// Gain affects speech following and its test meter, never the saved recording or speakers.
+struct MicrophoneVolumeControl: View {
+  @Binding var value: Double
+  static func stepped(_ value: Double, by step: Int) -> Double {
+    min(4, max(0.25, (value * 100).rounded() / 100 + Double(step) / 100))
+  }
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      HStack {
+        Text("Microphone volume")
+        Spacer()
+        Text("\(Int((value * 100).rounded()))%")
+          .monospacedDigit().accessibilityLabel("Microphone volume value")
+      }
+      ReadingSlider(value: $value, range: 0.25...4, title: "Microphone volume",
+        spokenValue: String(format: "%.2f times", value))
+      HStack {
+        Button("−1%") { value = Self.stepped(value, by: -1) }
+          .accessibilityLabel("Decrease microphone volume by 1 percent").disabled(value <= 0.25)
+        Button("+1%") { value = Self.stepped(value, by: 1) }
+          .accessibilityLabel("Increase microphone volume by 1 percent").disabled(value >= 4)
+        Spacer()
+        Button("Reset") { value = 1 }
+          .accessibilityLabel("Reset microphone volume to 100 percent").disabled(value == 1)
+      }
+      Text("Changes voice following and its test level only. Saved audio and speaker volume stay unchanged.")
+        .font(.callout).fixedSize(horizontal: false, vertical: true)
+    }
   }
 }
 

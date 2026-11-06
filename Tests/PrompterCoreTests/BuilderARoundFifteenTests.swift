@@ -54,7 +54,7 @@ import XCTest
     store.session.present(record: record, settings: store.settings)
     camera.displayMode = .prompterWithVideo
     let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-    let (window, host) = await LibraryAX.host(view.toolsSurface, size: .init(width: 520, height: 700))
+    let (window, host) = await LibraryAX.host(Form { ForEach(["Text", "Camera", "Exposure", "Microphone"], id: \.self) { view.toolContents($0) } }, size: .init(width: 520, height: 700))
     defer { LibraryAX.close(window) }
     for name in ["Smaller text", "Larger text", "Reading mode…", "Edit this script", "Choose camera…", "Framing guides…", ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check brightness · False colour", "Check sound…", "More text settings…", "More camera settings…", "More exposure settings…", "More microphone settings…"] {
       XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name)

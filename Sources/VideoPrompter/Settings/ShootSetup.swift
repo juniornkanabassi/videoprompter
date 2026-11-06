@@ -222,6 +222,7 @@ struct PresenterHelp: View {
         Text("Presenter help").font(.title2)
         Text("Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately.")
         Text("Back to start returns to the first word without stopping a recording.")
+        Text("The Picture row offers Guides, Exposure check and Switch camera. Exposure check uses brightness colours on first use and preserves your choices when switched off.")
         Text("Tools contains Text, Camera, Exposure and Microphone. Camera view shows the picture without a script. Script and camera puts your words over it.")
         Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
         Text("Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings.")
