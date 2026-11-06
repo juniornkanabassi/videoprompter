@@ -86,7 +86,7 @@ struct InspectorView: View {
 }
 
 enum SettingsTab: String, CaseIterable {
-  case general = "General", voice = "Voice", editor = "Editor", presets = "Presets"
+  case general = "General", voice = "Voice", editor = "Editor", presets = "Saved settings"
   var symbol: String {
     switch self {
     case .general: "gearshape"
@@ -107,6 +107,11 @@ struct AppSettingsView: View {
     self.selectedTab = selectedTab
     _selection = State(initialValue: selectedTab ?? .general)
   }
+  static var requestedTab: SettingsTab?
+  static func requestVoiceTab() {
+    requestedTab = .voice
+    NotificationCenter.default.post(name: .init("VideoPrompter.voiceSettings"), object: nil)
+  }
   static let width: CGFloat = 560
   private var height: CGFloat {
     switch selection {
@@ -125,7 +130,11 @@ struct AppSettingsView: View {
           .tabItem { Label(tab.rawValue, systemImage: tab.symbol) }.tag(tab)
       }
     }.frame(width: Self.width, height: height)
-      .onAppear { if selectedTab == nil { selection = SettingsTab(rawValue: savedTab) ?? .general } }
+      .onAppear {
+        selection = Self.requestedTab ?? selectedTab ?? SettingsTab(rawValue: savedTab) ?? .general
+        Self.requestedTab = nil
+      }
+      .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.voiceSettings"))) { _ in selection = .voice; Self.requestedTab = nil }
       .onChange(of: selection) { _, tab in savedTab = tab.rawValue }
   }
 }
@@ -138,6 +147,7 @@ struct SettingsPage: View {
   @State private var presetName = ""
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
+  @State private var replacingPreset: PrompterSettings?
 
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
@@ -177,40 +187,48 @@ struct SettingsPage: View {
           Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
             Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
           }.accessibilityLabel("Editor text size").help("Change text size while editing")
-        } header: { Text("Editor text") } footer: { Text("Presenter text is set separately in the Presenter inspector.") }
+        } header: { Text("Editor text") } footer: { Text("Change reading text with Reading controls in the presenter, or Text in the Presenter inspector.") }
       case .presets:
         Section("Save current presenter settings") {
-          TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
+          TextField("Settings name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
-          Button("Save Preset") { store.savePreset(named: presetName); presetName = "" }
+          Button("Save Settings") {
+            if let existing = store.presets.first(where: { $0.name == presetName.trimmingCharacters(in: .whitespacesAndNewlines) }) { replacingPreset = existing }
+            else { store.savePreset(named: presetName); presetName = "" }
+          }.disabled(presetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .help("Save the current presenter settings for reuse")
         }
         Section {
-          if store.presets.isEmpty { Text("Saved presets appear here.").foregroundStyle(.secondary) }
+          if store.presets.isEmpty { Text("Your saved settings appear here.").foregroundStyle(.secondary) }
           ForEach(store.presets) { preset in
             HStack {
-              Button(preset.name) { store.applyPreset(preset) }.buttonStyle(.plain)
+              Button("Apply \(preset.name)") { store.applyPreset(preset) }.buttonStyle(.plain)
                 .lineLimit(1).truncationMode(.tail).help("Apply \(preset.name)")
               Spacer()
               Button("Delete \(preset.name)", systemImage: "trash") { store.deletePreset(preset.id, undoManager: undoManager) }
                 .labelStyle(.iconOnly).buttonStyle(.plain)
-                .help("Remove this preset; choose Edit > Undo to restore it")
+                .help("Remove these saved settings; choose Edit > Undo to restore it")
             }.contextMenu {
               Button("Rename…") { renamePreset = preset; renameValue = preset.name }
                 .help("Change the name of these saved settings")
               Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of these saved settings")
-              Button("Replace with Current Settings") { store.updatePreset(preset.id) }
-                .help("Overwrite this preset with the settings in use")
+              Button("Replace with Current Settings") { replacingPreset = preset }
+                .help("Replace these saved settings with the settings in use")
               Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
-                .help("Remove this preset; choose Edit > Undo to restore it")
+                .help("Remove these saved settings; choose Edit > Undo to restore it")
             }
           }
-        } header: { Text("Saved settings") } footer: { Text("Applying a preset keeps your microphone and spoken language.") }
+        } header: { Text("Saved settings") } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.") }
       }
     }.formStyle(.grouped)
+      .confirmationDialog("Replace saved settings?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
+        Button("Replace", role: .destructive) { if let preset = replacingPreset { store.updatePreset(preset.id) }; replacingPreset = nil; presetName = "" }
+        Button("Cancel", role: .cancel) { replacingPreset = nil }
+      } message: { Text("This replaces the saved reading mode, speed, appearance and layout with your current settings. Your microphone and spoken language stay unchanged when you apply them.") }
       .alert("Rename Saved Settings", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
-        TextField("Preset name", text: $renameValue).help("Enter a new name for these saved settings")
+        TextField("Settings name", text: $renameValue).help("Enter a new name for these saved settings")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
+          .disabled(renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         Button("Cancel", role: .cancel) { renamePreset = nil }
       }
 
@@ -245,7 +263,7 @@ private struct VoiceSettingsPage: View {
 
   @ViewBuilder private var sections: some View {
     Section {
-      Picker("Microphone", selection: Binding(
+      Picker("Voice-follow microphone", selection: Binding(
         get: { store.settings.audioDeviceUID ?? "" },
         set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
       ) {
@@ -256,7 +274,7 @@ private struct VoiceSettingsPage: View {
         ForEach(devices) { Text($0.name).tag($0.uid) }
       }.help("Choose the microphone that Voice listens to")
       MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
-      LabeledContent("Microphone volume") {
+      LabeledContent("Voice-follow input level") {
         Slider(value: Binding(get: { gainDraft ?? store.settings.inputGain },
           set: { gainDraft = $0; session.setMicrophoneTestGain($0) }), in: 0.25...4
         ) { editing in if !editing { commitGain() } }
@@ -264,7 +282,7 @@ private struct VoiceSettingsPage: View {
           .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
       }.help("Reduce the volume if the sound distorts")
       LabeledContent("Loudest sound") { LoudestSoundReadout(meter: session.meter) }
-    } header: { Text("Microphone") } footer: { Text("Zero dBFS is the microphone's maximum level. Lower the volume if the sound distorts.") }
+    } header: { Text("Microphone") } footer: { Text("Press Test microphone and speak normally. If you see Sound too loud, lower Voice-follow input level. The dBFS number is a technical level; 0 is the maximum.") }
     Section("Recognition") {
       Picker("Spoken language", selection: $store.settings.speechLanguage) {
         Text("Mixed English & French").tag("Mixed")
@@ -344,13 +362,14 @@ private struct MicrophoneTestRow: View {
   let gain: Double
   var body: some View {
     HStack(spacing: 12) {
-      Button(session.isTestingMicrophone ? "Stop test" : "Test") {
+      Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
         if session.isTestingMicrophone { session.stopMicrophoneTest() }
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")
         .disabled(!session.isTestingMicrophone && deviceUID == nil)
       LiveInputLevelMeter(meter: session.meter)
     }
+    if deviceUID == nil { Text("Choose a microphone above to test it.").font(.callout) }
     if let notice = session.microphoneTestNotice {
       Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.secondary)
     }
@@ -370,10 +389,10 @@ private struct LoudestSoundReadout: View {
   var body: some View {
     HStack {
       if meter.isClipping {
-        Label("Sound distortion", systemImage: "exclamationmark.triangle.fill")
-          .labelStyle(.iconOnly).foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
+        Label("Sound too loud", systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.red).help("Lower Voice-follow input level if the input is distorted")
       }
-      Text(meter.peakDBFS.isFinite ? String(format: "%.1f dBFS", meter.peakDBFS) : "−∞ dBFS")
+      Text(meter.peakDBFS.isFinite ? "Sound detected · " + String(format: "%.1f dBFS", meter.peakDBFS) : "No sound yet")
         .monospacedDigit().lineLimit(1).fixedSize()
     }
   }

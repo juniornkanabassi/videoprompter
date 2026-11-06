@@ -167,7 +167,7 @@ final class CameraPickerTests: XCTestCase {
       CameraDevice(uid: "uid-cam-b", name: "Blackmagic Cam B"),
     ]
     XCTAssertEqual(CameraPicker.label(for: "uid-cam-b", in: cameras), "Blackmagic Cam B")
-    XCTAssertEqual(CameraPicker.label(for: "uid-gone", in: cameras), "FaceTime HD Camera")
+    XCTAssertEqual(CameraPicker.label(for: "uid-gone", in: cameras), "No camera")
     XCTAssertEqual(CameraPicker.label(for: nil, in: cameras), "FaceTime HD Camera")
     XCTAssertEqual(CameraPicker.label(for: nil, in: []), "No camera")
     XCTAssertEqual(CameraPicker.label(for: "uid-cam-b", in: []), "No camera")

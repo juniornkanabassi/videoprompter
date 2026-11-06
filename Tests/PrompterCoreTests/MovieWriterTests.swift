@@ -13,6 +13,26 @@ final class MovieWriterTests: XCTestCase {
       }
     }
   }
+  func testSavedTakePreservesRotationAndMirroring() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("orientation-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for rotation in CameraRotation.allCases {
+      for mirrored in [false, true] {
+        let transform = RecordingSink.recordingTransform(rotation: rotation, mirrored: mirrored)
+        let file = folder.appendingPathComponent("\(rotation.rawValue)-\(mirrored).mov")
+        let writer = try MovieWriter(url: file, width: 320, height: 240, transform: transform, preset: .standard, audio: nil, floatAudio: false)
+        XCTAssertTrue(try writer.append(video: video(0)))
+        _ = try await writer.finish()
+        let tracks = try await AVURLAsset(url: file).loadTracks(withMediaType: .video)
+        let saved = try await XCTUnwrap(tracks.first).load(.preferredTransform)
+        XCTAssertEqual(saved.a, transform.a, accuracy: 0.001)
+        XCTAssertEqual(saved.b, transform.b, accuracy: 0.001)
+        XCTAssertEqual(saved.c, transform.c, accuracy: 0.001)
+        XCTAssertEqual(saved.d, transform.d, accuracy: 0.001)
+      }
+    }
+  }
   private func video(_ frame: Int) throws -> CMSampleBuffer {
     var pixel: CVPixelBuffer?
     XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 240, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixel), kCVReturnSuccess)

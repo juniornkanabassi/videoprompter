@@ -106,6 +106,17 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(afterDelete.tokenIndex, 0)
   }
 
+  func testVoiceNeverClaimsListeningBeforeRecognitionArrives() {
+    let session = SessionStore()
+    var settings = PrompterSettings()
+    settings.audioDeviceUID = "test-microphone"
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    XCTAssertEqual(session.readingStatus, "Ready to read")
+    XCTAssertFalse(session.hasLiveRecognition)
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+  }
   func testMissingAudioInputPausesAndPreservesAnchor() {
     let session = SessionStore()
     session.present(record: record(), settings: PrompterSettings())
@@ -114,7 +125,8 @@ final class SessionStoreTests: XCTestCase {
 
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.anchor, anchor)
-    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Presenter settings")
+    XCTAssertEqual(session.readingStatus, "Needs microphone")
+    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Settings > Voice, then press Start reading.")
     session.play(captureAudio: false)
     XCTAssertEqual(session.state, .running)
     XCTAssertNil(session.anchorNotice)

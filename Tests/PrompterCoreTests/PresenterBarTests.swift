@@ -6,7 +6,7 @@ import XCTest
 @testable import VideoPrompter
 
 /// The presenter bar keeps the camera picker and Framing guides reachable while the camera is on,
-/// dimmed but in place while it is off, so the bar is the same width in every view. Offscreen
+/// hidden while it is off, with grouped controls inside the presenter. Offscreen
 /// fixture camera only: `startsCamera: false`, and no window is ordered in.
 @MainActor final class PresenterBarTests: XCTestCase {
   private func elements(_ element: Any) -> [NSObject] {
@@ -19,12 +19,16 @@ import XCTest
 
   private func button(_ label: String, in host: NSView) throws -> NSObject {
     try XCTUnwrap(elements(host).first { object in
-      let role = NSSelectorFromString("accessibilityRole"), name = NSSelectorFromString("accessibilityLabel")
+      let role = NSSelectorFromString("accessibilityRole")
       guard object.responds(to: role),
         let value = object.perform(role)?.takeUnretainedValue() as? String,
-        ["AXButton", "AXMenuButton", "AXPopUpButton"].contains(value),
-        object.responds(to: name) else { return false }
-      return object.perform(name)?.takeUnretainedValue() as? String == label
+        ["AXButton", "AXMenuButton", "AXPopUpButton"].contains(value) else { return false }
+      return ["accessibilityLabel", "accessibilityTitle"].contains { name in
+        let selector = NSSelectorFromString(name)
+        guard object.responds(to: selector) else { return false }
+        let value = object.perform(selector)?.takeUnretainedValue()
+        return (value as? String ?? (value as? NSAttributedString)?.string) == label
+      }
     }, "The bar has no \(label) button")
   }
 
@@ -43,7 +47,7 @@ import XCTest
     return unsafeBitCast(object.method(for: selector), to: Getter.self)(object, selector)
   }
 
-  func testCameraPickerAndFramingGuidesAreReachableAndTheBarKeepsOneWidth() async throws {
+  func testCameraControlsStayReachableWithinGroupedPresenterAtEveryZoom() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("presenter-bar-\(UUID())")
@@ -68,36 +72,30 @@ import XCTest
 
     for zoom in [1.0, 2.0] {
       store.uiZoom = zoom
-      var widths: [PresenterDisplayMode: CGFloat] = [:]
       for mode in [PresenterDisplayMode.prompterOnly, .prompterWithVideo, .videoOnly, .prompterOnly] {
         camera.displayMode = mode
         await settle()
-        let picker = try button("Camera", in: host)
-        let guides = try button("Framing guides", in: host)
-        XCTAssertEqual(try isEnabled(picker), camera.presentsWithVideo, "\(zoom) \(mode): picker dimmed only while the camera is off")
-        XCTAssertEqual(try isEnabled(guides), camera.presentsWithVideo, "\(zoom) \(mode): guides dimmed only while the camera is off")
         _ = try button("Presenter view", in: host)
-        let start = try frame(button(store.session.isActivelyRunning ? "Pause" : "Start", in: host))
-        let close = try frame(button("Close presenter", in: host))
-        for control in [picker, guides] {
-          let rect = try frame(control)
-          XCTAssertGreaterThan(rect.width, 0, "\(zoom) \(mode)")
-          XCTAssertEqual(rect.midY, start.midY, accuracy: 2, "\(zoom) \(mode): one row")
-          XCTAssertTrue(rect.minX > start.maxX && rect.maxX < close.minX, "\(zoom) \(mode): inside the bar")
-          if camera.presentsWithVideo {
-            // A real click lands on the control, not on the video or script behind it.
+        let labels = ["Start reading", "Close presenter", "Reading", "Record camera"]
+        for label in labels {
+          let rect = try frame(button(label, in: host))
+          XCTAssertGreaterThan(rect.width, 0)
+          XCTAssertTrue(window.convertToScreen(host.bounds).contains(rect), "\(zoom) \(mode): \(label) remains inside the presenter")
+        }
+        if camera.presentsWithVideo {
+          let picker = try button("Camera", in: host)
+          let guides = try button("Framing guides", in: host)
+          XCTAssertTrue(try isEnabled(picker))
+          XCTAssertTrue(try isEnabled(guides))
+          for control in [picker, guides] {
+            let rect = try frame(control)
+            XCTAssertTrue(window.convertToScreen(host.bounds).contains(rect))
             let point = window.convertPoint(fromScreen: NSPoint(x: rect.midX, y: rect.midY))
             let hit = host.superview?.hitTest(point)
-            XCTAssertTrue(hit === host || hit?.isDescendant(of: host) == true, "\(zoom) \(mode): control is hit-testable")
+            XCTAssertTrue(hit === host || hit?.isDescendant(of: host) == true)
           }
+          XCTAssertLessThanOrEqual(try frame(picker).width, PresenterView.cameraPickerWidth * zoom + 2)
         }
-        XCTAssertLessThanOrEqual(try frame(picker).width, PresenterView.cameraPickerWidth * zoom + 2,
-                                 "\(zoom) \(mode): a camera name never widens the bar")
-        let width = close.maxX - start.minX
-        if let first = widths.values.first {
-          XCTAssertEqual(width, first, accuracy: 1, "\(zoom) \(mode): the bar keeps one width")
-        }
-        widths[mode] = width
       }
     }
   }

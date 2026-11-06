@@ -3,6 +3,34 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class CameraRecorderTests: XCTestCase {
+  func testRecordingTransformMatchesPreviewRotationAndHorizontalMirror() {
+    for rotation in CameraRotation.allCases {
+      let point = CGPoint(x: 3, y: 7)
+      let rotated = point.applying(CGAffineTransform(rotationAngle: rotation.radians))
+      let plain = point.applying(RecordingSink.recordingTransform(rotation: rotation, mirrored: false))
+      let mirrored = point.applying(RecordingSink.recordingTransform(rotation: rotation, mirrored: true))
+      XCTAssertEqual(plain.x, rotated.x, accuracy: 0.001)
+      XCTAssertEqual(plain.y, rotated.y, accuracy: 0.001)
+      XCTAssertEqual(mirrored.x, -rotated.x, accuracy: 0.001)
+      XCTAssertEqual(mirrored.y, rotated.y, accuracy: 0.001)
+    }
+  }
+  func testMissingFramesTimeOutFromAttachmentOrLastWrittenFrame() {
+    let start = Date(timeIntervalSince1970: 100)
+    XCTAssertFalse(CameraRecorder.framesTimedOut(attachedAt: start, lastFrameAt: nil, now: start.addingTimeInterval(4)))
+    XCTAssertTrue(CameraRecorder.framesTimedOut(attachedAt: start, lastFrameAt: nil, now: start.addingTimeInterval(6)))
+    XCTAssertFalse(CameraRecorder.framesTimedOut(attachedAt: start, lastFrameAt: start.addingTimeInterval(10), now: start.addingTimeInterval(14)))
+    XCTAssertTrue(CameraRecorder.framesTimedOut(attachedAt: start, lastFrameAt: start.addingTimeInterval(10), now: start.addingTimeInterval(16)))
+  }
+  func testIdleRecorderNeverClaimsWrittenFrames() {
+    let suite = "RecorderTests.\(UUID())"
+    let recorder = CameraRecorder(defaults: TestDefaults.suite(named: suite)!)
+    defer { TestDefaults.remove(suite) }
+    XCTAssertNil(recorder.startedAt)
+    XCTAssertFalse(recorder.isRecording)
+    XCTAssertEqual(recorder.recordedDuration, 0)
+    XCTAssertNil(recorder.lastFile)
+  }
   func testPathsSpaceAndPreferencesWithoutOpeningDevices() throws {
     XCTAssertEqual(CameraRecorder.recordingsFolder(arguments: ["app", "--data-directory", "/tmp/disposable"]).path, "/tmp/disposable/Recordings")
     let movies = FileManager.default.temporaryDirectory.appendingPathComponent("videoprompter-movies-\(UUID().uuidString)", isDirectory: true)

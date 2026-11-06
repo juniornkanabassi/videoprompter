@@ -42,7 +42,8 @@ final class MovieWriter: @unchecked Sendable {
       guard writer.canAdd(input) else { throw CocoaError(.featureUnsupported) }; writer.add(input); self.audio = input
     } else { self.audio = nil }
   }
-  func append(video buffer: CMSampleBuffer) throws {
+  @discardableResult
+  func append(video buffer: CMSampleBuffer) throws -> Bool {
     if !started {
       guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
       firstTime = CMSampleBufferGetPresentationTimeStamp(buffer)
@@ -53,8 +54,10 @@ final class MovieWriter: @unchecked Sendable {
       if !video.append(buffer) {
         guard writer.status != .failed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         droppedFrames += 1
+        return false
       }
-    } else { droppedFrames += 1 }
+      return true
+    } else { droppedFrames += 1; return false }
   }
   func append(audio buffer: CMSampleBuffer) throws {
     guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime, let audio, audio.isReadyForMoreMediaData else { return }
