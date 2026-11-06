@@ -232,7 +232,7 @@ import SwiftUI
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
-      if activate && !CommandLine.arguments.contains("--agent-screen") { panel.makeKey(); NSApp.activateUnlessAgentScreen() }
+      if activate && !AgentMode.isOn { panel.makeKey(); NSApp.activateUnlessAgentScreen() }
       return
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
@@ -241,14 +241,14 @@ import SwiftUI
     hosting.sizingOptions = []
     panel.contentView = hosting
     panel.makeFirstResponder(panel)
-    let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen") ? NSScreen.agentScreen : nil)
+    let targetScreen = screen ?? (AgentMode.isOn ? NSScreen.agentScreen : nil)
     if let area = targetScreen?.visibleFrame, !isFullScreen {
       panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
     }
     recoverVisibleFrame(panel)
     if !activate {
       panel.orderFrontRegardless()
-    } else if screen != nil || CommandLine.arguments.contains("--agent-screen") {
+    } else if screen != nil || AgentMode.isOn {
       panel.orderFrontRegardless()
       panel.makeKey()
     } else {
@@ -390,7 +390,7 @@ enum PresenterFrameMemory {
   static let key = "presenterFrame"
 
   @MainActor static func defaultStore() -> UserDefaults? {
-    guard NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") else { return nil }
+    guard NSClassFromString("XCTestCase") == nil, !AgentMode.isOn else { return nil }
     return AppStore.preferences()
   }
 

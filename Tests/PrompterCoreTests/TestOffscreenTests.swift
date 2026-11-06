@@ -35,3 +35,10 @@ final class CaptureAccessTests: XCTestCase {
     }
   }
 }
+
+final class AgentModeTests: XCTestCase {
+  func testOnlyTheRealBundleRunsVisibleOutsideTests() {
+    XCTAssertEqual(AgentMode.realBundleID, "com.juniornkanabassi.VidPrompt")
+    XCTAssertFalse(AgentMode.isOn, "tests keep their own window and focus guards")
+  }
+}

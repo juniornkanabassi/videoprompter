@@ -31,7 +31,7 @@ enum ScriptShortcuts {
     // moment before this init runs. Every other launch becomes the ordinary app here, before it finishes launching.
     if !Headless.shared.active { NSApplication.shared.setActivationPolicy(.regular) }
     Headless.shared.start()
-    if CommandLine.arguments.contains("--agent-screen") { NSWindow.keepEveryWindowInvisible() }
+    if AgentMode.isOn { NSWindow.keepEveryWindowInvisible() }
     Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
     Updates.shared.start()
   }
@@ -317,7 +317,7 @@ extension NSResponder {
 extension NSApplication {
   /// Hidden agent copies (`--agent-screen`) must never come to the front and take focus from Junior.
   func activateUnlessAgentScreen() {
-    guard !CommandLine.arguments.contains("--agent-screen") else { return }
+    guard !AgentMode.isOn else { return }
     activate(ignoringOtherApps: true)
   }
 }
@@ -353,7 +353,7 @@ struct MainWindowConfigurator: NSViewRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
   func updateNSView(_ view: NSView, context: Context) {
-    guard CommandLine.arguments.contains("--agent-screen"), !context.coordinator.placed else { return }
+    guard AgentMode.isOn, !context.coordinator.placed else { return }
     DispatchQueue.main.async {
       guard let window = view.window else { return }
       context.coordinator.placed = true
