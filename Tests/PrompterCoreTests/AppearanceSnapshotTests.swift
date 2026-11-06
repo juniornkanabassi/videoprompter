@@ -91,6 +91,33 @@ import XCTest
     }
   }
 
+  func testRoundElevenRecoveryAndMonitoring() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("R11Snapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let record = try await store.createScript(title: "Recovery", markdown: String(repeating: "Read at your own pace. Keep your place while the camera reconnects.\n\n", count: 20))
+    store.settings.mode = "Manual"
+    store.session.present(record: record, settings: store.settings)
+    let camera = CameraModel(defaults: defaults); camera.displayMode = .prompterWithVideo
+    let recorder = CameraRecorder(defaults: defaults)
+    for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom
+        for state in ["denied", "missing", "waiting", "reading", "retake"] {
+          store.session.pause(); store.session.seek(to: state == "retake" ? 90 : 0)
+          recorder.phase = state == "waiting" ? .waitingForFrames : .idle
+          camera.authorization = state == "denied" ? .denied : .authorized
+          if state == "reading" { store.session.play(captureAudio: false) }
+          try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r11-\(state)-\(Int(zoom * 100))-\(mode)", size: .init(width: 720, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+        }
+      }
+    }
+    store.session.pause()
+  }
+
   func testEveryPageInLightAndDark() async throws {
     let environment = ProcessInfo.processInfo.environment
     guard let output = environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in image check: run checks/check-snapshots.sh") }

@@ -24,11 +24,11 @@ enum WelcomeScript {
 
     Use **Text** to make the words bigger or smaller. **More → Settings…**, under **Reading**, holds fonts, spacing, colours and Mirror for teleprompter glass.
 
-    Click a word to read from there. The arrow keys move between passages when the script has focus. Open **More → Back to start**, or **More → Edit script**; choose **Save changes** when finished. **Back to start** returns to the opening without stopping a recording.
+    Click a word to read from there. The arrow keys move between passages when the script has focus. When paused, choose **Back to start** beside **Start reading** to try again. Open **More → Edit script**; choose **Save changes** when finished. **Back to start** returns to the opening without stopping a recording.
 
     ## Camera and recording
 
-    **More → View** shows the script, the camera, or both in this presenter. Open **Camera** to choose your camera and **Framing guides**. **Zebras** and **False colour** under **Exposure** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
+    **More → View** shows the script, the camera, or both in this presenter. Open **Camera** to choose your camera, or **Guides** for **Framing guides**. **Zebras** and **False colour** under **Exposure** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
 
     **Open Camera Monitor** in the Window menu opens a second-display view. Both windows share the camera and recording setup.
 

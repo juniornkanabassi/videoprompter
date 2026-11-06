@@ -13,7 +13,7 @@ import Foundation
 
     I am looking towards the camera and reading at my own pace.
 
-    Now press Pause. Use Back to start to try again.
+    Now press Pause. Press Back to start beside Start reading to try again.
 
     This practice does not record a video. When I am ready to record, I press Record and Start reading separately.
     """

@@ -20,6 +20,7 @@ enum SettingsTab: String, CaseIterable {
 }
 
 struct AppSettingsView: View {
+  @Environment(\.offscreenRendering) private var offscreenRendering
   @ObservedObject var store: AppStore
   @State private var selection: SettingsTab
   @SceneStorage("settingsTab") private var savedTab = SettingsTab.general.rawValue
@@ -39,12 +40,19 @@ struct AppSettingsView: View {
     let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 900)
     return CGSize(width: min(880 * store.uiZoom, screen.width - 80), height: min(600 * store.uiZoom, screen.height - 80))
   }
+  private func navigationLabel(_ tab: SettingsTab) -> some View {
+    Label { Text(tab.rawValue).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: tab.symbol) }
+  }
   var body: some View {
     GeometryReader { geometry in
     HStack(spacing: 0) {
       List(selection: $selection) {
         ForEach(SettingsTab.allCases, id: \.self) { tab in
-          Label { Text(tab.rawValue).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: tab.symbol) }.tag(tab)
+          Group {
+            if offscreenRendering && selection == tab {
+              navigationLabel(tab).foregroundStyle(.white)
+            } else { navigationLabel(tab) }
+          }.tag(tab)
         }
       }.listStyle(.sidebar).uiZoom(store.uiZoom)
         .frame(width: min(240 * store.uiZoom, geometry.size.width * 0.3))
@@ -488,7 +496,7 @@ struct CameraRecordingPage: View {
   var body: some View {
     VStack(spacing: Space.sm) {
       Picker("Camera & Recording section", selection: $section) {
-        ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0).tag($0) }
+        ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
       }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Camera & Recording section")
         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
       Form {

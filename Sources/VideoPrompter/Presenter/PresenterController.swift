@@ -659,6 +659,7 @@ struct PresenterView: View {
     _presentation = StateObject(wrappedValue: PresenterSessionState(session: session))
   }
   @State private var countdown = 0
+  @State private var awayFromStart = false
   @State private var editorNotice: String?
   @State private var showsMicrophone = false
   @State private var showsGuideSettings = false
@@ -673,6 +674,7 @@ struct PresenterView: View {
   @State private var showsReadingControls = false
   @State private var showsTextControls = false
   @State private var showsCameraControls = false
+  @State private var showsCameraRecovery = false
   @State private var showsTakeDetails = false
   @Environment(\.openWindow) private var openWindow
   @State private var settingsTab = SettingsTab.reading
@@ -726,7 +728,7 @@ struct PresenterView: View {
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
         }
-        if camera.presentsWithVideo && camera.needsRecovery {
+        if camera.presentsWithVideo && camera.needsRecovery && !showsScript {
           CameraRecoveryView(model: camera) { showsCameraControls = true }
             .uiZoom(controlZoom).padding(Space.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -751,6 +753,7 @@ struct PresenterView: View {
       recorder.useSettings(value)
     }
     .onReceive(session.$countdownRemaining.removeDuplicates()) { countdown = $0 }
+    .onReceive(session.$tokenIndex.map { $0 > 0 }.removeDuplicates()) { awayFromStart = $0 }
     .onChange(of: session.isActivelyRunning) { _, _ in revealControls() }
     .onChange(of: session.seekRevision) { _, _ in revealControls() }
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
@@ -769,6 +772,7 @@ struct PresenterView: View {
       else if showsExposureSettings { showsExposureSettings = false }
       else if showsReadingControls { showsReadingControls = false }
       else if showsTextControls { showsTextControls = false }
+      else if showsCameraRecovery { showsCameraRecovery = false }
       else if showsCameraControls { showsCameraControls = false }
       else if showsSettings { showsSettings = false }
       else if camera.cleanView { camera.cleanView = false }
@@ -861,7 +865,7 @@ struct PresenterView: View {
     CameraExposureSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
   }
   private var hasOpenPopover: Bool {
-    showsTakeDetails || showsSettings || showsReadingControls || showsTextControls || showsCameraControls
+    showsTakeDetails || showsSettings || showsReadingControls || showsTextControls || showsCameraControls || showsCameraRecovery
       || showsMicrophone || showsGuideSettings || showsExposureSettings
   }
   private func revealControls() {
@@ -880,7 +884,7 @@ struct PresenterView: View {
   private var barContent: some View {
     VStack(spacing: 0) {
       transport
-      HStack(spacing: Space.sm) {
+      HStack(spacing: Space.xs) {
         if hasScript { readingModeButton }
         if recorder.isRecording {
           Text("REC " + String(format: "%02d:%02d", Int(recorder.recordedDuration) / 60, Int(recorder.recordedDuration) % 60))
@@ -890,19 +894,37 @@ struct PresenterView: View {
           Text(recorder.phase == .saving ? "Saving…" : "Waiting for camera").lineLimit(1)
         }
         if recorder.isRecording {
-          RecordingBarLevel(meter: recorder.inputMeter)
+          RecordingBarLevel(meter: recorder.inputMeter, compact: compactControls)
         }
         if recorder.isRecording || recorder.isBusy {
-          RecordingHealthNotice(recorder: recorder, zoom: controlZoom)
+          RecordingHealthNotice(recorder: recorder, zoom: controlZoom, compact: compactControls)
         } else if recorder.savedTake != nil || recorder.takeFailure != nil { receipt }
         else if camera.presentsWithVideo && !hasScript {
           Text(camera.isReadyToRecord ? "Ready. Choose Record to save a video." : "Choose Camera to check the picture.").lineLimit(2)
         }
+        if showsScript && camera.presentsWithVideo && camera.needsRecovery && !recorder.isBusy && !recorder.isRecording && recorder.savedTake == nil && recorder.takeFailure == nil {
+          Button("Camera unavailable") { showsCameraRecovery = true }
+            .restoringPopoverFocus(isPresented: $showsCameraRecovery, identifier: "presenter-camera-recovery")
+            .popover(isPresented: $showsCameraRecovery) {
+              CameraRecoveryView(model: camera) {
+                showsCameraRecovery = false
+                showsCameraControls = true
+              }.padding(Space.md).uiZoom(controlZoom)
+                .environment(\.colorScheme, .dark)
+            }
+        }
       }.font(.callout)
+      if camera.presentsWithVideo && !recorder.isRecording && !recorder.isBusy {
+        Text(recorder.outputConfirmation(camera: camera))
+          .font(.callout).lineLimit(1).truncationMode(.middle)
+          .help(recorder.outputSummary(camera: camera) + " · Saves to " + CameraRecorder.recordingsFolder().path)
+          .accessibilityLabel("Saved video")
+          .accessibilityValue(recorder.outputConfirmation(camera: camera))
+      }
       if !camera.cleanView {
         tools.opacity(secondaryOpacity)
       }
-    }.padding(Space.xs)
+    }.padding(.horizontal, Space.xs)
       .frame(maxWidth: .infinity)
       .modifier(PresenterGlass(radius: 20))
       .buttonStyle(PresenterButtonStyle()).font(.body).symbolRenderingMode(.hierarchical)
@@ -932,9 +954,9 @@ struct PresenterView: View {
             .fixedSize()
         }.accessibilityLabel(session.isCountingDown ? "Cancel countdown" : session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read again" : "Start reading")
           .buttonStyle(PresenterButtonStyle(prominent: true)).disabled(draft.isEditing)
-        if !compactControls || (!session.isActivelyRunning && session.tokenIndex > 0) {
+        if !compactControls || (!session.isActivelyRunning && awayFromStart) {
           Button("Back to start", systemImage: "arrow.counterclockwise", action: session.restart)
-            .labelStyle(.iconOnly).accessibilityLabel("Back to start")
+            .labelStyle(.titleOnly).fixedSize().accessibilityLabel("Back to start")
             .help("Back to start").disabled(draft.isEditing)
         }
       }
@@ -961,12 +983,12 @@ struct PresenterView: View {
   private var readingModeButton: some View {
         Button { showsReadingControls.toggle() } label: {
           HStack(spacing: Space.xs) {
-            ViewThatFits(in: .horizontal) {
-              Text(readingStatusTitle).fixedSize()
-              Text(draft.isEditing ? "Draft not saved" : "\(store.settings.mode == "Manual" ? "Auto" : "Voice") · \(hasBottomNotice ? "Check reading" : countdown > 0 ? "\(countdown)…" : session.readingStatus)").fixedSize()
-            }.font(.callout)
+            Text(compactControls ? (draft.isEditing ? "Draft not saved" : session.readingModeName) : readingStatusTitle)
+              .font(.callout).lineLimit(1).fixedSize()
             Image(systemName: "chevron.down")
-          }
+          }.frame(minHeight: 24).padding(.horizontal, Space.xs)
+            .contentShape(Rectangle())
+            .background(.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
         }.accessibilityIdentifier("presenter-status")
           .accessibilityLabel("Reading mode")
           .accessibilityValue(draft.isEditing ? "Editing · not saved yet" : "\(session.readingModeName) · \(session.readingStatus). \(session.readingNextAction)" + (hasBottomNotice ? " " + (editorNotice ?? session.anchorNotice ?? draft.errorMessage ?? draft.noticeMessage ?? "Review draft before saving") : ""))
@@ -1020,6 +1042,9 @@ struct PresenterView: View {
 
   private var cameraControls: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
+      if camera.needsRecovery {
+        CameraRecoveryView(model: camera) { showsCameraOptions = true }
+      }
       if camera.recordingLocked {
         Text("Stop recording to change camera.").font(.callout)
       } else {
@@ -1031,10 +1056,7 @@ struct PresenterView: View {
         }.disabled(camera.recordingLocked)
         Text("Rotation changes the preview and saved video.").font(.callout)
         Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
-        Button("Framing guides") { showsGuideSettings = true }
-          .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "presenter-camera-guides")
-          .popover(isPresented: $showsGuideSettings) { guideControls }
-        Button("Recording settings…") { settingsOrigin = "presenter-camera"; showsCameraControls = false; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
+        Button("Recording…") { settingsOrigin = "presenter-camera"; showsCameraControls = false; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
         Button("Recordings folder") { recorder.openRecordingsFolder() }
         Button("Open Camera Monitor") { openWindow(id: "camera") }
         Text("An optional second window showing the same camera and recording.").font(.callout)
@@ -1044,7 +1066,7 @@ struct PresenterView: View {
   }
 
   private var tools: some View {
-    HStack(spacing: Space.sm) {
+    HStack(spacing: Space.xs) {
       if showsScript {
         Button("Text") { showsTextControls.toggle() }
           .focused($focusedTool, equals: "Text")
@@ -1053,10 +1075,22 @@ struct PresenterView: View {
           .popover(isPresented: $showsTextControls) { textControls }
       }
       Button("Camera") { showsCameraControls.toggle() }
+        .accessibilityLabel("Camera")
+        .accessibilityValue(camera.needsRecovery ? "Unavailable. Open for recovery instructions." : "Choose camera")
         .focused($focusedTool, equals: "Camera")
         .restoringPopoverFocus(isPresented: Binding(get: { showsCameraControls || (showsSettings && settingsOrigin == "presenter-camera") }, set: { if !$0 { showsCameraControls = false; showsSettings = false } }), identifier: "presenter-camera")
         .popover(isPresented: $showsCameraControls) { cameraControls }
       if camera.presentsWithVideo {
+        Button("Guides") { showsGuideSettings.toggle() }
+          .accessibilityLabel("Framing guides")
+          .focused($focusedTool, equals: "Framing guides")
+          .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "presenter-guides")
+          .popover(isPresented: $showsGuideSettings) { guideControls }
+        if !compactControls {
+          ExposureToggle(model: camera, kind: .zebras)
+          ExposureToggle(model: camera, kind: .falseColour)
+          Button("Clean view") { camera.cleanView = true }
+        }
         Button("Exposure") { showsExposureSettings.toggle() }
           .focused($focusedTool, equals: "Exposure")
           .restoringPopoverFocus(isPresented: $showsExposureSettings, identifier: "presenter-exposure")
@@ -1072,7 +1106,7 @@ struct PresenterView: View {
         .focused($focusedTool, equals: "Microphone")
         .restoringPopoverFocus(isPresented: $showsMicrophone, identifier: "presenter-microphone")
         .popover(isPresented: $showsMicrophone) { microphoneControls }
-    }.labelStyle(.titleOnly)
+    }
   }
   private var moreMenu: some View {
       Menu {
@@ -1408,12 +1442,13 @@ extension EnvironmentValues {
 /// Observes the recording input already being captured, without starting another microphone.
 private struct RecordingBarLevel: View {
   @ObservedObject var meter: InputMeter
+  var compact = false
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
       HStack {
         InputLevelMeter(peakDBFS: meter.isFresh() ? meter.peakDBFS : -.infinity,
                         isClipping: meter.isClipping, showsScale: false)
-      }.frame(width: 40)
+      }.frame(width: compact ? 24 : 40)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel("Recording microphone level")

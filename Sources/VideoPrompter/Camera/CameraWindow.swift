@@ -284,22 +284,25 @@ struct CameraView: View {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
       ToolbarItemGroup { ExposureToggle(model: model, kind: .zebras); ExposureToggle(model: model, kind: .falseColour) }
       ToolbarItem {
-        Button("Exposure…", systemImage: "sun.max") { showsExposureSettings = true }
+        Button("Framing guides") { showsGuideSettings = true }
+          .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "monitor-guides")
+          .popover(isPresented: $showsGuideSettings) {
+            CameraGuideSettings(model: model).frame(width: 340, height: 480).uiZoom(zoom)
+          }
+      }
+      ToolbarItem {
+        Button("Exposure", systemImage: "sun.max") { showsExposureSettings = true }
       }
       ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model, zoom: zoom) }
       ToolbarItem {
         Menu {
           Text("Second-display camera view. Shares camera and recording setup with the presenter.")
           Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
-          Button("Framing guides…") { showsGuideSettings = true }
-            .help("Choose framing guides and a frame marker")
           Button("Camera & Recording Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
           Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Camera window above other windows")
         } label: { Label("Options", systemImage: "ellipsis.circle") }
           .accessibilityLabel("Options").help("Camera mirroring, framing guides and window position")
-          .popover(isPresented: $showsGuideSettings, arrowEdge: .bottom) {
-            CameraGuideSettings(model: model).frame(width: 340, height: 480).uiZoom(zoom)
-          }
+
       }
     }
   }
@@ -747,16 +750,19 @@ struct CameraRecoveryView: View {
 struct RecordingHealthNotice: View {
   @ObservedObject var recorder: CameraRecorder
   var zoom = 1.0
+  var compact = false
   @State private var showsDetails = false
-  @State private var beganAt = ProcessInfo.processInfo.systemUptime
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-      let fresh = ProcessInfo.processInfo.systemUptime - (recorder.inputMeter.lastAudibleSampleAt ?? beganAt) < 3
-      let warning = recorder.droppedAudioBuffers > 0 || recorder.droppedFrames > 0 || recorder.inputMeter.isClipping || !fresh
+      let health = RecordingHealth.measured(lastAudibleSampleAt: recorder.inputMeter.lastAudibleSampleAt,
+        clipping: recorder.inputMeter.isClipping && recorder.inputMeter.isFresh())
+      let warning = recorder.droppedAudioBuffers > 0 || recorder.droppedFrames > 0 || health == .clipping || health == .silence
       Button { showsDetails = true } label: {
-        Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : "Sound OK").fixedSize()
+        Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : health == .waiting ? "Waiting for sound" : "Sound OK")
+          .lineLimit(2).fixedSize(horizontal: !compact, vertical: true)
+          .frame(maxWidth: compact ? 86 : nil)
       }
-        .accessibilityValue(RecordingAudioHealth.message(drops: recorder.droppedAudioBuffers, clipping: recorder.inputMeter.isClipping, fresh: fresh))
+        .accessibilityValue(recorder.droppedAudioBuffers > 0 ? "Sound dropped from the file (\(recorder.droppedAudioBuffers) times)" : health.message)
         .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-health")
         .popover(isPresented: $showsDetails) {
           VStack(alignment: .leading, spacing: Space.md) {
@@ -797,19 +803,18 @@ struct CameraExposureSections: View {
   @ObservedObject var model: CameraModel
   var body: some View {
     Section("Exposure") {
-      Text("Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours.").font(.callout)
       ExposureToolToggles(model: model)
       Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
         ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }
-      ExposureGuidance(zebras: true, guides: model.guides, falseColour: true)
+      Text(model.guides.zebraGuidance).font(.callout).fixedSize(horizontal: false, vertical: true)
       Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout).foregroundStyle(.primary)
       DisclosureGroup("Custom levels") {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
       }
       DisclosureGroup("How exposure aids work") {
-        Text("For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 45 ± 5; adjust it to your skin. Camera profiles vary, so use it as a reference.")
+        Text("For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 60 ± 5; skin tones vary. Camera profiles vary, so use it as a reference.")
         Text("Bright-area zebras warn where detail may wash out. False colour compares the brightness of different areas.")
         Text("These colours and zebras measure the brightness of the feed received by your Mac. They do not change the saved video. The right levels depend on your camera and picture profile.")
       }.font(.callout)
@@ -829,6 +834,18 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
+  func outputConfirmation(camera: CameraModel) -> String {
+    var dimensions = "Resolution unknown"
+    var orientation = "Orientation unknown"
+    if let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) {
+      let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+      let width = camera.guides.rotation.swapsAxes ? size.height : size.width
+      let height = camera.guides.rotation.swapsAxes ? size.width : size.height
+      dimensions = "\(width) × \(height)"
+      orientation = height > width ? "Portrait" : width > height ? "Landscape" : "Square"
+    }
+    return "\(dimensions) · \(orientation) · Saves to \(Self.recordingsFolder().lastPathComponent)"
+  }
   func outputSummary(camera: CameraModel) -> String {
     let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
     var parts: [String] = []
@@ -839,6 +856,7 @@ extension CameraRecorder {
       let duration = device.activeVideoMinFrameDuration.seconds
       if duration.isFinite && duration > 0 { parts.append(String(format: "%.2f fps", 1 / duration)) }
     }
+    if parts.isEmpty { parts.append("Resolution unknown") }
     parts.append("\(camera.guides.rotation.label) saved rotation")
     parts.append(codec)
     parts.append(mirrorSavedVideo ? "mirrored output" : "unmirrored output")
@@ -851,10 +869,15 @@ extension CameraRecorder {
 }
 
 enum RecordingHealth: Equatable {
-  case receiving, silence, clipping
+  case waiting, receiving, silence, clipping
+  static func measured(lastAudibleSampleAt: TimeInterval?, clipping: Bool, now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Self {
+    guard let lastAudibleSampleAt else { return clipping ? .clipping : .waiting }
+    return state(clipping: clipping, fresh: now - lastAudibleSampleAt < 3)
+  }
   static func state(clipping: Bool, fresh: Bool) -> Self { clipping ? .clipping : fresh ? .receiving : .silence }
   var message: String {
     switch self {
+    case .waiting: "Waiting for sound"
     case .receiving: "Receiving sound"
     case .silence: "No sound for 3 seconds. Check the microphone."
     case .clipping: "Too loud. Lower the microphone level."
@@ -866,8 +889,7 @@ struct RecordingAudioHealth: View {
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject private var meter: InputMeter
   var compact = false
-  @State private var beganAt = ProcessInfo.processInfo.systemUptime
-  @State private var previousHealth = RecordingHealth.receiving
+  @State private var previousHealth = RecordingHealth.waiting
   @State private var lastWarningAt = -Double.infinity
   init(recorder: CameraRecorder, compact: Bool = false) { self.recorder = recorder; self.compact = compact; meter = recorder.inputMeter }
   nonisolated static func message(drops: Int, clipping: Bool, fresh: Bool) -> String {
@@ -876,8 +898,8 @@ struct RecordingAudioHealth: View {
   }
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-      let fresh = ProcessInfo.processInfo.systemUptime - (meter.lastAudibleSampleAt ?? beganAt) < 3
-      let health = RecordingHealth.state(clipping: meter.isClipping && meter.isFresh(), fresh: fresh)
+      let health = RecordingHealth.measured(lastAudibleSampleAt: meter.lastAudibleSampleAt,
+        clipping: meter.isClipping && meter.isFresh())
       let layout = compact ? AnyLayout(HStackLayout(spacing: Space.sm)) : AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
       layout {
         HStack(spacing: Space.sm) {
@@ -887,7 +909,7 @@ struct RecordingAudioHealth: View {
             .frame(minWidth: 40, maxWidth: 100)
         }
         if recorder.droppedAudioBuffers > 0 || health != .receiving {
-          Label(Self.message(drops: recorder.droppedAudioBuffers, clipping: health == .clipping, fresh: fresh), systemImage: "exclamationmark.triangle.fill").fontWeight(.semibold)
+          Label(recorder.droppedAudioBuffers > 0 ? "Sound dropped from the file (\(recorder.droppedAudioBuffers) times)" : health.message, systemImage: "exclamationmark.triangle.fill").fontWeight(.semibold)
             .fixedSize(horizontal: false, vertical: true)
         }
         if recorder.droppedFrames > 0 {
