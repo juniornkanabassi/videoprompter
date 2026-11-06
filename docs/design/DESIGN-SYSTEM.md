@@ -96,3 +96,34 @@ SF Symbols only, `.symbolRenderingMode(.hierarchical)`, weight matching the labe
 ## Verification
 
 Run `zsh test.sh`, `zsh checks/check-snapshots.sh` and the included grid check. Inspect every changed light and dark image. All tests and renders stay offscreen with disposable scripts and preferences. Offscreen renders do not prove live glass, hardware recording or spoken VoiceOver.
+
+## Round 5 refinements
+
+These implement the council follow-up to the authoritative design specification.
+
+- The two-column library keeps folder navigation visible above the script list at
+  every interface size. Both lists draw native selection. Selected text uses the
+  semantic active or inactive selection colour; no fixed blue row backgrounds.
+  Folder removal and renaming are available on the folder's context menu.
+- The writing control is labelled **Editor text size** before it is opened. Its
+  explanation points to the presenter Text control and Settings > Reading.
+- **Try the Practice Script** saves/selects a short guided practice and opens the
+  presenter. It never starts a microphone or recording. Instructions reflect the
+  selected following mode, without changing the user's saved mode.
+- The start page explains that Voice follow moves the text as the user speaks
+  after **Start reading**. Add also exposes the existing Google Docs import.
+- Save feedback and camera recovery copy use primary text at callout size in both
+  appearances. Their contrast is measured from final rendered PNGs, not assumed
+  from semantic colour names.
+- Exposure guidance describes what stripes mean, checks the lit cheek only as a
+  standard-video reference, and keeps skin-tone/profile qualifications visible.
+  The false-colour key explains every colour in terms of detail and brightness.
+- Reading contrast uses a conservative bound over all possible camera pixels,
+  includes dimmed cues/confirmed words and the active-word colour, and uses 4.5:1
+  below 24 pt or 3:1 for large reading text. Make Readable changes only backdrop
+  darkness; an impossible combination explains which preferences need changing.
+  Backdrop labels identify the camera or script-only scope. Show Presenter offers
+  a direct way to preview the reading settings.
+- Modern app-icon artwork consists of editable vector objects in three native
+  Icon Composer groups. The system applies the outer mask. Default, dark and
+  tinted appearances are exported at 16, 32, 64 and 128 points for inspection.

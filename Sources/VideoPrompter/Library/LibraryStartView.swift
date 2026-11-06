@@ -17,8 +17,6 @@ struct LibraryStartView: View {
       VStack(alignment: .leading, spacing: Space.xxl) {
         VStack(alignment: .leading, spacing: Space.sm) {
           Text("Ready when you are").font(.largeTitle.bold())
-          Text("Read your words. Keep your eyes on the camera.")
-            .font(.title3).fixedSize(horizontal: false, vertical: true)
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button { store.importClipboard() } label: {
@@ -26,22 +24,23 @@ struct LibraryStartView: View {
           }.buttonStyle(.borderedProminent)
           Text("Copy your script first. This pastes it straight into a new script.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
+        Text("Then choose **Present**, then **Start reading**. With Voice follow, the text follows your voice as you speak.")
+          .font(.callout).fixedSize(horizontal: false, vertical: true)
           ViewThatFits(in: .horizontal) {
             HStack(spacing: Space.lg) { otherScriptActions }
             VStack(alignment: .leading, spacing: Space.sm) { otherScriptActions }
           }
-          Text("Then choose **Present**, then **Start reading**.")
-            .fixedSize(horizontal: false, vertical: true)
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button(action: camera) { Label("Camera Only", systemImage: "video") }
           Text("Check your framing or record without a script.")
             .fixedSize(horizontal: false, vertical: true)
         }
-        Button("Try the Practice Script") {
-          store.showWelcomeScript()
-          practice()
-        }.buttonStyle(.link)
+        VStack(alignment: .leading, spacing: Space.sm) {
+          Button("Try the Practice Script", action: practice).buttonStyle(.link)
+          Text("Opens a short guided practice. Press Start reading when you are ready.")
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
+        }
       }.foregroundStyle(.primary).frame(maxWidth: 620, alignment: .leading)
         .frame(maxWidth: .infinity, minHeight: 460).padding(Space.margin)
     }

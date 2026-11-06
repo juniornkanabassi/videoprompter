@@ -97,7 +97,7 @@ struct CameraPickerList: View {
         if let uid { proxy.scrollTo(uid) }
       }
       .onAppear { if let selected { proxy.scrollTo(selected) } }
-    }.frame(width: 240, height: devices.isEmpty ? 180 : min(240, max(44, CGFloat(devices.count) * 52)))
+    }.frame(width: 240, height: devices.isEmpty ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
   }
 
   private var emptyState: some View {
@@ -105,13 +105,17 @@ struct CameraPickerList: View {
     return VStack(alignment: .leading, spacing: Space.sm) {
       Text(recovery.title).font(.headline)
       Text(recovery.message).font(.callout).fixedSize(horizontal: false, vertical: true)
+      if model.authorization == .notDetermined {
+        Button("Allow Camera Access") { model.start() }
+      } else {
       Button("Open Camera Privacy Settings") {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
           NSWorkspace.shared.open(url)
         }
       }
+      }
       Button("Refresh Cameras") { model.refresh() }
-    }.padding(Space.sm)
+    }.font(.callout).foregroundStyle(.primary).padding(Space.sm)
   }
 
   static func recovery(for authorization: AVAuthorizationStatus) -> (title: String, message: String) {
@@ -119,7 +123,7 @@ struct CameraPickerList: View {
     case .denied, .restricted:
       return ("Camera access is off", "Allow Video Prompter in System Settings, then refresh cameras.")
     case .notDetermined:
-      return ("Camera access needed", "Enable the camera in the presenter to request access, or open Camera Privacy Settings.")
+      return ("Camera access needed", "Choose Allow Camera Access to see and select your cameras here.")
     default:
       return ("No camera connected", "Connect or switch on your camera, then refresh. Check Camera Privacy Settings if it still does not appear.")
     }

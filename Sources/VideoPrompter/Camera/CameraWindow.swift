@@ -256,7 +256,7 @@ struct CameraView: View {
         ContentUnavailableView {
           Label("No camera access", systemImage: "video.slash")
         } description: {
-          Text("Allow Video Prompter in System Settings → Privacy & Security → Camera.")
+          Text("Allow Video Prompter in System Settings → Privacy & Security → Camera.").font(.callout).foregroundStyle(.primary)
         } actions: {
           Button("Open System Settings") {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
@@ -266,7 +266,7 @@ struct CameraView: View {
       default:
         if let message = model.unavailableMessage {
           ContentUnavailableView("Connect a camera", systemImage: "video",
-            description: Text(message))
+            description: Text(message).font(.callout).foregroundStyle(.primary))
             .uiZoom(zoom)
         } else {
           CameraPreview(model: model).background(.black)
@@ -670,26 +670,6 @@ struct RecordingInputLevel: View {
   }
 }
 
-struct ExposureLegend: View {
-  @ObservedObject var model: CameraModel
-  var body: some View {
-    if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras { Text("Zebras: " + (model.guides.zebraRange > 0 ? "face brightness, \(model.guides.zebraLevel) IRE ± \(model.guides.zebraRange)" : "bright areas, \(model.guides.zebraLevel) IRE and above")) }
-        if model.guides.falseColour {
-          DisclosureGroup("False colour key") {
-            ForEach(CameraExposure.bands, id: \.name) { band in
-              Label { Text(band.name) } icon: {
-                Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-              }
-            }
-          }
-        }
-      }.font(.callout).padding(Space.sm).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
-    }
-  }
-}
-
 struct CameraExposureSettings: View {
   @ObservedObject var model: CameraModel
   var body: some View { Form { CameraExposureSections(model: model) }.formStyle(.grouped) }
@@ -720,7 +700,8 @@ struct CameraExposureSections: View {
         Text("Bright areas").tag(false)
         Text("Face brightness").tag(true)
       }
-      Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout)
+      ExposureGuidance(zebras: true, face: model.guides.zebraRange > 0, falseColour: true)
+      Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout).foregroundStyle(.primary)
       DisclosureGroup("Custom levels") {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
   @ObservedObject var store: AppStore
+  @Environment(\.openWindow) private var openWindow
   @Environment(\.undoManager) private var undoManager
   private let camera: CameraModel
   init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
@@ -18,30 +19,31 @@ struct LibraryView: View {
   @State private var renamingFolder: ScriptFolder?
   @State private var renamedFolderName = ""
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.controlActiveState) private var controlActiveState
 
   var body: some View {
     NavigationSplitView {
       VStack(spacing: 0) {
-        HStack(spacing: Space.sm) {
-          Picker("Script folder", selection: scopeSelection) {
-            Text("All Scripts").tag(LibraryScope.all)
+        List(selection: scopeSelection) {
+          scopeRow("All Scripts", symbol: "tray", scope: .all)
+          Section("Folders") {
             ForEach(store.folders) { folder in
-              Text(folder.name).tag(LibraryScope.folder(folder.id))
+              scopeRow(folder.name, symbol: "folder", scope: .folder(folder.id))
+                .help(folder.name)
+                .contextMenu {
+                  Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
+                  Button("Remove Folder, Keep Scripts", role: .destructive) {
+                    store.deleteFolder(folder.id, undoManager: undoManager)
+                  }
+                }
             }
-            Text("Recently Deleted").tag(LibraryScope.deleted)
-          }.labelsHidden().frame(maxWidth: .infinity)
-            .help("Choose which scripts to show")
-          Menu {
-            Button("New Folder…") { store.namingNewFolder = true }
-            if let folder = store.folders.first(where: { $0.id == store.selectedFolderID }), !showsDeleted {
-              Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
-              Button("Remove Folder, Keep Scripts", role: .destructive) {
-                store.deleteFolder(folder.id, undoManager: undoManager)
-              }.help("Scripts stay in All Scripts. Undo restores the folder.")
-            }
-          } label: { Image(systemName: "ellipsis.circle") }
-            .menuIndicator(.hidden).fixedSize().accessibilityLabel("Folder actions")
-        }.padding(Space.md)
+            Button("New Folder…", systemImage: "folder.badge.plus") { store.namingNewFolder = true }
+              .selectionDisabled().disabled(!store.libraryAvailable)
+          }
+          scopeRow("Recently Deleted", symbol: "trash", scope: .deleted)
+        }.listStyle(.inset)
+          .accessibilityLabel("Script folders")
+          .frame(height: min(220, CGFloat(148 + store.folders.count * 28)))
         Divider()
         List(selection: $selection) {
           if showsDeleted {
@@ -53,16 +55,19 @@ struct LibraryView: View {
             }
           } else {
             ForEach(store.visible) { script in
-              ScriptRow(script: script, link: store.linkStates[script.id], selected: !showsStart && selection.contains(script.id))
-                .listRowBackground(!showsStart && selection.contains(script.id) ? LibraryAppearance.selectionBackground(scheme: colorScheme) : Color.clear)
-                .accessibilityAddTraits(!showsStart && selection.contains(script.id) ? .isSelected : [])
+              ScriptRow(script: script, link: store.linkStates[script.id], selected: selection.contains(script.id))
                 .contextMenu { scriptActions(script) }
                 .simultaneousGesture(TapGesture().onEnded { showsPractice = true })
             }
           }
-        }.listStyle(.plain)
+        }.listStyle(.inset).accessibilityLabel("Scripts")
+        .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
+          guard !showsDeleted, press.modifiers == .command, !selection.isEmpty,
+            AppStore.canTrashSelection(in: NSApp.keyWindow) else { return .ignored }
+          store.delete(selection, undoManager: undoManager)
+          return .handled
+        }
       }
-      .foregroundColor(LibraryAppearance.color(.labelColor, scheme: colorScheme))
       .environment(\.colorScheme, colorScheme)
       .contextMenu {
         Button("New Folder…") { store.namingNewFolder = true }
@@ -73,19 +78,13 @@ struct LibraryView: View {
         store.selectedIDs = value
         if let id = value.first { showsPractice = true; store.selectedID = id }
       }
-      .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
-        guard !showsDeleted, press.modifiers == .command, !selection.isEmpty,
-          AppStore.canTrashSelection(in: NSApp.keyWindow) else { return .ignored }
-        store.delete(selection, undoManager: undoManager)
-        return .handled
-      }
       .onChange(of: store.selectedID) { _, id in
         if id != nil { showsDeleted = false }
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
       .uiZoom(store.uiZoom)
-      .frame(minWidth: 200 * store.uiZoom)
-      .navigationSplitViewColumnWidth(min: 200 * store.uiZoom, ideal: 260 * store.uiZoom, max: 360 * store.uiZoom)
+      .frame(minWidth: max(280, 200 * store.uiZoom))
+      .navigationSplitViewColumnWidth(min: max(280, 200 * store.uiZoom), ideal: max(320, 260 * store.uiZoom), max: max(400, 360 * store.uiZoom))
     } detail: {
       VStack(spacing: 0) {
         if let notice = store.libraryNotice {
@@ -99,7 +98,10 @@ struct LibraryView: View {
           ContentUnavailableView("Recently Deleted", systemImage: "trash",
             description: Text("Choose Restore Script to return a deleted script to your library."))
         } else if showsStart {
-          LibraryStartView(store: store, importing: $importing, practice: { showsPractice = true },
+          LibraryStartView(store: store, importing: $importing, practice: {
+            showsPractice = true
+            Task { await PracticeReading.present(store: store) }
+          },
             camera: { PresenterController.shared.presentCamera(store: store) })
         } else if let script = store.selected {
           EditorView(store: store, script: script).id(script.metadata.id)
@@ -126,6 +128,7 @@ struct LibraryView: View {
           Button("Import File…") { importing = true }
             .keyboardShortcut(ScriptShortcuts.importFile)
           Button("Paste Copied Text") { store.importClipboard() }
+          Button("Import from Google Docs…") { openWindow(id: "google-docs") }
           Divider()
           Button("New Folder…") { store.namingNewFolder = true }
         } label: { Label("Add", systemImage: "plus") }
@@ -225,8 +228,9 @@ struct LibraryView: View {
       (store.scripts.count == 1 && store.selected?.metadata.title == WelcomeScript.title && store.selected?.markdown == WelcomeScript.markdown))
   }
 
-  private var scopeSelection: Binding<LibraryScope> {
+  private var scopeSelection: Binding<LibraryScope?> {
     Binding(get: { showsDeleted ? .deleted : store.selectedFolderID.map(LibraryScope.folder) ?? .all }, set: { scope in
+      guard let scope else { return }
       showsDeleted = scope == .deleted
       switch scope {
       case .all: store.selectFolder(nil)
@@ -234,6 +238,13 @@ struct LibraryView: View {
       case .deleted: break
       }
     })
+  }
+
+  private func scopeRow(_ title: String, symbol: String, scope: LibraryScope) -> some View {
+    Label(title, systemImage: symbol)
+      .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+      .foregroundStyle(LibraryAppearance.color(scopeSelection.wrappedValue == scope ? (controlActiveState == .key ? .alternateSelectedControlTextColor : .unemphasizedSelectedTextColor) : .labelColor, scheme: colorScheme))
+      .tag(scope)
   }
 
   @ViewBuilder private func scriptActions(_ script: ScriptRecord) -> some View {
@@ -271,25 +282,24 @@ private struct ScriptRow: View {
   let link: LinkState?
   var selected = false
   @Environment(\.colorScheme) private var colorScheme
+  @Environment(\.controlActiveState) private var controlActiveState
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       HStack(spacing: Space.xs) {
-        Image(systemName: "doc.text").foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
-        Text(script.metadata.title).fontWeight(selected ? .semibold : .regular)
-          .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+        Text(script.metadata.title)
           .lineLimit(2).help(script.metadata.title).layoutPriority(1)
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
-            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+            .font(UIType.secondary)
             .accessibilityLabel(present ? "Linked file" : "Linked file unavailable")
             .help(path)
         }
       }
       if !script.metadata.tags.isEmpty {
-        Text(script.metadata.tags.joined(separator: ", ")).font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).lineLimit(1)
+        Text(script.metadata.tags.joined(separator: ", ")).font(UIType.secondary).lineLimit(1)
       }
-    }.foregroundColor(LibraryAppearance.color(.labelColor, scheme: colorScheme)).tag(script.metadata.id)
+    }.foregroundStyle(LibraryAppearance.color(selected ? (controlActiveState == .key ? .alternateSelectedControlTextColor : .unemphasizedSelectedTextColor) : .labelColor, scheme: colorScheme)).tag(script.metadata.id)
   }
 }
 
@@ -321,10 +331,10 @@ private struct EditorView: View {
           .help("Title, tags and script text save automatically")
         HStack(alignment: .firstTextBaseline) {
           Text("\(saver.isSaving || saver.failed ? saver.message : "Changes save automatically") · \(PrompterDocument(markdown: text).spokenTokens.count) words")
-            .font(UIType.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
           Spacer()
-          Button("Text size") { showsTextSize = true }
+          Button("Editor text size") { showsTextSize = true }
             .buttonStyle(.link).help("Change the editor font and text size")
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
         }

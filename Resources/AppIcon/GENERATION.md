@@ -49,3 +49,18 @@ Native Icon Composer exports at 16/32/64 points and a comparison are in
 `docs/design/round-3-library/icons`. The modern catalogue still derives all sizes
 from one bitmap per appearance. Per-size optical artwork is applied to the
 legacy ICNS only; a layered vector master remains future work.
+
+## 6 November 2026 round 5 layered source
+
+The modern catalogue now uses an unmasked square background, a script group
+(page, lines, reading marker) and a microphone group (body and support).
+`build-layers.py` writes the editable SVG geometry and Icon Composer JSON.
+Each object has separate default, dark and monochrome tinted artwork. The page
+uses native glass/specular treatment; the solid microphone keeps its silhouette.
+Groups and layers are in front-to-back order, as required by Icon Composer.
+
+This supersedes the modern flattened appearance layers described above. The old
+bitmap masters and optical legacy ICNS remain intact for provenance and fallback.
+The modern catalogue is compiled independently with `compile-icon.sh`; no release
+or installed app is changed. Native exports at 16, 32, 64 and 128 points are in
+`docs/design/round-5-builder-b/icons/`, including both tinted appearances.

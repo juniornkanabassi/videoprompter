@@ -24,6 +24,9 @@ struct ReadingSettingsPage: View {
         slider("Reading text size", value: $store.settings.fontSize, range: AppStore.presenterFontSizes, readout: "\(Int(store.settings.fontSize)) pt", spoken: "\(Int(store.settings.fontSize)) points")
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+        Button("Show Presenter") { PresenterController.shared.presentFromLibrary(store: store) }
+          .help("See your reading appearance settings in the presenter")
+          .disabled(store.selected == nil)
       }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
@@ -39,11 +42,14 @@ struct ReadingSettingsPage: View {
       }
       Section("Colours") {
         percent("Text visibility", $store.settings.textOpacity, 0.2...1)
-        percent("Background darkness", backdropOpacity, PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo))
+        percent(camera.presentsWithVideo ? "Background over camera" : "Script-only background", backdropOpacity, PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo))
         ColorPicker("Text colour", selection: colour($store.settings.textColorHex), supportsOpacity: false)
         ColorPicker("Background colour", selection: colour($store.settings.backgroundColorHex), supportsOpacity: false)
         ReadingContrastWarning(textHex: store.settings.textColorHex, textOpacity: store.settings.textOpacity,
-          backgroundHex: store.settings.backgroundColorHex, darkness: backdropOpacity)
+          backgroundHex: store.settings.backgroundColorHex, darkness: backdropOpacity,
+          minimumRunOpacity: store.settings.showCues ? 0.42 : 0.5,
+          threshold: store.settings.fontSize >= 24 ? 3 : 4.5,
+          highlightHex: store.settings.highlightActiveWord ? NSColor.systemYellow.hex : nil)
       }
       Section("Rotation and stage directions") {
         Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror)
