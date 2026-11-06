@@ -624,7 +624,7 @@ struct PresenterView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         if let passage = monitor.passage, !showsScript {
-          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
+          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName, readingSize: store.settings.fontSize, zoom: store.uiZoom) {
             PresenterController.shared.endMonitor()
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -714,7 +714,7 @@ struct PresenterView: View {
           // Always in the bar at a fixed width, dimmed while the camera is off, so the bar keeps
           // the same width with the camera on or off.
           Group {
-            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth)
+            CameraPicker(model: camera, zoom: store.uiZoom, darkSurface: true).frame(width: Self.cameraPickerWidth)
             CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3",
                           help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
               showsGuideSettings = true
@@ -866,7 +866,11 @@ private struct CapsuleButton: View {
 struct GuideLine: View {
   let settings: PrompterSettings
   var body: some View {
-    Rectangle().fill(.cyan.opacity(settings.guideOpacity)).frame(height: 2).allowsHitTesting(false)
+    HStack {
+      Rectangle().frame(width: 12, height: 3)
+      Spacer()
+      Rectangle().frame(width: 12, height: 3)
+    }.foregroundStyle(.cyan.opacity(settings.guideOpacity)).allowsHitTesting(false).accessibilityHidden(true)
   }
 }
 

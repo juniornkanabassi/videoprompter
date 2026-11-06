@@ -14,6 +14,7 @@ struct LibraryView: View {
   @State private var newFolderName = ""
   @State private var renamingFolder: ScriptFolder?
   @State private var renamedFolderName = ""
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     NavigationSplitView {
@@ -24,15 +25,18 @@ struct LibraryView: View {
           // Present with nothing to show.
           Button { store.selectFolder(nil) } label: {
             ViewThatFits(in: .horizontal) {
-              Label("All Scripts", systemImage: "tray.full").fixedSize()
+              Label("All Scripts", systemImage: "tray.full").foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).fixedSize()
               Text("All Scripts").lineLimit(nil).fixedSize(horizontal: false, vertical: true)
             }
           }
+            .buttonStyle(.plain)
             .help("Choose which scripts to show").selectionDisabled()
+            .listRowBackground(store.selectedFolderID == nil ? Color.accentColor.opacity(0.18) : Color.clear)
+            .accessibilityAddTraits(store.selectedFolderID == nil ? .isSelected : [])
           ForEach(store.folders) { folder in
             Button { store.selectFolder(folder.id) } label: {
               ViewThatFits(in: .horizontal) {
-                Label(folder.name, systemImage: "folder").fixedSize()
+                Label(folder.name, systemImage: "folder").foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).fixedSize()
                 Text(folder.name).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
               }
             }
@@ -40,10 +44,13 @@ struct LibraryView: View {
                 Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }.help("Change this folder’s name")
                 Button("Delete Folder", role: .destructive) { store.deleteFolder(folder.id, undoManager: undoManager) }.help("Remove the folder; its scripts return to All Scripts")
               }
-              .help("Choose which scripts to show").selectionDisabled()
+              .buttonStyle(.plain)
+            .help("Choose which scripts to show").selectionDisabled()
+              .listRowBackground(store.selectedFolderID == folder.id ? Color.accentColor.opacity(0.18) : Color.clear)
+              .accessibilityAddTraits(store.selectedFolderID == folder.id ? .isSelected : [])
           }
         }
-        Section("Scripts") {
+        Section(store.folders.first(where: { $0.id == store.selectedFolderID })?.name ?? "All Scripts") {
           ForEach(store.visible) { script in
             ScriptRow(script: script, link: store.linkStates[script.id])
               .contextMenu { scriptActions(script) }
@@ -61,7 +68,9 @@ struct LibraryView: View {
           }
         }
       }
+      .foregroundColor(LibraryAppearance.color(.labelColor, scheme: colorScheme))
       .listStyle(.sidebar)
+      .environment(\.colorScheme, colorScheme)
       .contextMenu {
         Button("New Folder…") { store.namingNewFolder = true }
           .disabled(!store.libraryAvailable)
@@ -123,7 +132,9 @@ struct LibraryView: View {
     .inspector(isPresented: $store.inspector) {
       // The column width is what the split view honours; a `frame` inside it let the form
       // out-size the pane and slide under the editor.
-      InspectorView(store: store, camera: camera).uiZoom(store.uiZoom)
+      InspectorView(store: store, camera: camera)
+        .environment(\.colorScheme, colorScheme)
+        .uiZoom(store.uiZoom)
         // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
         .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
     }
@@ -148,6 +159,9 @@ struct LibraryView: View {
           .tint(.accentColor)
           .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
           .disabled(!store.libraryAvailable)
+        Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
+          .labelStyle(.titleAndIcon)
+          .help("Check framing or record without a script")
         Button("Presenter", systemImage: "sidebar.trailing") { store.inspector.toggle() }
           .labelStyle(.iconOnly)
           .help(store.inspector ? "Hide presenter controls" : "Show presenter controls")
@@ -191,7 +205,11 @@ struct LibraryView: View {
           Text(value.markdown).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
         }.font(Font(FormattedMarkdownEditModel.font(name: store.previewFontName, size: store.previewFontSize)))
           .frame(minWidth: 600, minHeight: 400)
-        ForEach(value.warnings, id: \.self) { Text($0).foregroundStyle(.orange) }
+        if AppStore.importTarget(for: value).linkTo != nil {
+          Label("This file will be linked both ways. Editing here changes the original Markdown file. Changes to that file also appear here.", systemImage: "link")
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
+        }
+        ForEach(value.warnings, id: \.self) { Text($0).foregroundStyle(.primary) }
         HStack {
           Spacer()
           Button("Cancel", role: .cancel) { importPreview = nil }
@@ -266,23 +284,25 @@ struct LibraryView: View {
 private struct ScriptRow: View {
   let script: ScriptRecord
   let link: LinkState?
+  @Environment(\.colorScheme) private var colorScheme
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       HStack(spacing: 4) {
         Label(script.metadata.title, systemImage: "doc.text")
+          .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
           .lineLimit(nil).fixedSize(horizontal: false, vertical: true).layoutPriority(1)
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
-            .font(.caption).foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            .font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
             .accessibilityLabel(present ? "Linked file" : "Linked file unavailable")
             .help(path)
         }
       }
       if !script.metadata.tags.isEmpty {
-        Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).lineLimit(1)
       }
-    }.tag(script.metadata.id)
+    }.foregroundColor(LibraryAppearance.color(.labelColor, scheme: colorScheme)).tag(script.metadata.id)
   }
 }
 
@@ -292,7 +312,10 @@ private struct EditorView: View {
   @State private var text = ""
   @State private var title = ""
   @State private var tags = ""
+  @State private var showsTags = false
   @State private var editNotice: String?
+  @Environment(\.colorScheme) private var colorScheme
+  @StateObject private var saver = LibraryEditorSave()
 
   init(store: AppStore, script: ScriptRecord) {
     self.store = store
@@ -300,17 +323,23 @@ private struct EditorView: View {
     _text = State(initialValue: script.markdown)
     _title = State(initialValue: script.metadata.title)
     _tags = State(initialValue: script.metadata.tags.joined(separator: ", "))
+    _showsTags = State(initialValue: !script.metadata.tags.isEmpty)
   }
 
   var body: some View {
     VStack(spacing: 0) {
       VStack(alignment: .leading, spacing: 8) {
-        TextField("Title", text: $title).textFieldStyle(.plain).font(.title2.weight(.semibold))
-          .help("Name this script; press Return to save the title")
-          .onSubmit { store.rename(title, for: script.metadata.id) }
-        TextField("Add tags", text: $tags).help("Separate tags with commas; press Return to save them").textFieldStyle(.plain).font(.caption).onSubmit
-        { store.setTags(tags.split(separator: ",").map(String.init), for: script.metadata.id) }
-      }.padding(24)
+        TextField("Title", text: $title).textFieldStyle(.plain).font(.headline)
+          .accessibilityLabel("Script title")
+          .help("Title, tags and script text save automatically")
+        DisclosureGroup("Tags", isExpanded: $showsTags) {
+          TextField("Separate tags with commas", text: $tags).textFieldStyle(.plain).font(.callout)
+        }
+        HStack {
+          Text(saver.message).font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+          if saver.failed { Button("Retry Save") { scheduleSave() } }
+        }
+      }.padding(.horizontal, 24).padding(.vertical, 12)
       Divider()
       if let editNotice {
         Text(editNotice).font(.callout).foregroundStyle(.secondary)
@@ -321,10 +350,10 @@ private struct EditorView: View {
         let present = !(state?.isBroken ?? false)
         HStack(spacing: 8) {
           Label(
-            present ? "Linked to \(path)" : "Linked file unavailable: \(path)",
+            present ? "Linked to \(URL(fileURLWithPath: path).lastPathComponent)" : "Linked file unavailable: \(path)",
             systemImage: present ? "link" : "exclamationmark.triangle")
             .font(.caption)
-            .foregroundStyle(present ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.orange))
+            .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
             .lineLimit(1)
             .truncationMode(.middle).help("Edits stay in sync with this Markdown file: " + path)
           Spacer()
@@ -333,13 +362,13 @@ private struct EditorView: View {
       } else {
         HStack {
           Label("Stored in Video Prompter", systemImage: "doc.text")
-            .font(.caption).foregroundStyle(.secondary)
+            .font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
           Spacer()
         }.padding(.horizontal, 24).padding(.vertical, Space.sm)
       }
       if store.unavailableScriptIDs.contains(script.metadata.id) {
         Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
-          .font(.callout).foregroundStyle(.orange).frame(maxWidth: .infinity, alignment: .leading)
+          .font(.callout).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
           .padding(.horizontal, 24).padding(.vertical, Space.md)
       }
       FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
@@ -347,10 +376,18 @@ private struct EditorView: View {
           editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
         }).help("Type or paste your script; changes save automatically").padding(24)
     }
-    .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id) }
+    .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id); scheduleSave() }
+    .onChange(of: title) { _, _ in scheduleSave() }
+    .onChange(of: tags) { _, _ in scheduleSave() }
+    .onChange(of: editNotice) { _, value in if let value { LibraryAnnouncement.post(value) } }
     .onChange(of: script.markdown) { _, value in if value != text { text = value } }
-    .onChange(of: script.metadata.title) { _, value in if value != title { title = value } }
+    .onChange(of: script.metadata.title) { _, value in if !saver.isSaving, value != title { title = value } }
 
+  }
+
+  private func scheduleSave() {
+    saver.schedule(store: store, id: script.id, title: title,
+      tags: tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
   }
 
 }

@@ -89,28 +89,34 @@ import SwiftUI
 struct ReferenceMonitorCaption: View {
   let passage: String
   let fontName: String
+  var readingSize: Double = 48
+  var zoom = 1.0
   let end: () -> Void
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
         Label("Reference monitor", systemImage: "video.badge.checkmark")
-          .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+          .font(.caption.weight(.semibold)).foregroundStyle(.white)
         Spacer()
         Button("Back to script", systemImage: "text.alignleft", action: end)
           .keyboardShortcut(.cancelAction)
           .buttonStyle(.bordered)
+          .foregroundStyle(.white)
+          .tint(.white)
           .help("Leave the reference monitor and return to the full script (Esc)")
-      }
-      // A long selection shrinks to fit rather than covering the picture it is there to check.
+      }.uiZoom(zoom)
+      ScrollView {
       Text(passage)
-        .font(.custom(fontName, size: 22, relativeTo: .title3))
+        .font(.custom(fontName, size: readingSize))
         .foregroundStyle(.white)
-        .lineLimit(6).minimumScaleFactor(0.6)
+        .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Monitored passage")
+        .accessibilityValue(passage)
+      }.frame(maxHeight: 240)
     }
     .padding(12)
-    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
+    .background(.black.opacity(0.90), in: RoundedRectangle(cornerRadius: 14))
     .padding(.horizontal, 16)
     .frame(maxWidth: 820)
   }

@@ -47,6 +47,8 @@ struct ScriptTextView: NSViewRepresentable {
     scroll.autohidesScrollers = true
     let text = TrackingTextView()
     text.setAccessibilityLabel("Presenter script")
+    text.setAccessibilityHelp("Select a word with the keyboard, then press Option-Command-Return to read from it.")
+    text.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Read from Selection", target: text, selector: #selector(TrackingTextView.accessibilityReadFromSelection))])
     text.isEditable = false
     text.isSelectable = true
     text.drawsBackground = false
@@ -659,9 +661,31 @@ struct ScriptTextView: NSViewRepresentable {
     }
   }
 }
-private final class TrackingTextView: NSTextView {
+final class TrackingTextView: NSTextView {
   var onCharacterClick: ((Int) -> Void)?
   var onLayout: (() -> Void)?
+  @objc func accessibilityReadFromSelection() -> Bool {
+    guard selectedRange().location < (string as NSString).length else { return false }
+    readFromSelection(nil)
+    return true
+  }
+  @objc func readFromSelection(_ sender: Any?) {
+    guard selectedRange().location < (string as NSString).length else { return }
+    onCharacterClick?(selectedRange().location)
+  }
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 36, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .option] {
+      readFromSelection(nil)
+    } else { super.keyDown(with: event) }
+  }
+  override func menu(for event: NSEvent) -> NSMenu? {
+    let menu = super.menu(for: event) ?? NSMenu()
+    let item = NSMenuItem(title: "Read from Selection", action: #selector(readFromSelection(_:)), keyEquivalent: "\r")
+    item.keyEquivalentModifierMask = [.command, .option]
+    item.target = self
+    menu.insertItem(item, at: 0)
+    return menu
+  }
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     if let manager = layoutManager, let container = textContainer {

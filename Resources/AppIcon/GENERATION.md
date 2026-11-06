@@ -18,3 +18,7 @@ Use case: logo-brand. Create ONE finished minimalist macOS app icon for VidPromp
 ## Testing variant approved 12 September 2026
 
 Junior approved an amber tile retaining the dark microphone and white script as a testing variant. It was retired with the Alpha channel on 1 October 2026; builds use the white icon. Generated preview exterior checkerboard was replaced with real alpha before packaging.
+
+## 6 November 2026 alpha repair
+
+The approved artwork is retained. Two image-tool cutout attempts left exterior speckles, so the packaged master uses a deterministic border-connected exterior mask. Only near-black pixels connected to the image boundary are made transparent; the microphone's enclosed dark pixels remain intact. Every legacy ICNS representation is regenerated with high-quality downsampling and transparent corners. This is an alpha/export repair, not new icon artwork.

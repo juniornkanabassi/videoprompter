@@ -64,7 +64,7 @@ struct GoogleDocsWindow: View {
   @ObservedObject var store: AppStore
   var body: some View {
     NavigationStack {
-      GoogleDocsSheet(google: MacGoogleDocs.docs, importDocument: store.importGoogleDoc)
+      GoogleDocsSheet(google: MacGoogleDocs.docs, importDocument: store.importGoogleDoc, zoom: store.uiZoom)
     }
   }
 }

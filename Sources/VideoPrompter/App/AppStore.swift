@@ -395,7 +395,11 @@ private enum PresenterSaveError: LocalizedError {
   }
   /// Paste as New Script, in the File and Add menus.
   func importClipboard() {
-    guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
+    guard let markdown = NSPasteboard.general.string(forType: .string),
+      !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      errorMessage = "Copy some text first, then choose Paste as New Script."
+      return
+    }
     create(title: "Pasted Script", markdown: markdown)
   }
   struct PendingEditsError: Error, CustomStringConvertible {
