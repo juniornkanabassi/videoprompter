@@ -4,6 +4,7 @@ import AppKit
 import UIKit
 #endif
 import Foundation
+import PrompterCore
 import PDFKit
 
 struct ImportPreview: Sendable {
@@ -44,8 +45,7 @@ struct DocumentImporter: Sendable {
   private func text(_ u: URL) throws -> ImportPreview {
     let d = try Data(contentsOf: u)
     guard
-      let s = String(data: d, encoding: .utf8) ?? String(data: d, encoding: .utf16) ?? String(
-        data: d, encoding: .utf16LittleEndian) ?? String(data: d, encoding: .utf16BigEndian),
+      let s = MarkdownText.decode(d),
       !s.isEmpty
     else { throw DocumentImportError.unreadableFile }
     return ImportPreview(sourceURL: u, markdown: s)

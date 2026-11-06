@@ -58,6 +58,8 @@ public struct ControlCommand: Sendable {
 public enum ControlProtocol {
   public static let bundleID = "com.juniornkanabassi.VidPrompt"
   public static let maxRequestBytes = 65_536
+  // A 20 MiB import can expand sixfold when JSON escapes control characters.
+  public static let maxResponseBytes = 128 * 1024 * 1024
   private static let onOff = ["on", "off"]
   private static let script = ControlParam("script", required: true, positional: true, help: "Script id or exact title")
   private static let requestID = ControlParam("requestId", help: "Retry key: a repeated id returns the first result instead of acting again")

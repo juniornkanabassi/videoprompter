@@ -85,7 +85,7 @@ let path = ControlProtocol.socketURL(dataRoot: root).path
 if path.utf8.count > 103 { failure("Control socket path exceeds 103 bytes. Use a shorter --data-directory.", json: invocation.json) }
 if let value = invocation.params["path"] { invocation.params["path"] = URL(fileURLWithPath: value).path }
 // `--text -` reads the script from standard input; the request still has to fit in 64 KB.
-if invocation.params["text"] == "-" {
+if invocation.readsStandardInput {
   guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8), !text.isEmpty else {
     failure("Standard input was empty or not UTF-8 text.", code: "usage", json: invocation.json, exitCode: 2)
   }
@@ -139,11 +139,14 @@ let sent = data.withUnsafeBytes { bytes -> Bool in
 }
 guard sent else { failure("The app closed the control connection.", json: invocation.json) }
 var response = Data(); var buffer = [UInt8](repeating: 0, count: 8192)
-while !response.contains(10) {
+var complete = false
+while !complete {
   let count = recv(fd, &buffer, buffer.count, 0)
   if count < 0 && errno == EINTR { continue }
-  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("Video Prompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
-  response.append(contentsOf: buffer.prefix(count))
+  guard count > 0, response.count + max(0, count) <= ControlProtocol.maxResponseBytes else { failure("Video Prompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
+  let chunk = buffer.prefix(count)
+  response.append(contentsOf: chunk)
+  complete = chunk.contains(10)
 }
 guard let end = response.firstIndex(of: 10), var value = try? JSONSerialization.jsonObject(with: response.prefix(upTo: end)) as? [String: Any] else { failure("Invalid app response.", json: invocation.json) }
 value.removeValue(forKey: "id"); emit(value, json: invocation.json)

@@ -116,6 +116,7 @@ import Speech
         "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev", "library": store.libraryAvailable, "scripts": store.scripts.count,
         "selected": store.selected.map(identity) as Any? ?? NSNull(), "presenter": presenter.isEditing ? "editing" : presenter.panel?.isVisible == true ? "visible" : "hidden",
         "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "readingStatus": store.session.readingStatus, "nextReadingAction": store.session.readingNextAction, "state": state, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
+      result["linkedSyncWaiting"] = await store.library?.linkedSyncWaiting() ?? []
       result["speed"] = Int(store.settings.speed.rounded())
       result["camera"] = cameraState
       result["recording"] = recordingState

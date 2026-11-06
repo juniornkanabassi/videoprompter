@@ -6,6 +6,7 @@ public enum ControlCLI {
     public var params: [String: String]
     public var json: Bool
     public var dataDirectory: String?
+    public var readsStandardInput = false
   }
   public struct UsageError: Error, CustomStringConvertible { public let description: String }
   /// `--text-size` and `--textSize` both name the `textSize` parameter.
@@ -19,6 +20,7 @@ public enum ControlCLI {
   public static func parse(_ argv: [String]) throws -> Invocation {
     var words: [String] = []; var flags: [String: String] = [:]
     var json = false; var directory: String?; var show = false
+    var readsStandardInput = false
     var i = 0
     while i < argv.count {
       let word = argv[i]; i += 1
@@ -38,6 +40,7 @@ public enum ControlCLI {
             guard i < argv.count, !argv[i].hasPrefix("--") else { throw UsageError(description: "Missing value for \(word)") }
             value = argv[i]; i += 1
           }
+          if flag == "--text", parts.count == 1, value == "-" { readsStandardInput = true }
           if flag == "--data-directory" { directory = value }
           else {
             guard flags[name] == nil else { throw UsageError(description: "Repeated flag \(flag)") }
@@ -65,7 +68,7 @@ public enum ControlCLI {
       }
       guard p.accepts(value) else { throw UsageError(description: "Invalid \(p.flag). Valid values: \(p.validValues)") }
     }
-    return Invocation(action: command.action, params: flags, json: json, dataDirectory: directory)
+    return Invocation(action: command.action, params: flags, json: json, dataDirectory: directory, readsStandardInput: readsStandardInput)
   }
   private static func usage(_ p: ControlParam) -> String {
     var line = "  \(p.flag)\(p.kind == "boolean" ? "" : " <value>")\(p.required ? " required" : " optional")\(p.positional ? " or positional" : "")"
@@ -75,7 +78,7 @@ public enum ControlCLI {
     return line
   }
   public static func help() -> String {
-    "Usage: videoprompter <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nFlags can be written --text-size or --textSize, with a space or =.\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")): \($0.summary)\n  \($0.example)\n" + $0.params.map(usage).joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest: print MCP tools JSON from this command table.\n  videoprompter mcp-manifest\n"
+    "Usage: videoprompter <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nFlags can be written --text-size or --textSize, with a space or =. Use --text - for stdin; --text=- is a literal dash.\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")): \($0.summary)\n  \($0.example)\n" + $0.params.map(usage).joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest: print MCP tools JSON from this command table.\n  videoprompter mcp-manifest\n"
   }
   public static func manifest(version: String = "dev") -> [String: Any] {
     ["serverInfo": ["name": "videoprompter", "version": version], "tools": ControlProtocol.commands.map { command -> [String: Any] in
