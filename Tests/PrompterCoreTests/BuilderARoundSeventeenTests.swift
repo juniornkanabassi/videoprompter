@@ -52,6 +52,11 @@ import XCTest
       for name in ["Guides", "Exposure check", "Switch camera"] {
         let action = try XCTUnwrap(LibraryAX.named(name, in: host).first, name)
         XCTAssertTrue(LibraryAX.bool(action, "isAccessibilityEnabled"))
+        let frame = try XCTUnwrap(action.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+        XCTAssertGreaterThanOrEqual(frame.height, 24 * zoom)
+        let local = host.convert(window.convertFromScreen(frame), from: nil)
+        XCTAssertGreaterThanOrEqual(local.minX, -1)
+        XCTAssertLessThanOrEqual(local.maxX, 721, "Picture control must fit at \(zoom): \(name)")
       }
       let guide = try XCTUnwrap(LibraryAX.named("Guides", in: host).first)
       let before = camera.framingIsVisible
@@ -65,6 +70,7 @@ import XCTest
       let status = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
       XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Automatic scroll"))
       camera.exposureBypassed = true
+      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
       func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
       let text = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
       let height = try XCTUnwrap(text.enclosingScrollView).frame.height

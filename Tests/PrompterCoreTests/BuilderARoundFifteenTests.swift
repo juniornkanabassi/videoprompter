@@ -42,7 +42,7 @@ import XCTest
       let name = String(WelcomeScript.markdown[Range(match.range(at: 1), in: WelcomeScript.markdown)!])
       // Exact literal at a control or label declaration, never the guide's own text.
       let escaped = NSRegularExpression.escapedPattern(for: name)
-      let control = try NSRegularExpression(pattern: #"(?:Button|Toggle|Picker|Text|Label|accessibilityLabel)\s*\([^\n]*""# + escaped + #"""#)
+      let control = try NSRegularExpression(pattern: #"(?:Button|Toggle|Picker|Menu|Text|Label|accessibilityLabel)\s*\([^\n]*""# + escaped + #"""#)
       XCTAssertNotNil(control.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)), "Guide names a missing control: \(name)")
     }
     XCTAssertFalse(WelcomeScript.markdown.contains("More →"))

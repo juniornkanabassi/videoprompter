@@ -956,7 +956,7 @@ struct PresenterView: View {
         if hasScript && camera.displayMode != .videoOnly {
           Button { showsReadingControls.toggle() } label: {
             Text(hasBottomNotice ? "Check reading…" : visibleReadingStatus)
-              .fontWeight(.semibold).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+              .fontWeight(.semibold).lineLimit(nil).fixedSize(horizontal: false, vertical: true).frame(minHeight: 24).contentShape(Rectangle())
           }.buttonStyle(.plain).accessibilityLabel(hasBottomNotice ? "Check reading…" : "Reading status").accessibilityValue(readingStatusTitle)
             .accessibilityHint("Change reading mode and speed")
             .restoringPopoverFocus(isPresented: $showsReadingControls, identifier: "presenter-reading-status")
@@ -969,7 +969,7 @@ struct PresenterView: View {
         Spacer(minLength: 0)
         if !camera.presentsWithVideo { moreMenu.opacity(secondaryOpacity) }
       }.font(.callout)
-      if camera.presentsWithVideo { pictureRow.padding(.vertical, Space.xs) }
+      if camera.presentsWithVideo { pictureRow }
         if camera.presentsWithVideo && !camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording && recorder.savedTake == nil && recorder.takeFailure == nil {
           Button {
             if camera.authorization == .denied || camera.authorization == .restricted {
@@ -982,10 +982,6 @@ struct PresenterView: View {
             .restoringPopoverFocus(isPresented: $showsCameraRecovery, identifier: "presenter-camera-recovery")
 
         }
-      if camera.presentsWithVideo && camera.exposureIsConfigured && (camera.exposureBypassed || camera.cleanView) {
-        Button(camera.exposureCheckState + " · Restore exposure aids") { camera.restoreExposureAids() }
-          .font(.callout).fixedSize(horizontal: false, vertical: true)
-      }
       if let error = store.shootSetupError {
         HStack(alignment: .top, spacing: Space.sm) {
           Text(error).fixedSize(horizontal: false, vertical: true)
@@ -1182,15 +1178,15 @@ struct PresenterView: View {
   // The small row is for checking the picture. Configuration stays in Tools.
   var pictureRow: some View {
     HStack(spacing: Space.sm) {
-      Button { camera.toggleFramingGuides() } label: { HStack(spacing: Space.xs) { Text("Guides"); if camera.framingIsVisible { Image(systemName: "checkmark").imageScale(.small) } }.fixedSize().frame(minHeight: 24) }
+      Button { camera.toggleFramingGuides() } label: { HStack(spacing: Space.xs) { Text("Guides"); if camera.framingIsVisible { Image(systemName: "checkmark").imageScale(.small) } }.fixedSize().frame(minHeight: 24).contentShape(Rectangle()) }
         .accessibilityLabel("Guides").accessibilityValue(camera.framingIsVisible ? "On" : "Off")
         .help("Show or hide framing guides. Choose the guides in Tools.")
         .tint(camera.framingIsVisible ? .accentColor : nil)
-      Button { camera.togglePictureExposureCheck() } label: { HStack(spacing: Space.xs) { Text("Exposure check"); if camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView { Image(systemName: "checkmark").imageScale(.small) } }.fixedSize().frame(minHeight: 24) }
+      Button { camera.togglePictureExposureCheck() } label: { HStack(spacing: Space.xs) { Text("Exposure check"); if camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView { Image(systemName: "checkmark").imageScale(.small) } }.fixedSize().frame(minHeight: 24).contentShape(Rectangle()) }
         .accessibilityLabel("Exposure check").accessibilityValue(camera.exposureCheckState)
         .help("Show or hide exposure aids. With no aids selected, shows brightness colours.")
         .tint(camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView ? .accentColor : nil)
-      Button { openedFromPicture = true; overflowTool = "Camera" } label: { Text("Switch camera").frame(minHeight: 24) }
+      Button { openedFromPicture = true; overflowTool = "Camera" } label: { Text("Switch camera").frame(minHeight: 24).contentShape(Rectangle()) }
         .disabled(camera.recordingLocked)
         .help(camera.recordingLocked ? "Stop recording to change camera" : "Choose a camera")
         .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && overflowTool == "Camera" }, set: { if !$0 { overflowTool = nil } }), identifier: "picture-camera")

@@ -84,8 +84,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       storedGuides = value
       if !loadingGuides {
         guideStore.set(value, for: selectedUID)
-        if value.zebras != old.zebras { announceExposure("Zebras", on: value.zebras) }
-        if value.falseColour != old.falseColour { announceExposure("False colour", on: value.falseColour) }
+        if value.zebras != old.zebras { announceExposure(ExposureLegend.zebraTitle(for: value.validatedZebraPurpose), on: value.zebras) }
+        if value.falseColour != old.falseColour { announceExposure("Check brightness · False colour", on: value.falseColour) }
       }
     }
   }
@@ -876,7 +876,6 @@ struct ExposureToggle: View {
   enum Kind { case zebras, falseColour }
   @ObservedObject var model: CameraModel
   let kind: Kind
-  var compact = false
   var presenter = true
   private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour, presenter: presenter) }
   private var on: Bool { binding.wrappedValue }
