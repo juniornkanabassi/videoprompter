@@ -16,7 +16,7 @@ struct ReadingLayoutPreview: View {
         ReadingSampleText(settings: settings, overVideo: overVideo)
           .frame(maxWidth: .infinity)
           .padding(Space.md)
-      }.frame(height: min(220, max(120, settings.fontSize * 3)))
+      }.frame(height: min(260, max(180, settings.fontSize * 4.5)))
         .background(Color(nsColor: NSColor(hex: settings.backgroundColorHex) ?? .black)
           .opacity(settings.backdropOpacity(withVideo: overVideo)))
         .background(.gray)
