@@ -12,32 +12,36 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > Choose **Present**, then **Microphone** to check your sound. Close the popover and choose **Start reading**. Reading does not record. Choose **Record** separately to save a video.
+    > Choose **Present**, then **Start reading**. Reading does not record. To check your sound first, open **Tools**, then **Check sound…** under Microphone.
 
-    Hello, and welcome. This is a practice script. Pause whenever you like. [Look at the camera.]
+    Hello, and welcome. Pause whenever you like. [Look at the camera.]
 
     ## Choose how to read
 
-    Voice follow keeps your place as you speak. **Listening** means your words are being received. Choose **Reading mode** to switch mode or adjust the automatic speed. Automatic scroll waits for the **Start delay**, normally three seconds. **Cancel countdown** stops the countdown.
+    Voice follow keeps your place as you speak. Open **Tools**, then **Reading mode…** to choose Voice follow or Automatic scroll. Automatic scroll waits for your Start delay, normally three seconds. The Cancel button stops the countdown. If reading needs attention, choose **Check reading…** beside the status for instructions and an automatic-scroll fallback.
 
     ## Make yourself comfortable
 
-    Use **Text** to make the words bigger or smaller. **More → Settings…**, under **Reading**, holds fonts, spacing, colours and Mirror for teleprompter glass.
+    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. The Settings sidebar also has Reading presets.
 
-    Click a word to read from there. The arrow keys move between passages when the script has focus. When paused, choose **Back to start** beside **Start reading** to try again. Open **More → Edit script**; choose **Save changes** when finished. **Back to start** returns to the opening without stopping a recording.
+    Click a word to read from there. The arrow keys move between passages when the script has focus. When paused, choose **Back to start** beside **Start reading** to try again without stopping a recording. Open **Tools**, then **Edit this script**. Choose **Save changes** when finished, or **Cancel editing** to keep the original.
 
     ## Camera and recording
 
-    **More → View** shows the script, the camera, or both in this presenter. Open **Camera** to choose your camera, or **Framing guides**. **Zebras** and **False colour** under **Exposure settings** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
+    Choose **Show camera** before recording if only your script is showing. Under **Tools**, use **View** to choose Script only, Script and camera, or Camera view. **Choose camera…** selects your camera and **Framing guides…** helps you compose the picture.
 
-    **Open Camera Monitor** in the Window menu opens a second-display view. Both windows share the camera and recording setup.
+    In the Exposure group, **Zebras** marks bright areas and **False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. **Bypass exposure aids** temporarily hides configured aids; **Restore exposure aids** brings them back. Neither enables a tool by itself.
 
-    **Record** sits beside **Start reading**. Each is a separate action. Choose **Stop recording** when finished, wait for **Show saved take…**, then **Play**, or use **Show in Finder** directly. **Saved with problems** names a fault: review it before recording again. The library's **Recordings** button opens your takes.
+    **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Camera window keeps its overlays.
+
+    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Camera window** for a separate window showing the same camera and recording. The section chooser also contains Saved shoot setups, where you can save, apply, rename and delete complete setups.
+
+    **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Show saved take…** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
 
     ## Your own scripts
 
     Choose **Paste Copied Text**, **New Script**, or **Import File…**. Imported Markdown stays linked to the original file. Changes in either place appear in the other.
 
-    Headings, bold and italics work. You can delete this practice script and bring it back using **Getting Started Guide** in Help.
+    Headings, bold and italics work. You can delete this guide and bring it back using **Getting Started Guide** in Help.
     """
 }

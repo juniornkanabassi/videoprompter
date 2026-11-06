@@ -39,12 +39,12 @@ A new library starts with a script called Welcome to Video Prompter. Present it 
 
 1. Choose **Paste Copied Text** to paste a script, or use **Add** to create or import one. Pasted scripts take their title from the text.
 2. Choose **Present**.
-3. Open **Microphone** to check the live level, then close the popover.
+3. Open **Tools > Check sound…** to check the microphone level, then close the popover.
 4. Choose **Start reading**. **Pause** stops reading and **Back to start**, beside Start reading, returns to the first word.
 
 Reading and recording are separate actions. With a camera shown, **Record** sits beside **Start reading**. In Script only view, **Show camera** switches the presenter to Script and camera.
 
-Settings has five pages: **General**, **Reading**, **Reading presets**, **Microphone**, and **Camera & Recording**. General holds interface and editor sizes. Reading holds the script's appearance and following mode. The presenter's **Tools > Settings for all scripts…** opens those same reading, microphone and camera controls in a popover.
+Settings has five pages: **General**, **Reading**, **Reading presets**, **Microphone**, and **Camera & Recording**. General holds interface and editor sizes. Reading holds the script's appearance and following mode. Each job in **Tools** has one **More … settings** link to the matching page in a shared settings popover.
 
 Voice follow tracks your spoken words using speech recognition on your Mac, including mixed English and French. Automatic scroll moves at the speed you choose and needs no microphone or speech download. It waits three seconds before moving; Settings > Reading > Start delay offers Off, 3 or 5 seconds. Cancel countdown stops it. The first time you use Voice follow in a language, macOS may need to download Apple's speech files for it, so you need to be online then. A Mac that has never been online may not be ready for Voice follow. If Voice follow cannot get ready, check your connection and permissions and try again, or use Automatic scroll.
 
@@ -54,11 +54,11 @@ Voice tracking is still a preview. It can hesitate when your wording differs fro
 
 Scripts are stored as Markdown. When you import a Markdown file it stays linked both ways with the original. Edits in Video Prompter change the file, and changes to the file appear in Video Prompter. Other formats are converted on import and are not linked.
 
-The **Tools** menu groups Text, Camera, Exposure and Microphone jobs. **Tools > View** switches between Script only, Script and camera, and Camera view. **Choose camera…** selects the device; **Framing guides…** opens framing controls. **Recording settings…** holds the format and destination. Under Exposure, **Zebras** and **False colour** switch the aids on, and **Compare exposure aids** temporarily bypasses them. **Clean presenter view** hides the script, backdrop and guides here while reading continues. The second Camera Monitor keeps its own overlays. **Exit clean view** or Esc restores the script at its current position.
+The **Tools** button opens a working surface grouped by Text, Camera, Exposure and Microphone. Each group has common adjustments and one **More … settings** link. **View** switches between Script only, Script and camera, and Camera view. **Choose camera…** selects the device; **Framing guides…** opens framing controls. In Camera & Recording settings, the Recording section holds format and destination. **Zebras** and **False colour** switch exposure aids on. **Bypass exposure aids** temporarily hides configured aids; **Restore exposure aids** brings them back. **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Camera window keeps its overlays. **Exit clean view** or Esc restores the script at its current position.
 
-Choose **Camera Only** in the library to check framing or record without a script. Choose **Tools → Open Camera Monitor** or **Window → Open Camera Monitor** for a second-display view of the same camera. It shares the presenter’s camera and recording setup. Fresh setups prefer a physical camera and name the choice; virtual cameras must be chosen explicitly.
+Choose **Camera Only** in the library to check framing or record without a script. Choose **Tools > More camera settings… > Open Camera window** or **Window > Open Camera window** for a second-display view of the same camera. It shares the presenter’s camera and recording setup. Fresh setups prefer a physical camera and name the choice; virtual cameras must be chosen explicitly.
 
-Drag across a passage in the presenter or editor, then choose **Pin Selected Text over Camera** from **Tools** or the Prompter menu (⌥⌘L). **Expand passage** reveals longer text. **Back to script** or Esc returns to reading. Clicking a word in the presenter moves the reading position. **Edit script** opens an unsaved draft; **Save changes** (⌘Return) saves it, and **Cancel editing** keeps the original wording.
+Drag across a passage in the presenter or editor, then choose **Pin Selected Text over Camera** from **Tools > More camera settings…** or the Prompter menu (⌥⌘L). **Expand passage** reveals longer text. **Back to script** or Esc returns to reading. Clicking a word in the presenter moves the reading position. **Tools > Edit this script** opens an unsaved draft; **Save changes** (⌘Return) saves it, and **Cancel editing** keeps the original wording.
 
 **Microphone** normally chooses one device for both Voice follow and recorded sound. In Settings > Microphone > Advanced, **Record from a different microphone** enables a separate recording input. Camera, rotation and saved-video settings are locked while a take is preparing, recording or saving.
 
@@ -151,8 +151,15 @@ The bundled Lexend fonts are under the SIL Open Font License, in [Resources/Font
 
 The **Reading mode** button keeps the current state and countdown visible at every interface size. Automatic scroll keeps its full name at every size. Its chevron opens mode and speed controls; the current speed or voice-follow behaviour is described there. **End of script** is distinct from a pause, with **Back to start** and **Read again**; finishing a script never stops a recording.
 
-**Tools > Saved shoot setups** recalls a complete camera, framing, exposure, reading-text and recording setup with one selection. Save or manage these in that menu or Settings > Reading presets. Shoot setups include microphone choices and recording format; reading presets keep their existing reading-only scope. Applying a setup preserves the script's words, refuses changes during a take and reports unavailable devices before changing anything.
+**Settings > Camera & Recording > Saved shoot setups** saves and recalls a complete camera, framing, exposure, reading-text and recording setup. Rename and Delete are in each setup's Actions menu. Shoot setups include microphone choices and recording format; **Settings > Reading presets** keeps its reading-only scope. Applying a setup preserves the script's words, refuses changes during a take and reports unavailable devices before changing anything.
 
 Saved preset entries load independently so a damaged entry does not discard neighbouring presets. A recovery copy preserves malformed saved data. Folder renames use the same trimmed name on disk and in the running app. Restored Interface size always matches a supported picker choice.
 
 Exposure presets distinguish bright areas, a qualified face reference, and custom measurements. Editing a level selects Custom. Custom bands are never presented as face targets, and near-white levels carry a warning. Camera rotation changes both the preview and saved take; frame markers do not crop the recording.
+
+
+**Camera Only** is the launch action, **Camera view** is the script-free presenter
+view, and **Camera window** is the separate window. **Clean presenter view** hides
+the script, framing guides and exposure aids in the presenter only. The Camera
+window keeps its overlays. Bypassing exposure aids preserves their configuration
+and displays a **Restore exposure aids** action until restored.

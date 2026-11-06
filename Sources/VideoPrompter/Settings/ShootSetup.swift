@@ -174,7 +174,7 @@ struct PresenterHelp: View {
         Text("Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately.")
         Text("Back to start returns to the first word without stopping a recording.")
         Text("Tools contains Text, Camera, Exposure and Microphone. Camera view shows the picture without a script. Script and camera puts your words over it.")
-        Text("Clean presenter view hides the script and guides here. The second Camera Monitor keeps its overlays.")
+        Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
         Text("Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings.")
         Button("Done") { dismiss() }.initialPopoverFocus()
       }.font(.callout).padding(Space.md)

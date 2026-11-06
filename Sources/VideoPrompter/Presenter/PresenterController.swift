@@ -712,8 +712,7 @@ struct PresenterView: View {
   @State private var showsCameraControls = false
   @State private var showsCameraRecovery = false
   @State private var showsTakeDetails = false
-  @State private var showsHelp = false
-  @State private var showsShootSetups = false
+  @State private var showsTools = false
   @State private var overflowTool: String?
   @Environment(\.openWindow) private var openWindow
   @State private var settingsTab = SettingsTab.reading
@@ -822,8 +821,7 @@ struct PresenterView: View {
       if showsReadingControls { showsReadingControls = false }
       else if showsCameraRecovery { showsCameraRecovery = false }
       else if showsCameraControls { showsCameraControls = false }
-      else if showsHelp { showsHelp = false }
-      else if showsShootSetups { showsShootSetups = false }
+      else if showsTools { showsTools = false }
       else if showsSettings { showsSettings = false }
       else if overflowTool != nil { overflowTool = nil }
       else if camera.cleanView { camera.cleanView = false }
@@ -895,15 +893,30 @@ struct PresenterView: View {
       .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
       .onHover { pointerOverControls = $0; revealControls() }
       .simultaneousGesture(TapGesture().onEnded { revealControls() })
-      .popover(isPresented: $showsReadingControls) {
-        Group { if hasBottomNotice { bottomNotice } else { readingControls } }.popoverEntryFocus()
+      .popover(isPresented: Binding(get: { hasOpenPopover }, set: { if !$0 { dismissPopover() } })) {
+        Group {
+          if showsReadingControls {
+            if hasBottomNotice { bottomNotice } else { readingControls }
+          } else if showsSettings {
+            PresenterSettingsPopover(store: store, initialTab: settingsTab, initialCameraSection: cameraSection)
+          } else if showsTakeDetails {
+            RecordingReceipt(recorder: recorder, camera: camera, zoom: controlZoom).padding(Space.md).uiZoom(controlZoom)
+          } else if showsCameraRecovery {
+            CameraRecoveryView(model: camera) {
+              showsCameraRecovery = false; showsCameraControls = true
+            }.padding(Space.md).uiZoom(controlZoom).environment(\.colorScheme, .dark)
+          } else if showsCameraControls { cameraControls }
+          else if overflowTool == "Microphone" { microphoneControls }
+          else if overflowTool == "Guides" { guideControls }
+          else if overflowTool == "Camera" { cameraControls }
+          else { toolsSurface }
+        }.popoverEntryFocus()
       }
-      .popover(isPresented: $showsTakeDetails) {
-        RecordingReceipt(recorder: recorder, camera: camera, zoom: controlZoom).padding(Space.md).uiZoom(controlZoom).popoverEntryFocus()
-      }
-      .popover(isPresented: $showsSettings) {
-        PresenterSettingsPopover(store: store, initialTab: settingsTab, initialCameraSection: cameraSection)
-      }
+  }
+
+  private func dismissPopover() {
+    showsReadingControls = false; showsSettings = false; showsTakeDetails = false
+    showsCameraRecovery = false; showsCameraControls = false; overflowTool = nil; showsTools = false
   }
 
   private var microphoneControls: some View {
@@ -913,12 +926,9 @@ struct PresenterView: View {
   private var guideControls: some View {
     CameraGuideSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
   }
-  private var exposureControls: some View {
-    CameraExposureSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
-  }
   private var hasOpenPopover: Bool {
     overflowTool != nil || showsTakeDetails || showsSettings || showsReadingControls || showsCameraControls || showsCameraRecovery
-      || showsHelp || showsShootSetups
+      || showsTools
   }
   private func revealControls() {
     controlsQuiet = false
@@ -936,23 +946,37 @@ struct PresenterView: View {
   private var barContent: some View {
     VStack(spacing: Space.xs) {
       transport
-      HStack(spacing: Space.sm) {
+      HStack(alignment: .top, spacing: Space.sm) {
         if hasScript && camera.displayMode != .videoOnly {
-          Text(readingStatusTitle).lineLimit(1).font(.callout)
-            .accessibilityLabel("Reading status").accessibilityValue(readingStatusTitle + (hasBottomNotice ? ". " + (editorNotice ?? session.anchorNotice ?? draft.errorMessage ?? draft.noticeMessage ?? "Review the unsaved draft") : ""))
-        } else { Text("Camera view").font(.callout) }
-        if showsScript && camera.presentsWithVideo && camera.needsRecovery && !recorder.isBusy && !recorder.isRecording {
-          Button("Camera unavailable") { showsCameraRecovery = true }
+          if hasBottomNotice {
+            Button { showsReadingControls = true } label: {
+              Text(session.visibleReadingState + " · Check reading…")
+                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+            }.accessibilityLabel("Check reading…").accessibilityValue(readingStatusTitle)
+          } else {
+            Text(session.visibleReadingState).fixedSize(horizontal: false, vertical: true)
+              .accessibilityLabel("Reading status").accessibilityValue(readingStatusTitle)
+          }
+        } else { Text("Camera view").fixedSize(horizontal: false, vertical: true) }
+        if camera.presentsWithVideo && !camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording && recorder.savedTake == nil && recorder.takeFailure == nil {
+          Button {
+            if camera.authorization == .denied || camera.authorization == .restricted {
+              NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+            } else { showsCameraRecovery = true }
+          } label: {
+            Text(camera.recordingRecoveryAction).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+          }
+            .accessibilityValue(camera.recordingBlockReason)
             .restoringPopoverFocus(isPresented: $showsCameraRecovery, identifier: "presenter-camera-recovery")
-            .popover(isPresented: $showsCameraRecovery) {
-              CameraRecoveryView(model: camera) {
-                showsCameraRecovery = false; showsCameraControls = true
-              }.padding(Space.md).uiZoom(controlZoom).environment(\.colorScheme, .dark).popoverEntryFocus()
-            }
+
         }
-        Spacer(minLength: 0)
         if camera.cleanView { Button("Exit clean view") { camera.cleanView = false } }
+        Spacer(minLength: 0)
         moreMenu.opacity(secondaryOpacity)
+      }.font(.callout)
+      if camera.presentsWithVideo && camera.exposureIsConfigured && (camera.exposureBypassed || camera.cleanView) {
+        Button(camera.exposureCheckState + " · Restore exposure aids") { camera.restoreExposureAids() }
+          .font(.callout).fixedSize(horizontal: false, vertical: true)
       }
       if let error = store.shootSetupError {
         HStack(alignment: .top, spacing: Space.sm) {
@@ -975,15 +999,16 @@ struct PresenterView: View {
         receipt
       } else if camera.presentsWithVideo && camera.isReadyToRecord {
         Button { showsCameraControls = true; showsCameraOptions = true } label: {
-          Text(recorder.compactOutputConfirmation(camera: camera)).lineLimit(1)
+          Text(recorder.compactOutputConfirmation(camera: camera))
+            .fixedSize(horizontal: false, vertical: true)
         }.font(.callout)
           .help(recorder.outputSummary(camera: camera) + " · " + CameraRecorder.recordingsFolder().path)
           .accessibilityLabel("Output check")
-          .accessibilityValue(recorder.compactOutputConfirmation(camera: camera))
+          .accessibilityValue(recorder.compactOutputConfirmation(camera: camera) + ". " + recorder.inputAndFormatConfirmation)
           .restoringPopoverFocus(isPresented: $showsCameraControls, identifier: "presenter-output")
-          .popover(isPresented: $showsCameraControls) { cameraControls.popoverEntryFocus() }
+
       }
-    }.padding(Space.xs).frame(maxWidth: .infinity)
+    }.padding(.horizontal, Space.sm).padding(.vertical, Space.xs).frame(maxWidth: .infinity)
       .modifier(PresenterGlass(radius: 20))
       .buttonStyle(PresenterButtonStyle()).font(.body).symbolRenderingMode(.hierarchical)
       .accessibilityIdentifier("presenter-control-bar")
@@ -999,7 +1024,7 @@ struct PresenterView: View {
   }
 
   private var transport: some View {
-    HStack(spacing: Space.xs) {
+    HStack(spacing: Space.sm) {
       if draft.isEditing {
         Button("Save changes") { Task { await draft.confirm(store: store) } }
           .keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
@@ -1020,7 +1045,7 @@ struct PresenterView: View {
       Group {
         if camera.presentsWithVideo {
           PresenterRecordButton(recorder: recorder, camera: camera, compact: true, showsStatus: false)
-            .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : "Choose a camera to record")
+            .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : camera.recordingBlockReason)
         } else {
           Button("Show camera") { camera.displayMode = .prompterWithVideo }
         }
@@ -1032,7 +1057,8 @@ struct PresenterView: View {
   private var readingStatusTitle: String {
     if draft.isEditing { return "Editing · not saved yet" }
     let mode = session.readingModeName
-    return "\(mode): \(session.visibleReadingState)"
+    let notice = editorNotice ?? session.anchorNotice ?? draft.errorMessage ?? draft.noticeMessage
+    return "\(mode): \(session.visibleReadingState)" + (notice.map { ". " + $0 } ?? "")
   }
 
   private func viewMenu(compact: Bool) -> some View {
@@ -1064,23 +1090,9 @@ struct PresenterView: View {
     }.formStyle(.grouped).frame(width: 400, height: 300).uiZoom(controlZoom)
   }
 
-  private var textControls: some View {
-    VStack(alignment: .leading, spacing: Space.md) {
-      Text("Reading text · \(Int(store.settings.fontSize)) points").font(.headline)
-      HStack {
-        Button("Smaller text") { changeReadingSize(-4) }
-          .accessibilityValue("\(Int(store.settings.fontSize)) points").disabled(store.settings.fontSize <= 18)
-          .initialPopoverFocus(when: store.settings.fontSize > 18)
-        Button("Larger text") { changeReadingSize(4) }
-          .accessibilityValue("\(Int(store.settings.fontSize)) points").disabled(store.settings.fontSize >= 120)
-          .initialPopoverFocus(when: store.settings.fontSize <= 18)
-      }
-    }.padding(Space.md).uiZoom(controlZoom).fixedSize()
-  }
-
   private var cameraControls: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
-
+      Text(recorder.inputAndFormatConfirmation).font(.callout).fixedSize(horizontal: false, vertical: true)
       // Builder B contract: the picker suppresses its recovery; this is the single owner.
       if camera.needsRecovery {
         CameraRecoveryView(model: camera) { showsCameraOptions = true }
@@ -1099,7 +1111,7 @@ struct PresenterView: View {
         Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
         Button("Recording settings…") { showsCameraControls = false; overflowTool = nil; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
         Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
-        Button("Open Camera Monitor") { openWindow(id: "camera") }
+        Button("Open Camera window") { openWindow(id: "camera") }
         Text("An optional second window showing the same camera and recording.").font(.callout)
       }
     }.padding(Space.md).modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom))
@@ -1107,96 +1119,70 @@ struct PresenterView: View {
   }
 
   private var moreMenu: some View {
-    PresenterToolsMenu {
+    Button { showsTools.toggle() } label: {
+      HStack(spacing: Space.xs) {
+        Text("Tools")
+        Image(systemName: "chevron.down").imageScale(.small)
+      }.fixedSize()
+    }.accessibilityLabel("Tools")
+      .accessibilityHint("Text, Camera, Exposure and Microphone controls")
+      .focused($focusedTool, equals: "Tools")
+      .restoringPopoverFocus(isPresented: Binding(get: {
+        showsTools || showsSettings || showsTakeDetails || overflowTool != nil || showsReadingControls
+      }, set: { if !$0 {
+        showsTools = false; showsSettings = false; showsTakeDetails = false; overflowTool = nil; showsReadingControls = false
+      } }), identifier: "presenter-tools")
+  }
+
+  // One working surface: common actions stay inline, configuration has one link per job.
+  var toolsSurface: some View {
+    Form {
       if hasScript && camera.displayMode != .videoOnly {
         Section("Text") {
-          Button(hasBottomNotice ? "Check reading…" : "Reading mode…") { showsReadingControls = true }
-          Button("Reading text size for all scripts…") { overflowTool = "Text" }
-          Button("Edit this script") { draft.begin(session: session) }.disabled(draft.isEditing)
-          Menu("Reading presets for all scripts") {
-            Button("Manage reading presets…") { openPresenterSettings(.presets) }
-            ForEach(store.presets) { preset in
-              Button(preset.name) { store.applyPreset(preset, undoManager: undoManager) }
-            }
+          WrapLayout(spacing: Space.sm) {
+            Button("Smaller text") { changeReadingSize(-4) }.disabled(store.settings.fontSize <= 18)
+            Button("Larger text") { changeReadingSize(4) }.disabled(store.settings.fontSize >= 120)
+            Button("Reading mode…") { showsTools = false; showsReadingControls = true }
+            Button("Edit this script") { showsTools = false; draft.begin(session: session) }.disabled(draft.isEditing)
           }
-          Button("Reading settings for all scripts…") { openPresenterSettings(.reading) }
+          Text("Reading text: \(Int(store.settings.fontSize)) points. Changes apply to all scripts.").font(.callout)
+          Button("More text settings…") { showsTools = false; openPresenterSettings(.reading) }
         }
       }
       Section("Camera") {
-        viewMenu(compact: true)
-        Button("Choose camera…") { overflowTool = "Camera" }
-        Button("Framing guides…") { overflowTool = "Guides" }
-        Button("Recording settings…") { openPresenterSettings(.camera, section: "Recording") }
-        Button("Open Camera Monitor") { openWindow(id: "camera") }
-        Menu("Saved shoot setups") {
-          ForEach(store.shootSetups) { setup in
-            Button(setup.name) { store.applyShootSetup(setup, camera: camera, recorder: recorder) }
-              .disabled(isTaking)
-          }
-          Button("Save or manage shoot setups…") { showsShootSetups = true }
+        WrapLayout(spacing: Space.sm) {
+          viewMenu(compact: true)
+          Button("Choose camera…") { showsTools = false; overflowTool = "Camera" }
+          Button("Framing guides…") { showsTools = false; overflowTool = "Guides" }
         }
-        Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
+        Button("More camera settings…") { showsTools = false; openPresenterSettings(.camera) }
       }
       if camera.presentsWithVideo {
         Section("Exposure") {
           Toggle("Zebras", isOn: camera.exposureBinding(\.zebras))
           Toggle("False colour", isOn: camera.exposureBinding(\.falseColour))
-          Button("Exposure settings…") { overflowTool = "Exposure" }
-          Button("Compare exposure aids") { camera.toggleExposureCheck() }
-          Toggle("Clean presenter view", isOn: $camera.cleanView)
+          Button(camera.exposureBypassed || camera.cleanView ? "Restore exposure aids" : "Bypass exposure aids") {
+            camera.toggleExposureCheck()
+          }.disabled(!camera.exposureIsConfigured)
+            .accessibilityValue(camera.exposureCheckState)
+          Toggle("Clean presenter view", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation)
+          Text(camera.exposureCheckState).font(.callout).fixedSize(horizontal: false, vertical: true)
+          Button("More exposure settings…") { showsTools = false; openPresenterSettings(.camera, section: "Exposure") }
         }
       }
       Section("Microphone") {
-        Button("Microphone…") { overflowTool = "Microphone" }.accessibilityValue(microphoneHelp)
-        Button("Microphone settings for all scripts…") { openPresenterSettings(.microphone) }
+        Picker("Microphone", selection: $store.settings.audioDeviceUID) {
+          Text("System default").tag(String?.none)
+          ForEach(AudioCapture.inputDevices()) { Text($0.name).tag(Optional($0.uid)) }
+        }.disabled(recorder.settingsLocked && !recorder.usesSeparateMicrophone)
+        Button("Check sound…") { showsTools = false; overflowTool = "Microphone" }
+        Button("More microphone settings…") { showsTools = false; openPresenterSettings(.microphone) }
       }
-      Section("Presenter") {
-        if recorder.savedTake != nil || recorder.takeFailure != nil {
-          Button("Take details…") { showsTakeDetails = true }
-        }
-        Button("Settings for all scripts…") { openPresenterSettings(showsScript ? .reading : .camera) }
-        Button("Pin Selected Text over Camera") { controller.monitorSelection(store: store) }
-          .disabled(draft.isEditing || !controller.hasSelectedText)
-        Button("Match Camera Size") { controller.matchCameraSize() }
-          .help("Resize the presenter window to the camera picture's proportions")
-          .disabled(!camera.presentsWithVideo)
-        Button("Presenter Full Screen") { controller.toggleFullScreen() }
-        Button("Presenter help…") { showsHelp = true }
-        Button("Close Presenter") { controller.close() }.keyboardShortcut("w")
-      }
-    }
-      .popover(isPresented: Binding(get: { overflowTool != nil }, set: { if !$0 { overflowTool = nil } })) {
-        Group {
-          switch overflowTool {
-          case "Text": textControls
-          case "Microphone": microphoneControls
-          case "Guides": guideControls
-          case "Exposure": exposureControls
-          default: cameraControls
-          }
-        }.popoverEntryFocus()
-      }
-      .popover(isPresented: $showsHelp) { PresenterHelp().uiZoom(controlZoom).popoverEntryFocus() }
-      .popover(isPresented: $showsShootSetups) {
-        Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }
-          .formStyle(.grouped).frame(width: 460, height: 420).uiZoom(controlZoom).popoverEntryFocus()
-      }
-      .focused($focusedTool, equals: "Tools")
-      .restoringPopoverFocus(isPresented: Binding(get: {
-        showsSettings || showsTakeDetails || overflowTool != nil || showsReadingControls || showsHelp || showsShootSetups
-      }, set: { if !$0 {
-        showsSettings = false; showsTakeDetails = false; overflowTool = nil; showsReadingControls = false
-        showsHelp = false; showsShootSetups = false
-      } }), identifier: "presenter-tools")
+    }.formStyle(.grouped).frame(width: min(520, 640 / controlZoom), height: popoverHeight / controlZoom)
+      .uiZoom(controlZoom)
   }
   private func openPresenterSettings(_ tab: SettingsTab, section: String = "Camera") {
     settingsTab = tab; cameraSection = section; showsSettings = true
-  }
-  private var followingMicrophoneName: String {
-    AudioCapture.inputDevices().first { $0.uid == store.settings.audioDeviceUID }?.name ?? "System default"
-  }
-  private var microphoneHelp: String {
-    recorder.usesSeparateMicrophone ? "Microphone: \(followingMicrophoneName). Recording microphone: \(recorder.microphoneName)." : followingMicrophoneName
   }
   private func changeReadingSize(_ step: Double) {
     store.settings.fontSize = min(120, max(18, store.settings.fontSize + step))

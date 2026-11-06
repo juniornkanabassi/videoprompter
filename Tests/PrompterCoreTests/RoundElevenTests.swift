@@ -47,7 +47,8 @@ import PrompterCore
           store.session.seek(to: position)
           for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
           XCTAssertEqual(host.bounds.width, 720, accuracy: 1)
-          let recovery = try XCTUnwrap(LibraryAX.named("Camera unavailable", in: host).first)
+          let action = access == .denied ? "Allow camera in System Settings" : access == .notDetermined ? "Allow camera access" : "Connect and choose camera…"
+          let recovery = try XCTUnwrap(LibraryAX.named(action, in: host).first)
           let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
           let scriptFrame = script.convert(script.bounds, to: nil)
           XCTAssertFalse(window.convertToScreen(scriptFrame).intersects(try frame(recovery)), "Recovery must reserve space outside reading")

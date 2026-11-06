@@ -50,7 +50,7 @@ import XCTest
 
   func testUnavailableCameraOffersLocalRecovery() async throws {
     let (_, _, camera, _) = try await fixture()
-    for (authorization, action) in [(AVAuthorizationStatus.denied, "Open System Settings"), (.notDetermined, "Allow Camera Access"), (.authorized, "Choose camera")] {
+    for (authorization, action) in [(AVAuthorizationStatus.denied, "Allow camera in System Settings"), (.notDetermined, "Allow Camera Access"), (.authorized, "Choose camera")] {
       camera.authorization = authorization
       let (window, host) = await LibraryAX.host(CameraRecoveryView(model: camera, chooseCamera: {}))
       defer { LibraryAX.close(window) }

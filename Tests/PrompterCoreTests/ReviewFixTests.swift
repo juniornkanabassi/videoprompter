@@ -226,7 +226,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       host.layoutSubtreeIfNeeded()
       if taking {
         XCTAssertFalse(LibraryAX.named("Tools", in: host).isEmpty, "Named tools remain reachable")
-        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading status", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
+        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Check reading…", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
 
       }
     }

@@ -106,7 +106,7 @@ import XCTest
       size: .init(width: 720, height: 520))
     defer { LibraryAX.close(narrow) }
     XCTAssertFalse(LibraryAX.named("Tools", in: narrowHost).isEmpty)
-    camera.toggleExposureCheck()
+    camera.guides.zebras = true
     XCTAssertTrue(camera.previewGuides.zebras)
     camera.toggleExposureCheck()
     XCTAssertFalse(camera.previewGuides.zebras)

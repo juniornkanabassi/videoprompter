@@ -97,7 +97,7 @@ enum ScriptShortcuts {
             .disabled(store.selected == nil)
           Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Choose a camera, check framing or record. Camera Monitor is an optional second view.")
+            .help("Choose a camera, check framing or record. Camera window is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
@@ -127,7 +127,7 @@ enum ScriptShortcuts {
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Camera Monitor", id: "camera") {
+    Window("Camera window", id: "camera") {
       CameraView(zoom: store.uiZoom)
         .background(MainWindowConfigurator(size: NSSize(width: 760, height: 480)))
         .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
@@ -160,7 +160,7 @@ struct PresenterVideoItems: View {
 struct ExposureMenuItems: View {
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
-    Toggle("Clean View", isOn: $camera.cleanView).keyboardShortcut("k", modifiers: [.option, .command])
+    Toggle("Clean presenter view", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
     Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
     Toggle("False Colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
   }
@@ -220,14 +220,15 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Camera window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }
 
 @MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
   private let presenter: PresenterController
-  init(presenter: PresenterController = .shared) {
+  override convenience init() { self.init(presenter: .shared) }
+  init(presenter: PresenterController) {
     self.presenter = presenter
     super.init()
   }

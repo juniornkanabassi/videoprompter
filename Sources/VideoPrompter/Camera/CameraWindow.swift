@@ -103,10 +103,17 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     })
   }
   func toggleExposureCheck() {
-    if cleanView { cleanView = false; exposureBypassed = false }
-    else if exposureIsConfigured { exposureBypassed.toggle() }
-    else { guides.zebras = true }
+    guard exposureIsConfigured else { return }
+    if cleanView || exposureBypassed { restoreExposureAids() }
+    else { exposureBypassed = true; announceExposure("Exposure aids bypassed", on: false) }
   }
+  func restoreExposureAids() {
+    guard exposureIsConfigured else { return }
+    cleanView = false; exposureBypassed = false
+    announceExposure("Exposure aids restored", on: true)
+  }
+  static let cleanViewExplanation = "Hides the script, framing guides and exposure aids in the presenter only. The Camera window keeps its overlays."
+
   private func announceExposure(_ name: String, on: Bool) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
       userInfo: [.announcement: name + (on ? " on" : " off"), .priority: NSAccessibilityPriorityLevel.medium.rawValue])
@@ -592,6 +599,8 @@ struct PresenterRecordButton: View {
           Label { Text("Record").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "record.circle").foregroundStyle(.red) }
         }.accessibilityLabel("Record")
           .buttonStyle(PresenterButtonStyle()).disabled(!camera.isReadyToRecord)
+          .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : camera.recordingBlockReason)
+          .accessibilityHint(camera.isReadyToRecord ? "Reading starts separately" : camera.recordingBlockReason)
       }
     }
   }
@@ -757,7 +766,7 @@ struct CameraRecoveryView: View {
       Text(message).font(.callout).multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
       if model.authorization == .denied || model.authorization == .restricted {
-        Button("Open System Settings") {
+        Button("Allow camera in System Settings") {
           NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
         }.initialPopoverFocus()
       } else if model.authorization == .notDetermined {
@@ -848,6 +857,17 @@ extension CameraModel {
   var needsRecovery: Bool {
     recordingReadyOverride != true && (authorization != .authorized || unavailableMessage != nil)
   }
+  var recordingBlockReason: String {
+    if authorization == .denied || authorization == .restricted { return "Allow camera in System Settings" }
+    if authorization == .notDetermined { return "Allow camera access to record" }
+    if selectedUID == nil { return "Connect and choose a camera to record" }
+    return "Camera picture unavailable. Check the camera connection."
+  }
+  var recordingRecoveryAction: String {
+    if authorization == .denied || authorization == .restricted { return "Allow camera in System Settings" }
+    if authorization == .notDetermined { return "Allow camera access" }
+    return selectedUID == nil ? "Connect and choose camera…" : "Check camera…"
+  }
   var isReadyToRecord: Bool {
     if let recordingReadyOverride { return recordingReadyOverride }
     return authorization == .authorized && selectedUID != nil && unavailableMessage == nil
@@ -856,6 +876,9 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
+  var inputAndFormatConfirmation: String {
+    "Mic: \(microphoneName) · \(preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422")"
+  }
   func compactOutputConfirmation(camera: CameraModel) -> String {
     guard let size = SharedCameraSession.shared.pictureSize else { return "Orientation unknown · resolution unknown" }
     let rotated = camera.guides.rotation.swapsAxes ? CGSize(width: size.height, height: size.width) : size
@@ -984,11 +1007,11 @@ struct RecordingReceipt: View {
   }
   var body: some View {
     if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
-      HStack(spacing: zoom >= 2 ? 0 : Space.sm) {
+      HStack(spacing: Space.xs) {
         if let cause = recorder.qualityWarning {
           VStack(alignment: .leading, spacing: 0) {
             if recorder.savedTake == nil { Text("Take not saved").fontWeight(.semibold) }
-            Text(Self.shortCause(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure))).lineLimit(1)
+            Text(Self.shortCause(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure)).replacingOccurrences(of: "Picture and sound", with: "Picture + sound")).fixedSize(horizontal: false, vertical: true)
           }.font(.callout).foregroundStyle(.orange).help(cause)
             .accessibilityElement(children: .combine)
             .accessibilityLabel((recorder.savedTake == nil ? "Take not saved · " : "Saved with problems · ") + Self.shortCause(cause))
@@ -1002,8 +1025,8 @@ struct RecordingReceipt: View {
           }
         }
         if recorder.savedTake != nil {
-          Button(recorder.qualityWarning == nil ? "Show saved take…" : "Review problem…") { showsDetails = true }
-            .fixedSize().accessibilityValue(recorder.savedTake?.lastPathComponent ?? "")
+          Button(recorder.qualityWarning == nil ? "Show saved take…" : "Review") { showsDetails = true }
+            .fixedSize().accessibilityLabel(recorder.qualityWarning == nil ? "Show saved take…" : "Review problem…").accessibilityValue(recorder.savedTake?.lastPathComponent ?? "")
           if let file = recorder.savedTake {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.fixedSize()
           }

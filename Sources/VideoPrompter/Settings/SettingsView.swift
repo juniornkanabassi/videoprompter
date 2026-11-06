@@ -112,7 +112,6 @@ struct SettingsPage: View {
       case .microphone, .reading, .camera:
         EmptyView()
       case .presets:
-        ShootSetupSection(store: store, camera: .shared, recorder: .shared)
         Section("Save current reading settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
@@ -502,11 +501,13 @@ struct CameraRecordingPage: View {
   @ObservedObject var recorder = CameraRecorder.shared
   var startsCamera = true
   @State var section = "Camera"
+  @Environment(\.openWindow) private var openWindow
+  @State private var showsHelp = false
   var body: some View {
     VStack(spacing: Space.sm) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Picker("Camera & Recording section", selection: $section) {
-          ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
+          ForEach(["Camera", "Recording", "Framing", "Exposure", "Saved shoot setups"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
         }.pickerStyle(.menu).labelsHidden().fixedSize()
           .accessibilityLabel("Camera & Recording section")
       }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
@@ -514,14 +515,26 @@ struct CameraRecordingPage: View {
         switch section {
         case "Camera":
           CameraSettingsSections(model: camera, zoom: store.uiZoom)
+          Section("Presenter and windows") {
+            Button("Open Camera window") { openWindow(id: "camera") }
+            Text("A separate window showing the same camera and recording.").font(.callout)
+            Button("Pin Selected Text over Camera") { PresenterController.shared.monitorSelection(store: store) }
+              .disabled(!PresenterController.shared.hasSelectedText)
+            Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
+              .disabled(!camera.presentsWithVideo)
+            Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
+            Button("Presenter help…") { showsHelp = true }
+            Button("Close Presenter") { PresenterController.shared.close() }
+          }
         case "Recording":
           RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
           RecordingFolderSection(recorder: recorder)
         case "Framing": CameraGuideSections(model: camera)
+        case "Saved shoot setups": ShootSetupSection(store: store, camera: camera, recorder: recorder)
         default: CameraExposureSections(model: camera)
         }
       }.formStyle(.grouped)
-    }
+    }.popover(isPresented: $showsHelp) { PresenterHelp().uiZoom(store.uiZoom).popoverEntryFocus() }
   }
 }
 
