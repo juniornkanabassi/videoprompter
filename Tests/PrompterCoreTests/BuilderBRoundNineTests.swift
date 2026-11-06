@@ -20,7 +20,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false),
         practice: { practices += 1 }, camera: {}).uiZoom(zoom), size: .init(width: 840, height: 800))
       defer { LibraryAX.close(window) }
-      let button = try XCTUnwrap(LibraryAX.named("Try the Practice Script", in: host).first)
+      let button = try XCTUnwrap(LibraryAX.named("Quick Reading Practice", in: host).first)
       XCTAssertEqual(LibraryAX.value(button, "accessibilityRole"), "AXButton")
       XCTAssertTrue(LibraryAX.bool(button, "accessibilityPerformPress"))
       XCTAssertEqual(practices, 1)

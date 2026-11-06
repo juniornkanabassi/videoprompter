@@ -775,8 +775,7 @@ struct CameraExposureSections: View {
   var body: some View {
     Section("Exposure") {
       Text("Adjust brightness on your camera. Use Zebras to check bright areas, or False colour to see brightness colours.").font(.callout)
-      Toggle("Zebras: mark bright areas", isOn: $model.guides.zebras)
-      Toggle("False colour: show brightness levels", isOn: $model.guides.falseColour)
+      ExposureToolToggles(model: model)
       Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
         ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }

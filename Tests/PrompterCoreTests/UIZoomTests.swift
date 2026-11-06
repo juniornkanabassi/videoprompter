@@ -97,18 +97,15 @@ final class UIZoomTests: XCTestCase {
     }
   }
 
-  /// Settings zooms each page inside a fixed viewport: the native TabView root stays unscaled, so
-  /// 200% does not double the window. The live Settings scene chrome still needs a visual check.
+  /// Settings preserves its sidebar and uses the available display height as text grows.
   func testSettingsKeepsHeightBoundedAndEnlargesNavigation() {
+    let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1280, height: 900)
     for tab in SettingsTab.allCases {
-      store.uiZoom = 1
-      let actual = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
-      XCTAssertEqual(actual.width, AppSettingsView.width, accuracy: 1, "\(tab)")
-      for scale in [1.5, 2.0] {
+      for scale in [1.0, 1.5, 2.0] {
         store.uiZoom = scale
-        let zoomed = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
-        XCTAssertEqual(zoomed.width, actual.width * scale, accuracy: 1, "\(tab) at \(scale): navigation grows with its labels")
-        XCTAssertEqual(zoomed.height, actual.height, accuracy: 1, "\(tab) at \(scale): height")
+        let size = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
+        XCTAssertEqual(size.width, min(880 * scale, screen.width - 80), accuracy: 1, "\(tab) at \(scale): bounded width")
+        XCTAssertEqual(size.height, min(600 * scale, screen.height - 80), accuracy: 1, "\(tab) at \(scale): usable display height")
       }
     }
   }
