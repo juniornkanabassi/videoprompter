@@ -5,7 +5,7 @@ import Synchronization
 final class LinkedFileAccess: @unchecked Sendable {
   struct Waiting: Error, LocalizedError {
     let url: URL
-    var errorDescription: String? { "Waiting for \(url.lastPathComponent). Save or close it in the other editor to finish syncing." }
+    var errorDescription: String? { "Waiting for \(url.lastPathComponent). Sync will retry automatically. The file may be downloading or busy in another app." }
   }
   let url: URL
   private let coordinator = NSFileCoordinator()
@@ -13,11 +13,11 @@ final class LinkedFileAccess: @unchecked Sendable {
   private let pending = Mutex<CheckedContinuation<LinkedFileAccess, Error>?>(nil)
   private init(url: URL) { self.url = url }
 
-  static func acquire(_ url: URL, writing: Bool) async throws -> LinkedFileAccess {
+  static func acquire(_ url: URL, writing: Bool, timeout: TimeInterval = 1) async throws -> LinkedFileAccess {
     let access = LinkedFileAccess(url: url)
     return try await withCheckedThrowingContinuation { continuation in
       access.pending.withLock { $0 = continuation }
-      DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
+      DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
         let pending = access.pending.withLock { value in defer { value = nil }; return value }
         if let pending {
           access.coordinator.cancel()
@@ -57,14 +57,25 @@ public enum MarkdownText {
     if data.starts(with: [0xff, 0xfe]) || data.starts(with: [0xfe, 0xff]) {
       return String(data: data, encoding: .utf16)
     }
-    return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .utf16)
-      ?? String(data: data, encoding: .utf16LittleEndian) ?? String(data: data, encoding: .utf16BigEndian)
+    // ASCII UTF-16 is valid UTF-8 containing NULs. Use its byte lanes before UTF-8.
+    if data.count.isMultiple(of: 2), data.contains(0) {
+      let bytes = Array(data)
+      let even = stride(from: 0, to: bytes.count, by: 2).filter { bytes[$0] == 0 }.count
+      let odd = stride(from: 1, to: bytes.count, by: 2).filter { bytes[$0] == 0 }.count
+      if even != odd {
+        return String(data: data, encoding: odd > even ? .utf16LittleEndian : .utf16BigEndian)
+      }
+    }
+    if let text = String(data: data, encoding: .utf8), !text.contains("\0") { return text }
+    return nil // Unmarked, ambiguous encodings must not import as garbled text.
   }
   static func encode(_ text: String, like original: Data) -> Data {
     if original.starts(with: [0xff, 0xfe]) { return Data([0xff, 0xfe]) + text.data(using: .utf16LittleEndian)! }
     if original.starts(with: [0xfe, 0xff]) { return Data([0xfe, 0xff]) + text.data(using: .utf16BigEndian)! }
+    if original.starts(with: [0xef, 0xbb, 0xbf]) { return Data([0xef, 0xbb, 0xbf]) + Data(text.utf8) }
     return Data(text.utf8)
   }
+
   static func read(_ url: URL) throws -> String {
     guard let text = decode(try Data(contentsOf: url)) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
     return text

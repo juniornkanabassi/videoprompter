@@ -68,9 +68,14 @@ public actor MarkdownLibrary {
   // Test seam for an external save arriving immediately after the content/date snapshot.
   private var linkedReadHook: (@Sendable () -> Void)?
   func setLinkedReadHook(_ hook: (@Sendable () -> Void)?) { linkedReadHook = hook }
+  private var linkedAccessHook: (@Sendable (Bool) async -> Void)?
+  func setLinkedAccessHook(_ hook: (@Sendable (Bool) async -> Void)?) { linkedAccessHook = hook }
   private var lastLinkSync: [UUID: Date] = [:]
+  private var unsupportedLinks: [UUID: String] = [:]
+  private var preservedEncodings: [UUID: String] = [:]
+  private var linkTimeouts: [String: TimeInterval] = [:]
   private var waitingForLinks: [UUID: String] = [:]
-  public func linkedSyncWaiting() -> [String] { waitingForLinks.values.sorted() }
+  public func linkedSyncWaiting() -> [String] { (Array(waitingForLinks.values) + Array(unsupportedLinks.values)).sorted() }
   /// Modification date of each library file the last time the poll read it, and of the Scripts
   /// folder the last time it was scanned. The two-second poll used to coordinate-read and
   /// fingerprint every script and re-enumerate the folder every tick, whether or not anything
@@ -272,10 +277,9 @@ public actor MarkdownLibrary {
     } else {
       try saveWithinAccess(url)
     }
-    let saved = ScriptRecord(metadata: index.scripts[position], markdown: markdown)
     lastLinkSync[id] = nil
     await pushToLinkedFile(id)
-    return saved
+    return try read(id)
   }
   public func externalChange(for id: UUID) async throws -> ScriptRecord? {
     try await syncLinkedFile(id)
@@ -333,6 +337,8 @@ public actor MarkdownLibrary {
     try FileManager.default.moveItem(at: source, to: destination)
     index.scripts.remove(at: position)
     waitingForLinks[id] = nil
+    unsupportedLinks[id] = nil
+    preservedEncodings[id] = nil
     index.trash.append(.init(metadata: metadata, deletedAt: Date()))
     do { try persistIndex() } catch {
       try? FileManager.default.moveItem(
@@ -422,6 +428,9 @@ public actor MarkdownLibrary {
       case .keepLibrary:
         let original = try Data(contentsOf: target)
         do {
+          guard try canWriteLinked(original, disk: external, local: local, metadata: metadata) else {
+            throw CocoaError(.fileWriteInapplicableStringEncoding)
+          }
           _ = try writeConflict(external, for: metadata, label: "file")
           try MarkdownText.encode(local, like: original).write(to: target)
           index.scripts[position].linkedPath = url.path
@@ -485,7 +494,18 @@ public actor MarkdownLibrary {
       return try Self.withLinkAccess(url) { target in try validateLinkTarget(target); return try body(target) }
     }
     try Self.withLinkAccess(url) { try validateLinkTarget($0) }
-    let access = try await LinkedFileAccess.acquire(url, writing: writing)
+    await linkedAccessHook?(writing)
+    let timeoutKey = url.path + (writing ? ":write" : ":read")
+    let timeout = linkTimeouts[timeoutKey] ?? 1
+    let access: LinkedFileAccess
+    do {
+      access = try await LinkedFileAccess.acquire(url, writing: writing, timeout: timeout)
+      linkTimeouts[timeoutKey] = nil
+    } catch is LinkedFileAccess.Waiting {
+      // Back off cancellation so slow file providers get a longer reservation on retry.
+      linkTimeouts[timeoutKey] = min(30, timeout * 2)
+      throw LinkedFileAccess.Waiting(url: url)
+    }
     defer { access.finish() }
     try validateLinkTarget(access.target)
     return try body(access.target)
@@ -500,6 +520,8 @@ public actor MarkdownLibrary {
     index.scripts[position].linkedFingerprint = nil
     lastLinkSync[id] = nil
     waitingForLinks[id] = nil
+    unsupportedLinks[id] = nil
+    preservedEncodings[id] = nil
     try persist(restoring: old)
     return index.scripts[position]
   }
@@ -543,6 +565,10 @@ public actor MarkdownLibrary {
     guard let disk = MarkdownText.decode(original) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
     linkedReadHook?()
     let local = try readText(libraryURL)
+    guard try canWriteLinked(original, disk: disk, local: local, metadata: metadata) else {
+      lastLinkSync[id] = nil
+      return false
+    }
     let diskPrint = Self.fingerprint(disk)
     let localPrint = Self.fingerprint(local)
     if diskPrint == localPrint {
@@ -576,6 +602,7 @@ public actor MarkdownLibrary {
         let original = try Data(contentsOf: target)
         guard let disk = MarkdownText.decode(original), Self.fingerprint(disk) == metadata.linkedFingerprint else { return }
         let local = try readText(validatedURL(metadata.fileName, in: scriptsURL))
+        guard try canWriteLinked(original, disk: disk, local: local, metadata: metadata) else { return }
         try MarkdownText.encode(local, like: original).write(to: target)
         index.scripts[position].linkedFingerprint = Self.fingerprint(local)
         try persistIndex()
@@ -587,6 +614,22 @@ public actor MarkdownLibrary {
       }
     }
       catch { lastLinkSync[id] = nil }
+  }
+  private func canWriteLinked(_ original: Data, disk: String, local: String, metadata: ScriptMetadata) throws -> Bool {
+    guard MarkdownText.encode(disk, like: original) != original else {
+      unsupportedLinks[metadata.id] = nil
+      preservedEncodings[metadata.id] = nil
+      return true
+    }
+    let signature = Self.fingerprint(original.base64EncodedString() + local)
+    if preservedEncodings[metadata.id] != signature {
+      let file = conflictsURL.appendingPathComponent("\(metadata.id)-unsupported-\(UUID()).md")
+      try original.write(to: file, options: .withoutOverwriting)
+      _ = try writeConflict(local, for: metadata)
+      preservedEncodings[metadata.id] = signature
+    }
+    unsupportedLinks[metadata.id] = "\(URL(fileURLWithPath: metadata.linkedPath ?? metadata.fileName).lastPathComponent) uses an unsupported encoding. Sync is paused; both versions are kept in Conflicts. Save the original as UTF-8 to resume."
+    return false
   }
   private func resolveLink(_ metadata: ScriptMetadata) -> URL? {
     switch linkState(metadata) {

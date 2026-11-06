@@ -47,7 +47,8 @@ private enum PresenterSaveError: LocalizedError {
   static let editorFontSizes = 12.0...40.0
   @Published var libraryNotice: String?
   @Published var errorMessage: String?
-  private var linkedSyncNotice: String?
+  @Published var linkedSyncStatus: String?
+  private var deferredExternalReads = Set<UUID>()
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
@@ -431,32 +432,41 @@ private enum PresenterSaveError: LocalizedError {
     selectedID = item.id
     return item
   }
-  func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
-    let googleLinks = Dictionary(uniqueKeysWithValues: ids.compactMap { id in MacGoogleDocs.links[id].map { (id, $0) } })
-    withLibrary { [self] _ in
-      var deleted = Set<UUID>()
-      do {
-        for id in ids { try await deleteScript(id); deleted.insert(id) }
-      } catch {
-        registerDeletedScripts(deleted, googleLinks: googleLinks, undoManager: undoManager)
-        throw error
-      }
-      registerDeletedScripts(deleted, googleLinks: googleLinks, undoManager: undoManager)
-    }
+  private final class ScriptDeletion {
+    var completed = Set<UUID>()
   }
-  private func registerDeletedScripts(_ ids: Set<UUID>, googleLinks: [UUID: GoogleDocLinks.Link], undoManager: UndoManager?) {
+  private var scriptDeletionTask: Task<Void, Never>?
+  func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
+    let links = Dictionary(uniqueKeysWithValues: ids.compactMap { id in MacGoogleDocs.links[id].map { (id, $0) } })
+    changeScriptDeletion(ids, links: links, deleting: true, undoManager: undoManager)
+  }
+  private func changeScriptDeletion(_ ids: Set<UUID>, links: [UUID: GoogleDocLinks.Link], deleting: Bool,
+                                    undoManager: UndoManager?, inverting: ScriptDeletion? = nil) {
     guard !ids.isEmpty else { return }
-    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in
-      // Register synchronously while UndoManager is undoing, so this becomes Redo.
-      undoManager?.registerUndo(withTarget: target) { [weak undoManager] store in store.delete(ids, undoManager: undoManager) }
-      undoManager?.setActionName("Move to Trash")
-      target.withLibrary { _ in
-        for id in ids { try await target.restoreScript(id); MacGoogleDocs.links[id] = googleLinks[id] }
-      }
+    let change = ScriptDeletion()
+    undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
+      self?.changeScriptDeletion(ids, links: links, deleting: !deleting, undoManager: undoManager, inverting: change)
     }
     undoManager?.setActionName("Move to Trash")
-    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: "Moved \(ids.count) \(ids.count == 1 ? "script" : "scripts") to Recently Deleted", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    let previous = scriptDeletionTask
+    scriptDeletionTask = Task { [self, weak undoManager] in
+      await previous?.value
+      let targets = inverting?.completed ?? ids
+      do {
+        for id in targets {
+          if deleting { try await deleteScript(id) }
+          else { try await restoreScript(id); MacGoogleDocs.links[id] = links[id] }
+          change.completed.insert(id)
+        }
+      } catch {
+        errorMessage = "The library change could not be saved. \(error.localizedDescription)"
+      }
+      if change.completed.isEmpty { undoManager?.removeAllActions(withTarget: change) }
+      if deleting, !change.completed.isEmpty {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [.announcement: "Moved \(change.completed.count) scripts to Recently Deleted", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      }
+    }
   }
   func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -525,6 +535,7 @@ private enum PresenterSaveError: LocalizedError {
         if self?.saveTaskTokens[id] == taskToken {
           self?.saveTasks[id] = nil
           self?.saveTaskTokens[id] = nil
+          Task { await self?.refreshDeferredExternalRead(id) }
         }
       }
       await previous?.value
@@ -534,7 +545,7 @@ private enum PresenterSaveError: LocalizedError {
           let expected = self.scripts.first(where: { $0.metadata.id == id })?.metadata.contentFingerprint
         else { return }
         await self.saveGate?()
-        self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id)
+        self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id, submitted: value)
       } catch is CancellationError {} catch {
         self?.failedSaveIDs.insert(id)
         self?.hasFailedSaves = true
@@ -543,11 +554,12 @@ private enum PresenterSaveError: LocalizedError {
     }
   }
   /// A save that reached disk always brings its revision metadata, even if the user has typed
-  /// since. The pending draft is dropped only when it is exactly what was just saved.
-  private func applySaved(_ saved: ScriptRecord, for id: UUID) {
+  /// since. Drop only the submitted draft; a linked-file conflict may have replaced its text.
+  private func applySaved(_ saved: ScriptRecord, for id: UUID, submitted: String) {
     guard let index = scripts.firstIndex(where: { $0.id == id }) else { return }
     scripts[index].metadata = saved.metadata
-    guard pendingDrafts[id] == saved.markdown else { return }
+    guard pendingDrafts[id] == submitted else { return }
+    scripts[index] = saved
     pendingDrafts[id] = nil
     failedSaveIDs.remove(id)
     hasFailedSaves = !failedSaveIDs.isEmpty
@@ -622,6 +634,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   private func finishPresenterSave(_ id: UUID) {
     presenterSaveIDs.remove(id)
+    Task { await refreshDeferredExternalRead(id) }
     let waiters = presenterSaveWaiters.removeValue(forKey: id) ?? []
     for waiter in waiters { waiter.resume() }
   }
@@ -633,7 +646,7 @@ private enum PresenterSaveError: LocalizedError {
       do {
         applySaved(
           try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint),
-          for: id)
+          for: id, submitted: draft)
       } catch { hasFailedSaves = true; errorMessage = "The edit was preserved but could not replace the file. \(error)" }
     }
   }
@@ -797,6 +810,21 @@ private enum PresenterSaveError: LocalizedError {
     return (nsError.domain == NSCocoaErrorDomain && (nsError.code == CocoaError.Code.fileNoSuchFile.rawValue || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue))
       || (nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT)
   }
+  func refreshLinkedSyncStatus() async {
+    guard let library else { return }
+    let waiting = await library.linkedSyncWaiting()
+    linkedSyncStatus = waiting.isEmpty ? nil : waiting.joined(separator: "\n")
+  }
+  private func refreshDeferredExternalRead(_ id: UUID) async {
+    guard deferredExternalReads.contains(id), let library, saveTasks[id] == nil,
+      pendingDrafts[id] == nil, !failedSaveIDs.contains(id), !presenterSaveIDs.contains(id),
+      let record = try? await library.read(id) else { return }
+    guard saveTasks[id] == nil, pendingDrafts[id] == nil, !failedSaveIDs.contains(id),
+      !presenterSaveIDs.contains(id) else { return }
+    deferredExternalReads.remove(id)
+    if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i] = record }
+    session.applyEditedRecord(record)
+  }
   func refreshExternalChanges() async {
     guard let library else { return }
     lastExternalRefresh = Date()
@@ -810,8 +838,12 @@ private enum PresenterSaveError: LocalizedError {
         // An external edit, or a file that has come back.
         var found = try await library.externalChange(for: metadata.id)
         if found == nil, unavailableScriptIDs.contains(metadata.id) { found = try await library.read(metadata.id) }
-        guard let record = found, !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
-          !presenterSaveIDs.contains(metadata.id) else { continue }
+        guard let record = found else { continue }
+        guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
+          !presenterSaveIDs.contains(metadata.id) else {
+          deferredExternalReads.insert(metadata.id)
+          continue
+        }
         if let i = scripts.firstIndex(where: { $0.id == metadata.id }) {
           scripts[i] = record
         } else {
@@ -830,10 +862,7 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
     await refreshLinkStates()
-    let waiting = await library.linkedSyncWaiting()
-    if let previous = linkedSyncNotice, errorMessage == previous { errorMessage = nil }
-    linkedSyncNotice = waiting.isEmpty ? nil : waiting.joined(separator: "\n")
-    if let notice = linkedSyncNotice { errorMessage = notice }
+    await refreshLinkedSyncStatus()
     let conflicts = await library.takeLinkConflicts()
     if !conflicts.isEmpty {
       let notice =
