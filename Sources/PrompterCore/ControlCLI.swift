@@ -78,7 +78,7 @@ public enum ControlCLI {
     return line
   }
   public static func help() -> String {
-    "Usage: videoprompter <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nFlags can be written --text-size or --textSize, with a space or =. Use --text - for stdin; --text=- is a literal dash.\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")): \($0.summary)\n  \($0.example)\n" + $0.params.map(usage).joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest: print MCP tools JSON from this command table.\n  videoprompter mcp-manifest\n"
+    "Usage: videoprompter <command> [options]\nOptions: --json --show (script open/present only) --data-directory <dir> --help\nFlags can be written --text-size or --textSize, with a space or =. Use --text - for stdin; --text=- is a literal dash. Text, including stdin, must fit in a 64 KB JSON request; use script import for larger files.\nExit: 0 success, 1 action/connection error, 2 usage error.\n" + ControlProtocol.commands.map { "\n\($0.words.joined(separator: " ")): \($0.summary)\n  \($0.example)\n" + $0.params.map(usage).joined(separator: "\n") }.joined(separator: "\n") + "\nmcp-manifest: print MCP tools JSON from this command table.\n  videoprompter mcp-manifest\n"
   }
   public static func manifest(version: String = "dev") -> [String: Any] {
     ["serverInfo": ["name": "videoprompter", "version": version], "tools": ControlProtocol.commands.map { command -> [String: Any] in

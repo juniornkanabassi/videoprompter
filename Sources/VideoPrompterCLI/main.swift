@@ -86,7 +86,16 @@ if path.utf8.count > 103 { failure("Control socket path exceeds 103 bytes. Use a
 if let value = invocation.params["path"] { invocation.params["path"] = URL(fileURLWithPath: value).path }
 // `--text -` reads the script from standard input; the request still has to fit in 64 KB.
 if invocation.readsStandardInput {
-  guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8), !text.isEmpty else {
+  var input = Data()
+  while input.count <= ControlProtocol.maxRequestBytes {
+    let chunk = try FileHandle.standardInput.read(upToCount: ControlProtocol.maxRequestBytes + 1 - input.count) ?? Data()
+    if chunk.isEmpty { break }
+    input.append(chunk)
+  }
+  guard input.count <= ControlProtocol.maxRequestBytes else {
+    failure("Standard input exceeds the 64 KB request limit. Use script import for larger files.", code: "usage", json: invocation.json, exitCode: 2)
+  }
+  guard let text = String(data: input, encoding: .utf8), !text.isEmpty else {
     failure("Standard input was empty or not UTF-8 text.", code: "usage", json: invocation.json, exitCode: 2)
   }
   invocation.params["text"] = text

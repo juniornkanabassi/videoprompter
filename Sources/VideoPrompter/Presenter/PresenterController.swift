@@ -316,7 +316,7 @@ import SwiftUI
   /// Resize the presenter to the shape of the feed as it is shown — a feed turned 90° gives a
   /// vertical window — as large as the screen it is on allows.
   static func matchedCameraFrame(picture: CGSize, rotation: CameraRotation, in visibleFrame: NSRect) -> NSRect {
-    rotation.fittedRect(aspect: picture, in: visibleFrame)
+    PresenterFrameMemory.clamp(rotation.fittedRect(aspect: picture, in: visibleFrame), into: visibleFrame)
   }
   func matchCameraSize() {
     guard let panel, isWindowedOnScreen,
@@ -425,9 +425,9 @@ enum PresenterFrameMemory {
   }
 
   static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
-    let size = NSSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
-    let x = min(max(frame.minX, area.minX), area.maxX - size.width)
-    let y = min(max(frame.minY, area.minY), area.maxY - size.height)
+    let size = NSSize(width: max(720, min(frame.width, area.width)), height: max(520, min(frame.height, area.height)))
+    let x = min(max(frame.minX - max(0, size.width - frame.width) / 2, area.minX), area.maxX - size.width)
+    let y = min(max(frame.minY - max(0, size.height - frame.height) / 2, area.minY), area.maxY - size.height)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
   }
 }
@@ -437,18 +437,19 @@ enum PresenterFrameMemory {
 /// only for a full-screen Space of its own, and every way in comes through `toggleFullScreen`:
 /// Prompter > Presenter Full Screen, View > Enter Full Screen (Ctrl-Cmd-F) and the green button.
 class PresenterPanel: NSPanel {
-  var onPassageKey: ((UInt16) -> Bool)?
-  override func sendEvent(_ event: NSEvent) {
-    if event.type == .keyDown { NotificationCenter.default.post(name: .init("VideoPrompter.revealControls"), object: self) }
-    super.sendEvent(event)
+  override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+    var frame = frameRect
+    frame.size.width = max(720, frame.width)
+    frame.size.height = max(520, frame.height)
+    super.setFrame(frame, display: flag)
   }
+  var onPassageKey: ((UInt16) -> Bool)?
   /// Bare arrows belong to the reading surface; every focused control keeps native key handling.
   func handlePassageKey(_ event: NSEvent) -> Bool {
     guard event.type == .keyDown, [123, 124].contains(event.keyCode),
       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
       firstResponder === self
     else { return false }
-    NotificationCenter.default.post(name: .init("VideoPrompter.revealControls"), object: self)
     return onPassageKey?(event.keyCode) == true
   }
   override func keyDown(with event: NSEvent) {
@@ -796,9 +797,6 @@ struct PresenterView: View {
     .safeAreaInset(edge: .bottom, spacing: 0) {
       controlBar.environment(\.colorScheme, .dark)
     }
-    .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.revealControls"))) { notification in
-      if (notification.object as? NSWindow) === controller.panel { revealControls() }
-    }
     .confirmationDialog("Close while a take is active?", isPresented: $controller.asksToCloseRecording) {
       Button("Stop and save, then close") { controller.stopAndClose() }
       Button("Keep recording") { controller.keepRecordingAndClose() }
@@ -827,23 +825,24 @@ struct PresenterView: View {
     }.environment(\.colorScheme, .dark)
       .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
       .background(PresenterFocusReturn(target: popoverOrigin, revision: focusRevision))
-      .popover(isPresented: $showsMicrophone) {
-      MicrophonePage(store: store, compact: true, recorder: recorder).uiZoom(controlZoom)
-        .frame(width: 500, height: min(400, popoverHeight))
-    }
-    .popover(isPresented: $showsGuideSettings) {
-      CameraGuideSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
-    }
-    .popover(isPresented: $showsExposureSettings) {
-      CameraExposureSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
-    }
-      .popover(isPresented: $showsCameraControls) { cameraControls }
-      .popover(isPresented: $showsTextControls) { textControls }
       .popover(isPresented: $showsSettings) {
         PresenterSettingsPopover(store: store, initialTab: settingsTab)
       }
   }
 
+  private func popoverBinding(_ state: Binding<Bool>, from origin: String) -> Binding<Bool> {
+    Binding(get: { state.wrappedValue && popoverOrigin == origin }, set: { state.wrappedValue = $0 })
+  }
+  private var microphoneControls: some View {
+    MicrophonePage(store: store, compact: true, recorder: recorder).uiZoom(controlZoom)
+      .frame(width: 500, height: min(400, popoverHeight))
+  }
+  private var guideControls: some View {
+    CameraGuideSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
+  }
+  private var exposureControls: some View {
+    CameraExposureSettings(model: camera).uiZoom(controlZoom).frame(width: 500, height: min(500, popoverHeight))
+  }
   private var barContent: some View {
     VStack(spacing: Space.xs) {
       transport
@@ -862,7 +861,7 @@ struct PresenterView: View {
           .accessibilityValue(controlsRevealed ? "Expanded" : "Collapsed")
           .popover(isPresented: $controlsRevealed) {
             VStack(spacing: Space.md) {
-              tools(compact: true)
+              tools(compact: true, includeStatus: false)
               if recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
             }.padding(Space.md).uiZoom(controlZoom)
           }
@@ -916,12 +915,14 @@ struct PresenterView: View {
       }.accessibilityLabel("Camera readiness").accessibilityValue(camera.devices.first { $0.uid == camera.selectedUID }?.name ?? "Choose camera")
         .focusable().focused($focusedTool, equals: "Camera readiness").accessibilityFocused($accessibleTool, equals: "Camera readiness")
         .help(recorder.outputSummary(camera: camera))
-      Button { popoverOrigin = "Check microphone level"; showsMicrophone = true } label: {
+        .popover(isPresented: popoverBinding($showsCameraControls, from: "Camera readiness")) { cameraControls }
+      Button { popoverOrigin = "Check microphone level"; showsMicrophone.toggle() } label: {
         Text("Mic: " + recorder.microphoneName).lineLimit(1).truncationMode(.middle)
         PreflightMicrophoneLevel(session: session, recorder: recorder)
       }.accessibilityLabel("Check microphone level").accessibilityValue(recorder.microphoneName)
         .focusable().focused($focusedTool, equals: "Check microphone level").accessibilityFocused($accessibleTool, equals: "Check microphone level")
         .help("Check microphone level before recording")
+        .popover(isPresented: popoverBinding($showsMicrophone, from: "Check microphone level")) { microphoneControls }
       Text("Saves to " + CameraRecorder.recordingsFolder().lastPathComponent).lineLimit(1)
         .accessibilityLabel("Saves to " + CameraRecorder.recordingsFolder().path)
         .help(CameraRecorder.recordingsFolder().path)
@@ -1026,27 +1027,33 @@ struct PresenterView: View {
       CameraPicker(model: camera, zoom: controlZoom, darkSurface: true)
       Text("Shows the same camera and recording in every view.").font(.callout)
       Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
-      Button("Guides") { showsCameraControls = false; showsGuideSettings = true }
+      Button("Guides") { showsGuideSettings = true }
+        .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "presenter-camera-guides")
+        .popover(isPresented: $showsGuideSettings) { guideControls }
       ExposureToggle(model: camera, kind: .zebras)
       ExposureToggle(model: camera, kind: .falseColour)
-      Button("Exposure…") { showsCameraControls = false; showsExposureSettings = true }
+      Button("Exposure…") { showsExposureSettings = true }
+        .restoringPopoverFocus(isPresented: $showsExposureSettings, identifier: "presenter-camera-exposure")
+        .popover(isPresented: $showsExposureSettings) { exposureControls }
       Button("Camera & Recording…") { showsCameraControls = false; settingsTab = .camera; showsSettings = true }
       Divider()
-      Button("Open second camera monitor") { openWindow(id: "camera") }
+      Button("Open Second Camera Monitor") { openWindow(id: "camera") }
       Text("An optional second window showing the same camera and recording.").font(.callout)
     }.padding(Space.md).modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom))
       .frame(width: 420).uiZoom(controlZoom)
   }
 
-  private func tools(compact: Bool) -> some View {
+  private func tools(compact: Bool, includeStatus: Bool = true) -> some View {
     HStack(spacing: Space.sm) {
       viewMenu(compact: compact)
       Button("Camera", systemImage: "video") { popoverOrigin = "Camera"; showsCameraControls.toggle() }
         .focusable().focused($focusedTool, equals: "Camera").accessibilityFocused($accessibleTool, equals: "Camera")
+        .popover(isPresented: popoverBinding($showsCameraControls, from: "Camera")) { cameraControls }
 
       if !compact && camera.presentsWithVideo {
         Button("Guides") { popoverOrigin = "Guides"; showsGuideSettings = true }
           .focusable().focused($focusedTool, equals: "Guides").accessibilityFocused($accessibleTool, equals: "Guides")
+          .popover(isPresented: popoverBinding($showsGuideSettings, from: "Guides")) { guideControls }
         ExposureToggle(model: camera, kind: .zebras)
         ExposureToggle(model: camera, kind: .falseColour)
         Button("Clean view") { camera.cleanView = true }
@@ -1055,11 +1062,12 @@ struct PresenterView: View {
         Button("Text", systemImage: "textformat.size") { popoverOrigin = "Text"; showsTextControls.toggle() }
           .focusable().focused($focusedTool, equals: "Text").accessibilityFocused($accessibleTool, equals: "Text")
           .accessibilityValue("\(Int(store.settings.fontSize)) points")
-
+          .popover(isPresented: $showsTextControls) { textControls }
       }
-      Button("Microphone", systemImage: "mic") { popoverOrigin = "Microphone"; showsMicrophone = true }
+      Button("Microphone", systemImage: "mic") { popoverOrigin = "Microphone"; showsMicrophone.toggle() }
         .accessibilityValue(followingMicrophoneName).help(microphoneHelp)
         .focusable().focused($focusedTool, equals: "Microphone").accessibilityFocused($accessibleTool, equals: "Microphone")
+        .popover(isPresented: popoverBinding($showsMicrophone, from: "Microphone")) { microphoneControls }
       if showsScript {
         if draft.isEditing {
           Button("Save changes") { Task { await draft.confirm(store: store) } }
@@ -1069,9 +1077,9 @@ struct PresenterView: View {
           Button("Edit script", systemImage: "pencil") { draft.begin(session: session) }
         }
       }
-      if showsScript && hasBottomNotice { readingNotice }
+      if includeStatus && showsScript && hasBottomNotice { readingNotice }
       moreMenu(compact: compact)
-      if recorder.savedTake != nil || recorder.takeFailure != nil { receipt }
+      if includeStatus && (recorder.savedTake != nil || recorder.takeFailure != nil) { receipt }
     }.labelStyle(.titleOnly)
 
   }
@@ -1116,7 +1124,6 @@ struct PresenterView: View {
     }
   }
 
-  private func revealControls() { controlsRevealed = true }
 
   private func announce(_ message: String) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,

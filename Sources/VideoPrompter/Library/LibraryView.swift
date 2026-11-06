@@ -397,6 +397,10 @@ private struct EditorView: View {
         }
       }.padding(.horizontal, Space.xxl).padding(.vertical, Space.md)
       Divider()
+      if let status = store.linkedSyncStatus {
+        Text(status).font(.callout).accessibilityIdentifier("linked-sync-status")
+          .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
+      }
       if let editNotice {
         Text(editNotice).font(.callout).foregroundStyle(.primary)
           .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)

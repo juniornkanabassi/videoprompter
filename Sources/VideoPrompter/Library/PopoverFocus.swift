@@ -11,12 +11,11 @@ extension View {
 private struct PopoverFocus: ViewModifier {
   @Binding var isPresented: Bool
   let identifier: String
-  @State private var instanceID = UUID().uuidString
   @FocusState private var focused: Bool
   @AccessibilityFocusState private var accessibilityFocused: Bool
   func body(content: Content) -> some View {
-    content.accessibilityIdentifier(identifier + instanceID).focusable().focused($focused).accessibilityFocused($accessibilityFocused)
-      .background(PopoverFocusAnchor(isPresented: isPresented, identifier: identifier + instanceID))
+    content.accessibilityIdentifier(identifier).focusable().focused($focused).accessibilityFocused($accessibilityFocused)
+      .background(PopoverFocusAnchor(isPresented: isPresented, identifier: identifier))
       .onChange(of: isPresented) { _, open in
         if !open {
           DispatchQueue.main.async { focused = true; accessibilityFocused = true }
@@ -33,7 +32,7 @@ private struct PopoverFocusAnchor: NSViewRepresentable {
     guard view.wasOpen != isPresented else { return }
     view.wasOpen = isPresented
     if isPresented {
-      view.opener = view.window?.contentView.flatMap { Anchor.find(identifier, in: $0) }
+      view.opener = view.findOpener(identifier)
     } else {
       // SwiftUI completes the popover dismissal before native focus can be restored.
       DispatchQueue.main.async { [weak view] in view?.restore() }
@@ -41,8 +40,16 @@ private struct PopoverFocusAnchor: NSViewRepresentable {
   }
   final class Anchor: NSView {
     var wasOpen = false
-    var opener: NSObject?
+    weak var opener: NSObject?
     override func isAccessibilityElement() -> Bool { false }
+    func findOpener(_ identifier: String) -> NSObject? {
+      var ancestor = superview
+      while let current = ancestor {
+        if let match = Self.find(identifier, in: current) { return match }
+        ancestor = current.superview
+      }
+      return nil
+    }
     static func find(_ identifier: String, in root: NSObject) -> NSObject? {
       var visited = Set<ObjectIdentifier>()
       func visit(_ element: NSObject) -> NSObject? {

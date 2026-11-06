@@ -127,7 +127,7 @@ import PrompterCore
     else {
       let recording = defaults.string(forKey: "recordingMicrophoneUID")
       let following = followingMicrophoneUID ?? defaults.data(forKey: "settings").flatMap { try? JSONDecoder().decode(PrompterSettings.self, from: $0).audioDeviceUID }
-      let separate = recording != nil && following != nil && recording != following
+      let separate = recording != nil && recording != following
       storedUsesSeparateMicrophone = separate
       defaults.set(separate, forKey: "recordingUsesSeparateMicrophone")
     }

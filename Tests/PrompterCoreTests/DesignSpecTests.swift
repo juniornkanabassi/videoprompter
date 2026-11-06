@@ -100,8 +100,8 @@ import XCTest
     let b = try await store.createScript(title: "Two", markdown: "Two")
     let manager = UndoManager()
     store.delete([a.id, b.id], undoManager: manager)
-    for _ in 0..<100 where !manager.canUndo { try await Task.sleep(for: .milliseconds(20)) }
-    XCTAssertTrue(manager.canUndo)
+    XCTAssertTrue(manager.canUndo, "Undo is registered in action order, before the disk work")
+    for _ in 0..<100 where !store.scripts.isEmpty { try await Task.sleep(for: .milliseconds(20)) }
     XCTAssertTrue(store.scripts.isEmpty)
     manager.undo()
     for _ in 0..<100 where store.scripts.count != 2 { try await Task.sleep(for: .milliseconds(20)) }

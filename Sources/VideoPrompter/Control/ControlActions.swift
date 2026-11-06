@@ -644,6 +644,9 @@ import Speech
     if let value = params["stageDirections"] { s.showCues = value == "on" }
     if let value = params["highlightWord"] { s.highlightActiveWord = value == "on" }
     if let value = params["followRepeats"] { s.allowsBackwardVoiceTracking = value == "on" }
+    if params["microphone"] != nil, recorder.settingsLocked && !recorder.usesSeparateMicrophone {
+      return .error("recording_active", "The shared microphone cannot change during a take. Stop recording first.")
+    }
     if let name = params["microphone"] {
       if name.lowercased() == "none" { s.audioDeviceUID = nil }
       else {

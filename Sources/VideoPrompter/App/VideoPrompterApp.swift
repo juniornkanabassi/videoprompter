@@ -218,7 +218,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open second camera monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Second Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

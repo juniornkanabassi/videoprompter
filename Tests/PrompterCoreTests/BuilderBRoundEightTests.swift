@@ -100,6 +100,7 @@ import XCTest
       defer { LibraryAX.close(window) }
       window.makeKeyAndOrderFront(nil)
       let opener = try XCTUnwrap(LibraryAX.named("Editor text size", in: host).first)
+      XCTAssertEqual(LibraryAX.value(opener, "accessibilityIdentifier"), "editor-text-size")
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(180))
       let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Editor font", in: $0).isEmpty } == true })
