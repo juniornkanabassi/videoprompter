@@ -672,7 +672,8 @@ import Speech
   private var guidesSnapshot: [String: Any] {
     let g = camera.guides
     return ["thirds": on(g.thirds), "centreCross": on(g.axes), "centreTarget": on(g.bullseye), "marker": g.marker?.label ?? "off",
-            "colour": g.colorHex, "visibility": percent(g.opacity), "shade": percent(g.shadeOpacity)]
+            "colour": g.colorHex, "visibility": percent(g.opacity), "shade": percent(g.shadeOpacity),
+            "zebras": on(g.zebras), "zebraLevel": g.zebraLevel, "zebraRange": g.zebraRange, "falseColour": on(g.falseColour)]
   }
   private static func access(_ status: AVAuthorizationStatus) -> String {
     switch status {
@@ -704,6 +705,10 @@ import Speech
     }
     if let value = number(params, "visibility") { g.opacity = value / 100 }
     if let value = number(params, "shade") { g.shadeOpacity = value / 100 }
+    if let value = params["zebras"] { g.zebras = value == "on" }
+    if let value = params["falseColour"] { g.falseColour = value == "on" }
+    if let value = number(params, "zebraLevel") { g.zebraLevel = Int(value) }
+    if let value = number(params, "zebraRange") { g.zebraRange = Int(value) }
     camera.guides = g
     return .ok(cameraState)
   }
