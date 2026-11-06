@@ -156,3 +156,18 @@ label colour rather than the low-contrast system secondary label on plain editor
 backgrounds. Keep explanations in primary callout text. Reading-size button work
 in PresenterController.swift belongs to Builder A; its required labels are
 Smaller text and Larger text with the current point value and disabled limits.
+
+## Round 9 Builder B refinement
+
+- Keep Paste Copied Text primary and show Try the Practice Script as a native
+  bordered secondary button immediately below the reading instruction.
+- Label the library opener Editor text size. Its explanation names Reading text
+  size in Settings > Reading and the presenter's Text control. Slider values use
+  at least the callout tier with monospaced digits, never caption text.
+- Size the folder list for its rows plus modest inset padding, capped at 220
+  unscaled points with scrolling. Scripts takes the remaining sidebar height.
+- Keep visible menu indicators on library menus and enlarged reading choices.
+- Exposure titles name the job first: Check bright areas, Check your face, or
+  Check custom brightness for Zebras, and Check brightness for False colour.
+  Keep the received-picture qualification and state beside the false-colour
+  swatches that grey shows brightness between the coloured bands.

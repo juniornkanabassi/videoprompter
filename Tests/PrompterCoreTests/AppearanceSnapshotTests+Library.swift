@@ -115,6 +115,23 @@ extension AppearanceSnapshotTests {
 }
 
 extension AppearanceSnapshotTests {
+  func testBuilderBRoundNineExposureFixtures() async throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }
+    let destination = URL(fileURLWithPath: output)
+    let camera = CameraModel(defaults: freshDefaults("BuilderBNineSnapshots"))
+    let scheme: ColorScheme = env["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
+    let mode = scheme == .dark ? "dark" : "light"
+    for purpose in CameraGuides.ZebraPurpose.allCases {
+      camera.guides.useZebraPreset(purpose)
+      camera.guides.zebras = true
+      camera.guides.falseColour = true
+      for zoom in [1.0, 1.5, 2.0] {
+        try await snapshot(ExposureLegend(model: camera).uiZoom(zoom), name: "r9-exposure-\(purpose.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      }
+    }
+  }
+
   func testBuilderBRoundEightFixtures() async throws {
     let env = ProcessInfo.processInfo.environment
     guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }

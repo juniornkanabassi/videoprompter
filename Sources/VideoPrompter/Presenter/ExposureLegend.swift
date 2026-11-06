@@ -39,6 +39,13 @@ struct ExposureGuidance: View {
 
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
+  static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
+    switch purpose {
+    case .brightAreas: "Check bright areas · Zebras"
+    case .faceReference: "Check your face · Zebras"
+    case .custom: "Check custom brightness · Zebras"
+    }
+  }
   static func measurement(level: Int, range: Int) -> String {
     range > 0
       ? "Stripes mark \(max(0, level - range))–\(min(100, level + range)) on a 0–100 brightness scale in the received picture."
@@ -49,7 +56,7 @@ struct ExposureLegend: View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
       VStack(alignment: .leading, spacing: Space.sm) {
         if model.guides.zebras {
-          Text(model.guides.validatedZebraPurpose.label + " · Zebras")
+          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose))
           ExposureGuidance(zebras: true, guides: model.guides, falseColour: false)
         }
         if model.guides.falseColour { FalseColourKey() }
@@ -78,7 +85,8 @@ struct FalseColourKey: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Text("Brightness · received picture")
+      Text("Check brightness · False colour")
+      Text("Brightness in the received picture")
       HStack(alignment: .top, spacing: Space.xs) {
         ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
           VStack(spacing: Space.xs) {
@@ -92,6 +100,7 @@ struct FalseColourKey: View {
             .accessibilityValue(Self.rangeLabel(band.range))
         }
       }
+      Text("Grey shows brightness between these bands.")
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
   }
 }

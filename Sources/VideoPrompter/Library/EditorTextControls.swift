@@ -12,7 +12,7 @@ struct EditorTextControls: View {
       Slider(value: $store.previewFontSize, in: AppStore.editorFontSizes)
         .accessibilityLabel("Editor text size").accessibilityValue("\(Int(store.previewFontSize)) points")
     }
-    Text("Changes the writing surface. For the presenter, use Text on its bar or Settings > Reading.").font(UIType.secondary)
+    Text("Changes the writing surface. For reading, use Reading text size in Settings > Reading, or Text on the presenter.").font(UIType.secondary)
       .foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
   }
 }
