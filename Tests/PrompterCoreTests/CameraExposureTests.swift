@@ -8,15 +8,19 @@ final class CameraExposureTests: XCTestCase {
     // 3x2 picture in rows padded to 4 bytes; the padding byte is bright and must be ignored.
     let plane: [UInt8] = [10, 242, 255, 255, 241, 0, 243, 255]
     let mask = plane.withUnsafeBytes {
-      CameraExposure.mask(luma: $0, width: 3, height: 2, bytesPerRow: 4, threshold: CameraExposure.threshold(percent: 95))
+      CameraExposure.mask(luma: $0, width: 3, height: 2, bytesPerRow: 4, codes: CameraExposure.zebraCodes(level: 95, range: 0))
     }
     XCTAssertEqual(mask.map { $0 != 0 }, [false, true, true, false, false, true])
   }
 
-  func testThresholdIsPercentOfFullScale() {
-    XCTAssertEqual(CameraExposure.threshold(percent: 95), 242)
-    XCTAssertEqual(CameraExposure.threshold(percent: 100), 255)
-    XCTAssertEqual(CameraExposure.threshold(percent: 150), 255)
+  func testZebraCodesFollowIRE() {
+    XCTAssertEqual(CameraExposure.zebraCodes(level: 95, range: 0), 242...255)
+    // Sony-style 50 ± 2: 48 to 52 IRE, so 49.8 and 50.2 IRE stripe and 47 and 53 do not.
+    let skin = CameraExposure.zebraCodes(level: 50, range: 2)
+    XCTAssertEqual(skin, 122...133)
+    XCTAssertFalse(skin.contains(CameraExposure.code(ire: 47)))
+    XCTAssertFalse(skin.contains(CameraExposure.code(ire: 53)))
+    XCTAssertEqual(CameraExposure.code(ire: 150), 255)
   }
 
   func testFalseColourBandsFollowTheARRIScale() {

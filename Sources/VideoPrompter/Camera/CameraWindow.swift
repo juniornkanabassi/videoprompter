@@ -333,11 +333,18 @@ struct CameraGuideSections: View {
         LabeledContent("Guide visibility") { Slider(value: $model.guides.opacity, in: 0...1).accessibilityLabel("Guide visibility") }.help("Fade the guides; zero hides them")
       }
       Section("Exposure") {
-        Toggle("Zebra stripes", isOn: $model.guides.zebras).help("Stripe the parts of the picture that are too bright")
+        Toggle("Zebra stripes", isOn: $model.guides.zebras).help("Stripe the parts of the picture at a chosen brightness, in IRE")
         if model.guides.zebras {
-          Picker("Show stripes above", selection: $model.guides.zebraLevel) {
-            ForEach(Set([70, 80, 90, 95, 100, model.guides.zebraLevel]).sorted(), id: \.self) { Text("\($0)%").tag($0) }
-          }.help("Brightness where stripes start; 95% warns before highlights clip, 70% checks skin tones")
+          Picker("Zebra type", selection: Binding(get: { model.guides.zebraRange > 0 }, set: { model.guides.zebraRange = $0 ? max(model.guides.zebraRange, 2) : 0 })) {
+            Text("Level and above").tag(false)
+            Text("Level ± range").tag(true)
+          }.help("Level and above warns of highlights; Level ± range holds skin at a chosen exposure, like Sony's zebra range")
+          Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
+            .help("Brightness in IRE, as camera zebras measure it")
+          if model.guides.zebraRange > 0 {
+            Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 1...10)
+              .help("How far either side of the level the stripes still show")
+          }
         }
         Toggle("False colour", isOn: $model.guides.falseColour).help("Colour the picture by brightness to set exposure against a grey card")
         if model.guides.falseColour {

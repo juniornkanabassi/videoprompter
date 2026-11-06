@@ -41,9 +41,10 @@ struct CameraGuides: Codable, Equatable, Sendable {
   var marker: CameraAspect?
   /// How dark everything outside the marker goes.
   var shadeOpacity = 0.5
-  /// Stripes over everything at or above `zebraLevel` percent brightness.
+  /// Stripes over everything at or above `zebraLevel` IRE, or within ± `zebraRange` of it.
   var zebras = false
   var zebraLevel = 95
+  var zebraRange = 0
   /// The picture repainted by brightness band, for setting exposure against a grey card.
   var falseColour = false
 
@@ -76,6 +77,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     shadeOpacity = try c.decodeIfPresent(Double.self, forKey: .shadeOpacity) ?? 0.5
     zebras = try c.decodeIfPresent(Bool.self, forKey: .zebras) ?? false
     zebraLevel = try c.decodeIfPresent(Int.self, forKey: .zebraLevel) ?? 95
+    zebraRange = try c.decodeIfPresent(Int.self, forKey: .zebraRange) ?? 0
     falseColour = try c.decodeIfPresent(Bool.self, forKey: .falseColour) ?? false
   }
 }

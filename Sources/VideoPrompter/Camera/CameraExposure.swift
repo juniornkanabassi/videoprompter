@@ -15,6 +15,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
   struct Settings: Equatable, Sendable {
     var zebras = false
     var zebraLevel = 95
+    var zebraRange = 0
     var falseColour = false
     var isOn: Bool { zebras || falseColour }
   }
@@ -26,19 +27,29 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
   /// Thumbnail size. Plenty for an exposure aid, and it keeps a 4K feed off this path.
   static let width = 640, height = 360
 
-  /// One opaque white RGBA pixel where the luma reaches `threshold`, clear elsewhere: a layer
-  /// mask reads only the alpha. Rows may be padded, as a pixel buffer's are.
-  static func mask(luma: UnsafeRawBufferPointer, width: Int, height: Int, bytesPerRow: Int, threshold: UInt8) -> [UInt32] {
+  /// One opaque white RGBA pixel where the luma falls in `codes`, clear elsewhere: a layer mask
+  /// reads only the alpha. Rows may be padded, as a pixel buffer's are.
+  static func mask(luma: UnsafeRawBufferPointer, width: Int, height: Int, bytesPerRow: Int, codes: ClosedRange<UInt8>) -> [UInt32] {
     var out = [UInt32](repeating: 0, count: width * height)
     for y in 0..<height {
       let row = y * bytesPerRow
-      for x in 0..<width where luma[row + x] >= threshold { out[y * width + x] = .max }
+      for x in 0..<width where codes.contains(luma[row + x]) { out[y * width + x] = .max }
     }
     return out
   }
 
-  /// Percent of full scale to the 8-bit full-range luma the output delivers.
-  static func threshold(percent: Int) -> UInt8 { UInt8(min(100, max(0, percent)) * 255 / 100) }
+  /// IRE to the luma code the output delivers. The output is asked for full range, so a
+  /// video-range source (code 16 = 0 IRE, 235 = 100 IRE, which is what HDMI from a camera and
+  /// Sony's own zebras measure) is stretched to 0...255 and IRE is simply code / 255 x 100.
+  static func code(ire: Double) -> UInt8 { UInt8(min(255, max(0, (ire * 255 / 100).rounded()))) }
+
+  /// Sony's two zebra kinds: range 0 stripes everything at or above the level; otherwise only
+  /// level ± range, for holding skin at a chosen exposure.
+  static func zebraCodes(level: Int, range: Int) -> ClosedRange<UInt8> {
+    range <= 0
+      ? code(ire: Double(level))...255
+      : code(ire: Double(level - range))...code(ire: Double(level + range))
+  }
 
   /// ARRI's false colour bands, in percent of full scale; everything else shows as grey.
   static let bands: [(range: ClosedRange<Double>, name: String, rgb: (UInt8, UInt8, UInt8))] = [
@@ -126,7 +137,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var frame = Frame()
     if settings.zebras {
       frame.zebraMask = image(Self.mask(
-        luma: luma, width: width, height: height, bytesPerRow: stride, threshold: Self.threshold(percent: settings.zebraLevel)))
+        luma: luma, width: width, height: height, bytesPerRow: stride, codes: Self.zebraCodes(level: settings.zebraLevel, range: settings.zebraRange)))
     }
     if settings.falseColour {
       frame.falseColour = image(Self.falseColour(luma: luma, width: width, height: height, bytesPerRow: stride))
@@ -138,6 +149,6 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 /// Here rather than in CameraGuides.swift, which the iPad app compiles without this file.
 extension CameraGuides {
   var exposure: CameraExposure.Settings {
-    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, falseColour: falseColour)
+    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour)
   }
 }
