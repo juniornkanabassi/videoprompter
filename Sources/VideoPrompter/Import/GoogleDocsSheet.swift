@@ -12,6 +12,7 @@ struct GoogleDocsSheet: View {
   @ObservedObject var google: GoogleDocs
   let importDocument: (String) async -> String?
   @Environment(\.dismiss) private var dismiss
+  var zoom = 1.0
   @State private var link = ""
   @State private var search = ""
   @State private var docs: [GoogleDoc] = []
@@ -22,7 +23,7 @@ struct GoogleDocsSheet: View {
   var body: some View {
     Form {
       Section {
-        TextField("https://docs.google.com/document/d/…", text: $link)
+        TextField("Google Docs link", text: $link)
           .autocorrectionDisabled()
           #if os(iOS)
           .textInputAutocapitalization(.never)
@@ -33,18 +34,23 @@ struct GoogleDocsSheet: View {
           importLink()
         } label: {
           if importing == GoogleDocs.documentID(from: link), importing != nil {
-            ProgressView()
+            HStack { ProgressView(); Text("Importing…") }
           } else {
             Text("Import")
           }
         }
         .disabled(GoogleDocs.documentID(from: link) == nil || importing != nil)
+        .accessibilityLabel("Import document")
+        .accessibilityValue(importing == nil ? "Ready" : "Importing")
       } header: {
         Text("Paste a link")
       } footer: {
         Text(google.isSignedIn
           ? "Any document your Google account can open."
-          : "Works for documents shared with “Anyone with the link”. For others, sign in below.")
+          : google.canSignIn
+            ? "Works for shared links. For private documents, sign in below."
+            : "This build imports shared links only. For a private document, download it from Google Docs as Word or text, then choose Add > Import File. You do not need to change sharing permissions.")
+          .foregroundStyle(.primary)
       }
 
       if google.canSignIn {
@@ -95,7 +101,11 @@ struct GoogleDocsSheet: View {
       }
 
       if let problem {
-        Section { Text(problem).foregroundStyle(.red) }
+        Section("Import failed") {
+          Text(problem)
+          Button("Try Again") { importLink() }.disabled(GoogleDocs.documentID(from: link) == nil || importing != nil)
+          Text("You can also download the document as Word or text and choose Add > Import File.")
+        }
       }
     }
     .navigationTitle("Import from Google Docs")
@@ -103,10 +113,16 @@ struct GoogleDocsSheet: View {
     .navigationBarTitleDisplayMode(.inline)
     #else
     .formStyle(.grouped)
+    .uiZoom(zoom)
     .frame(minWidth: 480, minHeight: 420)
     #endif
     .toolbar { Button("Done") { dismiss() } }
     .task(id: google.isSignedIn) { if google.isSignedIn { await load() } }
+    .onChange(of: problem) { _, value in
+      #if os(macOS)
+      if let value { LibraryAnnouncement.post("Import failed. " + value) }
+      #endif
+    }
     .onChange(of: search) {
       Task {
         try? await Task.sleep(for: .milliseconds(400))
@@ -129,7 +145,12 @@ struct GoogleDocsSheet: View {
     // A failure is shown here rather than as an alert behind the sheet.
     problem = await importDocument(id)
     importing = nil
-    if problem == nil { dismiss() }
+    if problem == nil {
+      #if os(macOS)
+      LibraryAnnouncement.post("Document imported")
+      #endif
+      dismiss()
+    }
   }
 
   private func load() async {

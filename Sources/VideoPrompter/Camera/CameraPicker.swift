@@ -17,6 +17,8 @@ struct CameraPicker: View {
   @ObservedObject var model: CameraModel
   /// The library's UI zoom. A popover is its own hosting view, so the parent's zoom never reaches it.
   var zoom = 1.0
+  var darkSurface = false
+  @Environment(\.colorScheme) private var colorScheme
   @State private var isOpen = false
 
   /// Never blank. A remembered camera that is gone reads as the one `refresh` will fall back to.
@@ -29,7 +31,9 @@ struct CameraPicker: View {
     Button { isOpen.toggle() } label: {
       HStack(spacing: Space.xs) {
         Text(label).lineLimit(1).truncationMode(.middle)
-        Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(.secondary)
+          .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
+        Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+          .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
       }
     }
     .help("Choose a camera; preview each before selecting. Current camera: " + label)
@@ -65,13 +69,12 @@ private struct CameraPickerList: View {
     }
     .padding(Space.md)
     .focusable()
-    .focusEffectDisabled()
     .focused($focused)
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .onAppear { focused = true }
+    .onAppear { focused = true; highlighted = selected }
     .onChange(of: highlighted) { _, uid in preview.show(uid, mirrored: model.mirrored) }
     .onDisappear { preview.stop() }
   }
@@ -103,6 +106,7 @@ private struct CameraPickerList: View {
     }
     .accessibilityLabel(device.displayName)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityValue(isHighlighted ? "Previewing" : "")
   }
 
   private var pane: some View {
@@ -137,7 +141,7 @@ private struct CameraPickerList: View {
     case .denied, .restricted: return "Camera access is off. Allow it in System Settings to see previews."
     default: return "Previews appear once camera access is allowed."
     }
-    if highlighted == nil { return "Point to a camera to preview it" }
+    if highlighted == nil { return "Point to a camera or use the arrow keys to preview it" }
     return preview.noSignal ? "No signal" : nil
   }
 
@@ -148,12 +152,16 @@ private struct CameraPickerList: View {
     } else {
       highlighted = selected ?? uids.first
     }
+    if let device = model.devices.first(where: { $0.uid == highlighted }) {
+      LibraryAnnouncement.post("Previewing " + device.displayName)
+    }
     return .handled
   }
 
   /// The camera is handed to the shared session only once its preview session has let go of it:
   /// a DeckLink input cannot be open in two sessions at once.
   private func choose(_ uid: String) {
+    if let device = model.devices.first(where: { $0.uid == uid }) { LibraryAnnouncement.post("Camera selected: " + device.displayName) }
     if uid != model.selectedUID {
       preview.stop { [model] in model.selectedUID = uid }
     }

@@ -630,7 +630,7 @@ struct PresenterView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         if let passage = monitor.passage, !showsScript {
-          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
+          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName, readingSize: store.settings.fontSize, zoom: store.uiZoom) {
             PresenterController.shared.endMonitor()
           }
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -757,9 +757,10 @@ struct PresenterView: View {
               CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom).disabled(recorder.isRecording || recorder.isBusy)
             }
           }
-          // Camera choices stay together when the picture is visible.
-          if camera.presentsWithVideo {
-            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth).disabled(recorder.isRecording || recorder.isBusy)
+          // Always in the bar at a fixed width, dimmed while the camera is off, so the bar keeps
+          // the same width with the camera on or off.
+          Group {
+            CameraPicker(model: camera, zoom: store.uiZoom, darkSurface: true).frame(width: Self.cameraPickerWidth).disabled(recorder.isRecording || recorder.isBusy)
             CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", displayTitle: compactControls ? "Guides" : nil,
                           help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
               showsGuideSettings = true
@@ -767,7 +768,7 @@ struct PresenterView: View {
             .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
               CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
             }
-          }
+          }.disabled(!camera.presentsWithVideo)
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
                         systemImage: draft.isEditing ? "checkmark" : "pencil", displayTitle: compactControls ? (draft.isEditing ? "Finish" : "Edit") : nil,
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
@@ -932,7 +933,11 @@ private struct CapsuleButton: View {
 struct GuideLine: View {
   let settings: PrompterSettings
   var body: some View {
-    Rectangle().fill(.cyan.opacity(settings.guideOpacity)).frame(height: 2).allowsHitTesting(false)
+    HStack {
+      Rectangle().frame(width: 12, height: 3)
+      Spacer()
+      Rectangle().frame(width: 12, height: 3)
+    }.foregroundStyle(.cyan.opacity(settings.guideOpacity)).allowsHitTesting(false).accessibilityHidden(true)
   }
 }
 

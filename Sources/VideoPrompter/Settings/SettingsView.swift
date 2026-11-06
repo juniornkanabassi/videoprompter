@@ -5,30 +5,35 @@ import CoreText
 
 /// Only presenter appearance lives beside the script. App preferences have their own window.
 struct InspectorView: View {
+  @Environment(\.colorScheme) private var colorScheme
   @ObservedObject var store: AppStore
   @ObservedObject private var camera: CameraModel
   @State private var showsCameraSettings = false
   init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
 
   var body: some View {
-    Form {
-      Section("Presenter") {
-        Picker("What to show", selection: $camera.displayMode) {
-          Text("Script").tag(PresenterDisplayMode.prompterOnly)
-          Text("Script and camera").tag(PresenterDisplayMode.prompterWithVideo)
-          Text("Camera").tag(PresenterDisplayMode.videoOnly)
+    ScrollView {
+      VStack(alignment: .leading, spacing: Space.xxl) {
+      InspectorSection("Presenter") {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("What to show")
+          InspectorChoice(title: "What to show", values: [.prompterOnly, .prompterWithVideo, .videoOnly],
+            names: ["Script", "Script and camera", "Camera"], selection: $camera.displayMode)
         }.help("Show the script, the camera picture, or both")
         if camera.presentsWithVideo {
           Button("Camera Settings…") { showsCameraSettings = true }
+            .buttonStyle(.link)
             .help("Choose the camera, its rotation and framing guides")
             .popover(isPresented: $showsCameraSettings, arrowEdge: .leading) {
               CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
             }
         }
       }
-      Section("Text") {
-        Picker("Font", selection: $store.settings.fontName) {
-          ForEach(AvailableFonts.presenter, id: \.self, content: Text.init)
+      InspectorSection("Text") {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Font")
+          InspectorChoice(title: "Font", values: AvailableFonts.presenter, names: AvailableFonts.presenter,
+            selection: $store.settings.fontName)
         }.help("Choose the font used in the presenter")
         ValueSlider("Size", value: $store.settings.fontSize, in: AppStore.presenterFontSizes,
           readout: "\(Int(store.settings.fontSize)) pt").help("Make the presenter text easier to read")
@@ -36,25 +41,25 @@ struct InspectorView: View {
           .accessibilityLabel("Mirror for teleprompter glass")
           .help("Flip text left to right for reflected glass")
       }
-      Section("Layout") {
-        Slider(value: $store.settings.textWidth, in: PrompterSettings.textWidthRange) { Text("Text width") }
+      InspectorSection("Layout") {
+        ValueSlider("Text width", value: $store.settings.textWidth, in: PrompterSettings.textWidthRange, readout: "\(Int(store.settings.textWidth * 100))%")
           .help("Narrow or widen the centred script column")
-        Slider(value: $store.settings.textOpacity, in: 0.2...1) { Text("Text visibility") }
+        ValueSlider("Text visibility", value: $store.settings.textOpacity, in: 0.2...1, readout: "\(Int(store.settings.textOpacity * 100))%")
           .help("Make the script text more or less transparent")
-        Slider(value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo)) {
-          Text("Background darkness")
-        }.help("Darken the backdrop; script and camera views keep separate values")
-        Slider(value: $store.settings.guideFraction, in: 0.1...0.85) { Text("Reading line position") }
+        ValueSlider("Background darkness", value: backdropOpacity, in: PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo), readout: "\(Int(backdropOpacity.wrappedValue * 100))%").help("Darken the backdrop; script and camera views keep separate values")
+        ValueSlider("Reading guide position", value: $store.settings.guideFraction, in: 0.1...0.85, readout: "\(Int(store.settings.guideFraction * 100))%")
           .help("Move the line where your current words appear")
-        Slider(value: $store.settings.guideOpacity, in: 0...1) { Text("Reading line visibility") }
+        ValueSlider("Reading guide visibility", value: $store.settings.guideOpacity, in: 0...1, readout: "\(Int(store.settings.guideOpacity * 100))%")
           .help("Fade the reading line; zero hides it")
       }
-      Section("Typography") {
-        Picker("Text weight", selection: $store.settings.fontWeight) {
-          Text("Regular").tag("Regular"); Text("Bold").tag("Bold")
+      InspectorSection("Typography") {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Text weight")
+          InspectorChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight)
         }.help("Choose regular or bold presenter text")
-        Picker("Alignment", selection: $store.settings.alignment) {
-          Text("Left").tag("Left"); Text("Centre").tag("Center"); Text("Right").tag("Right")
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Alignment")
+          InspectorChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment)
         }.help("Align the text within the script column")
         Slider(value: $store.settings.lineSpacing, in: 0...0.5) { Text("Line spacing") }.help("Adjust the space between lines")
         Slider(value: $store.settings.paragraphSpacing, in: 0...1) { Text("Paragraph spacing") }.help("Adjust the space between paragraphs")
@@ -62,7 +67,7 @@ struct InspectorView: View {
         ColorPicker("Background colour", selection: Binding(get: { Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black) }, set: { store.settings.backgroundColorHex = NSColor($0).hex }), supportsOpacity: false)
           .help("Choose the background colour")
       }
-      Section("Advanced") {
+      InspectorSection("Advanced") {
         DisclosureGroup("Mirroring and cues", isExpanded: Binding(get: { !store.simpleInterface }, set: { store.simpleInterface = !$0 })) {
           Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror)
             .help("Flip text top to bottom for your teleprompter setup")
@@ -76,7 +81,12 @@ struct InspectorView: View {
         }.accessibilityAction { store.simpleInterface.toggle() }
           .help("Show the presenter's mirroring, rotation and cue options")
       }
-    }.formStyle(.grouped)
+      }.padding(Space.lg)
+    }
+      .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+      .scrollContentBackground(.hidden)
+      .background(LibraryAppearance.color(.windowBackgroundColor, scheme: colorScheme))
+      .environment(\.colorScheme, colorScheme).preferredColorScheme(colorScheme)
   }
 
   private var backdropOpacity: Binding<Double> {
@@ -317,7 +327,7 @@ private struct ValueSlider: View {
       HStack(alignment: .firstTextBaseline) {
         Text(title)
         Spacer()
-        Text(readout).font(.caption).monospacedDigit().foregroundStyle(.secondary)
+        Text(readout).font(.caption).monospacedDigit().foregroundStyle(.primary)
           .multilineTextAlignment(.trailing)
       }
       Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title)

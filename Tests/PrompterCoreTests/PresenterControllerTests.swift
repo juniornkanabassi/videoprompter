@@ -1453,10 +1453,12 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(reopened.guideOpacity, 0.25)
 
     func drawnAlpha(_ settings: PrompterSettings) throws -> CGFloat {
-      let renderer = ImageRenderer(content: GuideLine(settings: settings).frame(width: 8))
+      let renderer = ImageRenderer(content: GuideLine(settings: settings).frame(width: 100))
       renderer.scale = 1
       let image = try XCTUnwrap(renderer.cgImage)
-      return try XCTUnwrap(NSBitmapImageRep(cgImage: image).colorAt(x: 4, y: 1)).alphaComponent
+      let bitmap = NSBitmapImageRep(cgImage: image)
+      XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 50, y: 1)).alphaComponent, 0, "The guide leaves the script area clear")
+      return try XCTUnwrap(bitmap.colorAt(x: 4, y: 1)).alphaComponent
     }
     XCTAssertEqual(try drawnAlpha(reopened), 0.25, accuracy: 0.02)
     XCTAssertEqual(try drawnAlpha(PrompterSettings()), 0.82, accuracy: 0.02)

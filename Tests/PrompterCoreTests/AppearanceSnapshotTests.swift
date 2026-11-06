@@ -46,6 +46,7 @@ import XCTest
       store.inspector = true
       try await snapshot(LibraryView(store: store, camera: camera), name: "library-inspector-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
       try await snapshot(InspectorView(store: store, camera: camera), name: "presenter-inspector-\(mode)", size: .init(width: 360, height: 900), scheme: scheme, destination: destination)
+      try await snapshot(ReferenceMonitorCaption(passage: String(repeating: "Welcome back. Bonjour à toutes et à tous. ", count: 30), fontName: "Helvetica Neue", readingSize: 48, end: {}), name: "reference-monitor-\(mode)", size: .init(width: 1000, height: 400), scheme: scheme, destination: destination)
       for tab in SettingsTab.allCases {
         try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "settings-\(tab.rawValue)-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
       }
@@ -64,6 +65,8 @@ import XCTest
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       camera.displayMode = .prompterWithVideo
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false), name: "presenter-camera-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      try await snapshot(LibraryView(store: store, camera: camera), name: "library-200-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
+      try await snapshot(GoogleDocsSheet(google: GoogleDocs(), importDocument: { _ in nil }, zoom: 2), name: "google-docs-200-\(mode)", size: .init(width: 640, height: 560), scheme: scheme, destination: destination)
       camera.displayMode = .prompterOnly
       store.uiZoom = 1
       try await snapshot(IPadRemoteView(link: link, startsLink: false), name: "ipad-remote-\(mode)", size: .init(width: 480, height: 420), scheme: scheme, destination: destination)
@@ -72,7 +75,7 @@ import XCTest
   }
 
   private func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
-    let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme))
+    let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     let window = NSWindow(contentRect: NSRect(origin: .init(x: -20000, y: -20000), size: size), styleMask: [.titled], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
     window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -85,7 +88,9 @@ import XCTest
     }
     XCTAssertFalse(window.isVisible)
     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-    host.cacheDisplay(in: host.bounds, to: bitmap)
+    window.effectiveAppearance.performAsCurrentDrawingAppearance {
+      host.cacheDisplay(in: host.bounds, to: bitmap)
+    }
     let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
     try data.write(to: destination.appendingPathComponent(name + ".png"))
     XCTAssertGreaterThan(data.count, 2_000, "A page must contain rendered content")
