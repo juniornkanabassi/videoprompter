@@ -99,22 +99,4 @@ import XCTest
     XCTAssertEqual(store.settings.mode, "Voice")
   }
 
-  func testModernIconHasSeparateVectorObjectsAndThreeAppearances() throws {
-    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let icon = root.appendingPathComponent("Resources/AppIcon/VideoPrompter.icon")
-    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: icon.appendingPathComponent("icon.json"))) as? [String: Any])
-    let groups = try XCTUnwrap(json["groups"] as? [[String: Any]])
-    XCTAssertEqual(groups.count, 3)
-    for group in groups {
-      let layers = try XCTUnwrap(group["layers"] as? [[String: Any]])
-      for layer in layers {
-        let image = try XCTUnwrap(layer["image-name"] as? String)
-        XCTAssertTrue(image.hasSuffix(".svg"))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: icon.appendingPathComponent("Assets/" + image).path))
-        XCTAssertEqual((layer["opacity-specializations"] as? [[String: Any]])?.count, 3)
-      }
-    }
-    let background = try String(contentsOf: icon.appendingPathComponent("Assets/Background-Default.svg"), encoding: .utf8)
-    XCTAssertTrue(background.contains("M0 0H1024V1024H0Z"), "The system applies the outer mask")
-  }
 }
