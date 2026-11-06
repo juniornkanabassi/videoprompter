@@ -5,6 +5,23 @@ import XCTest
 @testable import VideoPrompter
 import PrompterCore
 
+extension XCTestCase {
+  /// A throwaway defaults suite, removed when the test ends.
+  func freshDefaults(_ prefix: String = "VideoPrompterTests") -> UserDefaults {
+    let name = "\(prefix).\(UUID().uuidString)"
+    addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
+    return UserDefaults(suiteName: name)!
+  }
+
+  /// Registered after `freshDefaults`, so XCTest (last in, first out) stops this store's
+  /// settings writer before it removes the suite.
+  @MainActor @discardableResult
+  func flushedAtTeardown(_ store: AppStore) -> AppStore {
+    addTeardownBlock { @MainActor in await store.flushSettings() }
+    return store
+  }
+}
+
 @MainActor
 final class SessionStoreTests: XCTestCase {
   private func record() -> ScriptRecord {
@@ -210,11 +227,6 @@ final class SessionStoreTests: XCTestCase {
     // Registered after freshDefaults: XCTest runs this before it removes the suite.
     addTeardownBlock { @MainActor in await store.flushSettings() }
     return store
-  }
-  private func freshDefaults() -> UserDefaults {
-    let name = "VideoPrompterTests.\(UUID().uuidString)"
-    addTeardownBlock { UserDefaults(suiteName: name)?.removePersistentDomain(forName: name) }
-    return UserDefaults(suiteName: name)!
   }
 
   func testLegacySettingsAndPresetsMigrateAndApplyingAnOldPresetUsesTheNewMode() async {

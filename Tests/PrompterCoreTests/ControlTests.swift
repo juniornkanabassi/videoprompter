@@ -11,8 +11,8 @@ import XCTest
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await store.reload()
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .prompterOnly
@@ -83,8 +83,8 @@ import XCTest
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await store.reload()
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .prompterOnly
@@ -257,8 +257,8 @@ import XCTest
   func testCreateInFolderIsRetrySafeAndPersists() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await store.waitForInitialLoad()
     let folder = try await store.createLibraryFolder(named: "Drafts")
     let camera = CameraModel(defaults: defaults)
@@ -289,8 +289,8 @@ import XCTest
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Read", markdown: "one two")
     let other = try await store.createScript(title: "Keep", markdown: "three four")
     let camera = CameraModel(defaults: defaults)
@@ -318,8 +318,8 @@ import XCTest
   func testDeleteRetryDoesNotDeleteReplacementWithSameTitle() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Read", markdown: "one two")
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
@@ -337,8 +337,8 @@ import XCTest
   func testExportAndRestoreRetriesReplayInsteadOfActingAgain() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let first = try await store.createScript(title: "Intro", markdown: "one")
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
@@ -365,8 +365,8 @@ import XCTest
   func testCameraGuidesRetryNeverChangesACameraSelectedSince() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
     camera.selectedUID = "camera-a"
@@ -386,8 +386,8 @@ import XCTest
   func testRenameRetryNeverRenamesAScriptThatTookTheOldName() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let first = try await store.createScript(title: "Draft", markdown: "one")
     let folder = try await store.createLibraryFolder(named: "Old")
     let camera = CameraModel(defaults: defaults)
@@ -412,8 +412,8 @@ import XCTest
   func testDuplicateRetryAfterRenameUsesCachedResult() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Read", markdown: "one two")
     let camera = CameraModel(defaults: defaults)
     let actions = ControlActions(store: store, presenter: PresenterController(camera: camera), camera: camera, recorder: CameraRecorder(defaults: defaults))
@@ -440,8 +440,8 @@ import XCTest
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Read", markdown: "one two")
     store.settings.mode = "Manual"
     let camera = CameraModel(defaults: defaults)
@@ -462,8 +462,8 @@ import XCTest
     OffscreenPanels.install(); defer { OffscreenPanels.uninstall() }
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "ControlTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("ControlTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.createScript(title: "Read", markdown: "one two")
     store.settings.mode = "Manual"
     var preset = store.settings; preset.mode = "Voice"; preset.name = "Voice preset"

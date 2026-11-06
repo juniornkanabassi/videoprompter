@@ -47,9 +47,9 @@ final class ICloudMirrorTests: XCTestCase {
     ICloudScripts.cloudDocsOverride = try temp("CloudDocs")
     UserDefaults.standard.set(true, forKey: ICloudScripts.enabledKey)
     let root = try temp("vp-lib"), outside = try temp("vp-notes")
-    let store = AppStore(
+    let store = flushedAtTeardown(AppStore(
       arguments: ["test", "--data-directory", root.path],
-      defaults: UserDefaults(suiteName: "ICloudMirrorTests.\(UUID().uuidString)")!)
+      defaults: freshDefaults("ICloudMirrorTests")))
     let master = outside.appendingPathComponent("master.md")
     try Data("Original text.\n".utf8).write(to: master)
     let record = try await store.library!.create(title: "Linked", markdown: "Original text.\n")

@@ -22,9 +22,9 @@ final class PresenterPresentTests: XCTestCase {
     try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
     OffscreenPanels.install()
     root = FileManager.default.temporaryDirectory.appendingPathComponent("present-\(UUID().uuidString)")
-    store = AppStore(
+    store = flushedAtTeardown(AppStore(
       arguments: ["test", "--data-directory", root.path],
-      defaults: UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!)
+      defaults: freshDefaults()))
     controller = PresenterController()
   }
 

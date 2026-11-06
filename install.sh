@@ -55,7 +55,16 @@ if ! /bin/mv -f "$CLI_STAGE" "$CLI_LINK"; then
   print -u2 'CLI setup failed; the previous app was restored.'
   exit 1
 fi
-[[ ! -e "$BACKUP" ]] || /bin/rm -rf "$BACKUP"
+# The previous app goes to the user's Bin, never deleted; a taken name gets a number, as Finder does.
+if [[ -e "$BACKUP" ]]; then
+  TRASHED="$HOME/.Trash/Video Prompter.app"
+  n=2
+  while [[ -e "$TRASHED" || -L "$TRASHED" ]]; do TRASHED="$HOME/.Trash/Video Prompter $n.app"; (( n++ )); done
+  if [[ ! -d "$HOME/.Trash" || -L "$HOME/.Trash" ]] || ! /bin/mv "$BACKUP" "$TRASHED" || [[ -e "$BACKUP" ]]; then
+    print -u2 "Installed Video Prompter $ACTUAL_VERSION, but the previous app could not be moved to the Bin. It is kept at $BACKUP."
+    exit 1
+  fi
+fi
 # Retire the pre-2.0 command link, only if it is a symlink.
 [[ ! -L "$BIN_DIR/vidprompt" ]] || /bin/rm -f "$BIN_DIR/vidprompt"
 print "Installed Video Prompter $ACTUAL_VERSION at $DEST"

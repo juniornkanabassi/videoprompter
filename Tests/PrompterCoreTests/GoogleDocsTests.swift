@@ -30,7 +30,7 @@ import XCTest
   }
 
   func testLinksAreRememberedPerScript() {
-    let defaults = UserDefaults(suiteName: "GoogleDocsTests.\(UUID().uuidString)")!
+    let defaults = freshDefaults("GoogleDocsTests")
     let links = GoogleDocLinks(defaults: defaults)
     let script = UUID()
     XCTAssertNil(links[script])

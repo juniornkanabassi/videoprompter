@@ -37,6 +37,16 @@ def pids(directory):
     rows = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True).splitlines()
     return [int(row.split(None, 1)[0]) for row in rows if str(exe) in row and '--data-directory '+str(directory) in row]
 
+def suite_domains(directory):
+    """The defaults suite AppStore.preferences opens for --data-directory: VidPrompt.<FNV-1a of the standardised path>."""
+    path = str(directory)
+    # NSURL standardising drops a leading /private when the shorter path exists, so cover both spellings.
+    for candidate in {path, path.removeprefix('/private') if path.startswith('/private/') else path}:
+        value = 14695981039346656037
+        for byte in candidate.encode():
+            value = ((value ^ byte) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+        yield 'VidPrompt.%016x' % value
+
 def activation_type(pid):
     found = re.search(r'type="(\w+)"', subprocess.run(['lsappinfo', 'info', '-app', str(pid)], capture_output=True, text=True).stdout)
     return found.group(1) if found else None
@@ -125,8 +135,19 @@ try:
 finally:
     for directory in (data, idle_data):
         for stray in pids(directory): os.kill(stray, 9)
+    # Only once every copy has exited can no settings writer recreate a suite removed below.
+    for _ in range(100):
+        if not any(pids(directory) for directory in (data, idle_data)): break
+        time.sleep(0.05)
     subprocess.run(['defaults', 'delete', CHECK_ID], capture_output=True)
     library = pathlib.Path.home() / 'Library'
     (library / 'Preferences' / (CHECK_ID+'.plist')).unlink(missing_ok=True)
+    if not any(pids(directory) for directory in (data, idle_data)):
+        for directory in (data, idle_data):
+            for domain in suite_domains(directory):  # derived from this check's own disposable paths only
+                subprocess.run(['defaults', 'delete', domain], capture_output=True)
+                (library / 'Preferences' / (domain+'.plist')).unlink(missing_ok=True)
+    else:
+        raise RuntimeError('A check copy is still running; isolated defaults cleanup did not finish')
     shutil.rmtree(library / 'Saved Application State' / (CHECK_ID+'.savedState'), ignore_errors=True)
 print('RESULT %d headless checks passed' % checks)

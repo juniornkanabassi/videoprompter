@@ -256,8 +256,8 @@ final class PresenterControllerTests: XCTestCase {
 
   func testPresenterEditCommitPersistsMarkdownAndKeepsTheAnchor() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(
       title: "Presented", markdown: "Opening words here.\n\nSecond passage with the target word.")
     await store.reload()
@@ -1300,8 +1300,8 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(try decoder.decode(PrompterSettings.self, from: Data(#"{"horizontalMargin":80}"#.utf8)).textWidth, 1)
 
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(store.settings.textWidth, 1)
     let markdown = (1...20).map { "Passage \($0) with useful words for a wide column." }.joined(separator: "\n\n")
     let record = ScriptRecord(metadata: .init(title: "Width", fileName: "width.md", revision: 1,
@@ -1314,7 +1314,7 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(store.session.tokenIndex, target, "a width change never moves the anchor")
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
-    XCTAssertEqual(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    XCTAssertEqual(flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
       .settings.textWidth, 0.4)
 
     let size = NSSize(width: 1600, height: 900)
@@ -1409,14 +1409,14 @@ final class PresenterControllerTests: XCTestCase {
   /// picture out; Prompter only keeps its background opacity.
   func testBackdropOpacityFollowsTheModeAndVideoDimmingPersists() async {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: false), 0.82)
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.25)
     store.settings.videoDimming = 0.6
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)).settings
     XCTAssertEqual(reopened.backdropOpacity(withVideo: true), 0.6)
     XCTAssertEqual(reopened.backdropOpacity(withVideo: false), 0.82, "Prompter only is unchanged")
   }
@@ -1443,13 +1443,13 @@ final class PresenterControllerTests: XCTestCase {
   /// The reading line's opacity persists and is what the line is drawn with.
   func testGuideOpacityPersistsAndReachesTheLine() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(store.settings.guideOpacity, 0.82, "the default keeps the current look")
     store.settings.guideOpacity = 0.25
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults).settings
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)).settings
     XCTAssertEqual(reopened.guideOpacity, 0.25)
 
     func drawnAlpha(_ settings: PrompterSettings) throws -> CGFloat {

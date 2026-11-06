@@ -33,8 +33,8 @@ final class AppStoreTests: XCTestCase {
   func testMetadataActionUpdatesMemoryAndDiskAndThrowsWithoutChangingMemory() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpm-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults("AppStoreTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Read", markdown: "one two")
     try await store.updateScriptMetadata(record.id, title: "Renamed", tags: [" draft ", "ready", "draft"])
     let updated = try XCTUnwrap(store.scripts.first)
@@ -121,8 +121,8 @@ final class AppStoreTests: XCTestCase {
       "VideoPrompter-notes-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let markdown = "Opening lines of the script.\n\nSecond passage holds the target word here."
     let file = outside.appendingPathComponent("script.md")
     try Data(markdown.utf8).write(to: file)
@@ -155,8 +155,8 @@ final class AppStoreTests: XCTestCase {
       "VideoPrompter-notes-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
     defer { for url in [root, outside] { try? FileManager.default.removeItem(at: url) } }
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let file = outside.appendingPathComponent("Imported notes.md")
     try Data("Imported body.".utf8).write(to: file)
 
@@ -402,8 +402,8 @@ final class AppStoreTests: XCTestCase {
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
       "VideoPrompter-notes-\(UUID().uuidString)", isDirectory: true)
     try? FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    return (AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults), root, outside)
+    let defaults = freshDefaults()
+    return (flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)), root, outside)
   }
   /// A script linked to a file that has since moved: returns the script and the file's new place.
   private func brokenLink(
@@ -426,8 +426,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFlushPendingSavePersistsImmediateEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Draft", markdown: "first")
     await store.reload()
     let id = try XCTUnwrap(store.selectedID)
@@ -440,8 +440,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFlushPendingSaveUsesLatestOfRapidEdits() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Draft", markdown: "first")
     await store.reload()
     let id = try XCTUnwrap(store.selectedID)
@@ -455,8 +455,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFailedSaveBlocksQuitUntilFixtureIsRepairedAndRetried() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Draft", markdown: "first")
     await store.reload()
     let record = try XCTUnwrap(store.selected)
@@ -482,8 +482,8 @@ final class AppStoreTests: XCTestCase {
 
   func testImmediateEditThenDeleteRestoresLatestDraft() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Draft", markdown: "first")
     await store.reload()
     let record = try XCTUnwrap(store.selected)
@@ -500,8 +500,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFailedSaveSurvivesExternalRefresh() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Draft", markdown: "first")
     await store.reload()
     let record = try XCTUnwrap(store.selected)
@@ -548,8 +548,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFolderSelectionFiltersAndNewScriptInheritsFolder() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let folder = try await store.library!.createFolder(name: "Work")
     _ = try await store.library!.create(title: "Existing", markdown: "one", folderID: folder.id)
     await store.reload()
@@ -570,8 +570,8 @@ final class AppStoreTests: XCTestCase {
   func testRefreshDiscoversExternalMarkdownAndPreservesPendingDraft() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let created = try await store.library!.create(title: "Draft", markdown: "original")
     await store.reload()
     store.updateMarkdown("unsaved local", for: created.id)
@@ -588,7 +588,7 @@ final class AppStoreTests: XCTestCase {
 
   func testPresetLifecyclePreservesIdentityAndSettings() {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)"))
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: freshDefaults()))
     store.savePreset(named: "Camera")
     let original = store.presets[0]
     store.settings.fontSize = 72
@@ -612,8 +612,8 @@ final class AppStoreTests: XCTestCase {
 
   func testSettingsAndMultiplePresetsSurviveNewStoreInstance() async {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let first = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(first.settings.fontName, "Lexend Deca")
     XCTAssertEqual(first.sourceFontName, "Lexend Deca")
     XCTAssertEqual(first.previewFontName, "Lexend Deca")
@@ -625,17 +625,17 @@ final class AppStoreTests: XCTestCase {
     first.settings.fontSize = 83
     _ = await first.flushPendingSaves()
 
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(reopened.settings.fontSize, 83)
     XCTAssertEqual(reopened.presets, expected)
-    let reopenedAgain = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let reopenedAgain = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(reopenedAgain.presets, expected)
   }
 
   func testEditorTypographyPersistsIndependentlyOfPresenterSettings() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let first = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await first.library!.create(title: "Typography", markdown: "# Bonjour\n\n*accent*")
     let before = try Data(contentsOf: try await first.library!.scriptURL(for: record.id))
     first.sourceFontName = "Georgia"
@@ -645,7 +645,7 @@ final class AppStoreTests: XCTestCase {
     first.settings.fontSize = 67
     _ = await first.flushPendingSaves()
 
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await reopened.reload()
     XCTAssertEqual(reopened.sourceFontName, "Georgia")
     XCTAssertEqual(reopened.sourceFontSize, 22)
@@ -659,26 +659,31 @@ final class AppStoreTests: XCTestCase {
   func testDataDirectoryDefaultsAreIsolated() async throws {
     let first = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let second = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let a = AppStore(arguments: ["test", "--data-directory", first.path])
+    for root in [first, second] {
+      // The generated per-directory suite AppStore.preferences(arguments:) opens.
+      let suite = "VidPrompt.\(MarkdownLibrary.fingerprint(root.standardizedFileURL.path))"
+      addTeardownBlock { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+    }
+    let a = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", first.path]))
     a.settings.fontSize = 91
     _ = await a.flushPendingSaves()
-    let b = AppStore(arguments: ["test", "--data-directory", second.path])
+    let b = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", second.path]))
     XCTAssertNotEqual(b.settings.fontSize, 91)
-    let reopened = AppStore(arguments: ["test", "--data-directory", first.path])
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", first.path]))
     XCTAssertEqual(reopened.settings.fontSize, 91)
-    let injected = UserDefaults(suiteName: "VideoPrompterTests.injected.\(UUID().uuidString)")!
-    let explicit = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
+    let injected = freshDefaults("VideoPrompterTests.injected")
+    let explicit = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected))
     explicit.settings.fontSize = 37
     _ = await explicit.flushPendingSaves()
-    let explicitReopened = AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected)
+    let explicitReopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", second.path], defaults: injected))
     XCTAssertEqual(explicitReopened.settings.fontSize, 37)
   }
 
   /// Create, duplicate, move to Trash and restore, as the library and a relaunch see them.
   func testCreateDuplicateTrashAndRestoreKeepTheLibraryInStep() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     _ = try await store.library!.create(title: "Existing", markdown: "one")
     await store.reload()
     XCTAssertEqual(store.scripts.count, 1)
@@ -696,7 +701,7 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(store.trash.map(\.id), [duplicatedID])
     store.restore(duplicatedID)
     try await waitUntil { store.scripts.count == 3 && store.trash.isEmpty }
-    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await reopened.reload()
     XCTAssertEqual(reopened.scripts.count, 3)
     XCTAssertTrue(reopened.trash.isEmpty)
@@ -704,8 +709,8 @@ final class AppStoreTests: XCTestCase {
 
   func testExternalConflictCanKeepExternalAndLocalDraft() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Draft", markdown: "original")
     await store.reload()
     store.updateMarkdown("local draft", for: record.id)
@@ -730,8 +735,8 @@ final class AppStoreTests: XCTestCase {
 
   func testExternalEditRetainsActiveAnchorAndPausesSession() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Reading", markdown: "one two three four")
     await store.reload()
     var settings = PrompterSettings(); settings.mode = "Manual"
@@ -749,8 +754,8 @@ final class AppStoreTests: XCTestCase {
 
   func testPresenterSaveUsesPresentedRecordAndOpeningFingerprint() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let presented = try await store.library!.create(title: "Presented", markdown: "one two three")
     let other = try await store.library!.create(title: "Selected", markdown: "other")
     await store.reload()
@@ -768,8 +773,8 @@ final class AppStoreTests: XCTestCase {
 
   func testPresenterSaveWaitsForPendingLibraryEdit() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Presented", markdown: "original")
     await store.reload()
     store.updateMarkdown("library edit", for: record.id)
@@ -785,8 +790,8 @@ final class AppStoreTests: XCTestCase {
 
   func testLibraryEditQueuedDuringPresenterSavePersistsAfterPresenterDraft() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Presented", markdown: "original")
     await store.reload()
     store.presenterSaveReservationHook = { store.updateMarkdown("newer library edit", for: record.id) }
@@ -802,8 +807,8 @@ final class AppStoreTests: XCTestCase {
 
   func testLibraryEditQueuedDuringFailedPresenterSaveEntersRecovery() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Presented", markdown: "original")
     let url = try await store.library!.scriptURL(for: record.id)
     await store.reload()
@@ -826,8 +831,8 @@ final class AppStoreTests: XCTestCase {
 
   func testFlushWaitsForReservedPresenterSave() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Presented", markdown: "original")
     await store.reload()
     let gate = PresenterSaveGate()
@@ -848,8 +853,8 @@ final class AppStoreTests: XCTestCase {
 
   func testPresenterSavePreservesDraftWhenExternalEditChangedFingerprint() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Presented", markdown: "original")
     await store.reload()
     let url = try await store.library!.scriptURL(for: record.id)
@@ -868,8 +873,8 @@ final class AppStoreTests: XCTestCase {
 
   func testMissingExternalFilePreservesDraftAndRecoversWhenRestored() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.library!.create(title: "Missing", markdown: "keep me")
     await store.reload()
     let url = try await store.library!.scriptURL(for: record.id)
@@ -890,12 +895,12 @@ final class AppStoreTests: XCTestCase {
 
   func testColdReloadKeepsOtherScriptsWhenOneFileIsMissing() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
+    let defaults = freshDefaults()
     let library = try MarkdownLibrary(rootURL: root, coordinatesExternalChanges: false)
     let missing = try await library.create(title: "Missing", markdown: "gone")
     _ = try await library.create(title: "Valid", markdown: "still here")
     try FileManager.default.removeItem(at: try await library.scriptURL(for: missing.id))
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     await store.reload()
     XCTAssertEqual(store.scripts.count, 1)
     XCTAssertEqual(store.scripts.first?.markdown, "still here")
@@ -914,8 +919,8 @@ final class AppStoreTests: XCTestCase {
 
   func testTextZoomStepsTheFocusedWindowsTextWithinItsRange() {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    let defaults = UserDefaults(suiteName: "VideoPrompterTests.\(UUID().uuidString)")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let defaults = freshDefaults()
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     store.previewFontSize = 18
     store.settings.fontSize = 44
     store.zoomText(in: true, presenter: false)
@@ -938,13 +943,13 @@ final class AppStoreTests: XCTestCase {
   func testANewLibraryGetsTheWelcomeScriptOnceAndDeletingItIsFinal() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    let defaults = freshDefaults("AppStoreTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await store.waitForWelcomeScript()
     XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
     XCTAssertEqual(store.selected?.markdown, WelcomeScript.markdown)
     try await store.deleteScript(try XCTUnwrap(store.scripts.first).id)
-    let again = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    let again = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await again.waitForWelcomeScript()
     XCTAssertTrue(again.scripts.isEmpty, "offered once per library")
     again.showWelcomeScript()
@@ -955,8 +960,8 @@ final class AppStoreTests: XCTestCase {
   func testHelpWelcomeScriptDuringTheFirstLaunchAddDoesNotAddASecondCopy() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    let defaults = freshDefaults("AppStoreTests")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     store.showWelcomeScript()
     await store.waitForWelcomeScript()
     try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
@@ -967,9 +972,9 @@ final class AppStoreTests: XCTestCase {
   func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let defaults = freshDefaults("AppStoreTests")
     defaults.set(true, forKey: WelcomeScript.offeredKey)
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await store.waitForWelcomeScript()
     XCTAssertTrue(store.scripts.isEmpty && store.trash.isEmpty, "the saved marker alone keeps it out")
   }
@@ -977,13 +982,13 @@ final class AppStoreTests: XCTestCase {
   func testAnExistingLibraryIsNotGivenTheWelcomeScript() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = UserDefaults(suiteName: "AppStoreTests.\(UUID())")!
+    let defaults = freshDefaults("AppStoreTests")
     _ = try await MarkdownLibrary(rootURL: root).create(title: "Mine", markdown: "my words")
-    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true)
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await store.waitForWelcomeScript()
     XCTAssertEqual(store.scripts.map(\.metadata.title), ["Mine"])
     XCTAssertTrue(defaults.bool(forKey: WelcomeScript.offeredKey))
-    let isolated = AppStore(arguments: ["test", "--data-directory", root.path + "-isolated"], defaults: UserDefaults(suiteName: "AppStoreTests.\(UUID())")!)
+    let isolated = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path + "-isolated"], defaults: freshDefaults("AppStoreTests")))
     defer { try? FileManager.default.removeItem(atPath: root.path + "-isolated") }
     await isolated.waitForInitialLoad()
     await isolated.waitForWelcomeScript()
