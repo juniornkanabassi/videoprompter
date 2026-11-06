@@ -18,6 +18,20 @@ struct ShootSetup: Codable, Identifiable {
 }
 
 extension ShootSetup {
+  static func uniqueIdentities(_ setups: [ShootSetup]) -> [ShootSetup] {
+    var reserved = Set(setups.map(\.id))
+    var seen = Set<UUID>()
+    return setups.map { setup in
+      var setup = setup
+      if !seen.insert(setup.id).inserted {
+        repeat { setup.id = UUID() } while reserved.contains(setup.id)
+        reserved.insert(setup.id)
+        seen.insert(setup.id)
+      }
+      return setup
+    }
+  }
+
   /// Older setups retain their known fields; missing or obsolete choices use safe defaults.
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -51,11 +65,7 @@ extension AppStore {
   @discardableResult func saveShootSetup(named name: String, camera: CameraModel, recorder: CameraRecorder) -> Bool {
     guard !recorder.settingsLocked, !session.isActivelyRunning,
       let name = shootSetupName(name) else { return false }
-    shootSetups.append(ShootSetup(name: name, reading: settings, cameraUID: camera.selectedUID,
-      guides: camera.guides, mirrored: camera.mirrored, displayMode: camera.displayMode,
-      format: recorder.preset, mirrorSavedVideo: recorder.mirrorSavedVideo,
-      separateMicrophone: recorder.usesSeparateMicrophone, microphoneUID: recorder.microphoneUID,
-      floatAudio: recorder.floatAudio))
+    shootSetups.append(currentShootSetup(named: name, camera: camera, recorder: recorder))
     return true
   }
 
@@ -67,7 +77,7 @@ extension AppStore {
   }
 
   func deleteShootSetup(_ id: UUID) {
-    shootSetups.removeAll { $0.id == id }
+    if let index = shootSetups.firstIndex(where: { $0.id == id }) { shootSetups.remove(at: index) }
     shootSetupError = nil
   }
 
@@ -89,6 +99,34 @@ extension AppStore {
     guard required.allSatisfy({ uid in microphones.contains { $0.uid == uid } }) else {
       return reject("A microphone for \(setup.name) is unavailable. Connect it before applying this setup.")
     }
+    previousShootSetup = currentShootSetup(named: "Previous setup", camera: camera, recorder: recorder)
+    previousShootExposure = (camera.cleanView, camera.exposureBypassed)
+    setShootSetup(setup, camera: camera, recorder: recorder)
+    appliedShootSetupName = setup.name
+    return true
+  }
+
+  private func currentShootSetup(named name: String, camera: CameraModel, recorder: CameraRecorder) -> ShootSetup {
+    ShootSetup(name: name, reading: settings, cameraUID: camera.selectedUID,
+      guides: camera.guides, mirrored: camera.mirrored, displayMode: camera.displayMode,
+      format: recorder.preset, mirrorSavedVideo: recorder.mirrorSavedVideo,
+      separateMicrophone: recorder.usesSeparateMicrophone, microphoneUID: recorder.microphoneUID,
+      floatAudio: recorder.floatAudio)
+  }
+
+  @discardableResult func restorePreviousShootSetup(camera: CameraModel, recorder: CameraRecorder) -> Bool {
+    guard !recorder.settingsLocked, !session.isActivelyRunning, let previousShootSetup else { return false }
+    // Restore the actual prior choices even if a device has since disconnected.
+    setShootSetup(previousShootSetup, camera: camera, recorder: recorder)
+    camera.cleanView = previousShootExposure.clean
+    camera.exposureBypassed = previousShootExposure.bypassed
+    self.previousShootSetup = nil
+    appliedShootSetupName = nil
+    shootSetupError = nil
+    return true
+  }
+
+  private func setShootSetup(_ setup: ShootSetup, camera: CameraModel, recorder: CameraRecorder) {
     session.pause()
     camera.selectedUID = setup.cameraUID
     camera.guides = setup.guides
@@ -104,7 +142,6 @@ extension AppStore {
     settings = reading
     recorder.useSettings(reading)
     camera.cleanView = false; camera.exposureBypassed = false
-    return true
   }
 }
 
@@ -117,6 +154,13 @@ struct ShootSetupSection: View {
     Section("Saved shoot setups") {
       Text("Save camera, framing, exposure, reading text, recording format and microphones together. Applying a setup keeps your script's words.")
         .font(.callout).fixedSize(horizontal: false, vertical: true)
+      if let applied = store.appliedShootSetupName {
+        Text("Applied \(applied)").font(.callout)
+      }
+      if store.previousShootSetup != nil {
+        Button("Restore previous setup") { store.restorePreviousShootSetup(camera: camera, recorder: recorder) }
+          .disabled(locked)
+      }
       TextField("Setup name", text: $name).initialPopoverFocus()
       Button("Save shoot setup") {
         if store.saveShootSetup(named: name, camera: camera, recorder: recorder) { name = "" }
@@ -125,7 +169,7 @@ struct ShootSetupSection: View {
         ShootSetupRow(store: store, camera: camera, recorder: recorder, setup: setup, locked: locked)
       }
       if let error = store.shootSetupError {
-        Text(error).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+        Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
       }
       if locked { Text("Stop reading and recording to change a shoot setup.").font(.callout) }
     }

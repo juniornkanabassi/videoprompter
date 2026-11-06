@@ -32,7 +32,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
 }
 
 @MainActor final class CameraModel: ObservableObject {
-  /// One model for the Camera window, the Camera menu and the presenter's video background:
+  /// One model for the Second monitor window, the Camera menu and the presenter's video background:
   /// they show the same camera with the same rotation and the same guides.
   static let shared = CameraModel(defaults: AppStore.preferences())
   @Published private(set) var devices: [CameraDevice] = []
@@ -43,9 +43,15 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       guard !recordingLocked, newValue != storedSelectedUID else { return }
       storedSelectedUID = newValue
       defaults.set(newValue, forKey: "cameraDeviceUID")
-      loadingGuides = true
-      guides = guideStore.guides(for: newValue)
-      loadingGuides = false
+      if let pendingGuides, newValue != nil {
+        self.pendingGuides = nil
+        guides = pendingGuides
+        guideStore.set(guides, for: newValue)
+      } else {
+        loadingGuides = true
+        guides = guideStore.guides(for: newValue)
+        loadingGuides = false
+      }
     }
   }
   @Published private var storedGuides = CameraGuides()
@@ -60,6 +66,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       }
       value.sanitise()
       let old = storedGuides
+      // Keep unresolved choices until discovery (or an explicit choice) supplies a camera.
+      if !loadingGuides && selectedUID == nil { pendingGuides = value }
       guard value != old else { return }
       if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) {
         exposureBypassed = false
@@ -112,7 +120,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     cleanView = false; exposureBypassed = false
     announceExposure("Exposure aids restored", on: true)
   }
-  static let cleanViewExplanation = "Hides the script, framing guides and exposure aids in the presenter only. The Camera window keeps its overlays."
+  static let cleanViewExplanation = "Hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays."
 
   private func announceExposure(_ name: String, on: Bool) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
@@ -161,6 +169,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   private let defaults: UserDefaults
   private let guideStore: CameraGuideStore
   private var loadingGuides = false
+  private var pendingGuides: CameraGuides?
   // nonisolated so `deinit` can take the observers back out again.
   nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
@@ -253,12 +262,12 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     }
   }
 
-  /// The rotation control's choices, in the Camera window's toolbar and the inspector alike.
+  /// The rotation control's choices, in the Second monitor window's toolbar and the inspector alike.
   static let rotationOptions: [(String, CameraRotation?)] =
     [("Automatic", nil)] + CameraRotation.allCases.map { ($0.label, Optional($0)) }
 
   /// One control for the four angles and Auto: nothing chooses an angle *and* leaves Auto on.
-  /// On the model, because the Camera window's toolbar and the inspector both show it.
+  /// On the model, because the Second monitor window's toolbar and the inspector both show it.
   var rotationChoice: Binding<CameraRotation?> {
     Binding(
       get: { [weak self] in
@@ -335,7 +344,7 @@ struct CameraView: View {
           Text("Second-display camera view. Shares camera and recording setup with the presenter.")
           Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
           Button("Camera & Recording Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
-          Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Camera window above other windows")
+          Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Second monitor window above other windows")
         } label: { Label("Options", systemImage: "ellipsis.circle") }
           .accessibilityLabel("Options").help("Camera mirroring, framing guides and window position")
 
@@ -344,7 +353,7 @@ struct CameraView: View {
   }
 }
 
-/// The Camera window's camera and rotation pop-ups.
+/// The Second monitor window's camera and rotation pop-ups.
 struct CameraChoiceItems: ToolbarContent {
   @ObservedObject var model: CameraModel
   @Binding var rotation: CameraRotation?
@@ -876,8 +885,20 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
+  func frameRateConfirmation(camera: CameraModel) -> String {
+    guard let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) else { return "Frame rate unknown" }
+    let seconds = device.activeVideoMinFrameDuration.seconds
+    guard seconds.isFinite, seconds > 0 else { return "Frame rate unknown" }
+    return String(format: "%.2f fps", 1 / seconds)
+  }
+  func preRecordConfirmation(camera: CameraModel) -> String {
+    [compactOutputConfirmation(camera: camera), frameRateConfirmation(camera: camera),
+      inputAndFormatConfirmation, mirrorSavedVideo ? "Mirrored saved video" : "Unmirrored saved video",
+      "Saves to " + Self.recordingsFolder().path].joined(separator: " · ")
+  }
+  var recordingFormatName: String { preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422" }
   var inputAndFormatConfirmation: String {
-    "Mic: \(microphoneName) · \(preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422")"
+    "Mic: \(microphoneName) · \(recordingFormatName)"
   }
   func compactOutputConfirmation(camera: CameraModel) -> String {
     guard let size = SharedCameraSession.shared.pictureSize else { return "Orientation unknown · resolution unknown" }

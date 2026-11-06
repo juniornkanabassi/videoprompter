@@ -713,6 +713,7 @@ struct PresenterView: View {
   @State private var showsCameraRecovery = false
   @State private var showsTakeDetails = false
   @State private var showsTools = false
+  @State private var showsHelp = false
   @State private var overflowTool: String?
   @Environment(\.openWindow) private var openWindow
   @State private var settingsTab = SettingsTab.reading
@@ -818,7 +819,8 @@ struct PresenterView: View {
     trackedStage
     .onAppear { recorder.useSettings(store.settings); camera.recorder = recorder; revealControls() }
     .onExitCommand {
-      if showsReadingControls { showsReadingControls = false }
+      if showsHelp { showsHelp = false }
+      else if showsReadingControls { showsReadingControls = false }
       else if showsCameraRecovery { showsCameraRecovery = false }
       else if showsCameraControls { showsCameraControls = false }
       else if showsTools { showsTools = false }
@@ -897,6 +899,8 @@ struct PresenterView: View {
         Group {
           if showsReadingControls {
             if hasBottomNotice { bottomNotice } else { readingControls }
+          } else if showsHelp { PresenterHelp().uiZoom(controlZoom)
+          } else if overflowTool == "Output" { outputControls
           } else if showsSettings {
             PresenterSettingsPopover(store: store, initialTab: settingsTab, initialCameraSection: cameraSection)
           } else if showsTakeDetails {
@@ -916,7 +920,7 @@ struct PresenterView: View {
 
   private func dismissPopover() {
     showsReadingControls = false; showsSettings = false; showsTakeDetails = false
-    showsCameraRecovery = false; showsCameraControls = false; overflowTool = nil; showsTools = false
+    showsCameraRecovery = false; showsCameraControls = false; overflowTool = nil; showsTools = false; showsHelp = false
   }
 
   private var microphoneControls: some View {
@@ -928,7 +932,7 @@ struct PresenterView: View {
   }
   private var hasOpenPopover: Bool {
     overflowTool != nil || showsTakeDetails || showsSettings || showsReadingControls || showsCameraControls || showsCameraRecovery
-      || showsTools
+      || showsTools || showsHelp
   }
   private func revealControls() {
     controlsQuiet = false
@@ -948,16 +952,21 @@ struct PresenterView: View {
       transport
       HStack(alignment: .top, spacing: Space.sm) {
         if hasScript && camera.displayMode != .videoOnly {
-          if hasBottomNotice {
-            Button { showsReadingControls = true } label: {
-              Text(session.visibleReadingState + " · Check reading…")
-                .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
-            }.accessibilityLabel("Check reading…").accessibilityValue(readingStatusTitle)
-          } else {
-            Text(session.visibleReadingState).fixedSize(horizontal: false, vertical: true)
-              .accessibilityLabel("Reading status").accessibilityValue(readingStatusTitle)
-          }
+          Button { showsReadingControls.toggle() } label: {
+            Text(hasBottomNotice ? "Check reading…" : visibleReadingStatus)
+              .lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+          }.accessibilityLabel(hasBottomNotice ? "Check reading…" : "Reading status").accessibilityValue(readingStatusTitle)
+            .accessibilityHint("Change reading mode and speed")
+            .restoringPopoverFocus(isPresented: $showsReadingControls, identifier: "presenter-reading-status")
         } else { Text("Camera view").fixedSize(horizontal: false, vertical: true) }
+        if camera.presentsWithVideo {
+          Text(recordingStatusTitle).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("Recording status").accessibilityValue(recordingStatusTitle)
+        }
+        if camera.cleanView { Button("Exit clean view") { camera.cleanView = false } }
+        Spacer(minLength: 0)
+        moreMenu.opacity(secondaryOpacity)
+      }.font(.body.weight(.medium))
         if camera.presentsWithVideo && !camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording && recorder.savedTake == nil && recorder.takeFailure == nil {
           Button {
             if camera.authorization == .denied || camera.authorization == .restricted {
@@ -970,10 +979,6 @@ struct PresenterView: View {
             .restoringPopoverFocus(isPresented: $showsCameraRecovery, identifier: "presenter-camera-recovery")
 
         }
-        if camera.cleanView { Button("Exit clean view") { camera.cleanView = false } }
-        Spacer(minLength: 0)
-        moreMenu.opacity(secondaryOpacity)
-      }.font(.callout)
       if camera.presentsWithVideo && camera.exposureIsConfigured && (camera.exposureBypassed || camera.cleanView) {
         Button(camera.exposureCheckState + " · Restore exposure aids") { camera.restoreExposureAids() }
           .font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -987,28 +992,33 @@ struct PresenterView: View {
       }
       if recorder.isRecording {
         HStack(spacing: Space.xs) {
-          Text("REC " + String(format: "%02d:%02d", Int(recorder.recordedDuration) / 60, Int(recorder.recordedDuration) % 60))
-            .foregroundStyle(.white).monospacedDigit()
-            .padding(.horizontal, Space.xs).background(.red.opacity(0.7), in: RoundedRectangle(cornerRadius: 4))
+          Text("Mic: " + recorder.microphoneName).lineLimit(1).truncationMode(.middle)
+            .help(recorder.microphoneName)
           RecordingBarLevel(meter: recorder.inputMeter, compact: compactControls)
           RecordingHealthNotice(recorder: recorder, zoom: controlZoom, compact: compactControls)
         }.font(.callout)
       } else if recorder.isBusy {
-        Text(recorder.phase == .saving ? "Saving…" : "Waiting for camera").font(.callout)
+        EmptyView()
       } else if recorder.savedTake != nil || recorder.takeFailure != nil {
         receipt
       } else if camera.presentsWithVideo && camera.isReadyToRecord {
-        Button { showsCameraControls = true; showsCameraOptions = true } label: {
-          Text(recorder.compactOutputConfirmation(camera: camera))
-            .fixedSize(horizontal: false, vertical: true)
-        }.font(.callout)
-          .help(recorder.outputSummary(camera: camera) + " · " + CameraRecorder.recordingsFolder().path)
+        Button { overflowTool = "Output" } label: {
+          HStack {
+          VStack(alignment: .leading, spacing: 0) {
+            Text(recorder.compactOutputConfirmation(camera: camera)).lineLimit(1).minimumScaleFactor(0.9)
+            Text("Saves to " + CameraRecorder.recordingsFolder().deletingLastPathComponent().lastPathComponent + " › " + CameraRecorder.recordingsFolder().lastPathComponent)
+              .lineLimit(1).truncationMode(.middle)
+          }.frame(maxWidth: .infinity, alignment: .leading)
+          Image(systemName: "chevron.right").imageScale(.small)
+          }.contentShape(Rectangle())
+        }.buttonStyle(.plain).font(.callout)
+          .help(recorder.preRecordConfirmation(camera: camera))
           .accessibilityLabel("Output check")
-          .accessibilityValue(recorder.compactOutputConfirmation(camera: camera) + ". " + recorder.inputAndFormatConfirmation)
-          .restoringPopoverFocus(isPresented: $showsCameraControls, identifier: "presenter-output")
+          .accessibilityValue(recorder.preRecordConfirmation(camera: camera))
+          .restoringPopoverFocus(isPresented: Binding(get: { overflowTool == "Output" }, set: { if !$0 { overflowTool = nil } }), identifier: "presenter-output")
 
       }
-    }.padding(.horizontal, Space.sm).padding(.vertical, Space.xs).frame(maxWidth: .infinity)
+    }.padding(.horizontal, Space.sm).padding(.bottom, Space.xs).frame(maxWidth: .infinity)
       .modifier(PresenterGlass(radius: 20))
       .buttonStyle(PresenterButtonStyle()).font(.body).symbolRenderingMode(.hierarchical)
       .accessibilityIdentifier("presenter-control-bar")
@@ -1052,6 +1062,34 @@ struct PresenterView: View {
       }.frame(maxWidth: .infinity)
     }.lineLimit(1)
       .accessibilityIdentifier("presenter-transport")
+  }
+
+  private var visibleReadingStatus: String {
+    if draft.isEditing { return "Editing · not saved yet" }
+    let mode = store.settings.mode == "Manual" ? (compactControls ? "Auto" : "Automatic scroll · \(Int(store.settings.speed)) wpm") : "Voice follow"
+    return mode + " · " + session.visibleReadingState
+  }
+
+  private var recordingStatusTitle: String {
+    if recorder.isRecording { return "REC " + String(format: "%02d:%02d", Int(recorder.recordedDuration) / 60, Int(recorder.recordedDuration) % 60) }
+    if recorder.isBusy { return recorder.phase == .saving ? "Saving…" : "Waiting for camera" }
+    return "Not recording"
+  }
+
+  var outputControls: some View {
+    Form {
+      Section("Before recording") {
+        LabeledContent("Picture", value: recorder.compactOutputConfirmation(camera: camera))
+        LabeledContent("Frame rate", value: recorder.frameRateConfirmation(camera: camera))
+        LabeledContent("Microphone", value: recorder.microphoneName)
+        LabeledContent("Format", value: recorder.recordingFormatName)
+        LabeledContent("Saved video", value: recorder.mirrorSavedVideo ? "Mirrored" : "Unmirrored")
+        Text("Saves to " + CameraRecorder.recordingsFolder().path).fixedSize(horizontal: false, vertical: true)
+      }
+      RecordingSettingsSections(recorder: recorder, camera: camera, zoom: controlZoom)
+      RecordingFolderSection(recorder: recorder)
+    }.formStyle(.grouped).environment(\.popoverEntryRequested, false)
+      .frame(width: min(480, 640 / controlZoom), height: popoverHeight / controlZoom).uiZoom(controlZoom)
   }
 
   private var readingStatusTitle: String {
@@ -1111,7 +1149,7 @@ struct PresenterView: View {
         Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
         Button("Recording settings…") { showsCameraControls = false; overflowTool = nil; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
         Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
-        Button("Open Camera window") { openWindow(id: "camera") }
+        Button("Open Second monitor window") { openWindow(id: "camera") }
         Text("An optional second window showing the same camera and recording.").font(.callout)
       }
     }.padding(Space.md).modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom))
@@ -1128,15 +1166,20 @@ struct PresenterView: View {
       .accessibilityHint("Text, Camera, Exposure and Microphone controls")
       .focused($focusedTool, equals: "Tools")
       .restoringPopoverFocus(isPresented: Binding(get: {
-        showsTools || showsSettings || showsTakeDetails || overflowTool != nil || showsReadingControls
+        showsTools || showsSettings || showsHelp || showsTakeDetails || overflowTool != nil || showsReadingControls
       }, set: { if !$0 {
-        showsTools = false; showsSettings = false; showsTakeDetails = false; overflowTool = nil; showsReadingControls = false
+        showsTools = false; showsSettings = false; showsHelp = false; showsTakeDetails = false; overflowTool = nil; showsReadingControls = false
       } }), identifier: "presenter-tools")
   }
 
   // One working surface: common actions stay inline, configuration has one link per job.
   var toolsSurface: some View {
     Form {
+      Section {
+        Button("Shoot setups…") { showsTools = false; openPresenterSettings(.shootSetups) }
+        Button("Presenter help…") { showsTools = false; showsHelp = true }
+        Button("Recording settings…") { showsTools = false; overflowTool = "Output" }
+      }
       if hasScript && camera.displayMode != .videoOnly {
         Section("Text") {
           WrapLayout(spacing: Space.sm) {

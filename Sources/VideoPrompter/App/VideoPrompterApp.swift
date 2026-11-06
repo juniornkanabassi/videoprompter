@@ -25,7 +25,7 @@ enum ScriptShortcuts {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   init() {
     // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
-    // Restored windows (the Camera window, extra library windows) would bypass the hidden-window path.
+    // Restored windows (the Second monitor window, extra library windows) would bypass the hidden-window path.
     if Headless.shared.active { UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true]) }
     // The bundle starts as an agent (LSUIElement), so a headless launch never shows a Dock tile, not even for the
     // moment before this init runs. Every other launch becomes the ordinary app here, before it finishes launching.
@@ -85,10 +85,7 @@ enum ScriptShortcuts {
             .keyboardShortcut("f", modifiers: [.command, .control])
         }
         CommandMenu("Format") {
-          Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
-          Button("Italic") { FormattedMarkdownEditor.formatFocused(.italic) }.keyboardShortcut(ScriptShortcuts.italic)
-          Button("Heading") { FormattedMarkdownEditor.formatFocused(.heading) }
-          Button("Add or Edit Link…") { FormattedMarkdownEditor.formatFocused(.link) }.keyboardShortcut("k")
+          FormattingMenuItems()
         }
         CommandMenu("Prompter") {
           Button("Present") { PresenterController.shared.present(store: store) }
@@ -97,7 +94,7 @@ enum ScriptShortcuts {
             .disabled(store.selected == nil)
           Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Choose a camera, check framing or record. Camera window is an optional second view.")
+            .help("Choose a camera, check framing or record. Second monitor window is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
@@ -127,13 +124,34 @@ enum ScriptShortcuts {
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Camera window", id: "camera") {
+    Window("Second monitor window", id: "camera") {
       CameraView(zoom: store.uiZoom)
         .background(MainWindowConfigurator(size: NSSize(width: 760, height: 480)))
         .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
     }
       .defaultSize(width: 760, height: 480)
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
+  }
+}
+
+/// Track AppKit's actual responder, including clicks on non-editor controls in the same window.
+struct FormattingMenuItems: View {
+  @State private var available = false
+  var body: some View {
+    Group {
+      Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
+      Button("Italic") { FormattedMarkdownEditor.formatFocused(.italic) }.keyboardShortcut(ScriptShortcuts.italic)
+      Button("Heading") { FormattedMarkdownEditor.formatFocused(.heading) }
+      Button("Add or Edit Link…") { FormattedMarkdownEditor.formatFocused(.link) }.keyboardShortcut("k")
+    }.disabled(!available)
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.didUpdateNotification)) { _ in refresh() }
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in refresh() }
+      .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { _ in refresh() }
+      .onAppear { refresh() }
+  }
+  private func refresh() {
+    let next = FormattedMarkdownEditor.canFormat()
+    if available != next { available = next }
   }
 }
 
@@ -220,7 +238,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Camera window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Second monitor window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

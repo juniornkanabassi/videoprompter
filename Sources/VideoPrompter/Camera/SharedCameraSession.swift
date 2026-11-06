@@ -23,7 +23,7 @@ struct CameraHolders {
   }
 }
 
-/// One capture session for both windows. The Camera window and the presenter's video background
+/// One capture session for both windows. The Second monitor window and the presenter's video background
 /// show the same camera, and a DeckLink cannot be opened twice, so there is one session, one
 /// input, a preview layer each, and a holder count that stops the capture when neither window is
 /// showing it.
@@ -201,7 +201,7 @@ struct CameraHolders {
 
   /// Auto orientation runs only while it is switched on and something is showing the camera.
   ///
-  /// Two stage views can ask at once — the Camera window and the presenter's video background —
+  /// Two stage views can ask at once — the Second monitor window and the presenter's video background —
   /// so `owner` identifies which one is asking and the detector goes away only when neither
   /// wants it. Without that, covering one window took Auto away from the other.
   ///

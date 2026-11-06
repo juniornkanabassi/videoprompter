@@ -41,8 +41,15 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
   }
+  @Published var previousShootSetup: ShootSetup?
+  @Published var appliedShootSetupName: String?
+  var previousShootExposure = (clean: false, bypassed: false)
   @Published var shootSetups: [ShootSetup] = [] {
-    didSet { if let data = try? JSONEncoder().encode(shootSetups) { defaults.set(data, forKey: "shootSetups") } }
+    didSet {
+      let repaired = ShootSetup.uniqueIdentities(shootSetups)
+      if repaired.map(\.id) != shootSetups.map(\.id) { shootSetups = repaired }
+      if let data = try? JSONEncoder().encode(shootSetups) { defaults.set(data, forKey: "shootSetups") }
+    }
   }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
@@ -156,7 +163,8 @@ private enum PresenterSaveError: LocalizedError {
     // Read all three first: a @Published didSet runs even here, and it saves all three.
     if let data = isolatedDefaults.data(forKey: "shootSetups") {
       if (try? JSONDecoder().decode([ShootSetup].self, from: data)) == nil { isolatedDefaults.set(data, forKey: "shootSetupsRecoveryBackup") }
-      shootSetups = InputValidation.savedEntries(ShootSetup.self, from: data) ?? []
+      shootSetups = ShootSetup.uniqueIdentities(InputValidation.savedEntries(ShootSetup.self, from: data) ?? [])
+      if let repaired = try? JSONEncoder().encode(shootSetups) { isolatedDefaults.set(repaired, forKey: "shootSetups") }
     }
     let presetData = isolatedDefaults.data(forKey: "presets")
     if let presetData, (try? JSONDecoder().decode([PrompterSettings].self, from: presetData)) == nil {

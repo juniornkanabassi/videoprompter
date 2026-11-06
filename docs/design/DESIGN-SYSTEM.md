@@ -292,3 +292,23 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
   Face is a qualified reference, not a universal target. Key retains exact ranges,
   grey-gap explanation and the received-picture qualification. The host keeps
   this strip outside the reading lane and centre of the subject.
+
+
+## Round 16 Builder A refinement
+
+Authorised by round-16 UX, visual and creator findings. The fixed transport, single-row exposure key and presenter-only Clean view remain settled.
+
+| Job | Placement and behaviour |
+|---|---|
+| Whole-shoot setup | Top-level Settings > Shoot setups, and first group in Tools > Shoot setups. The same ShootSetupSection owns all management. Successful Apply offers Restore previous setup on that page until used or replaced by another successful Apply. Failed Apply preserves the existing recovery. |
+| Presenter help | First group in Tools > Presenter help, outside camera configuration. |
+| Primary status | Reading mode, pace and state at the leading side; recording state at the trailing side. Reading status opens mode/speed directly. Compact automatic mode shows Auto and the state; its direct popover shows pace, with full Automatic scroll in its accessible value. Draft state visibly reads Editing · not saved yet. |
+| Secondary status | Smaller microphone health and output details. The one-line orientation/resolution check remains, with a visible Saves to folder line. Output check opens full orientation, resolution, frame rate, microphone, format, mirroring and destination before recording, plus the shared recording controls. Unknown values stay explicit. |
+| Recording choices | Tools > Recording settings opens the shared recording controls directly. Camera & Recording is one continuous grouped form with visible Camera, Recording, Framing guides and Exposure jump buttons, not a hidden subpage picker. Explicit recovery routes scroll to the requested section. |
+| Separate window | Second monitor window is the window title; Open Second monitor window is the command. Camera view remains the presenter mode; Camera Only remains the launch action. |
+| Format commands | Enabled only when the executing FormattingTextView is editable and has a format handler. |
+| Setup errors | Primary text with a warning symbol; normal-text contrast measured in both appearances. |
+
+QA round 10 adds unique-ID repair on load and every save, single-item deletion, unresolved guide transfer to the first selected camera, and inventory discovery on opening Choose camera without requesting access.
+
+Round 16 layout note: Check reading replaces the reading-status opener while a reading problem needs attention, retaining mode/state/problem in the accessible value.

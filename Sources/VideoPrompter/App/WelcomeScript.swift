@@ -32,9 +32,9 @@ enum WelcomeScript {
 
     In the Exposure group, **Zebras** marks bright areas and **False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. **Bypass exposure aids** temporarily hides configured aids; **Restore exposure aids** brings them back. Neither enables a tool by itself.
 
-    **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Camera window keeps its overlays.
+    **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays.
 
-    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Camera window** for a separate window showing the same camera and recording. The section chooser also contains Saved shoot setups, where you can save, apply, rename and delete complete setups.
+    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second monitor window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** in Tools, lets you save, apply, rename and delete complete setups. After Apply, **Restore previous setup** returns to your previous choices.
 
     **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Show saved take…** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
 

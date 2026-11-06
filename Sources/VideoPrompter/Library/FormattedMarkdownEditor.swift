@@ -78,9 +78,14 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
   /// Menu actions follow the first responder, so both editing surfaces use the same formatter.
   @discardableResult static func formatFocused(_ action: EditorFormatAction, in window: NSWindow? = NSApp.keyWindow) -> Bool {
-    guard let editor = window?.firstResponder as? FormattingTextView else { return false }
+    guard canFormat(in: window), let editor = window?.firstResponder as? FormattingTextView else { return false }
     editor.onFormat?(action)
     return true
+  }
+
+  static func canFormat(in window: NSWindow? = NSApp.keyWindow) -> Bool {
+    guard let editor = window?.firstResponder as? FormattingTextView else { return false }
+    return editor.isEditable && editor.onFormat != nil
   }
 
   func makeCoordinator() -> Coordinator { Coordinator(self) }

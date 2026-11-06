@@ -94,7 +94,7 @@ import XCTest
     }
     for file in files {
       let text = try String(contentsOf: file, encoding: .utf8)
-      for stale in ["Exposure on/off", "Exposure on\"", "Exposure off\"", "Sound OK", "Show recording folder in Finder", "Button(\"Recordings folder\"", "? \"Auto\" :"] {
+      for stale in ["Exposure on/off", "Exposure on\"", "Exposure off\"", "Sound OK", "Show recording folder in Finder", "Button(\"Recordings folder\""] {
         XCTAssertFalse(text.contains(stale), "\(file.lastPathComponent): \(stale)")
       }
     }

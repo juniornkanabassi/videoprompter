@@ -96,6 +96,7 @@ struct CameraPickerList: View {
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
     .onAppear {
+      if devicesOverride == nil { model.refreshDevices() }
       highlighted = selected ?? devices.first?.uid
       DispatchQueue.main.async {
         emptyFocused = devices.isEmpty

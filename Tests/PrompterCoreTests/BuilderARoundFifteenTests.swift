@@ -97,7 +97,7 @@ import XCTest
     XCTAssertFalse(store.saveShootSetup(named: " studio ", camera: camera, recorder: recorder))
     XCTAssertTrue(store.renameShootSetup(id, to: "Desk"))
     XCTAssertEqual(store.shootSetups.first?.name, "Desk")
-    let (setupWindow, setupHost) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false, section: "Saved shoot setups"), size: .init(width: 600, height: 700))
+    let (setupWindow, setupHost) = await LibraryAX.host(Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }.formStyle(.grouped), size: .init(width: 600, height: 700))
     XCTAssertFalse(LibraryAX.named("Save shoot setup", in: setupHost).isEmpty)
     XCTAssertFalse(LibraryAX.named("Actions for Desk", in: setupHost).isEmpty)
     LibraryAX.close(setupWindow)
@@ -140,7 +140,7 @@ extension AppearanceSnapshotTests {
         }
         let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
         try await snapshot(view.toolsSurface, name: "a15-tools-\(Int(zoom * 100))-\(name)", size: .init(width: 640, height: 680), scheme: scheme, destination: URL(fileURLWithPath: output))
-        try await snapshot(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false, section: "Saved shoot setups").uiZoom(zoom), name: "a15-setups-\(Int(zoom * 100))-\(name)", size: .init(width: 600, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output))
+        try await snapshot(Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }.formStyle(.grouped).uiZoom(zoom), name: "a15-setups-\(Int(zoom * 100))-\(name)", size: .init(width: 600, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output))
       }
     }
     store.session.pause()

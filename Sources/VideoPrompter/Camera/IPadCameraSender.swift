@@ -15,7 +15,7 @@ import VideoToolbox
 /// An iPad that allows it is also found on the same Wi-Fi with Bonjour. USB-C wins when both are
 /// there: it is faster and nothing else shares it.
 ///
-/// The camera is the one the Camera window shows, from the same shared session, so a DeckLink
+/// The camera is the one the Second monitor window shows, from the same shared session, so a DeckLink
 /// or ATEM feed is opened once. Frames are encoded to H.264 in hardware at up to 1080p.
 @MainActor final class IPadCameraSender: ObservableObject {
   static let shared = IPadCameraSender()
@@ -101,7 +101,7 @@ import VideoToolbox
     let camera = CameraModel.shared
     camera.start()
     guard let uid = camera.selectedUID else {
-      status = "Choose a camera in the Camera window first"
+      status = "Choose a camera in the Second monitor window first"
       isOn = false
       return
     }

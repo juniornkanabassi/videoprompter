@@ -149,7 +149,7 @@ import PrompterCore
     for section in ["Recording", "Camera"] {
       let (window, host) = await LibraryAX.host(PresenterSettingsPopover(store: store, initialTab: .camera, initialCameraSection: section))
       XCTAssertFalse(LibraryAX.named("Settings page", in: host).isEmpty)
-      XCTAssertEqual(!LibraryAX.named("Recording format", in: host).isEmpty, section == "Recording")
+      XCTAssertFalse(LibraryAX.named("Recording format", in: host).isEmpty, "Common choices stay on the same page for every entry route")
       LibraryAX.close(window)
     }
     for zoom in [1.0, 2.0] {

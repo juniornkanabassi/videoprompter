@@ -736,17 +736,17 @@ import Speech
     if let message = recorder.errorMessage { value["error"] = message }
     return value
   }
-  /// The Camera window's Record button, with the checks a person would see answered on screen
+  /// The Second monitor window's Record button, with the checks a person would see answered on screen
   /// made up front: no permission prompt is raised, and the camera must already be showing.
   private func startRecording() async -> ControlResult {
     if recorder.isRecording { return .error("already_recording", "A recording is already running. Stop it first: videoprompter record stop") }
     guard !recorder.isBusy else { return .error("recording_busy", "A recording is starting or finishing. Try again in a moment.") }
     guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-      return .error("permission_required", "Recording needs camera and microphone access. Record once in the Camera window so a person can answer the macOS prompts, or allow access in System Settings > Privacy & Security.")
+      return .error("permission_required", "Recording needs camera and microphone access. Record once in the Second monitor window so a person can answer the macOS prompts, or allow access in System Settings > Privacy & Security.")
     }
     let session = SharedCameraSession.shared
     guard let uid = camera.selectedUID, session.holderCount > 0, session.attachedUID == uid else {
-      return .error("camera_not_showing", "Show the camera first: open the Camera window, or present with videoprompter camera set on.")
+      return .error("camera_not_showing", "Show the camera first: open the Second monitor window, or present with videoprompter camera set on.")
     }
     recorder.useSettings(store.settings)
     await recorder.start(camera: camera)

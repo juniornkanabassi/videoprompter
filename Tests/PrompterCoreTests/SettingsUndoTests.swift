@@ -14,7 +14,7 @@ import XCTest
     XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent("<"))
     XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, .command)
-    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Microphone", "Camera & Recording"])
+    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Shoot setups", "Microphone", "Camera & Recording"])
   }
 
   func testPresetDeletionSupportsRepeatedUndoAndRedoWithoutLosingOrder() async throws {

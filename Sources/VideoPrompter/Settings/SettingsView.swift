@@ -7,7 +7,7 @@ import CoreText
 typealias InspectorView = ReadingInspectorView
 
 enum SettingsTab: String, CaseIterable {
-  case general = "General", reading = "Reading", presets = "Reading presets", microphone = "Microphone", camera = "Camera & Recording"
+  case general = "General", reading = "Reading", presets = "Reading presets", shootSetups = "Shoot setups", microphone = "Microphone", camera = "Camera & Recording"
   var symbol: String {
     switch self {
     case .general: "gearshape"
@@ -15,6 +15,7 @@ enum SettingsTab: String, CaseIterable {
     case .microphone: "mic"
     case .camera: "video"
     case .presets: "slider.horizontal.3"
+    case .shootSetups: "camera.badge.ellipsis"
     }
   }
 }
@@ -111,6 +112,8 @@ struct SettingsPage: View {
         }
       case .microphone, .reading, .camera:
         EmptyView()
+      case .shootSetups:
+        ShootSetupSection(store: store, camera: .shared, recorder: .shared)
       case .presets:
         Section("Save current reading settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
@@ -502,39 +505,37 @@ struct CameraRecordingPage: View {
   var startsCamera = true
   @State var section = "Camera"
   @Environment(\.openWindow) private var openWindow
-  @State private var showsHelp = false
   var body: some View {
-    VStack(spacing: Space.sm) {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        Picker("Camera & Recording section", selection: $section) {
-          ForEach(["Camera", "Recording", "Framing", "Exposure", "Saved shoot setups"], id: \.self) { Text($0 == "Framing" ? "Framing guides" : $0).tag($0) }
-        }.pickerStyle(.menu).labelsHidden().fixedSize()
-          .accessibilityLabel("Camera & Recording section")
-      }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
-      Form {
-        switch section {
-        case "Camera":
-          CameraSettingsSections(model: camera, zoom: store.uiZoom)
+    ScrollViewReader { proxy in
+      VStack(spacing: Space.sm) {
+        WrapLayout(spacing: Space.sm) {
+          ForEach(["Camera", "Recording", "Framing guides", "Exposure"], id: \.self) { name in
+            Button(name) { proxy.scrollTo(name, anchor: .top) }
+              .initialPopoverFocus(when: name == (section == "Framing" ? "Framing guides" : section))
+          }
+        }.padding(.horizontal, Space.md).accessibilityElement(children: .contain)
+          .accessibilityLabel("Camera and recording sections")
+        Form {
+          CameraSettingsSections(model: camera, zoom: store.uiZoom).id("Camera")
+          RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom).id("Recording")
+          RecordingFolderSection(recorder: recorder)
+          CameraGuideSections(model: camera).id("Framing guides")
+          CameraExposureSections(model: camera).id("Exposure")
           Section("Presenter and windows") {
-            Button("Open Camera window") { openWindow(id: "camera") }
+            Button("Open Second monitor window") { openWindow(id: "camera") }
             Text("A separate window showing the same camera and recording.").font(.callout)
             Button("Pin Selected Text over Camera") { PresenterController.shared.monitorSelection(store: store) }
               .disabled(!PresenterController.shared.hasSelectedText)
             Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
               .disabled(!camera.presentsWithVideo)
             Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
-            Button("Presenter help…") { showsHelp = true }
             Button("Close Presenter") { PresenterController.shared.close() }
           }
-        case "Recording":
-          RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
-          RecordingFolderSection(recorder: recorder)
-        case "Framing": CameraGuideSections(model: camera)
-        case "Saved shoot setups": ShootSetupSection(store: store, camera: camera, recorder: recorder)
-        default: CameraExposureSections(model: camera)
-        }
-      }.formStyle(.grouped)
-    }.popover(isPresented: $showsHelp) { PresenterHelp().uiZoom(store.uiZoom).popoverEntryFocus() }
+        }.formStyle(.grouped)
+          .environment(\.popoverEntryRequested, false)
+          .onAppear { proxy.scrollTo(section == "Framing" ? "Framing guides" : section, anchor: .top) }
+      }
+    }
   }
 }
 

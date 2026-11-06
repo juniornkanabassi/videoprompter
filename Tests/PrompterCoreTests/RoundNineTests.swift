@@ -56,7 +56,7 @@ import PrompterCore
     XCTAssertEqual(RecordingReceipt.problemSummary(frames: 0, audio: 0, failure: "Interrupted. Check take."), "Interrupted. Check take.")
   }
   func testWelcomeUsesCurrentNavigation() {
-    for label in ["Tools", "Reading mode…", "Smaller text", "Camera", "Framing guides…", "Open Camera window", "Show in Finder", "countdown"] {
+    for label in ["Tools", "Reading mode…", "Smaller text", "Camera", "Framing guides…", "Open Second monitor window", "Show in Finder", "countdown"] {
       XCTAssertTrue(WelcomeScript.markdown.contains(label), label)
     }
     for obsolete in ["**Setup**", "Open second camera monitor"] {

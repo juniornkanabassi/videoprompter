@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import AppKit
 
-/// The live picture with its guides, shared by the Camera window and the presenter's video
+/// The live picture with its guides, shared by the Second monitor window and the presenter's video
 /// background. Both take their frames from `SharedCameraSession`, so the device is opened once;
 /// each one has its own preview layer, which is what AVFoundation expects.
 ///
