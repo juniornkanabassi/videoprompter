@@ -223,16 +223,11 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       }
       host.layoutSubtreeIfNeeded()
       if taking {
-        let opener = try XCTUnwrap(LibraryAX.named("Controls", in: host).first)
-        XCTAssertEqual(LibraryAX.value(opener, "accessibilityValue"), "Collapsed")
-        XCTAssertTrue(LibraryAX.named("Fewer controls", in: host).isEmpty)
-        XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
-        try await Task.sleep(for: .milliseconds(160))
-        let tools = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named("Edit script", in: $0).isEmpty } == true })
-        XCTAssertEqual(LibraryAX.named("Reading notice", in: tools.contentView!).count, 1)
-        XCTAssertTrue(LibraryAX.named("Saved take", in: tools.contentView!).isEmpty)
-        XCTAssertTrue(LibraryAX.named("Reading notice", in: host).isEmpty)
-        tools.cancelOperation(nil)
+        XCTAssertFalse(LibraryAX.named("Text", in: host).isEmpty, "Named tools remain reachable")
+        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading mode", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
+        XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible }.allSatisfy { candidate in
+          candidate.contentView.map { LibraryAX.named("Larger text", in: $0).isEmpty } ?? true
+        }, "Reading keys must not open a tools popover")
       }
     }
   }
@@ -291,22 +286,16 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     let (panel, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
     panel.makeKeyAndOrderFront(nil)
     defer { LibraryAX.close(panel) }
-    let controls = try XCTUnwrap(LibraryAX.named("Controls", in: host).first)
-    XCTAssertTrue(LibraryAX.bool(controls, "accessibilityPerformPress"))
-    try await Task.sleep(for: .milliseconds(180))
-    let tools = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named("Text", in: $0).isEmpty } == true })
-    let toolsHost = try XCTUnwrap(tools.contentView)
-    for (title, content) in [("Camera", "Open Camera Monitor"), ("Text", "Larger text"), ("Microphone", "Microphone")] {
-      let opener = try XCTUnwrap(LibraryAX.named(title, in: toolsHost).first, title)
+    for (title, content) in [("Camera", "Camera access needed"), ("Text", "Larger text")] {
+      let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first, title)
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(180))
-      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0 !== tools && $0.isVisible && $0.contentView.map { !LibraryAX.named(content, in: $0).isEmpty } == true })
+      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named(content, in: $0).isEmpty } == true })
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"), "The opener closes its own popover")
       try await Task.sleep(for: .milliseconds(350))
       XCTAssertFalse(popover.isVisible, title)
-      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: toolsHost).first), "isAccessibilityFocused"), title)
+      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: host).first), "isAccessibilityFocused"), title)
     }
-    XCTAssertTrue(LibraryAX.bool(controls, "accessibilityPerformPress"))
 
   }
 

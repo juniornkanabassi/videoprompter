@@ -321,7 +321,7 @@ import XCTest
     }
   }
 
-  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
+  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero) async throws {
     let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     // Match PresenterController: the host must not grow the window to its intrinsic minimum.
     host.sizingOptions = []
@@ -335,6 +335,7 @@ import XCTest
       host.layoutSubtreeIfNeeded()
       try await Task.sleep(for: .milliseconds(30))
     }
+    try await Task.sleep(for: settleDelay)
     if name.hasPrefix("library-100-scripts-200-") {
       func outlines(_ view: NSView) -> [NSOutlineView] {
         (view as? NSOutlineView).map { [$0] } ?? view.subviews.flatMap(outlines)

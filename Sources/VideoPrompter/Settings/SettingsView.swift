@@ -36,26 +36,24 @@ struct AppSettingsView: View {
     NotificationCenter.default.post(name: .init("VideoPrompter.microphoneSettings"), object: nil)
   }
   static let width: CGFloat = 560
-  private var height: CGFloat { 600 }
+  private var availableSize: CGSize {
+    let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 900)
+    return CGSize(width: min(880 * store.uiZoom, screen.width - 80), height: min(600 * store.uiZoom, screen.height - 80))
+  }
   var body: some View {
-    Group {
-      if store.uiZoom >= 1.5 {
-        VStack(spacing: Space.sm) {
-          Picker("Settings page", selection: $selection) {
-            ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-          }.pickerStyle(.menu).padding(.horizontal, Space.md)
-            .uiZoom(store.uiZoom).fixedSize(horizontal: false, vertical: true)
-          SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
+    GeometryReader { geometry in
+    HStack(spacing: 0) {
+      List(selection: $selection) {
+        ForEach(SettingsTab.allCases, id: \.self) { tab in
+          Label { Text(tab.rawValue).fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: tab.symbol) }.tag(tab)
         }
-      } else {
-        TabView(selection: $selection) {
-          ForEach(SettingsTab.allCases, id: \.self) { tab in
-            SettingsPage(store: store, tab: tab).uiZoom(store.uiZoom)
-              .tabItem { Label(tab.rawValue, systemImage: tab.symbol) }.tag(tab)
-          }
-        }
-      }
-    }.frame(width: Self.width * store.uiZoom, height: height)
+      }.listStyle(.sidebar).uiZoom(store.uiZoom)
+        .frame(width: min(240 * store.uiZoom, geometry.size.width * 0.3))
+        .accessibilityLabel("Settings page")
+      SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    }.frame(idealWidth: availableSize.width, idealHeight: availableSize.height)
       .onAppear {
         selection = Self.requestedTab ?? selectedTab ?? SettingsTab(rawValue: savedTab) ?? .general
         Self.requestedTab = nil
@@ -70,6 +68,7 @@ struct SettingsPage: View {
   @Environment(\.colorScheme) private var scheme
   @ObservedObject var store: AppStore
   let tab: SettingsTab
+  var cameraSection = "Camera"
   @Environment(\.undoManager) private var undoManager
   @State private var presetName = ""
   @State private var renamePreset: PrompterSettings?
@@ -80,7 +79,7 @@ struct SettingsPage: View {
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
     Group {
-      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { ReadingSettingsPage(store: store) } else if tab == .camera { CameraRecordingPage(store: store) } else { form }
+      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { ReadingSettingsPage(store: store) } else if tab == .camera { CameraRecordingPage(store: store, section: cameraSection) } else { form }
     }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
   }
 
@@ -468,13 +467,14 @@ struct PeakHold {
 struct PresenterSettingsPopover: View {
   @ObservedObject var store: AppStore
   var initialTab: SettingsTab = .reading
+  var initialCameraSection = "Camera"
   @State private var tab: SettingsTab = .reading
   var body: some View {
     VStack(spacing: Space.sm) {
       Picker("Settings page", selection: $tab) {
         ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
       }.pickerStyle(.menu).padding(Space.sm)
-      SettingsPage(store: store, tab: tab)
+      SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
     }.uiZoom(store.uiZoom).frame(width: 560, height: 600)
       .onAppear { tab = initialTab }
   }
@@ -490,7 +490,8 @@ struct CameraRecordingPage: View {
     VStack(spacing: Space.sm) {
       Picker("Camera & Recording section", selection: $section) {
         ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0).tag($0) }
-      }.pickerStyle(.menu).padding(.horizontal, Space.md)
+      }.pickerStyle(.menu).labelsHidden().accessibilityLabel("Camera & Recording section")
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Space.md)
       Form {
         switch section {
         case "Camera":

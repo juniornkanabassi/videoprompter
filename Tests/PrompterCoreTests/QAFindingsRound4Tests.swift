@@ -37,12 +37,11 @@ import XCTest
 
   func testFormatRecoveryDestinationExposesRecordingFormat() async throws {
     let (store, _) = try await fixture()
-    // RecordingRecoveryActions routes .format to configure(), and the presenter maps every
-    // non-microphone recovery to initialTab .camera. This is the actual destination it opens.
+    // Format recovery selects the Recording section inside Camera & Recording.
     XCTAssertEqual(CameraRecorder.recovery(for: CocoaError(.featureUnsupported)), .format)
-    let (window, host) = await LibraryAX.host(PresenterSettingsPopover(store: store, initialTab: .camera))
+    let (window, host) = await LibraryAX.host(PresenterSettingsPopover(store: store, initialTab: .camera, initialCameraSection: "Recording"))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Camera & Recording section", in: host).isEmpty, "Verify the recovery destination is actually mounted")
+    XCTAssertFalse(LibraryAX.named("Settings page", in: host).isEmpty, "Verify the recovery destination is actually mounted")
     XCTAssertFalse(LibraryAX.named("Recording format", in: host).isEmpty,
       "Change recording format must open the Recording section, not the unrelated Camera section")
   }

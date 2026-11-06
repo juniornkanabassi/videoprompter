@@ -112,8 +112,8 @@ import XCTest
             XCTAssertEqual(try frame(readButton).midY, recordRect.midY, accuracy: 1)
             XCTAssertFalse(insideScrollView(readButton))
           } else { XCTAssertFalse(has("Start reading", in: host)); XCTAssertFalse(has("Pause", in: host)) }
-          _ = try button("Controls", in: host)
-          XCTAssertFalse(has("Text", in: host), "Tools have one stable disclosed home")
+          _ = try button("Presenter options", in: host)
+          XCTAssertEqual(has("Text", in: host), reading, "Named tools stay on the reading surface")
           if zoom == 2 && state == "recording" {
             let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
             XCTAssertLessThanOrEqual(try frame(bar).height, 280)
@@ -159,9 +159,9 @@ import XCTest
     defer { window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     await settle()
-    _ = try button("Controls", in: host)
+    _ = try button("Presenter options", in: host)
     XCTAssertFalse(has("View", in: host))
-    XCTAssertFalse(has("Text", in: host))
+    XCTAssertTrue(has("Text", in: host))
     // Monitor state is retained while its controls are disclosed.
     camera.guides.zebras = true; camera.guides.falseColour = true
     await settle()
@@ -228,7 +228,7 @@ import XCTest
         XCTAssertGreaterThanOrEqual(viewport.frame.height, 338, "\(zoom) \(state): script viewport \(viewport.frame)")
         let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
         XCTAssertLessThanOrEqual(try frame(bar).height, 182, "\(zoom) \(state)")
-        _ = try button("Controls", in: host)
+        _ = try button("Presenter options", in: host)
         let start = try button(state == "countdown" ? "Cancel countdown" : state == "reading" ? "Pause" : "Start reading", in: host)
         let target = try frame(start)
         XCTAssertGreaterThanOrEqual(target.height, 24 * zoom - 1)
@@ -240,7 +240,7 @@ import XCTest
         evidence.append(["zoom": zoom, "state": state, "controlWidth": target.width, "controlHeight": target.height,
                          "scriptHeight": viewport.frame.height, "windowHeight": 520, "readingFraction": viewport.frame.height / 520])
         if state == "idle" {
-          XCTAssertTrue(elements(host).contains { (label($0, "accessibilityLabel") ?? label($0, "accessibilityValue") ?? "").contains("Saves to ") })
+          XCTAssertFalse(has("Resolution pending camera", in: host))
         }
         if state.hasPrefix("warning") {
           let saved = try button("Saved with problems", in: host)
@@ -261,7 +261,7 @@ import XCTest
     recorder.phase = .idle; camera.recordingReadyOverride = false
     await settle()
     XCTAssertFalse(try isEnabled(button("Record", in: host)))
-    _ = try button("Controls", in: host)
+    _ = try button("Presenter options", in: host)
     XCTAssertEqual(PresenterView.controlZoom(2), 2)
     if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
       try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))

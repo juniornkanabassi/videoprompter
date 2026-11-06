@@ -248,6 +248,7 @@ struct CameraPreview: NSViewRepresentable {
 }
 
 struct CameraView: View {
+  @State private var showsCameraPicker = false
   @ObservedObject private var model: CameraModel
   @State private var showsGuideSettings = false
   @State private var showsExposureSettings = false
@@ -263,27 +264,13 @@ struct CameraView: View {
     self.startsCamera = startsCamera
   }
   var body: some View {
-    Group {
-      switch model.authorization {
-      case .denied, .restricted:
-        ContentUnavailableView {
-          Label("No camera access", systemImage: "video.slash")
-        } description: {
-          Text("Shows the same camera and recording as the presenter. Allow Video Prompter in System Settings → Privacy & Security → Camera.").font(.callout).foregroundStyle(.primary)
-        } actions: {
-          Button("Open System Settings") {
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+    CameraPreview(model: model).background(.black)
+    .overlay {
+      if model.needsRecovery {
+        CameraRecoveryView(model: model) { showsCameraPicker = true }.uiZoom(zoom)
+          .popover(isPresented: $showsCameraPicker) {
+            CameraPickerList(model: model, zoom: zoom) { showsCameraPicker = false }.uiZoom(zoom)
           }
-        }
-        .uiZoom(zoom)
-      default:
-        if let message = model.unavailableMessage {
-          ContentUnavailableView("Connect a camera", systemImage: "video",
-            description: Text("Shows the same camera and recording as the presenter. " + message).font(.callout).foregroundStyle(.primary))
-            .uiZoom(zoom)
-        } else {
-          CameraPreview(model: model).background(.black)
-        }
       }
     }
     .overlay(alignment: .topTrailing) { ExposureLegend(model: model).padding(Space.sm).uiZoom(zoom) }
@@ -417,8 +404,14 @@ struct CameraSettingsSections: View {
 /// The guide and frame marker sections, shared by both panels above.
 struct CameraGuideSections: View {
   @ObservedObject var model: CameraModel
-  @State private var customWidth = 2.39
-  @State private var customHeight = 1.0
+  private var customWidth: Binding<Double> {
+    Binding(get: { model.guides.marker?.width ?? 2.39 },
+      set: { model.guides.marker = CameraAspect(width: $0, height: model.guides.marker?.height ?? 1) })
+  }
+  private var customHeight: Binding<Double> {
+    Binding(get: { model.guides.marker?.height ?? 1 },
+      set: { model.guides.marker = CameraAspect(width: model.guides.marker?.width ?? 2.39, height: $0) })
+  }
   var body: some View {
     Group {
       Section("Framing guides") {
@@ -437,12 +430,10 @@ struct CameraGuideSections: View {
         if let marker = model.guides.marker { Text("\(marker.label) guide only. The full frame is recorded.").font(.callout) }
         if let value = model.guides.marker, !CameraAspect.presets.contains(value) {
           HStack {
-            TextField("Width", value: $customWidth, format: .number).help("Set the width part of the custom frame ratio").frame(width: 64)
+            TextField("Width", value: customWidth, format: .number).help("Set the width part of the custom frame ratio").frame(width: 64)
             Text(":")
-            TextField("Height", value: $customHeight, format: .number).help("Set the height part of the custom frame ratio").frame(width: 64)
+            TextField("Height", value: customHeight, format: .number).help("Set the height part of the custom frame ratio").frame(width: 64)
           }
-          .onChange(of: customWidth) { model.guides.marker = custom }
-          .onChange(of: customHeight) { model.guides.marker = custom }
         }
         if model.guides.marker != nil {
           LabeledContent("Shade outside") { Slider(value: $model.guides.shadeOpacity, in: 0...1).accessibilityLabel("Shade outside").accessibilityValue("\(Int(model.guides.shadeOpacity * 100)) percent") }.help("Darken the area outside the frame marker")
@@ -450,7 +441,7 @@ struct CameraGuideSections: View {
       }
     }
   }
-  private var custom: CameraAspect { CameraAspect(width: customWidth, height: customHeight) }
+  private var custom: CameraAspect { model.guides.marker.flatMap { CameraAspect.presets.contains($0) ? nil : $0 } ?? CameraAspect(width: 2.39, height: 1) }
   private var guideColor: Binding<Color> {
     Binding(
       get: {
@@ -693,6 +684,68 @@ struct RecordingInputLevel: View {
   }
 }
 
+/// The camera's next step belongs on its picture, in both camera surfaces.
+struct CameraRecoveryView: View {
+  @ObservedObject var model: CameraModel
+  var chooseCamera: () -> Void
+  var body: some View {
+    VStack(spacing: Space.sm) {
+      Label(title, systemImage: "video.slash").font(.headline)
+      Text(message).font(.callout).multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+      if model.authorization == .denied || model.authorization == .restricted {
+        Button("Open System Settings") {
+          NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+        }
+      } else if model.authorization == .notDetermined {
+        Button("Allow Camera Access") { model.start() }
+      } else { Button("Choose camera", action: chooseCamera) }
+    }.foregroundStyle(.white).padding(Space.md)
+      .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 12))
+      .frame(maxWidth: 420).accessibilityIdentifier("camera-recovery")
+  }
+  private var title: String {
+    if model.authorization == .denied || model.authorization == .restricted { return "Camera access is off" }
+    if model.authorization == .notDetermined { return "Allow your camera" }
+    return model.selectedUID == nil ? "Connect a camera" : "Camera picture unavailable"
+  }
+  private var message: String {
+    if model.authorization == .denied || model.authorization == .restricted {
+      return "Allow Video Prompter in System Settings > Privacy & Security > Camera."
+    }
+    if model.authorization == .notDetermined { return "Allow camera access to see your picture. Reading does not record a video." }
+    let name = model.devices.first { $0.uid == model.selectedUID }?.displayName
+    return name.map { "Check \($0) is connected and switched on, then choose your camera." }
+      ?? "Connect and switch on your camera, then choose it here."
+  }
+}
+
+/// A bounded, named notice keeps the next action readable even at 200%.
+struct RecordingHealthNotice: View {
+  @ObservedObject var recorder: CameraRecorder
+  var zoom = 1.0
+  @State private var showsDetails = false
+  @State private var beganAt = ProcessInfo.processInfo.systemUptime
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 0.25)) { _ in
+      let fresh = ProcessInfo.processInfo.systemUptime - (recorder.inputMeter.lastAudibleSampleAt ?? beganAt) < 3
+      let warning = recorder.droppedAudioBuffers > 0 || recorder.droppedFrames > 0 || recorder.inputMeter.isClipping || !fresh
+      Button { showsDetails = true } label: {
+        Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : "Sound OK").fixedSize()
+      }
+        .accessibilityValue(RecordingAudioHealth.message(drops: recorder.droppedAudioBuffers, clipping: recorder.inputMeter.isClipping, fresh: fresh))
+        .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-health")
+        .popover(isPresented: $showsDetails) {
+          VStack(alignment: .leading, spacing: Space.md) {
+            RecordingAudioHealth(recorder: recorder)
+            Text("Check the microphone connection and input level. Stop recording before changing the recording microphone.")
+              .font(.callout).fixedSize(horizontal: false, vertical: true)
+          }.padding(Space.md).frame(width: 320).uiZoom(zoom)
+        }
+    }
+  }
+}
+
 struct CameraExposureSettings: View {
   @ObservedObject var model: CameraModel
   var body: some View { Form { CameraExposureSections(model: model) }.formStyle(.grouped) }
@@ -743,6 +796,9 @@ struct CameraExposureSections: View {
 }
 
 extension CameraModel {
+  var needsRecovery: Bool {
+    recordingReadyOverride != true && (authorization != .authorized || unavailableMessage != nil)
+  }
   var isReadyToRecord: Bool {
     if let recordingReadyOverride { return recordingReadyOverride }
     return authorization == .authorized && selectedUID != nil && unavailableMessage == nil
@@ -865,11 +921,8 @@ struct RecordingReceipt: View {
       HStack(alignment: .center, spacing: Space.sm) {
       Button { showsDetails.toggle() } label: {
         VStack(alignment: .leading, spacing: 0) {
-          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill")
-          if recorder.qualityWarning != nil {
-            Text(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure))
-              .font(.callout).lineLimit(2)
-          }
+          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill").lineLimit(1)
+
         }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.plain).labelStyle(.titleAndIcon).foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange).accessibilityLabel(receiptLabel)
         .focusable().focused($receiptFocused).accessibilityFocused($receiptAXFocused)
@@ -915,7 +968,7 @@ struct RecordingReceipt: View {
           RecordingRecoveryActions(recorder: recorder, camera: camera) {
             if let configure { configure() } else { recoverySettings = true }
           }.popover(isPresented: $recoverySettings) {
-            PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera)
+            PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera, initialCameraSection: recorder.recovery == .format ? "Recording" : "Camera")
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
