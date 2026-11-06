@@ -30,6 +30,7 @@ enum ScriptShortcuts {
     // moment before this init runs. Every other launch becomes the ordinary app here, before it finishes launching.
     if !Headless.shared.active { NSApplication.shared.setActivationPolicy(.regular) }
     Headless.shared.start()
+    if CommandLine.arguments.contains("--agent-screen") { NSWindow.keepEveryWindowInvisible() }
     Headless.shared.canQuit = { !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy }
     Updates.shared.start()
   }
@@ -292,6 +293,17 @@ struct UIZoom: Layout {
 }
 extension View {
   func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
+}
+
+extension NSWindow {
+  /// `--agent-screen` (the packaged checks) runs the real app with nothing visible on any of Junior's displays:
+  /// windows stay ordered in, so Accessibility still reads them, but are transparent and let clicks through.
+  static func keepEveryWindowInvisible() {
+    NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { note in
+      guard let window = note.object as? NSWindow, window.alphaValue != 0 || !window.ignoresMouseEvents else { return }
+      MainActor.assumeIsolated { window.alphaValue = 0; window.ignoresMouseEvents = true }
+    }
+  }
 }
 
 extension NSScreen {
