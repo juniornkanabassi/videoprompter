@@ -119,6 +119,7 @@ final class SessionStoreTests: XCTestCase {
   }
   func testMissingAudioInputPausesAndPreservesAnchor() {
     let session = SessionStore()
+    session.resolveAudioInput = { _ in nil }
     session.present(record: record(), settings: PrompterSettings())
     let anchor = session.anchor
     session.play()
@@ -136,6 +137,7 @@ final class SessionStoreTests: XCTestCase {
   func testRelevantSettingsClearMissingMicrophoneNoticeWithoutMovingAnchor() {
     for change in ["mode", "microphone", "language"] {
       let session = SessionStore()
+      session.resolveAudioInput = { _ in nil }
       var settings = PrompterSettings()
       session.present(record: record(), settings: settings)
       session.seek(to: 1)
@@ -738,6 +740,7 @@ final class SessionStoreTests: XCTestCase {
 
   func testMicrophoneTestWithoutDeviceDoesNotChangeSession() {
     let session = SessionStore()
+    session.resolveAudioInput = { _ in nil }
     var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(record: record(), settings: settings)
     let anchor = session.anchor

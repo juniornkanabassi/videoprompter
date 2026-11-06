@@ -65,7 +65,7 @@ import XCTest
     var darkness = 0.25
     let (window, host) = await LibraryAX.host(ReadingContrastWarning(textHex: "#FFFFFF", textOpacity: 1, backgroundHex: "#000000", darkness: Binding(get: { darkness }, set: { darkness = $0 })))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Text may be hard to read over a bright picture.", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Text may be hard to read over the camera picture.", in: host).isEmpty)
     let button = try XCTUnwrap(LibraryAX.named("Make Readable", in: host).first)
     XCTAssertTrue(LibraryAX.bool(button, "accessibilityPerformPress"))
     XCTAssertEqual(darkness, try XCTUnwrap(ReadingContrast.minimumDarkness(textHex: "#FFFFFF", textOpacity: 1, backgroundHex: "#000000")), accuracy: 0.000001)

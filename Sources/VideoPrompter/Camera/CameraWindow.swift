@@ -266,7 +266,7 @@ struct CameraView: View {
       default:
         if let message = model.unavailableMessage {
           ContentUnavailableView("Connect a camera", systemImage: "video",
-            description: Text(message))
+            description: Text(message).foregroundStyle(.primary))
             .uiZoom(zoom)
         } else {
           CameraPreview(model: model).background(.black)
@@ -496,26 +496,31 @@ struct PresenterRecordButton: View {
   var compact = false
   var body: some View {
     Group {
-      if recorder.isRecording {
+      if recorder.phase == .preparing || recorder.phase == .waitingForFrames {
+        Button { Task { await recorder.stop() } } label: {
+          Text(compact ? "Cancel" : "Cancel preparation")
+        }.accessibilityLabel("Cancel preparation")
+        Text(recorder.phase == .waitingForFrames ? "Waiting for camera" : "Preparing…")
+          .font(.callout).fixedSize(horizontal: false, vertical: true)
+      } else if recorder.isRecording {
         Button { Task { await recorder.stop() } } label: {
           if compact { Text("Stop recording").fixedSize(horizontal: false, vertical: true) }
           else { Label("Stop recording", systemImage: "stop.circle.fill") }
         }.accessibilityLabel("Stop recording")
           .buttonStyle(PresenterButtonStyle(prominent: true)).tint(.red)
-      } else {
-        Button { Task { await recorder.start(camera: camera) } } label: {
-          Label { Text("Record").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "record.circle").foregroundStyle(.red) }
-        }.accessibilityLabel("Record")
-          .buttonStyle(PresenterButtonStyle()).disabled(recorder.isBusy || !camera.isReadyToRecord)
-      }
-      if recorder.isRecording {
         let seconds = Int(recorder.recordedDuration)
         HStack(spacing: Space.xs) {
           Circle().fill(.red).frame(width: 8, height: 8)
           Text(String(format: "REC %02d:%02d", seconds / 60, seconds % 60)).monospacedDigit().font(.callout)
         }.accessibilityElement(children: .combine).layoutPriority(2)
-      } else if recorder.isBusy { Text(recorder.phase.message).font(.callout) }
-      if recorder.phase == .preparing { Button("Cancel preparation") { Task { await recorder.stop() } } }
+      } else if recorder.phase == .saving {
+        Text("Saving…").font(.callout)
+      } else {
+        Button { Task { await recorder.start(camera: camera) } } label: {
+          Label { Text("Record").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "record.circle").foregroundStyle(.red) }
+        }.accessibilityLabel("Record")
+          .buttonStyle(PresenterButtonStyle()).disabled(!camera.isReadyToRecord)
+      }
     }
   }
 }
@@ -530,7 +535,7 @@ struct RecordingControls: View {
   var body: some View {
     PresenterRecordButton(recorder: recorder, camera: camera)
     if showsHealth && (recorder.isRecording || recorder.isBusy) { RecordingAudioHealth(recorder: recorder) }
-    if recorder.phase == .idle { RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom) }
+    if recorder.phase == .idle { RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom).uiZoom(zoom) }
   }
 }
 
@@ -575,7 +580,7 @@ struct RecordingMicrophoneSection: View {
           Text(recorder.microphoneName).fixedSize(horizontal: false, vertical: true)
         }.accessibilityLabel("Recording microphone").accessibilityValue(recorder.microphoneName).help(recorder.microphoneName).disabled(recorder.isRecording || recorder.isBusy)
 
-        Button(recorder.isTestingInput ? "Stop input test" : "Test recording microphone") {
+        Button(recorder.isTestingInput ? "Stop test" : "Test recording microphone") {
           if recorder.isTestingInput { recorder.stopInputTest() } else { Task { await recorder.startInputTest() } }
         }.disabled(recorder.isRecording || recorder.isBusy)
         if recorder.isTestingInput || recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
@@ -665,7 +670,7 @@ struct RecordingInputLevel: View {
             }
           }
         }
-      }.font(.caption)
+      }.font(.callout)
     }
   }
 }
@@ -677,7 +682,13 @@ struct ExposureLegend: View {
       VStack(alignment: .leading, spacing: Space.xs) {
         if model.guides.zebras { Text("Zebras: " + (model.guides.zebraRange > 0 ? "face brightness, \(model.guides.zebraLevel) IRE ± \(model.guides.zebraRange)" : "bright areas, \(model.guides.zebraLevel) IRE and above")) }
         if model.guides.falseColour {
-          DisclosureGroup("False colour key") {
+          Text("False colour key").fontWeight(.semibold)
+          HStack(spacing: 0) {
+            ForEach(CameraExposure.bands, id: \.name) { band in
+              Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255)
+            }
+          }.frame(width: 160, height: 12).accessibilityLabel("False colour brightness scale")
+          DisclosureGroup("Colour meanings") {
             ForEach(CameraExposure.bands, id: \.name) { band in
               Label { Text(band.name) } icon: {
                 Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
@@ -720,7 +731,8 @@ struct CameraExposureSections: View {
         Text("Bright areas").tag(false)
         Text("Face brightness").tag(true)
       }
-      Text("Exposure aids only change this preview. Adjust exposure on your camera.").font(.callout)
+      Text("Bright-area Zebras mark areas that may lose detail. Adjust brightness on your camera.").font(.callout)
+      Text("Face brightness is a reference for standard video. Log profiles and skin tone affect the target.").font(.callout)
       DisclosureGroup("Custom levels") {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
@@ -757,7 +769,22 @@ extension CameraRecorder {
     parts.append(codec)
     parts.append(mirrorSavedVideo ? "mirrored output" : "unmirrored output")
     parts.append(camera.guides.marker.map { "\($0.label) guide only; full frame saved" } ?? "full frame")
+    if let free = try? Self.recordingsFolder().resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage {
+      parts.append(String(format: "%.1f GB free", Double(free) / 1_000_000_000))
+    }
     return parts.joined(separator: " · ")
+  }
+}
+
+enum RecordingHealth: Equatable {
+  case receiving, silence, clipping
+  static func state(clipping: Bool, fresh: Bool) -> Self { clipping ? .clipping : fresh ? .receiving : .silence }
+  var message: String {
+    switch self {
+    case .receiving: "Receiving sound"
+    case .silence: "No sound for 3 seconds. Check the microphone."
+    case .clipping: "Too loud. Lower the microphone level."
+    }
   }
 }
 
@@ -765,24 +792,44 @@ struct RecordingAudioHealth: View {
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject private var meter: InputMeter
   @State private var beganAt = ProcessInfo.processInfo.systemUptime
+  @State private var previousHealth = RecordingHealth.receiving
+  @State private var lastWarningAt = -Double.infinity
   init(recorder: CameraRecorder) { self.recorder = recorder; meter = recorder.inputMeter }
   nonisolated static func message(drops: Int, clipping: Bool, fresh: Bool) -> String {
     if drops > 0 { return "Sound dropped from the file (\(drops) times)" }
-    if clipping { return "Too loud. Lower the microphone level." }
-    return fresh ? "Receiving sound" : "No sound for 3 seconds. Check the microphone."
+    return RecordingHealth.state(clipping: clipping, fresh: fresh).message
   }
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
-      HStack(spacing: Space.sm) {
-        Text("Mic: \(recorder.microphoneName)").lineLimit(2).help(recorder.microphoneName)
-        InputLevelMeter(peakDBFS: meter.isFresh() ? meter.peakDBFS : -.infinity, isClipping: meter.isClipping, showsScale: false)
-          .frame(minWidth: 40, maxWidth: 100)
-        let fresh = ProcessInfo.processInfo.systemUptime - (meter.lastAudibleSampleAt ?? beganAt) < 3
-        let message = Self.message(drops: recorder.droppedAudioBuffers, clipping: meter.isClipping, fresh: fresh)
-        if recorder.droppedAudioBuffers > 0 || meter.isClipping || !fresh {
-          Label(message, systemImage: "exclamationmark.triangle.fill").fontWeight(.semibold)
-        } else { Text(message) }
+      let fresh = ProcessInfo.processInfo.systemUptime - (meter.lastAudibleSampleAt ?? beganAt) < 3
+      let health = RecordingHealth.state(clipping: meter.isClipping && meter.isFresh(), fresh: fresh)
+      VStack(alignment: .leading, spacing: Space.xs) {
+        HStack(spacing: Space.sm) {
+          Text("Mic: \(recorder.microphoneName)").lineLimit(2).help(recorder.microphoneName)
+            .fixedSize(horizontal: false, vertical: true)
+          InputLevelMeter(peakDBFS: meter.isFresh() ? meter.peakDBFS : -.infinity, isClipping: meter.isClipping, showsScale: false)
+            .frame(minWidth: 40, maxWidth: 100)
+        }
+        if recorder.droppedAudioBuffers > 0 || health != .receiving {
+          Label(Self.message(drops: recorder.droppedAudioBuffers, clipping: health == .clipping, fresh: fresh), systemImage: "exclamationmark.triangle.fill").fontWeight(.semibold)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        if recorder.droppedFrames > 0 {
+          Label("Video frames dropped (\(recorder.droppedFrames)). The picture may stutter.", systemImage: "exclamationmark.triangle.fill")
+            .fixedSize(horizontal: false, vertical: true)
+        }
       }.font(.callout)
+        .onChange(of: health) { _, value in
+          guard recorder.isRecording, value != previousHealth else { return }
+          previousHealth = value
+          let now = ProcessInfo.processInfo.systemUptime
+          if value != .receiving {
+            guard now - lastWarningAt >= 5 else { return }
+            lastWarningAt = now
+          }
+          NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+            userInfo: [.announcement: value.message, .priority: (value == .receiving ? NSAccessibilityPriorityLevel.medium : .high).rawValue])
+        }
     }
   }
 }
@@ -794,26 +841,32 @@ struct RecordingReceipt: View {
   var zoom = 1.0
   @State private var recoverySettings = false
   var body: some View {
-    if let failure = recorder.takeFailure {
-      Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout)
-      RecordingRecoveryActions(recorder: recorder, camera: camera) {
-        if let configure { configure() } else { recoverySettings = true }
-      }.popover(isPresented: $recoverySettings) {
-        PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera)
-      }
-    }
-    if let file = recorder.savedTake {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        Label("Saved \(file.lastPathComponent)", systemImage: "checkmark.circle.fill")
-          .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).help(file.path)
-          .accessibilityLabel("Saved \(file.lastPathComponent)")
-        if recorder.droppedAudioBuffers > 0 { Text("Sound dropped from the file (\(recorder.droppedAudioBuffers) times)").font(.callout.weight(.semibold)) }
-        WrapLayout(spacing: Space.sm) {
-          Button("Play") { NSWorkspace.shared.open(file) }
-          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
-          Button("Hide") { recorder.savedTake = nil }
+    if recorder.savedTake != nil || recorder.takeFailure != nil {
+      VStack(alignment: .leading, spacing: Space.sm) {
+        if let file = recorder.savedTake {
+          Label(recorder.qualityWarning == nil ? "Saved \(file.lastPathComponent)" : "Saved with problems: \(file.lastPathComponent)",
+            systemImage: recorder.qualityWarning == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+            .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).help(file.path)
+          if let warning = recorder.qualityWarning { Text(warning).font(.callout).fixedSize(horizontal: false, vertical: true) }
+          WrapLayout(spacing: Space.sm) {
+            Button("Play") { NSWorkspace.shared.open(file) }
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+            if recorder.qualityWarning != nil { Button("Try recording again") { Task { await recorder.start(camera: camera) } } }
+            Button("Hide") { recorder.savedTake = nil }
+          }
+        } else if let failure = recorder.takeFailure {
+          Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout).fixedSize(horizontal: false, vertical: true)
+          if let file = recorder.incompleteTake {
+            Button("Show incomplete take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+          }
+          RecordingRecoveryActions(recorder: recorder, camera: camera) {
+            if let configure { configure() } else { recoverySettings = true }
+          }.popover(isPresented: $recoverySettings) {
+            PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera)
+          }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.md).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
     }
   }
 }
@@ -828,8 +881,9 @@ struct RecordingStatusPanel: View {
       VStack(alignment: .leading, spacing: Space.sm) {
         if recorder.phase != .idle {
           WrapLayout(spacing: Space.sm) {
-            RecordingControls(recorder: recorder, camera: camera, showsSetup: false, zoom: zoom)
+            PresenterRecordButton(recorder: recorder, camera: camera, compact: zoom >= 1.5)
           }
+          RecordingAudioHealth(recorder: recorder)
         } else {
           RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom)
           if recorder.savedTake == nil && recorder.takeFailure == nil { Text("No completed take was saved.") }

@@ -61,7 +61,7 @@ enum ScriptShortcuts {
           SidebarCommands()
           InspectorCommands()
           PrivacyCommands()
-          CommandGroup(after: .help) { Button("Welcome Script") { store.showWelcomeScript() } }
+          CommandGroup(after: .help) { Button("Practice Script") { store.showWelcomeScript() } }
         }
         Group {
           ICloudCommands(store: store)
@@ -95,7 +95,7 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Camera Only presenter") { PresenterController.shared.presentCamera(store: store) }
+          Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Open the floating presenter for framing; add a script later. Shares camera settings with the separate monitor.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space

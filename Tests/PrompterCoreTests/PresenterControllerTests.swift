@@ -1431,7 +1431,7 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(settings.backgroundOpacity, 0.5, "video leaves the Prompter-only value alone")
     XCTAssertEqual(settings.backdropOpacity(withVideo: true), 0.6)
     XCTAssertEqual(settings.backdropOpacity(withVideo: false), 0.5)
-    XCTAssertEqual(PrompterSettings.backdropOpacityRange(withVideo: true), 0...0.9, "the picture never blacks out")
+    XCTAssertEqual(PrompterSettings.backdropOpacityRange(withVideo: true), 0...1, "an opaque readable backdrop is available")
     XCTAssertEqual(PrompterSettings.backdropOpacityRange(withVideo: false), 0...1)
     let stored = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(settings)) as? [String: Any])
     XCTAssertEqual(stored["videoDimming"] as? Double, 0.6)

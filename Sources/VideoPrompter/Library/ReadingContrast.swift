@@ -1,12 +1,24 @@
 import SwiftUI
 
-/// sRGB compositing over a white camera frame, followed by WCAG relative luminance.
+/// Conservative sRGB contrast bound across all possible camera pixels.
 enum ReadingContrast {
   static func worstCase(textHex: String, textOpacity: Double, backgroundHex: String, darkness: Double) -> Double {
-    let background = rgb(backgroundHex, fallback: 0).map { $0 * clamp(darkness) + 1 - clamp(darkness) }
-    let foreground = zip(rgb(textHex, fallback: 1), background).map { $0 * clamp(textOpacity) + $1 * (1 - clamp(textOpacity)) }
-    let a = luminance(foreground), b = luminance(background)
-    return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    let backdrop = rgb(backgroundHex, fallback: 0)
+    let low = backdrop.map { $0 * clamp(darkness) }
+    let high = low.map { $0 + 1 - clamp(darkness) }
+    let text = rgb(textHex, fallback: 1)
+    let opacity = clamp(textOpacity)
+    let foregroundLow = zip(text, low).map { $0 * opacity + $1 * (1 - opacity) }
+    let foregroundHigh = zip(text, high).map { $0 * opacity + $1 * (1 - opacity) }
+    let backgroundRange = luminance(low)...luminance(high)
+    let foregroundRange = luminance(foregroundLow)...luminance(foregroundHigh)
+    // Independent luminance bounds are conservative for every RGB picture, including colours
+    // between black and white. An overlap can never be certified as readable.
+    if foregroundRange.overlaps(backgroundRange) { return 1 }
+    if foregroundRange.lowerBound > backgroundRange.upperBound {
+      return (foregroundRange.lowerBound + 0.05) / (backgroundRange.upperBound + 0.05)
+    }
+    return (backgroundRange.lowerBound + 0.05) / (foregroundRange.upperBound + 0.05)
   }
 
   static func minimumDarkness(textHex: String, textOpacity: Double, backgroundHex: String) -> Double? {
@@ -43,17 +55,30 @@ struct ReadingContrastWarning: View {
   let textOpacity: Double
   let backgroundHex: String
   @Binding var darkness: Double
+  var minimumOpacityScale = 1.0
+  var threshold = 3.0
+  var highlightHex: String? = nil
+  var makeReadable: (() -> Void)? = nil
+  private var ratio: Double {
+    let text = ReadingContrast.worstCase(textHex: textHex, textOpacity: textOpacity * minimumOpacityScale,
+      backgroundHex: backgroundHex, darkness: darkness)
+    let highlight = highlightHex.map { ReadingContrast.worstCase(textHex: $0, textOpacity: textOpacity,
+      backgroundHex: backgroundHex, darkness: darkness) } ?? 21
+    return min(text, highlight)
+  }
   var body: some View {
-    if ReadingContrast.worstCase(textHex: textHex, textOpacity: textOpacity, backgroundHex: backgroundHex, darkness: darkness) < 3 {
+    if ratio < threshold {
       VStack(alignment: .leading, spacing: Space.sm) {
-        Label("Text may be hard to read over a bright picture.", systemImage: "exclamationmark.triangle")
+        Label("Text may be hard to read over the camera picture.", systemImage: "exclamationmark.triangle")
           .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-        let readable = ReadingContrast.minimumDarkness(textHex: textHex, textOpacity: textOpacity, backgroundHex: backgroundHex)
-        Button("Make Readable") { if let readable { darkness = readable } }
-          .disabled(readable == nil)
-        if readable == nil {
-          Text("Increase Text visibility or choose a different text colour.")
-            .font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+        if let makeReadable {
+          Text("Make Readable uses solid black behind white text, full text visibility, and turns off stage directions and word highlighting.")
+            .font(UIType.secondary).fixedSize(horizontal: false, vertical: true)
+          Button("Make Readable", action: makeReadable)
+        } else {
+          let readable = ReadingContrast.minimumDarkness(textHex: textHex, textOpacity: textOpacity, backgroundHex: backgroundHex)
+          Button("Make Readable") { if let readable { darkness = readable } }.disabled(readable == nil)
+          if readable == nil { Text("Increase Text visibility or choose a different text colour.").font(UIType.secondary) }
         }
       }
     }

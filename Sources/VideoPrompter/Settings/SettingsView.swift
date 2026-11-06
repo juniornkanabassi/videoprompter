@@ -38,19 +38,22 @@ struct AppSettingsView: View {
   static let width: CGFloat = 560
   private var height: CGFloat { 600 }
   var body: some View {
-    TabView(selection: $selection) {
-      ForEach(SettingsTab.allCases, id: \.self) { tab in
-        // Zoom inside the page, not the TabView: the window and its native tabs stay one size and
-        // the Form scrolls in its fixed viewport, rather than the window doubling at 200%.
+    Group {
+      if store.uiZoom >= 1.5 {
         VStack(spacing: Space.sm) {
-          if store.uiZoom >= 1.5 {
-            Picker("Settings page", selection: $selection) {
-              ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }.pickerStyle(.segmented).padding(Space.sm)
+          Picker("Settings page", selection: $selection) {
+            ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+          }.pickerStyle(.menu).padding(.horizontal, Space.md)
+            .uiZoom(store.uiZoom).fixedSize(horizontal: false, vertical: true)
+          SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
+        }
+      } else {
+        TabView(selection: $selection) {
+          ForEach(SettingsTab.allCases, id: \.self) { tab in
+            SettingsPage(store: store, tab: tab).uiZoom(store.uiZoom)
+              .tabItem { Label(tab.rawValue, systemImage: tab.symbol) }.tag(tab)
           }
-          SettingsPage(store: store, tab: tab)
-        }.uiZoom(store.uiZoom)
-          .tabItem { Label(tab.rawValue, systemImage: tab.symbol) }.tag(tab)
+        }
       }
     }.frame(width: Self.width * store.uiZoom, height: height)
       .onAppear {
@@ -98,7 +101,7 @@ struct SettingsPage: View {
         EmptyView()
       case .presets:
         Section("Save current reading settings") {
-          TextField("Settings name", text: $presetName, prompt: Text("For example, Studio"))
+          TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
           Button("Save Reading Preset") {
             if let existing = store.presets.first(where: { $0.name == presetName.trimmingCharacters(in: .whitespacesAndNewlines) }) { replacingPreset = existing }
@@ -130,23 +133,23 @@ struct SettingsPage: View {
               }
             }.contextMenu {
               Button("Rename…") { renamePreset = preset; renameValue = preset.name }
-                .help("Change the name of these saved settings")
-              Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of these saved settings")
+                .help("Change the name of this reading preset")
+              Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of this reading preset")
               Button("Replace with Current Settings") { replacingPreset = preset }
-                .help("Replace these saved settings with the settings in use")
+                .help("Replace this reading preset with the settings in use")
               Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
-                .help("Remove these saved settings; choose Edit > Undo to restore it")
+                .help("Remove this reading preset; choose Edit > Undo to restore it")
             }
           }
         } header: { Text("Reading presets").foregroundStyle(.primary) } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.").foregroundStyle(.primary) }
       }
     }.formStyle(.grouped)
-      .confirmationDialog("Replace \(replacingPreset?.name ?? "saved settings")?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
+      .confirmationDialog("Replace \(replacingPreset?.name ?? "reading preset")?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
         Button("Replace", role: .destructive) { if let preset = replacingPreset { store.updatePreset(preset.id) }; replacingPreset = nil; presetName = "" }
         Button("Cancel", role: .cancel) { replacingPreset = nil }
       } message: { Text("This replaces the saved reading mode, speed, appearance and layout with your current settings. Your microphone and spoken language stay unchanged when you apply them.") }
-      .alert("Rename Saved Settings", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
-        TextField("Settings name", text: $renameValue).help("Enter a new name for these saved settings")
+      .alert("Rename Reading Preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
+        TextField("Preset name", text: $renameValue).help("Enter a new name for this reading preset")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
           .disabled(renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         Button("Cancel", role: .cancel) { renamePreset = nil }
@@ -320,10 +323,10 @@ private struct MicrophoneTestRow: View {
         if session.isTestingMicrophone { session.stopMicrophoneTest() }
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")
-        .disabled(!session.isTestingMicrophone && deviceUID == nil)
+
       LiveInputLevelMeter(meter: session.meter)
     }
-    if deviceUID == nil { Text("Choose a microphone above to test it.").font(.callout) }
+    if deviceUID == nil { Text("System default: \(AudioCapture.resolvedInput(nil)?.name ?? "No microphone available")").font(.callout) }
     if let notice = session.microphoneTestNotice {
       Label(notice, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.primary)
     }
@@ -469,8 +472,8 @@ struct PresenterSettingsPopover: View {
   var body: some View {
     VStack(spacing: Space.sm) {
       Picker("Settings page", selection: $tab) {
-        ForEach([SettingsTab.reading, .microphone, .camera], id: \.self) { Text($0.rawValue).tag($0) }
-      }.pickerStyle(.segmented).padding(Space.sm)
+        ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+      }.pickerStyle(.menu).padding(Space.sm)
       SettingsPage(store: store, tab: tab)
     }.uiZoom(store.uiZoom).frame(width: 560, height: 600)
       .onAppear { tab = initialTab }
@@ -484,11 +487,44 @@ struct CameraRecordingPage: View {
   var startsCamera = true
   var body: some View {
     Form {
+      if camera.authorization == .notDetermined {
+        Section("Camera access") {
+          Text("Allow access to choose and preview your camera here.").font(.callout)
+          Button("Allow Camera Access") { camera.start() }
+        }
+      }
       CameraSettingsSections(model: camera, zoom: store.uiZoom)
       RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
       CameraGuideSections(model: camera)
       CameraExposureSections(model: camera)
       RecordingFolderSection(recorder: recorder)
     }.formStyle(.grouped)
+  }
+}
+
+
+struct ReadingAppearancePreview: View {
+  let settings: PrompterSettings
+  let overVideo: Bool
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Text("Reading preview · scaled sample").font(.callout)
+      GeometryReader { geometry in
+        ZStack {
+          Color.gray
+          Color(nsColor: NSColor(hex: settings.backgroundColorHex) ?? .black)
+            .opacity(settings.backdropOpacity(withVideo: overVideo))
+          Text("Read at your own pace.\nLeave room for a natural pause.")
+            .font(.custom(settings.fontName, size: settings.fontSize * 0.65))
+            .fontWeight(settings.fontWeight == "Bold" ? .bold : .regular)
+            .foregroundStyle(Color(nsColor: NSColor(hex: settings.textColorHex) ?? .white).opacity(settings.textOpacity))
+            .multilineTextAlignment(settings.alignment == "Left" ? .leading : settings.alignment == "Right" ? .trailing : .center)
+            .lineSpacing(settings.lineSpacing * 30)
+            .frame(width: geometry.size.width * settings.textWidth)
+            .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
+            .rotationEffect(.degrees(Double(settings.rotation)))
+        }
+      }.frame(height: 140).clipped().accessibilityLabel("Sample of current reading appearance")
+    }
   }
 }

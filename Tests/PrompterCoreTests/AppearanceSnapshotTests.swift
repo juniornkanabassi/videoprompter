@@ -78,10 +78,10 @@ import XCTest
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-recording-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       try await snapshot(RecordingInputLevel(meter: recorder.inputMeter).padding().uiZoom(2), name: "recording-meter-200-\(mode)", size: .init(width: 700, height: 320), scheme: scheme, destination: destination)
       for zoom in [1.0, 1.5, 2.0] {
-        for phase in [CameraRecorder.Phase.preparing, .recording, .saving, .idle] {
+        for phase in [CameraRecorder.Phase.preparing, .waitingForFrames, .recording, .saving, .idle] {
           recorder.phase = phase
           recorder.savedTake = phase == .idle ? URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov") : nil
-          try await snapshot(RecordingStatusPanel(recorder: recorder, camera: camera, zoom: zoom, dismiss: {}), name: "recording-status-\(phase.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 440), scheme: scheme, destination: destination)
+          try await snapshot(RecordingStatusPanel(recorder: recorder, camera: camera, zoom: zoom, dismiss: {}), name: "recording-status-\(phase.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination)
         }
       }
       let failedRecorder = CameraRecorder(defaults: defaults)
@@ -90,8 +90,20 @@ import XCTest
       await failedRecorder.start(camera: disconnectedCamera)
       failedRecorder.errorMessage = nil
       for zoom in [1.0, 1.5, 2.0] {
-        try await snapshot(RecordingStatusPanel(recorder: failedRecorder, camera: disconnectedCamera, zoom: zoom, dismiss: {}), name: "recording-status-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 440), scheme: scheme, destination: destination)
+        try await snapshot(RecordingStatusPanel(recorder: failedRecorder, camera: disconnectedCamera, zoom: zoom, dismiss: {}), name: "recording-status-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination)
       }
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom
+        recorder.phase = .waitingForFrames
+        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-waiting-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        recorder.phase = .idle
+        recorder.savedTake = URL(fileURLWithPath: "/tmp/A long take name for checking a completed recording with a warning.mov")
+        recorder.droppedFrames = 7
+        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-warning-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        recorder.savedTake = nil; recorder.droppedFrames = 0
+        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: disconnectedCamera, monitor: monitor, startsCamera: false, recorder: failedRecorder), name: "presenter-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      }
+      store.uiZoom = 2
       recorder.savedTake = URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov")
       store.settings.mode = "Manual"
       store.session.updateSettings(store.settings)
@@ -212,6 +224,8 @@ import XCTest
           }
         }
       }
+      store.uiZoom = 2
+      try await snapshot(AppSettingsView(store: store, selectedTab: .reading), name: "settings-navigation-200-\(mode)", size: .init(width: 1120, height: 700), scheme: scheme, destination: destination)
       store.uiZoom = 1; camera.cleanView = true
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-clean-view-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       camera.cleanView = false; camera.displayMode = .videoOnly; store.uiZoom = 2
@@ -224,6 +238,8 @@ import XCTest
 
   func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
     let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
+    // Match PresenterController: the host must not grow the window to its intrinsic minimum.
+    host.sizingOptions = []
     let window = NSWindow(contentRect: NSRect(origin: .init(x: -20000, y: -20000), size: size), styleMask: [.titled], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
     window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -243,6 +259,9 @@ import XCTest
         "At 200%, document navigation retains a useful viewport")
     }
     XCTAssertFalse(window.isVisible)
+    if name.hasPrefix("presenter-waiting-") {
+      XCTAssertEqual(host.bounds.height, size.height, accuracy: 1, "Preparing must not expand the presenter")
+    }
     let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
     window.effectiveAppearance.performAsCurrentDrawingAppearance {
       host.cacheDisplay(in: host.bounds, to: bitmap)

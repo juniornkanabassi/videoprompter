@@ -44,6 +44,19 @@ public final class AudioCapture: @unchecked Sendable {
     return await AVCaptureDevice.requestAccess(for: .audio)
   }
 
+  public static func resolveInput(_ uid: String?, devices: [AudioInputDevice], defaultID: AudioDeviceID) -> AudioInputDevice? {
+    uid.map { selected in devices.first { $0.uid == selected } } ?? devices.first { $0.id == defaultID }
+  }
+
+  public static func resolvedInput(_ uid: String?) -> AudioInputDevice? {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+      mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var device: AudioDeviceID = 0
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    _ = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+    return resolveInput(uid, devices: inputDevices(), defaultID: device)
+  }
+
   public static func inputDevices() -> [AudioInputDevice] {
     var address = AudioObjectPropertyAddress(
       mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,

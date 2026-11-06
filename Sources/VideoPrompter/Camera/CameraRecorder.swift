@@ -21,8 +21,9 @@ import PrompterCore
   @Published var phase = Phase.idle {
     didSet { if phase != oldValue && phase != .idle { announce(phase.message) } }
   }
-  var isRecording: Bool { phase == .waitingForFrames || phase == .recording }
-  var isBusy: Bool { phase == .preparing || phase == .saving }
+  var isRecording: Bool { phase == .recording }
+  var isBusy: Bool { phase == .preparing || phase == .waitingForFrames || phase == .saving }
+  var isCapturing: Bool { phase == .waitingForFrames || phase == .recording }
   @Published private var storedMirrorSavedVideo: Bool
   var mirrorSavedVideo: Bool {
     get { storedMirrorSavedVideo }
@@ -44,9 +45,17 @@ import PrompterCore
   /// Receipt belongs to the latest attempt, never to an older successful take.
   @Published var savedTake: URL?
   @Published private(set) var takeFailure: String?
+  @Published private(set) var incompleteTake: URL?
   enum Recovery: Equatable { case cameraPrivacy, microphonePrivacy, camera, microphone, storage, format, retry }
   @Published private(set) var recovery = Recovery.retry
-  @Published var errorMessage: String? { didSet { if let errorMessage, errorMessage != oldValue { announce(errorMessage, priority: .high) } } }
+  @Published var errorMessage: String? {
+    didSet {
+      if let errorMessage, errorMessage != oldValue {
+        if isCapturing || isBusy { takeFailure = errorMessage }
+        announce(errorMessage, priority: .high)
+      }
+    }
+  }
   @Published private var storedPreset: RecordingPreset
   var preset: RecordingPreset {
     get { storedPreset }
@@ -101,7 +110,7 @@ import PrompterCore
   private var stopTask: Task<Void, Never>?
   private var watchdog: Task<Void, Never>?
   private var lastFrameAt: Date?
-  @Published private(set) var droppedFrames = 0
+  @Published var droppedFrames = 0
   @Published var droppedAudioBuffers = 0 {
     didSet {
       if oldValue == 0 && droppedAudioBuffers > 0 { announce("Sound dropped from the file", priority: .high) }
@@ -164,12 +173,12 @@ import PrompterCore
   func start(camera: CameraModel) async {
     guard !isBusy, !isRecording else { return }
     stopInputTest()
-    phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil
+    phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil; incompleteTake = nil
     recordingID = UUID()
     let takeID = recordingID
     recordedDuration = 0; droppedFrames = 0; droppedAudioBuffers = 0; inputMeter.reset(); lastFrameAt = nil
     activeMicrophoneName = nil; audioChannels = 0
-    defer { if !isRecording { phase = .idle; recordingID = nil } }
+    defer { if !isCapturing { phase = .idle; recordingID = nil } }
     do {
       await inputTestStop?.value
       guard !cancelStart else { return }
@@ -196,15 +205,20 @@ import PrompterCore
       audioChannels = spec.channels
       let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, onFrame: { [weak self] duration in
         Task { @MainActor in
-          guard let self, self.recordingID == takeID, self.isRecording else { return }
+          guard let self, self.recordingID == takeID, self.isCapturing else { return }
           if self.startedAt == nil { self.startedAt = Date(); self.phase = .recording }
           self.recordedDuration = duration
           self.lastFrameAt = Date()
         }
       }, onAudio: { [weak self] levels in
         Task { @MainActor in
-          guard let self, self.recordingID == takeID, self.isRecording else { return }
+          guard let self, self.recordingID == takeID, self.isCapturing else { return }
           self.inputMeter.show(channelPeaks: levels)
+        }
+      }, onVideoDrop: { [weak self] count in
+        Task { @MainActor in
+          guard let self, self.recordingID == takeID else { return }
+          self.droppedFrames = count
         }
       }, onAudioDrop: { [weak self] count in
         Task { @MainActor in
@@ -213,7 +227,7 @@ import PrompterCore
         }
       }) { [weak self] error in
         Task { @MainActor [weak self] in
-          guard let self, self.isRecording else { return }
+          guard let self, self.isCapturing else { return }
           self.recovery = Self.recovery(for: error)
           self.errorMessage = "Recording stopped after a writer failure: \(error.localizedDescription)"
           await self.stop()
@@ -243,7 +257,7 @@ import PrompterCore
       watchdog = Task { [weak self] in
         while !Task.isCancelled {
           try? await Task.sleep(for: .seconds(1))
-          guard !Task.isCancelled, let self, self.isRecording else { return }
+          guard !Task.isCancelled, let self, self.isCapturing else { return }
           if Self.framesTimedOut(attachedAt: attachedAt, lastFrameAt: self.lastFrameAt, now: Date()) {
             self.recovery = .camera
             self.errorMessage = "No camera frames received for 5 seconds. Check the camera connection and try again."
@@ -256,7 +270,7 @@ import PrompterCore
         observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
           let lostUID = (notification.object as? AVCaptureDevice)?.uniqueID
           Task { @MainActor [weak self] in
-            guard let self, self.isRecording, lostUID == nil || lostUID == uid || lostUID == microphone.uniqueID else { return }
+            guard let self, self.isCapturing, lostUID == nil || lostUID == uid || lostUID == microphone.uniqueID else { return }
             self.recovery = lostUID == microphone.uniqueID ? .microphone : .camera
             self.errorMessage = "A recording device disconnected or capture was interrupted. Recording was stopped."
             await self.stop()
@@ -302,15 +316,24 @@ import PrompterCore
         announce("Saved \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
       } catch {
         recovery = Self.recovery(for: error)
+        incompleteTake = FileManager.default.fileExists(atPath: sink.fileURL.path) ? sink.fileURL : nil
         errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)"
       }
-      takeFailure = errorMessage
+      if let errorMessage { takeFailure = errorMessage }
 
       shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; phase = .idle
       announce("Recording stopped")
     }
     stopTask = task; await task.value; stopTask = nil
   }
+  var qualityWarning: String? {
+    var parts: [String] = []
+    if let takeFailure { parts.append(takeFailure) }
+    if droppedFrames > 0 { parts.append("Video frames dropped (\(droppedFrames)). The picture may stutter.") }
+    if droppedAudioBuffers > 0 { parts.append("Sound dropped from the file (\(droppedAudioBuffers) times).") }
+    return parts.isEmpty ? nil : parts.joined(separator: " ")
+  }
+
   func startInputTest() async {
     guard !isRecording, !isBusy, !isTestingInput else { return }
     testGeneration = UUID()
@@ -371,12 +394,15 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   let microphone: AVCaptureDeviceInput
   private let queue = DispatchQueue(label: "VideoPrompter.recording")
   private let url: URL
+  var fileURL: URL { url }
   private let preset: RecordingPreset
   private let rotation: CameraRotation
   private let mirrored: Bool
   private let onFrame: @Sendable (TimeInterval) -> Void
   private let onAudio: @Sendable ([Float]) -> Void
   private let onAudioDrop: @Sendable (Int) -> Void
+  private let onVideoDrop: @Sendable (Int) -> Void
+  private var captureVideoDrops = 0
   private var earlyAudioDrops = 0
   private var firstFrame: CMTime?
   private let spec: AudioSpec
@@ -384,8 +410,8 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable ([Float]) -> Void, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
-    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable ([Float]) -> Void, onVideoDrop: @escaping @Sendable (Int) -> Void = { _ in }, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop; self.onVideoDrop = onVideoDrop
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
@@ -406,6 +432,7 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
           if firstFrame == nil { firstFrame = time }
           onFrame(max(0, (time - firstFrame!).seconds))
         }
+        onVideoDrop(captureVideoDrops + (writer?.droppedFrames ?? 0))
       } else {
         onAudio(RecordingAudioTest.channelPeaks(in: sampleBuffer))
         if let writer { try writer.append(audio: sampleBuffer) } else { earlyAudioDrops += 1 }
@@ -414,6 +441,11 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     } catch { failure = error; onFailure(error) }
   }
   func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    if output === video {
+      captureVideoDrops += 1
+      onVideoDrop(captureVideoDrops + (writer?.droppedFrames ?? 0))
+      return
+    }
     guard output === audio else { return }
     earlyAudioDrops += 1
     onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
@@ -430,6 +462,6 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
       }
     }
     let file = try await value.finish()
-    return (file, value.droppedFrames, earlyAudioDrops + value.droppedAudioBuffers)
+    return (file, captureVideoDrops + value.droppedFrames, earlyAudioDrops + value.droppedAudioBuffers)
   }
 }

@@ -35,7 +35,7 @@ From the first release built with Sparkle, Video Prompter checks for updates onc
 
 ## First use
 
-A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Welcome Script brings it back.
+A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Practice Script brings it back.
 
 1. Choose **Paste Copied Text** to paste a script, or use **Add** to create or import one. Pasted scripts take their title from the text.
 2. Choose **Present**.
@@ -54,7 +54,7 @@ Voice tracking is still a preview. It can hesitate when your wording differs fro
 
 Scripts are stored as Markdown. When you import a Markdown file it stays linked both ways with the original. Edits in Video Prompter change the file, and changes to the file appear in Video Prompter. Other formats are converted on import and are not linked.
 
-The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. The camera picker, **Guides**, **Zebras**, **False colour** and **Exposure…** are on the tools row. When space is limited, **Camera tools** groups them in one menu. **Clean view** temporarily hides the script, backdrop and all guides, and pauses reading. **Exit clean view** or Esc returns to the same reading position.
+The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. The camera picker, **Guides**, **Zebras**, **False colour** and **Exposure…** are on the tools row. When space is limited, **Camera tools** groups them in one menu. **Clean view** temporarily hides the script, backdrop and all guides while reading continues. **Exit clean view** or Esc restores the script at its current reading position.
 
 Choose **Camera Only** in the library to check framing or record without a script. The **Camera Monitor** window provides a second view of the same camera for another display.
 
@@ -62,9 +62,11 @@ Drag across a passage in the presenter or editor, then choose **Pin Selected Tex
 
 **Microphone** normally chooses one device for both Voice follow and recorded sound. In Settings > Microphone > Advanced, **Record from a different microphone** enables a separate recording input. Camera, rotation and saved-video settings are locked while a take is preparing, recording or saving.
 
-Choose **Record**, optionally **Start reading**, then **Stop recording**. The fixed transport row keeps Stop and the REC timer visible while the tools row recedes. **More controls** brings the tools back. The health line shows the recording microphone, its input level and any sound problem. Dropped audio buffers are reported during the take and retained with its saved message.
+Choose **Record**, optionally **Start reading**, then **Stop recording**. While the camera starts, a cancellable Waiting message stays visible. REC appears only after the first video frame is written. The fixed transport row keeps Stop and the REC timer visible while the tools row recedes. **More controls** brings the tools back. The health line shows the recording microphone, its input level and any sound problem. Dropped audio buffers are reported during the take and retained with its saved message.
 
-After a take, **Saved [file name]** offers **Play**, **Show in Finder** and **Hide**. The library's **Recordings** button and Prompter > **Show Recordings Folder** reopen the folder later. Settings > Camera & Recording holds H.264, HEVC and ProRes 422 recording formats, saved-video mirroring and take names. Frame markers and exposure aids only affect the preview.
+Before Record, **Saved video** shows the recording format, dimensions when available, rotation, saved mirroring and whether a frame marker is only a guide.
+
+After a take, the app checks its stored video and sound before **Saved [file name]** offers **Play**, **Show in Finder** and **Hide**. Dropped picture or sound and interrupted takes keep a warning beside the file, with a retry action. A file that fails verification is labelled incomplete, with a route to it in Finder when available. The library's **Recordings** button and Prompter > **Show Recordings Folder** reopen the folder later. Settings > Camera & Recording holds H.264, HEVC and ProRes 422 recording formats, saved-video mirroring and take names. Frame markers and exposure aids only affect the preview.
 
 Move to Trash is reversible with **Edit > Undo** for the whole selected batch. Applying a reading preset can also be undone. Google Docs updates show progress and report **Updated** or **Already up to date**; replacing locally edited text requires an explicit choice, with Cancel selected by default.
 

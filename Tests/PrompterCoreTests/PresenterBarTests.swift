@@ -125,13 +125,24 @@ import XCTest
       }
     }
     recorder.phase = .idle; store.session.pause(); camera.displayMode = .prompterWithVideo
+    store.settings.mode = "Manual"
+    store.session.updateSettings(store.settings)
+    store.session.play()
     camera.cleanView = true
     let position = store.session.tokenIndex
     await settle()
     _ = try button("Record", in: host); _ = try button("Exit clean view", in: host)
     XCTAssertFalse(has("Presenter script", in: host))
+    XCTAssertTrue(store.session.isActivelyRunning, "Clean view must preserve reading")
+    _ = try button("Pause", in: host)
     camera.cleanView = false; await settle()
-    XCTAssertEqual(store.session.tokenIndex, position)
+    XCTAssertGreaterThanOrEqual(store.session.tokenIndex, position, "Reading continues through Clean view; it must not reset")
+    XCTAssertTrue(store.session.isActivelyRunning)
+    store.session.pause()
+    recorder.phase = .waitingForFrames
+    await settle()
+    XCTAssertFalse(has("REC 00:00", in: host))
+    _ = try button("Cancel preparation", in: host)
   }
 
   func testMoreControlsAndExposureStates() async throws {
@@ -153,7 +164,7 @@ import XCTest
     await settle()
     _ = try button("More controls", in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
     await settle()
-    for name in ["View", "Guides", "Edit script", "More"] { _ = try button(name, in: host) }
+    for name in ["View", "Guides", "Clean view", "More"] { _ = try button(name, in: host) }
     for name in ["Zebras", "False colour"] {
       XCTAssertEqual(label(try button(name, in: host), "accessibilityValue"), "Off")
       _ = try button(name, in: host).perform(NSSelectorFromString("accessibilityPerformPress"))

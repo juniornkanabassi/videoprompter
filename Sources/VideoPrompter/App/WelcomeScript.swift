@@ -3,7 +3,7 @@ import Foundation
 /// The script a new library starts with. It doubles as the tour: a first-time user presents it and
 /// reads it aloud, and each section asks them to try the feature it describes, so Voice, the
 /// passage keys, stage directions and the camera are all met in the order they are needed.
-/// Help > Welcome Script brings it back after it has been deleted.
+/// Help > Practice Script brings it back after it has been deleted.
 enum WelcomeScript {
   static let title = "Welcome to Video Prompter"
   /// Set once a library has been offered the script, so deleting it is final until Help asks again.
@@ -36,6 +36,6 @@ enum WelcomeScript {
 
     Choose **Paste Copied Text**, **New Script**, or **Import File…**. Imported Markdown stays linked to the original file. Changes in either place appear in the other.
 
-    Headings, bold and italics work. You can delete this practice script and bring it back using **Welcome Script** in Help.
+    Headings, bold and italics work. You can delete this practice script and bring it back using **Practice Script** in Help.
     """
 }

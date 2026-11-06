@@ -396,8 +396,7 @@ final class SessionStore: ObservableObject {
       return
     }
     stopMicrophoneTest()
-    guard let deviceUID,
-      let device = AudioCapture.inputDevices().first(where: { $0.uid == deviceUID })
+    guard let device = resolveAudioInput(deviceUID)
     else {
       microphoneTestNotice = "Choose an available microphone to test."
       return
@@ -642,6 +641,8 @@ final class SessionStore: ObservableObject {
     return true
   }
 
+  var resolveAudioInput: (String?) -> AudioInputDevice? = AudioCapture.resolvedInput
+
   private func startAudioMode() {
     // Also while a start is still preparing: a second one would race it for the recogniser.
     guard audioCapture == nil, speechTask == nil else { return }
@@ -651,8 +652,7 @@ final class SessionStore: ObservableObject {
         self.microphoneDevicesDidChange(AudioCapture.inputDevices())
       }
     }
-    guard let uid = settings.audioDeviceUID,
-      let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
+    guard let device = resolveAudioInput(settings.audioDeviceUID)
     else {
       failAudio("Choose a microphone in Settings > Microphone, then press Start reading.")
       return

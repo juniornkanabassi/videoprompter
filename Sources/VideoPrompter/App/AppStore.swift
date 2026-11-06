@@ -259,7 +259,7 @@ private enum PresenterSaveError: LocalizedError {
       errorMessage = "The welcome script could not be added. \(error)"
     }
   }
-  /// Help > Welcome Script: selects it in the whole library, or adds a fresh copy when it has gone.
+  /// Help > Practice Script: selects it in the whole library, or adds a fresh copy when it has gone.
   /// While the first-launch add is still running it waits for that, so the script is never added twice.
   func showWelcomeScript() {
     guard let welcomeTask else { return selectWelcomeScript() }

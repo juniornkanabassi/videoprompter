@@ -107,7 +107,34 @@ final class MovieWriterTests: XCTestCase {
     try writer.append(audio: audio(0))
     XCTAssertEqual(writer.droppedAudioBuffers, 1)
     XCTAssertTrue(RecordingAudioHealth.message(drops: writer.droppedAudioBuffers, clipping: false, fresh: true).contains("Sound dropped"))
+    do { _ = try await writer.finish(); XCTFail("A take with no stored sound must fail verification") } catch {}
+  }
+
+  func testWaitingWriterNeverConfirmsAnUnwrittenFrame() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let writer = try MovieWriter(url: folder.appendingPathComponent("empty.mov"), width: 320, height: 240,
+      transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    writer.videoReadyOverride = false
+    XCTAssertFalse(try writer.append(video: video(0)))
+    XCTAssertEqual(writer.writtenFrames, 0)
+    XCTAssertEqual(writer.droppedFrames, 1)
+    do { _ = try await writer.finish(); XCTFail("No frame was written") } catch {}
+  }
+
+  func testSavedVerificationRejectsMissingAudioAndCorruptMedia() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("silent.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity,
+      preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
     _ = try await writer.finish()
+    do { try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: true); XCTFail("Missing sound must not pass") } catch {}
+    try Data("not a movie".utf8).write(to: file)
+    do { try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: false); XCTFail("Corrupt media must not pass") } catch {}
   }
 
 }

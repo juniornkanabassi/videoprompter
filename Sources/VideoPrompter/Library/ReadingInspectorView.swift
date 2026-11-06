@@ -25,6 +25,7 @@ struct ReadingSettingsPage: View {
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
       }
+      Section("Preview") { ReadingAppearancePreview(settings: store.settings, overVideo: camera.presentsWithVideo) }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
         Button("Narrow column") { store.settings.textWidth = 0.65 }
@@ -39,11 +40,21 @@ struct ReadingSettingsPage: View {
       }
       Section("Colours") {
         percent("Text visibility", $store.settings.textOpacity, 0.2...1)
-        percent("Background darkness", backdropOpacity, PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo))
+        percent(camera.presentsWithVideo ? "Background over camera" : "Script-only background", backdropOpacity, PrompterSettings.backdropOpacityRange(withVideo: camera.presentsWithVideo))
         ColorPicker("Text colour", selection: colour($store.settings.textColorHex), supportsOpacity: false)
         ColorPicker("Background colour", selection: colour($store.settings.backgroundColorHex), supportsOpacity: false)
-        ReadingContrastWarning(textHex: store.settings.textColorHex, textOpacity: store.settings.textOpacity,
-          backgroundHex: store.settings.backgroundColorHex, darkness: backdropOpacity)
+        if camera.presentsWithVideo { ReadingContrastWarning(textHex: store.settings.textColorHex, textOpacity: store.settings.textOpacity,
+          backgroundHex: store.settings.backgroundColorHex, darkness: backdropOpacity,
+          minimumOpacityScale: store.settings.showCues ? 0.42 : 0.5,
+          threshold: store.settings.fontSize >= 24 ? 3 : 4.5,
+          highlightHex: store.settings.highlightActiveWord ? NSColor.systemYellow.hex : nil) {
+            store.settings.backgroundColorHex = "#000000"
+            store.settings.textColorHex = "#FFFFFF"
+            store.settings.textOpacity = 1
+            store.settings.videoDimming = 1
+            store.settings.showCues = false
+            store.settings.highlightActiveWord = false
+          } }
       }
       Section("Rotation and stage directions") {
         Toggle("Mirror text top to bottom", isOn: $store.settings.verticalMirror)
@@ -61,8 +72,11 @@ struct ReadingSettingsPage: View {
   }
   private func slider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, readout: String, spoken: String) -> some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Text(title).fixedSize(horizontal: false, vertical: true)
-      Text(readout).monospacedDigit().font(UIType.secondary)
+      HStack(alignment: .firstTextBaseline) {
+        Text(title).fixedSize(horizontal: false, vertical: true)
+        Spacer()
+        Text(readout).monospacedDigit().font(UIType.secondary)
+      }
       Slider(value: value, in: range).accessibilityLabel(title).accessibilityValue(spoken)
     }
   }
@@ -89,8 +103,10 @@ struct ReadingChoice<Value: Hashable>: View {
     values.firstIndex(of: selection).map { names[$0] } ?? String(describing: selection)
   }
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.xs) {
+    let layout = zoom >= 1.5 ? AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs)) : AnyLayout(HStackLayout(spacing: Space.sm))
+    layout {
       Text(title).fixedSize(horizontal: false, vertical: true)
+      if zoom < 1.5 { Spacer() }
       if zoom >= 1.5 {
         Menu {
           Picker(title, selection: $selection) {

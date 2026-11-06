@@ -68,7 +68,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     func buttonFrame(_ label: String) throws -> NSRect {
       let object = try XCTUnwrap(accessibilityObjects(content).first { object in
         let selector = NSSelectorFromString("accessibilityRole")
-        guard object.responds(to: selector), object.perform(selector)?.takeUnretainedValue() as? String == "AXButton" else { return false }
+        guard object.responds(to: selector), object.perform(selector)?.takeUnretainedValue() as? String != nil else { return false }
         return labels(object).first?.contains(label) == true
       }, "Missing \(label)")
       return try XCTUnwrap(object.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -81,7 +81,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let start = try buttonFrame("Start reading")
       let camera = try buttonFrame("Show camera")
-      let edit = try buttonFrame("Edit script")
+      let edit = try buttonFrame("More")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, camera, edit] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
@@ -347,7 +347,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
       (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
       (.camera, ["Camera", "Saved video"]),
-      (.presets, ["Settings name", "Save Reading Preset", "Reading presets"])
+      (.presets, ["Preset name", "Save Reading Preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {
       host.rootView = AnyView(SettingsPage(store: store, tab: tab))

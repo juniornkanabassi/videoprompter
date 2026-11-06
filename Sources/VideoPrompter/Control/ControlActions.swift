@@ -745,7 +745,7 @@ import Speech
     }
     recorder.useSettings(store.settings)
     await recorder.start(camera: camera)
-    guard recorder.isRecording else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
+    guard recorder.isCapturing else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
     var value = recordingState
     value["folder"] = CameraRecorder.recordingsFolder().path
     return .ok(value)

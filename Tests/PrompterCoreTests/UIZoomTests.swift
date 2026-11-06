@@ -232,6 +232,7 @@ final class UIZoomTests: XCTestCase {
     // unlike the packaged on-screen frame. Force the actual accepted frame for layout checks.
     (panel.contentView as? OffscreenHostingSizing)?.holdWindowSize()
     panel.contentMinSize = NSSize(width: 360, height: 220)
+    store.session.resolveAudioInput = { _ in nil }
     store.session.seek(to: 48)
     let anchor = store.session.anchor
     let token = store.session.activeToken!
@@ -302,6 +303,7 @@ final class UIZoomTests: XCTestCase {
     let panel = try XCTUnwrap(controller.panel)
     defer { controller.close() }
     panel.setContentSize(NSSize(width: 500, height: 520))
+    store.session.resolveAudioInput = { _ in nil }
     store.session.play()
     XCTAssertNotNil(store.session.anchorNotice, "the missing-microphone notice exercises stacking")
     for scale in AppStore.uiZoomSteps {
