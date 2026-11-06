@@ -93,10 +93,8 @@ import Speech
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
     Headless.shared.begin(); defer { Headless.shared.end() }
     let result = await perform(action, params)
-    if ["set_mode", "set_zoom", "settings_set", "preset_apply", "preset_save"].contains(action),
-       result.body["ok"] as? Bool == true {
-      await store.flushSettings()
-    }
+    // Any successful action may have changed settings; an idle flush costs one queue hop.
+    if result.body["ok"] as? Bool == true { await store.flushSettings() }
     return result
   }
 

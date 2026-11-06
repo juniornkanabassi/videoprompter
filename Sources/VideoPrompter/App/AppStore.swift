@@ -304,20 +304,29 @@ private enum PresenterSaveError: LocalizedError {
       + trash.filter { $0.metadata.folderID == id }.map(\.id))
     changeFolder(folder, members: members, deleting: true, undoManager: undoManager)
   }
+  /// One queued folder change. It is also the undo target, so a failed change can remove just its own
+  /// entry instead of the store's whole undo stack.
+  private final class FolderChange { var failed = false }
   private func changeFolder(_ folder: ScriptFolder, members: Set<UUID>, deleting: Bool,
-                            undoManager: UndoManager?, duringUndo: Bool = false) {
-    func registerInverse() {
-      undoManager?.registerUndo(withTarget: self) { target in
-        target.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, duringUndo: true)
-      }
-      undoManager?.setActionName("Delete Folder")
+                            undoManager: UndoManager?, inverting: FolderChange? = nil) {
+    let change = FolderChange()
+    // Registered now, before the disk work, so Undo is offered at once and sits in the right place
+    // on the stack; the disk changes stay ordered behind folderChangeTask.
+    undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
+      // `change` is held here, not by UndoManager, so the entry keeps its target alive.
+      self?.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, inverting: change)
     }
-    // UndoManager needs its inverse synchronously; disk changes stay ordered even on rapid Undo/Redo.
-    if duringUndo { registerInverse() }
+    undoManager?.setActionName("Delete Folder")
     folderChangeRevision += 1
     let previous = folderChangeTask
-    folderChangeTask = Task { [self] in
+    folderChangeTask = Task { [self, weak undoManager] in
       await previous?.value
+      // Undoing a change that never reached the disk has nothing to reverse.
+      if inverting?.failed == true {
+        change.failed = true
+        undoManager?.removeAllActions(withTarget: change)
+        return
+      }
       guard let library else { return }
       do {
         if deleting { try await library.deleteFolder(folder.id) }
@@ -329,8 +338,11 @@ private enum PresenterSaveError: LocalizedError {
         }
         trash = await library.listTrash()
         if deleting, selectedFolderID == folder.id { selectedFolderID = nil }
-        if !duringUndo { registerInverse() }
-      } catch { errorMessage = String(describing: error) }
+      } catch {
+        change.failed = true
+        undoManager?.removeAllActions(withTarget: change)
+        errorMessage = String(describing: error)
+      }
     }
   }
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
@@ -554,7 +566,7 @@ private enum PresenterSaveError: LocalizedError {
     selectedID = copy.id
   }
   func flushSettings() async {
-    _ = await settingsPersistence.flush()
+    await settingsPersistence.flush()
   }
   func flushPendingSaves() async -> Bool {
     while true {
@@ -565,7 +577,7 @@ private enum PresenterSaveError: LocalizedError {
         await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
         continue
       }
-      _ = await settingsPersistence.flush()
+      await settingsPersistence.flush()
       if folderRevision != folderChangeRevision { continue }
       return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
     }
@@ -712,7 +724,7 @@ private enum PresenterSaveError: LocalizedError {
   func deletePreset(_ id: UUID, undoManager: UndoManager? = nil) {
     guard let index = presets.firstIndex(where: { $0.id == id }) else { return }
     let preset = presets.remove(at: index)
-    undoManager?.registerUndo(withTarget: self) { target in
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in
       target.restorePreset(preset, at: index, undoManager: undoManager)
     }
     undoManager?.setActionName("Delete Preset")
@@ -720,7 +732,7 @@ private enum PresenterSaveError: LocalizedError {
   private func restorePreset(_ preset: PrompterSettings, at index: Int, undoManager: UndoManager?) {
     guard !presets.contains(where: { $0.id == preset.id }) else { return }
     presets.insert(preset, at: min(index, presets.count))
-    undoManager?.registerUndo(withTarget: self) { target in target.deletePreset(preset.id, undoManager: undoManager) }
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in target.deletePreset(preset.id, undoManager: undoManager) }
     undoManager?.setActionName("Delete Preset")
   }
   private func persistSettings() {

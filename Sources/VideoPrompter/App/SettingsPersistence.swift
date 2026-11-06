@@ -24,12 +24,15 @@ final class SettingsPersistence: @unchecked Sendable {
   private let delay: TimeInterval
   private var pending: SettingsSnapshot?
   private var work: DispatchWorkItem?
-  private var writes = 0
-  private var wroteOnMainThread = false
+  /// A write not yet committed by `synchronize`, so an idle flush can skip it.
+  private var unsynchronized = false
+  /// Test seam: called on the writer's queue after each actual write.
+  private let onWrite: (@Sendable () -> Void)?
 
-  init(defaults: UserDefaults, delay: TimeInterval = 0.3) {
+  init(defaults: UserDefaults, delay: TimeInterval = 0.3, onWrite: (@Sendable () -> Void)? = nil) {
     self.defaults = defaults
     self.delay = delay
+    self.onWrite = onWrite
     queue.setSpecific(key: queueKey, value: true)
   }
 
@@ -38,10 +41,11 @@ final class SettingsPersistence: @unchecked Sendable {
     guard let snapshot = pending else { return }
     // Queue operations retain the writer, so teardown owns its remaining snapshot.
     nonisolated(unsafe) let savedDefaults = defaults
+    let onWrite = onWrite
     if DispatchQueue.getSpecific(key: queueKey) == true {
-      Self.write(snapshot, to: savedDefaults)
+      Self.write(snapshot, to: savedDefaults); onWrite?()
     } else {
-      queue.async { Self.write(snapshot, to: savedDefaults) }
+      queue.async { Self.write(snapshot, to: savedDefaults); onWrite?() }
     }
   }
 
@@ -55,11 +59,11 @@ final class SettingsPersistence: @unchecked Sendable {
     }
   }
 
-  func flush() async -> (writes: Int, wroteOnMainThread: Bool) {
-    await withCheckedContinuation { continuation in
+  func flush() async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
       queue.async { [self] in
         finishPending()
-        continuation.resume(returning: (writes, wroteOnMainThread))
+        continuation.resume()
       }
     }
   }
@@ -69,15 +73,15 @@ final class SettingsPersistence: @unchecked Sendable {
     work = nil
     writePending()
     // CLI responses and teardown need the defaults service to commit before returning.
-    defaults.synchronize()
+    if unsynchronized { defaults.synchronize(); unsynchronized = false }
   }
 
   private func writePending() {
     guard let snapshot = pending else { return }
     pending = nil
     Self.write(snapshot, to: defaults)
-    writes += 1
-    wroteOnMainThread = wroteOnMainThread || Thread.isMainThread
+    unsynchronized = true
+    onWrite?()
   }
 
   private static func write(_ snapshot: SettingsSnapshot, to defaults: UserDefaults) {

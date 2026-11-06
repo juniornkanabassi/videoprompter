@@ -38,40 +38,42 @@ import XCTest
     let suite = "SettingsPersistence.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let writer = SettingsPersistence(defaults: defaults, delay: 60)
+    let log = WriteLog()
+    let writer = SettingsPersistence(defaults: defaults, delay: 60, onWrite: { log.record() })
     var settings = PrompterSettings()
     for index in 0..<500 {
       settings.fontSize = Double(index)
       writer.schedule(SettingsSnapshot(settings: settings, presets: [settings],
         typography: EditorTypographyPreferences(previewFontSize: 23), uiZoom: 1.5, simpleInterface: false))
     }
-    let result = await writer.flush()
-    XCTAssertEqual(result.writes, 1)
-    XCTAssertFalse(result.wroteOnMainThread)
+    await writer.flush()
+    XCTAssertEqual(log.count, 1)
+    XCTAssertFalse(log.wroteOnMainThread)
     let final = try JSONDecoder().decode(PrompterSettings.self, from: XCTUnwrap(defaults.data(forKey: "settings")))
     XCTAssertEqual(final.fontSize, 120, "decoding retains its existing clamp")
     XCTAssertEqual(defaults.double(forKey: "uiZoom"), 1.5)
     XCTAssertFalse(defaults.bool(forKey: "simpleInterface"))
     let type = try JSONDecoder().decode(EditorTypographyPreferences.self, from: XCTUnwrap(defaults.data(forKey: "editorTypography")))
     XCTAssertEqual(type.previewFontSize, 23)
-    let emptyFlush = await writer.flush()
-    XCTAssertEqual(emptyFlush.writes, 1, "flushing twice does not repeat the write")
+    await writer.flush()
+    XCTAssertEqual(log.count, 1, "flushing twice does not repeat the write")
   }
 
   func testWritesAfterQuietPeriodWithoutExplicitFlush() async throws {
     let suite = "SettingsPersistence.\(UUID())"
     let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
     defer { defaults.removePersistentDomain(forName: suite) }
-    let writer = SettingsPersistence(defaults: defaults, delay: 0.02)
+    let log = WriteLog()
+    let writer = SettingsPersistence(defaults: defaults, delay: 0.02, onWrite: { log.record() })
     writer.schedule(SettingsSnapshot(settings: PrompterSettings(), presets: [],
       typography: EditorTypographyPreferences(), uiZoom: 1.75, simpleInterface: true))
     for _ in 0..<100 where defaults.object(forKey: "uiZoom") == nil {
       try await Task.sleep(for: .milliseconds(10))
     }
     XCTAssertEqual(defaults.double(forKey: "uiZoom"), 1.75)
-    let result = await writer.flush()
-    XCTAssertEqual(result.writes, 1)
-    XCTAssertFalse(result.wroteOnMainThread)
+    await writer.flush()
+    XCTAssertEqual(log.count, 1)
+    XCTAssertFalse(log.wroteOnMainThread)
   }
 
   func testReleasingWriterFlushesBeforeItsDelayedWrite() async throws {
@@ -120,4 +122,38 @@ import XCTest
     }
   }
 
+
+  /// Every successful command flushes, so a settings change pending from elsewhere is on disk
+  /// before even a read-only reply.
+  func testReadOnlyControlResponseFlushesPendingSettings() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-status-\(UUID())")
+    let suite = "SettingsPersistence.\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    let camera = CameraModel(defaults: defaults)
+    let actions = ControlActions(store: store, presenter: PresenterController(camera: camera),
+      camera: camera, recorder: CameraRecorder(defaults: defaults))
+    await store.waitForInitialLoad()
+    await store.flushSettings()
+    store.settings.speed = 222
+    let reply = await actions.handle("status", [:])
+    XCTAssertEqual(reply.body["ok"] as? Bool, true)
+    let saved = try JSONDecoder().decode(PrompterSettings.self, from: XCTUnwrap(defaults.data(forKey: "settings")))
+    XCTAssertEqual(saved.speed, 222, "status must not reply before pending settings are saved")
+  }
+
+}
+
+/// Counts the writer's actual writes from its own queue.
+private final class WriteLog: @unchecked Sendable {
+  private let lock = NSLock()
+  private var writes = 0
+  private var onMain = false
+  var count: Int { lock.withLock { writes } }
+  var wroteOnMainThread: Bool { lock.withLock { onMain } }
+  func record() {
+    let main = Thread.isMainThread
+    lock.withLock { writes += 1; onMain = onMain || main }
+  }
 }

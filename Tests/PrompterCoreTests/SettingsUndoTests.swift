@@ -70,8 +70,6 @@ import XCTest
     await store.reload()
     let originalFolderOrder = store.folders.map(\.id)
     let manager = UndoManager()
-    manager.groupsByEvent = false
-    // Async disk success registers the first undo in its own explicit event group.
     manager.groupsByEvent = true
     store.deleteFolder(folder.id, undoManager: manager)
     for _ in 0..<100 where store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
@@ -120,6 +118,109 @@ import XCTest
     XCTAssertTrue(folders.isEmpty)
     XCTAssertNil(saved.metadata.folderID)
     XCTAssertEqual(saved.markdown, script.markdown)
+  }
+
+
+  /// Undo is registered before the disk work, so it is offered at once and keeps its place when
+  /// another undoable action follows before the library has finished.
+  func testFolderDeletionIsUndoableAtOnceAndStaysInOrderWithLaterActions() async throws {
+    let (store, folder, script) = try await folderFixture("folder-undo-order")
+    store.savePreset(named: "Keep")
+    let manager = UndoManager()
+    manager.groupsByEvent = false
+    manager.beginUndoGrouping(); store.deleteFolder(folder.id, undoManager: manager); manager.endUndoGrouping()
+    XCTAssertTrue(manager.canUndo, "offered before the disk change completes")
+    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    manager.beginUndoGrouping(); store.deletePreset(store.presets[0].id, undoManager: manager); manager.endUndoGrouping()
+    XCTAssertEqual(manager.undoActionName, "Delete Preset", "the later action is undone first")
+    manager.undo()
+    XCTAssertEqual(store.presets.map(\.name), ["Keep"])
+    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    manager.undo()
+    XCTAssertFalse(manager.canUndo)
+    XCTAssertEqual(manager.redoActionName, "Delete Folder")
+    let flushed = await store.flushPendingSaves()
+    XCTAssertTrue(flushed)
+    XCTAssertEqual(store.folders.map(\.id), [folder.id])
+    XCTAssertEqual(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID, folder.id)
+    XCTAssertNil(store.errorMessage)
+    manager.redo()
+    _ = await store.flushPendingSaves()
+    XCTAssertTrue(store.folders.isEmpty)
+    XCTAssertNil(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID)
+    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+  }
+
+  func testFailedFolderDeletionDropsOnlyItsOwnQueuedUndoAndRedo() async throws {
+    let (store, folder, script) = try await folderFixture("folder-undo-failure")
+    store.savePreset(named: "Keep")
+    let manager = UndoManager()
+    manager.groupsByEvent = false
+    manager.beginUndoGrouping()
+    store.deletePreset(store.presets[0].id, undoManager: manager)
+    manager.endUndoGrouping()
+
+    let library = try XCTUnwrap(store.library)
+    let index = await library.rootURL.appendingPathComponent("LibraryIndex.json")
+    try FileManager.default.removeItem(at: index)
+    try FileManager.default.createDirectory(at: index, withIntermediateDirectories: false)
+    manager.beginUndoGrouping()
+    store.deleteFolder(folder.id, undoManager: manager)
+    manager.endUndoGrouping()
+    manager.undo()
+    manager.redo()
+    _ = await store.flushPendingSaves()
+
+    XCTAssertNotNil(store.errorMessage)
+    XCTAssertEqual(store.folders.map(\.id), [folder.id])
+    XCTAssertEqual(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID, folder.id)
+    XCTAssertEqual(manager.undoActionName, "Delete Preset", "failed folder entries leave unrelated undo intact")
+    XCTAssertFalse(manager.canRedo)
+    manager.undo()
+    XCTAssertEqual(store.presets.map(\.name), ["Keep"])
+    XCTAssertFalse(manager.canUndo)
+    let saved = try await library.read(script.id)
+    XCTAssertEqual(saved.markdown, script.markdown)
+    XCTAssertEqual(saved.metadata.folderID, folder.id)
+  }
+
+  /// Undo entries must not hold the UndoManager they live in, or a closed window's manager leaks.
+  func testUndoEntriesDoNotKeepTheirUndoManagerAlive() async throws {
+    let (store, folder, _) = try await folderFixture("undo-release")
+    store.savePreset(named: "One")
+    weak var released: UndoManager?
+    do {
+      let manager = UndoManager()
+      manager.groupsByEvent = false
+      manager.beginUndoGrouping(); store.deletePreset(store.presets[0].id, undoManager: manager); manager.endUndoGrouping()
+      manager.undo(); manager.redo()
+      manager.beginUndoGrouping(); store.deleteFolder(folder.id, undoManager: manager); manager.endUndoGrouping()
+      manager.undo(); manager.redo()
+      _ = await store.flushPendingSaves()
+      XCTAssertTrue(manager.canUndo)
+      XCTAssertEqual(manager.undoActionName, "Delete Folder")
+      released = manager
+    }
+    for _ in 0..<50 where released != nil { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertNil(released, "the store outlives the manager without keeping it alive")
+    XCTAssertTrue(store.presets.isEmpty)
+  }
+
+  private func folderFixture(_ name: String) async throws -> (AppStore, ScriptFolder, ScriptRecord) {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("\(name)-\(UUID())")
+    let suite = "\(name).\(UUID())"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    let store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    addTeardownBlock { @MainActor in
+      _ = await store.flushPendingSaves()
+      UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+      try? FileManager.default.removeItem(at: root)
+    }
+    let library = try XCTUnwrap(store.library)
+    let folder = try await library.createFolder(name: "Recordings")
+    let script = try await library.create(title: "Speech", markdown: "These words must survive.", folderID: folder.id)
+    await store.reload()
+    return (store, folder, script)
   }
 
 }
