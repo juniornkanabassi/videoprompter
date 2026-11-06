@@ -159,8 +159,8 @@ struct ExposureMenuItems: View {
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
     Toggle("Clean View", isOn: $camera.cleanView).keyboardShortcut("k", modifiers: [.option, .command])
-    Toggle("Zebras", isOn: $camera.guides.zebras).keyboardShortcut("z", modifiers: [.option, .command])
-    Toggle("False Colour", isOn: $camera.guides.falseColour).keyboardShortcut("x", modifiers: [.option, .command])
+    Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
+    Toggle("False Colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
   }
 }
 

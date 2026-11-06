@@ -68,13 +68,13 @@ struct ExposureGuidance: View {
 struct ExposureToolToggles: View {
   @ObservedObject var model: CameraModel
   var body: some View {
-    Toggle(isOn: $model.guides.zebras) {
+    Toggle(isOn: model.exposureBinding(\.zebras)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("Zebras").fontWeight(.semibold)
         Text(ExposureGuidance.zebraPurpose(model.guides))
       }
     }.accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
-    Toggle(isOn: $model.guides.falseColour) {
+    Toggle(isOn: model.exposureBinding(\.falseColour)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("False colour").fontWeight(.semibold)
         Text(ExposureGuidance.colourPurpose)

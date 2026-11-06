@@ -696,7 +696,7 @@ struct PresenterView: View {
   private var showsSetup: Bool { !isTaking || draft.isEditing }
   static func backdropOpacity(saved: Double, reduceTransparency: Bool) -> Double { reduceTransparency ? 1 : saved }
   @State private var presenterWidth: CGFloat = 1000
-  // Collapse secondary choices, never the user’s requested control size.
+  // Keep the requested size; secondary controls wrap in their original order.
   static func controlZoom(_ zoom: Double) -> Double { zoom }
   private var controlZoom: Double { Self.controlZoom(store.uiZoom) }
   private var compactControls: Bool { presenterWidth / controlZoom < 720 }
@@ -747,7 +747,7 @@ struct PresenterView: View {
             .environment(\.colorScheme, .dark)
         }
         // Builder B contract: the legend owns its zoom and bounded viewport.
-        if camera.presentsWithVideo && !camera.cleanView { ExposureLegend(model: camera, zoom: controlZoom).padding(Space.sm).frame(maxWidth: .infinity, alignment: .trailing) }
+        if camera.presentsWithVideo && !camera.cleanView && !session.isActivelyRunning && !session.isCountingDown { ExposureLegend(model: camera, zoom: controlZoom).padding(Space.sm).frame(maxWidth: .infinity, alignment: .trailing) }
         if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
           Text("No script yet. Choose one in the library and press Present to add it here.")
             .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
@@ -899,9 +899,9 @@ struct PresenterView: View {
     controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? 0.75 : 1
   }
   private var barContent: some View {
-    VStack(spacing: Space.xs) {
+    VStack(spacing: controlZoom >= 2 ? 0 : Space.xs) {
       transport
-      WrapLayout(spacing: Space.xs) {
+      WrapLayout(spacing: controlZoom >= 2 ? 0 : Space.xs) {
         if hasScript { readingModeButton }
         if recorder.isRecording {
           Text("REC " + String(format: "%02d:%02d", Int(recorder.recordedDuration) / 60, Int(recorder.recordedDuration) % 60))
@@ -934,16 +934,17 @@ struct PresenterView: View {
       if camera.presentsWithVideo && !recorder.isRecording && !recorder.isBusy && camera.isReadyToRecord && SharedCameraSession.shared.pictureSize != nil && !compactControls {
         ViewThatFits(in: .horizontal) {
           Text(recorder.outputConfirmation(camera: camera)).fixedSize()
-          Button("Recording folder: " + CameraRecorder.recordingsFolder().lastPathComponent) { recorder.openRecordingsFolder() }.fixedSize()
+          Button("Show Recordings Folder") { recorder.openRecordingsFolder() }.fixedSize()
         }.font(.callout)
           .help(recorder.outputSummary(camera: camera) + " · " + CameraRecorder.recordingsFolder().path)
           .accessibilityLabel("Recording folder")
       }
       if !camera.cleanView {
         if compactControls && (recorder.savedTake != nil || recorder.takeFailure != nil) { receipt }
-        else if camera.presentsWithVideo || presenterWidth / controlZoom >= 420 { tools.opacity(secondaryOpacity) }
+        else { tools.opacity(secondaryOpacity) }
       }
-    }.padding(Space.xs)
+    }.padding(.horizontal, Space.xs)
+      .padding(.vertical, controlZoom >= 2 ? 0 : Space.xs)
       .frame(maxWidth: .infinity)
       .modifier(PresenterGlass(radius: 20))
       .buttonStyle(PresenterButtonStyle()).font(.body).symbolRenderingMode(.hierarchical)
@@ -956,14 +957,12 @@ struct PresenterView: View {
       cameraSection = recorder.recovery == .format ? "Recording" : "Camera"
       showsSettings = true
     }, zoom: controlZoom, compact: true)
-    .fixedSize().layoutPriority(1)
+    .layoutPriority(1)
   }
 
   private var transport: some View {
-    ViewThatFits(in: .horizontal) {
-      transportRow(inlineRestart: true).fixedSize()
-      transportRow(inlineRestart: false).fixedSize()
-    }.accessibilityIdentifier("presenter-transport")
+    transportRow(inlineRestart: true)
+      .accessibilityIdentifier("presenter-transport")
   }
   private func transportRow(inlineRestart: Bool) -> some View {
     WrapLayout(spacing: Space.sm) {
@@ -1002,7 +1001,7 @@ struct PresenterView: View {
 
   private var readingStatusTitle: String {
     if draft.isEditing { return "Editing · not saved yet" }
-    let mode = compactControls && session.isManual ? "Auto" : session.readingModeName
+    let mode = session.readingModeName
     return "\(mode): \(session.visibleReadingState)"
   }
 
@@ -1085,7 +1084,7 @@ struct PresenterView: View {
         Text("Rotation changes the preview and saved video.").font(.callout)
         Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
         Button("Recording settings…") { settingsOrigin = "presenter-camera"; showsCameraControls = false; overflowTool = nil; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
-        Button("Recordings folder") { recorder.openRecordingsFolder() }
+        Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
         Button("Open Camera Monitor") { openWindow(id: "camera") }
         Text("An optional second window showing the same camera and recording.").font(.callout)
       }
@@ -1094,30 +1093,19 @@ struct PresenterView: View {
   }
 
   private var tools: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: Space.md) {
-        if showsScript { textButton }
-        cameraButton
-        if camera.presentsWithVideo {
-          guidesButton
-          ExposureToggle(model: camera, kind: .zebras)
-          ExposureToggle(model: camera, kind: .falseColour)
-          cleanButton
-          exposureButton
-        }
-        microphoneButton
-      }.fixedSize()
-      HStack(spacing: Space.md) {
-        if showsScript { textButton }
-        cameraButton
-        if camera.presentsWithVideo { exposureQuickButton; cleanButton }
-        microphoneButton
-      }.fixedSize()
-      HStack(spacing: Space.md) {
-        cameraButton
-        if camera.presentsWithVideo { exposureQuickButton; cleanButton }
-      }.fixedSize()
-    }
+    WrapLayout(spacing: Space.sm) {
+      if showsScript { textButton }
+      cameraButton
+      if camera.presentsWithVideo { exposureQuickButton; cleanButton }
+      microphoneButton
+      if camera.presentsWithVideo {
+        guidesButton
+        ExposureToggle(model: camera, kind: .zebras)
+        ExposureToggle(model: camera, kind: .falseColour)
+        exposureButton
+      }
+    }.frame(width: max(0, presenterWidth / controlZoom - Space.xs * 2))
+      .modifier(PresenterControlViewport(maxHeight: 48 / controlZoom))
   }
   private var textButton: some View {
     Button("Text") { showsTextControls.toggle() }
@@ -1135,7 +1123,7 @@ struct PresenterView: View {
       .popover(isPresented: $showsCameraControls) { cameraControls }
   }
   private var guidesButton: some View {
-    Button("Guides") { showsGuideSettings.toggle() }
+    Button("Framing guides") { showsGuideSettings.toggle() }
       .accessibilityLabel("Framing guides")
       .focused($focusedTool, equals: "Framing guides")
       .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "presenter-guides")
@@ -1147,12 +1135,9 @@ struct PresenterView: View {
       .popover(isPresented: $showsExposureSettings) { exposureControls }
   }
   private var exposureQuickButton: some View {
-    Button(camera.exposureIsConfigured && !camera.exposureBypassed ? "Exposure on" : "Exposure off") {
-      if camera.exposureIsConfigured { camera.exposureBypassed.toggle() }
-      else { camera.guides.zebras = true; camera.exposureBypassed = false }
-    }.accessibilityLabel("Exposure")
-      .accessibilityValue(camera.exposureIsConfigured && !camera.exposureBypassed ? "On" : "Off")
-      .help("Toggle exposure aids. Choose tools and levels in More > Exposure settings.")
+    Button("Exposure check") { camera.toggleExposureCheck() }
+      .accessibilityValue(camera.exposureCheckState)
+      .help("Compare exposure aids with the original picture. Adjust exposure on your camera. " + camera.exposureCheckState)
   }
   private var cleanButton: some View {
     Button("Clean view") { camera.cleanView = true }
@@ -1188,7 +1173,7 @@ struct PresenterView: View {
         if recorder.savedTake != nil || recorder.takeFailure != nil {
           Button("Take details…") { showsTakeDetails = true }
         }
-        Button("Show recording folder in Finder") { recorder.openRecordingsFolder() }
+        Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
         Button("Settings…") { settingsOrigin = "presenter-options"; settingsTab = showsScript ? .reading : .camera; cameraSection = "Camera"; showsSettings = true }
         Button("Pin Selected Text over Camera") { controller.monitorSelection(store: store) }.disabled(draft.isEditing)
         Button("Match Camera Size") { controller.matchCameraSize() }.disabled(!camera.presentsWithVideo)

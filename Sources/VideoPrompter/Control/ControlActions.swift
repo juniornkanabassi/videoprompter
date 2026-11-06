@@ -678,9 +678,10 @@ import Speech
   }
   private var guidesSnapshot: [String: Any] {
     let g = camera.guides
+    let visible = camera.previewGuides
     return ["thirds": on(g.thirds), "centreCross": on(g.axes), "centreTarget": on(g.bullseye), "marker": g.marker?.label ?? "off",
             "colour": g.colorHex, "visibility": percent(g.opacity), "shade": percent(g.shadeOpacity),
-            "zebras": on(g.zebras), "zebraLevel": g.zebraLevel, "zebraRange": g.zebraRange, "falseColour": on(g.falseColour)]
+            "zebras": on(visible.zebras), "zebraLevel": g.zebraLevel, "zebraRange": g.zebraRange, "falseColour": on(visible.falseColour)]
   }
   private static func access(_ status: AVAuthorizationStatus) -> String {
     switch status {
@@ -717,6 +718,7 @@ import Speech
     if let value = number(params, "zebraLevel") { g.zebraLevel = Int(value) }
     if let value = number(params, "zebraRange") { g.zebraRange = Int(value) }
     camera.guides = g
+    if params["zebras"] == "on" || params["falseColour"] == "on" { camera.exposureBypassed = false; camera.cleanView = false }
     return .ok(cameraState)
   }
   private var recordingSettings: [String: Any] {

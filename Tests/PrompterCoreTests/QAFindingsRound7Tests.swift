@@ -105,7 +105,7 @@ import XCTest
       draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder),
       size: .init(width: 720, height: 520))
     defer { LibraryAX.close(narrow) }
-    let master = try XCTUnwrap(LibraryAX.named("Exposure", in: narrowHost).first)
+    let master = try XCTUnwrap(LibraryAX.named("Exposure check", in: narrowHost).first)
     XCTAssertTrue(LibraryAX.bool(master, "accessibilityPerformPress"))
     XCTAssertTrue(camera.previewGuides.zebras)
     XCTAssertTrue(LibraryAX.bool(master, "accessibilityPerformPress"))

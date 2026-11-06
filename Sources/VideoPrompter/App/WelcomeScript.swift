@@ -28,7 +28,7 @@ enum WelcomeScript {
 
     ## Camera and recording
 
-    **More → View** shows the script, the camera, or both in this presenter. Open **Camera** to choose your camera, or **Guides** for **Framing guides**. **Zebras** and **False colour** under **Exposure** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
+    **More → View** shows the script, the camera, or both in this presenter. Open **Camera** to choose your camera, or **Framing guides**. **Zebras** and **False colour** under **Exposure settings** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
 
     **Open Camera Monitor** in the Window menu opens a second-display view. Both windows share the camera and recording setup.
 

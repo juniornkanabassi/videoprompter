@@ -61,7 +61,9 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
       value.sanitise()
       let old = storedGuides
       guard value != old else { return }
-      if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) { exposureBypassed = false }
+      if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) {
+        exposureBypassed = false; cleanView = false
+      }
       storedGuides = value
       if !loadingGuides {
         guideStore.set(value, for: selectedUID)
@@ -83,6 +85,22 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     if exposureBypassed || cleanView { value.zebras = false; value.falseColour = false }
     if cleanView { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
     return value
+  }
+  var exposureCheckState: String {
+    if cleanView { return "Hidden in Clean view" }
+    if !exposureIsConfigured { return "Off" }
+    return exposureBypassed ? "Aids bypassed" : "Aids visible"
+  }
+  func exposureBinding(_ key: WritableKeyPath<CameraGuides, Bool>) -> Binding<Bool> {
+    Binding(get: { self.previewGuides[keyPath: key] }, set: { enabled in
+      if enabled { self.exposureBypassed = false; self.cleanView = false }
+      self.guides[keyPath: key] = enabled
+    })
+  }
+  func toggleExposureCheck() {
+    if cleanView { cleanView = false; exposureBypassed = false }
+    else if exposureIsConfigured { exposureBypassed.toggle() }
+    else { guides.zebras = true }
   }
   private func announceExposure(_ name: String, on: Bool) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
@@ -293,7 +311,7 @@ struct CameraView: View {
           }
       }
       ToolbarItem {
-        Button("Exposure", systemImage: "sun.max") { showsExposureSettings = true }
+        Button("Exposure settings", systemImage: "sun.max") { showsExposureSettings = true }
       }
       ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model, zoom: zoom) }
       ToolbarItem {
@@ -579,7 +597,7 @@ struct RecordingControls: View {
   var zoom = 1.0
   var body: some View {
     PresenterRecordButton(recorder: recorder, camera: camera)
-    if showsHealth && (recorder.isRecording || recorder.isBusy) { RecordingAudioHealth(recorder: recorder) }
+    if showsHealth && (recorder.isCapturing || recorder.phase == .saving) { RecordingAudioHealth(recorder: recorder) }
     if recorder.phase == .idle { RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom).uiZoom(zoom) }
   }
 }
@@ -600,7 +618,7 @@ struct RecordingRecoveryActions: View {
       case .format:
         Button("Change recording format") { configure() }
       case .storage:
-        Button("Open recordings folder") { recorder.openRecordingsFolder() }
+        Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
       case .retry:
         Button("Try recording again") { Task { await recorder.start(camera: camera) } }
       }
@@ -768,7 +786,7 @@ struct RecordingHealthNotice: View {
         clipping: recorder.inputMeter.isClipping && recorder.inputMeter.isFresh())
       let warning = recorder.droppedAudioBuffers > 0 || recorder.droppedFrames > 0 || health == .clipping || health == .silence
       Button { showsDetails = true } label: {
-        Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : health == .waiting ? "Waiting for sound" : "Sound OK")
+        Text(recorder.droppedFrames > 0 ? "Check recording" : warning ? "Check microphone" : health == .waiting ? "Waiting for sound" : "Receiving sound")
           .font(.callout).fixedSize().frame(minHeight: 24)
       }.buttonStyle(.plain)
         .accessibilityValue(recorder.droppedAudioBuffers > 0 ? "Sound dropped from the file (\(recorder.droppedAudioBuffers) times)" : health.message)
@@ -794,11 +812,12 @@ struct ExposureToggle: View {
   @ObservedObject var model: CameraModel
   let kind: Kind
   var compact = false
-  private var on: Bool { kind == .zebras ? model.guides.zebras : model.guides.falseColour }
+  private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour) }
+  private var on: Bool { binding.wrappedValue }
   private var title: String { kind == .zebras ? "Zebras" : "False colour" }
   var body: some View {
     Button {
-      if kind == .zebras { model.guides.zebras.toggle() } else { model.guides.falseColour.toggle() }
+      binding.wrappedValue.toggle()
     } label: {
       if compact {
         if kind == .falseColour { VStack(spacing: 0) { Text("False"); Text("colour") }.fixedSize() }
@@ -813,6 +832,12 @@ struct CameraExposureSections: View {
   var body: some View {
     Section("Exposure") {
       ExposureToolToggles(model: model)
+      if model.exposureIsConfigured {
+        LabeledContent("Exposure check", value: model.exposureCheckState)
+        if model.exposureBypassed || model.cleanView {
+          Button("Show exposure aids") { model.cleanView = false; model.exposureBypassed = false }
+        }
+      }
       Picker("Zebras show", selection: Binding(get: { model.guides.validatedZebraPurpose }, set: { model.guides.useZebraPreset($0) })) {
         ForEach(CameraGuides.ZebraPurpose.allCases, id: \.self) { Text($0.label).tag($0) }
       }
@@ -823,7 +848,7 @@ struct CameraExposureSections: View {
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
       }
       DisclosureGroup("How exposure aids work") {
-        Text("For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 60 ± 5; skin tones vary. Camera profiles vary, so use it as a reference.")
+        Text("Adjust exposure on your camera while checking the lit cheek. For a standard video feed, a lit face usually sits between about 40 IRE for deeper skin and 65 IRE for lighter skin. Face reference starts at 60 ± 5; skin tones vary. Camera profiles vary, so use it as a reference.")
         Text("Bright-area zebras warn where detail may wash out. False colour compares the brightness of different areas.")
         Text("These colours and zebras measure the brightness of the feed received by your Mac. They do not change the saved video. The right levels depend on your camera and picture profile.")
       }.font(.callout)
@@ -911,13 +936,15 @@ struct RecordingAudioHealth: View {
         clipping: meter.isClipping && meter.isFresh())
       let layout = compact ? AnyLayout(HStackLayout(spacing: Space.sm)) : AnyLayout(VStackLayout(alignment: .leading, spacing: Space.xs))
       layout {
+        if recorder.isCapturing {
         HStack(spacing: Space.sm) {
           Text("Mic: \(recorder.microphoneName)").lineLimit(2).help(recorder.microphoneName)
             .fixedSize(horizontal: false, vertical: true)
           InputLevelMeter(peakDBFS: meter.isFresh() ? meter.peakDBFS : -.infinity, isClipping: meter.isClipping, showsScale: false)
             .frame(minWidth: 40, maxWidth: 100)
         }
-        if recorder.droppedAudioBuffers > 0 || health != .receiving {
+        }
+        if recorder.droppedAudioBuffers > 0 || (recorder.isCapturing && health != .receiving) {
           Label(recorder.droppedAudioBuffers > 0 ? "Sound dropped from the file (\(recorder.droppedAudioBuffers) times)" : health.message, systemImage: "exclamationmark.triangle.fill").fontWeight(.semibold)
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -949,33 +976,49 @@ struct RecordingReceipt: View {
   var compact = false
   @State private var recoverySettings = false
   @State private var showsDetails = false
-  private var receiptLabel: String { recorder.savedTake == nil ? "Take not saved" : recorder.qualityWarning == nil ? "Show saved take…" : "Saved with problems" }
   static func problemSummary(frames: Int, audio: Int, failure: String?) -> String {
     if let failure { return failure }
     if frames > 0 && audio > 0 { return "Picture and sound dropped. Review take." }
     if audio > 0 { return "Sound dropped. Review take." }
     return "Picture dropped. Review take."
   }
+  static func shortCause(_ message: String) -> String {
+    // Preserve the diagnosis; detailed recovery stays in the receipt.
+    let detail = message.replacingOccurrences(of: "No completed take was saved. ", with: "")
+      .replacingOccurrences(of: "No take was saved. ", with: "")
+    return detail.components(separatedBy: ". ").first ?? detail
+  }
   var body: some View {
     if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
-      HStack(alignment: .center, spacing: Space.sm) {
-      Button { showsDetails.toggle() } label: {
-        VStack(alignment: .leading, spacing: 0) {
-          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill").fixedSize()
-
-        }.frame(maxWidth: .infinity, alignment: .leading)
-            }.buttonStyle(.plain).labelStyle(.titleAndIcon).foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange).accessibilityLabel(receiptLabel)
-        .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-receipt")
-        .accessibilityValue(recorder.savedTake?.lastPathComponent ?? recorder.takeFailure ?? "Take not saved")
-        .accessibilityHint(recorder.qualityWarning ?? recorder.takeFailure ?? "Open take details")
-        .help(recorder.qualityWarning ?? recorder.takeFailure ?? recorder.savedTake?.path ?? "")
-        .popover(isPresented: $showsDetails) {
-          RecordingReceipt(recorder: recorder, camera: camera, configure: configure, zoom: zoom)
-            .frame(width: 440).padding(Space.sm).uiZoom(zoom)
+      HStack(spacing: zoom >= 2 ? 0 : Space.sm) {
+        if let cause = recorder.qualityWarning {
+          VStack(alignment: .leading, spacing: 0) {
+            if recorder.savedTake == nil { Text("Take not saved").fontWeight(.semibold) }
+            Text(Self.shortCause(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure))).lineLimit(1)
+          }.font(.callout).foregroundStyle(.orange).help(cause)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel((recorder.savedTake == nil ? "Take not saved · " : "Saved with problems · ") + Self.shortCause(cause))
+            .accessibilityValue(cause)
+          if recorder.savedTake == nil {
+            RecordingRecoveryActions(recorder: recorder, camera: camera) {
+              if let configure { configure() } else { recoverySettings = true }
+            }.fixedSize().popover(isPresented: $recoverySettings) {
+              PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera, initialCameraSection: recorder.recovery == .format ? "Recording" : "Camera")
+            }
+          }
         }
-      if let file = recorder.savedTake {
-        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+        if recorder.savedTake != nil {
+          Button(recorder.qualityWarning == nil ? "Show saved take…" : "Review problem…") { showsDetails = true }
+            .fixedSize().accessibilityValue(recorder.savedTake?.lastPathComponent ?? "")
+          if let file = recorder.savedTake {
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.fixedSize()
+          }
+        }
       }
+      .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-receipt")
+      .popover(isPresented: $showsDetails) {
+        RecordingReceipt(recorder: recorder, camera: camera, configure: configure, zoom: zoom)
+          .frame(width: 440).padding(Space.sm).uiZoom(zoom)
       }
     } else if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {

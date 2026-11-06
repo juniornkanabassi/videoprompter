@@ -26,7 +26,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
         draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
       defer { LibraryAX.close(window) }
-      for label in ["Start reading", "Stop recording", "Reading mode", "Camera", "Exposure", "More presenter options"] {
+      for label in ["Start reading", "Stop recording", "Reading mode", "Camera", "Exposure check", "More presenter options"] {
         XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "\(label) at \(zoom)")
       }
       XCTAssertTrue(LibraryAX.named("Controls", in: host).isEmpty)

@@ -40,35 +40,32 @@ struct AppSettingsView: View {
     let screen = NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 900)
     return CGSize(width: min(880 * store.uiZoom, screen.width - 80), height: min(600 * store.uiZoom, screen.height - 80))
   }
-  private func navigationLabel(_ tab: SettingsTab) -> some View {
-    Label { Text(tab.rawValue).fixedSize() } icon: { Image(systemName: tab.symbol) }
+  private func navigationLabel(_ tab: SettingsTab, width: CGFloat) -> some View {
+    HStack(spacing: Space.sm) {
+      Image(systemName: tab.symbol).frame(width: 20)
+      Text(tab.rawValue).lineLimit(nil).frame(width: max(60, width - 64), alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+    }
   }
   var body: some View {
     GeometryReader { geometry in
-    HStack(spacing: 0) {
-      if geometry.size.width >= 760 * store.uiZoom {
-      List(selection: $selection) {
-        ForEach(SettingsTab.allCases, id: \.self) { tab in
-          Group {
-            if offscreenRendering && selection == tab {
-              navigationLabel(tab).foregroundStyle(.white)
-            } else { navigationLabel(tab) }
-          }.tag(tab)
-        }
-      }.listStyle(.sidebar).uiZoom(store.uiZoom)
-        .frame(width: 250 * store.uiZoom)
-        .accessibilityLabel("Settings page")
-      }
-      VStack(spacing: Space.sm) {
-        if geometry.size.width < 760 * store.uiZoom {
-          Picker("Settings page", selection: $selection) {
-            ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-          }.pickerStyle(.menu).fixedSize().uiZoom(store.uiZoom).padding(Space.sm)
-        }
+      let sidebarWidth = min(250 * store.uiZoom, geometry.size.width * 0.34)
+      HStack(alignment: .top, spacing: 0) {
+        List(selection: $selection) {
+          ForEach(SettingsTab.allCases, id: \.self) { tab in
+            Group {
+              if offscreenRendering && selection == tab {
+                navigationLabel(tab, width: sidebarWidth / store.uiZoom).foregroundStyle(.white)
+              } else { navigationLabel(tab, width: sidebarWidth / store.uiZoom) }
+            }.tag(tab)
+          }
+        }.listStyle(.sidebar).uiZoom(store.uiZoom)
+          .frame(width: sidebarWidth)
+          .frame(maxHeight: .infinity)
+          .accessibilityLabel("Settings page")
         SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       }
-    }
     }.frame(idealWidth: availableSize.width, idealHeight: availableSize.height)
       .onAppear {
         selection = Self.requestedTab ?? selectedTab ?? SettingsTab(rawValue: savedTab) ?? .general
@@ -371,6 +368,8 @@ private struct LoudestSoundReadout: View {
 }
 
 struct InputLevelMeter: View {
+  @Environment(\.colorScheme) private var scheme
+  static func scaleColour(_ scheme: ColorScheme) -> Color { Color(white: scheme == .light ? 0.35 : 0.6) }
   let peakDBFS: Float
   let isClipping: Bool
   var showsScale = true
@@ -440,7 +439,7 @@ struct InputLevelMeter: View {
           let span = Self.labelSpan(position: positions[index], width: Self.labelWidths[index], availableWidth: geometry.size.width)
           Text(Self.ticks[index].1)
             .font(Font(Self.labelFont as CTFont))
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Self.scaleColour(scheme))
             .fixedSize()
             .position(x: (span.lowerBound + span.upperBound) / 2, y: 22)
         }
