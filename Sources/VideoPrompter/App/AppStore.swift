@@ -421,7 +421,7 @@ private enum PresenterSaveError: LocalizedError {
     selectedID = item.id
     return item
   }
-  func delete(_ ids: Set<UUID>) {
+  func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
     for id in ids {
       withLibrary { [self] _ in try await deleteScript(id) }
     }
