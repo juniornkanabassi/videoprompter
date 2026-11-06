@@ -80,17 +80,14 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
       let start = try buttonFrame("Start reading")
-      let close = try buttonFrame("Close presenter")
-      let restart = try buttonFrame("Back to start")
+      let camera = try buttonFrame("Show camera")
       let edit = try buttonFrame("Edit script")
-      let reading = try buttonFrame("Set up this take")
-      XCTAssertFalse(labels(content).joined(separator: "|").contains("Record camera"), "Script-only reading omits recording setup")
       let screenBounds = panel.convertToScreen(content.bounds)
-      for frame in [start, close, restart, edit, reading] {
-        XCTAssertTrue(screenBounds.contains(frame), "\(scale): grouped controls stay inside the presenter")
+      for frame in [start, camera, edit] {
+        XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
-      XCTAssertEqual(close.midY, edit.midY, accuracy: 2, "Editing and closing share the secondary row")
-      XCTAssertGreaterThan(start.midY, close.midY, "Reading sits above secondary actions")
+      XCTAssertEqual(start.midY, camera.midY, accuracy: 2)
+      XCTAssertGreaterThan(start.midY, edit.midY, "Transport stays above secondary actions")
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)
@@ -346,8 +343,11 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertTrue(advanced.contains("Highlight active word"))
     // Builder A owns the other pages; this test covers Reading and General's shared writing controls.
     let expected: [(SettingsTab, [String])] = [
-      (.general, ["Interface size", "Align presenter to screen edges"]),
-      (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"])
+      (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
+      (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
+      (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.camera, ["Camera", "Saved video"]),
+      (.presets, ["Settings name", "Save Reading Preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {
       host.rootView = AnyView(SettingsPage(store: store, tab: tab))

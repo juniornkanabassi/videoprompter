@@ -110,7 +110,8 @@ import XCTest
     let undo = UndoManager()
     store.delete([first.id, second.id], undoManager: undo)
     for _ in 0..<100 where !undo.canUndo { try await Task.sleep(for: .milliseconds(10)) }
-    guard undo.canUndo else { throw XCTSkip("Builder A has supplied the delete signature but not its undo implementation yet. Library Delete-key routing is verified separately.") }
+    XCTAssertTrue(undo.canUndo, "Moving scripts to Trash must register a batch Undo action")
+    guard undo.canUndo else { return }
     XCTAssertEqual(undo.undoActionName, "Move to Trash")
     undo.undo()
     for _ in 0..<100 where store.scripts.count < 2 { try await Task.sleep(for: .milliseconds(10)) }

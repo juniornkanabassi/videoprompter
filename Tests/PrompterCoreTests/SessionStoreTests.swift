@@ -126,7 +126,7 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.anchor, anchor)
     XCTAssertEqual(session.readingStatus, "Needs microphone")
-    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Settings > Voice, then press Start reading.")
+    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Settings > Microphone, then press Start reading.")
     session.play(captureAudio: false)
     XCTAssertEqual(session.state, .running)
     XCTAssertNil(session.anchorNotice)

@@ -17,6 +17,7 @@ import Speech
   init(store: AppStore, presenter: PresenterController = .shared, camera: CameraModel = .shared, recorder: CameraRecorder = .shared, audioAuthorization: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }) {
     self.store = store; self.presenter = presenter; self.camera = camera; self.recorder = recorder
     self.audioAuthorization = audioAuthorization
+    recorder.useSettings(store.settings)
   }
   private func identity(_ script: ScriptRecord) -> [String: String] { ["id": script.id.uuidString, "title": script.metadata.title] }
   private var position: [String: Int] { ["word": store.session.document.spokenTokens.isEmpty ? 0 : store.session.tokenIndex + 1, "words": store.session.document.spokenTokens.count] }
@@ -395,7 +396,7 @@ import Speech
       for device in recording where !voice.contains(where: { $0.uid == device.uniqueID }) {
         rows.append(["id": device.uniqueID, "name": device.localizedName, "voice": false, "recording": true])
       }
-      return .ok(["microphones": rows, "voiceMicrophone": store.settings.audioDeviceUID as Any? ?? NSNull(), "recordingMicrophone": recorder.microphoneUID ?? "default"])
+      return .ok(["microphones": rows, "voiceMicrophone": store.settings.audioDeviceUID as Any? ?? NSNull(), "recordingMicrophone": recorder.resolvedMicrophoneUID ?? "default"])
     case "record_start":
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to start recording.") }
       return await once(action, params) { [self] () -> ControlResult in await startRecording() }
@@ -422,7 +423,7 @@ import Speech
           microphoneUID = device?.uniqueID
         }
       }
-      if params["microphone"] != nil { recorder.microphoneUID = microphoneUID }
+      if params["microphone"] != nil { recorder.usesSeparateMicrophone = true; recorder.microphoneUID = microphoneUID }
       if let quality = params["quality"].flatMap(RecordingPreset.init(rawValue:)) { recorder.preset = quality }
       if let float = params["floatAudio"] { recorder.floatAudio = float == "on" }
       return .ok(recordingSettings)
@@ -716,7 +717,7 @@ import Speech
     return .ok(cameraState)
   }
   private var recordingSettings: [String: Any] {
-    ["quality": recorder.preset.rawValue, "microphone": recorder.microphoneUID ?? "default", "floatAudio": on(recorder.floatAudio)]
+    ["quality": recorder.preset.rawValue, "microphone": recorder.resolvedMicrophoneUID ?? "default", "floatAudio": on(recorder.floatAudio)]
   }
   private var recordingState: [String: Any] {
     var value = recordingSettings
@@ -742,6 +743,7 @@ import Speech
     guard let uid = camera.selectedUID, session.holderCount > 0, session.attachedUID == uid else {
       return .error("camera_not_showing", "Show the camera first: open the Camera window, or present with videoprompter camera set on.")
     }
+    recorder.useSettings(store.settings)
     await recorder.start(camera: camera)
     guard recorder.isRecording else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
     var value = recordingState

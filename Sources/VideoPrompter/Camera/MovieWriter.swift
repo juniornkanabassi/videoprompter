@@ -3,7 +3,7 @@ import AVFoundation
  enum RecordingPreset: String, CaseIterable, Codable, Sendable {
   case standard, high, edit
   var label: String {
-    switch self { case .standard: "Standard (H.264)"; case .high: "High (HEVC)"; case .edit: "Edit (ProRes 422)" }
+    switch self { case .standard: "H.264 (most compatible)"; case .high: "HEVC (smaller files)"; case .edit: "ProRes 422 (for editing)" }
   }
   var codec: AVVideoCodecType {
     switch self { case .standard: .h264; case .high: .hevc; case .edit: .proRes422 }
@@ -18,6 +18,8 @@ final class MovieWriter: @unchecked Sendable {
   private var started = false
   private var firstTime = CMTime.invalid
   private(set) var droppedFrames = 0
+  private(set) var droppedAudioBuffers = 0
+  var audioReadyOverride: Bool?
   init(url: URL, width: Int, height: Int, transform: CGAffineTransform, preset: RecordingPreset, audio: AudioSpec?, floatAudio: Bool) throws {
     guard !FileManager.default.fileExists(atPath: url.path),
       (try FileManager.default.attributesOfItem(atPath: url.deletingLastPathComponent().path)[.type] as? FileAttributeType) == .typeDirectory,
@@ -60,8 +62,13 @@ final class MovieWriter: @unchecked Sendable {
     } else { droppedFrames += 1; return false }
   }
   func append(audio buffer: CMSampleBuffer) throws {
-    guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime, let audio, audio.isReadyForMoreMediaData else { return }
-    if !audio.append(buffer), writer.status == .failed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    guard let audio else { return }
+    guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime,
+      audioReadyOverride ?? audio.isReadyForMoreMediaData else { droppedAudioBuffers += 1; return }
+    if !audio.append(buffer) {
+      droppedAudioBuffers += 1
+      if writer.status == .failed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    }
   }
   func finish() async throws -> URL {
     guard started, writer.status == .writing else {

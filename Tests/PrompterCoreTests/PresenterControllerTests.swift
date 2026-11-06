@@ -1300,7 +1300,7 @@ final class PresenterControllerTests: XCTestCase {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let defaults = freshDefaults()
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
-    XCTAssertEqual(store.settings.textWidth, 1)
+    XCTAssertEqual(store.settings.textWidth, 0.75)
     let markdown = (1...20).map { "Passage \($0) with useful words for a wide column." }.joined(separator: "\n\n")
     let record = ScriptRecord(metadata: .init(title: "Width", fileName: "width.md", revision: 1,
       contentFingerprint: "one"), markdown: markdown)
@@ -1410,7 +1410,7 @@ final class PresenterControllerTests: XCTestCase {
     let defaults = freshDefaults()
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     XCTAssertEqual(store.settings.backdropOpacity(withVideo: false), 0.82)
-    XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.25)
+    XCTAssertEqual(store.settings.backdropOpacity(withVideo: true), 0.5)
     store.settings.videoDimming = 0.6
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
@@ -1425,7 +1425,7 @@ final class PresenterControllerTests: XCTestCase {
     var settings = PrompterSettings()
     settings.setBackdropOpacity(0.5, withVideo: false)
     XCTAssertEqual(settings.backgroundOpacity, 0.5)
-    XCTAssertEqual(settings.videoDimming, 0.25, "Prompter only leaves the video value alone")
+    XCTAssertEqual(settings.videoDimming, 0.5, "Prompter only leaves the video value alone")
     settings.setBackdropOpacity(0.6, withVideo: true)
     XCTAssertEqual(settings.videoDimming, 0.6)
     XCTAssertEqual(settings.backgroundOpacity, 0.5, "video leaves the Prompter-only value alone")

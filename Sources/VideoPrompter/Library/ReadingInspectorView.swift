@@ -6,8 +6,7 @@ struct ReadingSettingsPage: View {
   @ObservedObject var store: AppStore
   @ObservedObject var camera: CameraModel
 
-  // Compatibility for Builder A's old TakeSetupPanel; remove the unused callback after integration.
-  init(store: AppStore, camera: CameraModel = .shared, onVoiceSettings: (() -> Void)? = nil) {
+  init(store: AppStore, camera: CameraModel = .shared) {
     self.store = store
     self.camera = camera
   }

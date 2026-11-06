@@ -1080,7 +1080,7 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
       XCTAssertEqual(session.anchor, before.2)
       XCTAssertEqual(session.seekRevision, before.3)
       XCTAssertEqual(session.state, .running, "video \(on) must not touch speech tracking")
-      XCTAssertEqual(store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), on ? 0.25 : 0.82)
+      XCTAssertEqual(store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), on ? 0.5 : 0.82)
       await reader.say(phrase)
       said += PrompterDocument(markdown: phrase).spokenTokens.count
       XCTAssertEqual(session.lastConfirmedTokenIndex, said - 1, "tracking continued with video \(on)")

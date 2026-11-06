@@ -96,4 +96,18 @@ final class MovieWriterTests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: url), original)
     }
   }
+  func testUnreadyAudioAfterVideoStartsIsCounted() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("audio-drops-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let writer = try MovieWriter(url: folder.appendingPathComponent("take.mov"), width: 320, height: 240,
+      transform: .identity, preset: .standard, audio: AudioSpec(sampleRate: 48000, channels: 2), floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    writer.audioReadyOverride = false
+    try writer.append(audio: audio(0))
+    XCTAssertEqual(writer.droppedAudioBuffers, 1)
+    XCTAssertTrue(RecordingAudioHealth.message(drops: writer.droppedAudioBuffers, clipping: false, fresh: true).contains("Sound dropped"))
+    _ = try await writer.finish()
+  }
+
 }

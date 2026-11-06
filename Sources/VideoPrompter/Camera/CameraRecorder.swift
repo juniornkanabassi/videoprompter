@@ -23,7 +23,16 @@ import PrompterCore
   }
   var isRecording: Bool { phase == .waitingForFrames || phase == .recording }
   var isBusy: Bool { phase == .preparing || phase == .saving }
-  @Published var mirrorSavedVideo: Bool { didSet { defaults.set(mirrorSavedVideo, forKey: "mirrorSavedVideo") } }
+  @Published private var storedMirrorSavedVideo: Bool
+  var mirrorSavedVideo: Bool {
+    get { storedMirrorSavedVideo }
+    set {
+      guard !settingsLocked, newValue != storedMirrorSavedVideo else { return }
+
+      storedMirrorSavedVideo = newValue
+      defaults.set(newValue, forKey: "mirrorSavedVideo")
+    }
+  }
   @Published private(set) var isTestingInput = false
   private var inputTest: RecordingAudioTest?
   private var inputTestStop: Task<Void, Never>?
@@ -37,11 +46,55 @@ import PrompterCore
   @Published private(set) var takeFailure: String?
   enum Recovery: Equatable { case cameraPrivacy, microphonePrivacy, camera, microphone, storage, format, retry }
   @Published private(set) var recovery = Recovery.retry
-  @Published var errorMessage: String? { didSet { if let errorMessage, errorMessage != oldValue { announce(errorMessage) } } }
-  @Published var preset: RecordingPreset { didSet { defaults.set(preset.rawValue, forKey: "recordingPreset") } }
-  @Published var floatAudio: Bool { didSet { if floatAudio != oldValue { stopInputTest() }; defaults.set(floatAudio, forKey: "recordingFloatAudio") } }
-  @Published var takeLabel = ""
-  @Published var microphoneUID: String? { didSet { if microphoneUID != oldValue { stopInputTest() }; defaults.set(microphoneUID, forKey: "recordingMicrophoneUID") } }
+  @Published var errorMessage: String? { didSet { if let errorMessage, errorMessage != oldValue { announce(errorMessage, priority: .high) } } }
+  @Published private var storedPreset: RecordingPreset
+  var preset: RecordingPreset {
+    get { storedPreset }
+    set {
+      guard !settingsLocked, newValue != storedPreset else { return }
+
+      storedPreset = newValue
+      defaults.set(newValue.rawValue, forKey: "recordingPreset")
+    }
+  }
+  @Published private var storedFloatAudio: Bool
+  var floatAudio: Bool {
+    get { storedFloatAudio }
+    set {
+      guard !settingsLocked, newValue != storedFloatAudio else { return }
+      stopInputTest()
+      storedFloatAudio = newValue
+      defaults.set(newValue, forKey: "recordingFloatAudio")
+    }
+  }
+  @Published private var storedTakeLabel = ""
+  var takeLabel: String {
+    get { storedTakeLabel }
+    set { if !settingsLocked { storedTakeLabel = newValue } }
+  }
+  @Published private var storedMicrophoneUID: String?
+  var microphoneUID: String? {
+    get { storedMicrophoneUID }
+    set {
+      guard !settingsLocked, newValue != storedMicrophoneUID else { return }
+      stopInputTest()
+      storedMicrophoneUID = newValue
+      defaults.set(newValue, forKey: "recordingMicrophoneUID")
+    }
+  }
+  var settingsLocked: Bool { isRecording || isBusy }
+  @Published private var storedUsesSeparateMicrophone: Bool
+  var usesSeparateMicrophone: Bool {
+    get { storedUsesSeparateMicrophone }
+    set {
+      guard !settingsLocked else { return }
+      storedUsesSeparateMicrophone = newValue
+      defaults.set(newValue, forKey: "recordingUsesSeparateMicrophone")
+    }
+  }
+  var followingMicrophoneUID: String?
+  var resolvedMicrophoneUID: String? { usesSeparateMicrophone ? microphoneUID : followingMicrophoneUID }
+  func useSettings(_ settings: PrompterSettings) { if !settingsLocked { followingMicrophoneUID = settings.audioDeviceUID } }
   private let defaults: UserDefaults
   private var sink: RecordingSink?
   private var cancelStart = false
@@ -49,16 +102,30 @@ import PrompterCore
   private var watchdog: Task<Void, Never>?
   private var lastFrameAt: Date?
   @Published private(set) var droppedFrames = 0
+  @Published var droppedAudioBuffers = 0 {
+    didSet {
+      if oldValue == 0 && droppedAudioBuffers > 0 { announce("Sound dropped from the file", priority: .high) }
+    }
+  }
   @Published private(set) var activeMicrophoneName: String?
   @Published private(set) var audioChannels = 0
   let inputMeter = InputMeter()
   private var observers: [NSObjectProtocol] = []
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = .standard, followingMicrophoneUID: String? = nil) {
     self.defaults = defaults
-    preset = defaults.string(forKey: "recordingPreset").flatMap(RecordingPreset.init) ?? .standard
-    floatAudio = defaults.bool(forKey: "recordingFloatAudio")
-    microphoneUID = defaults.string(forKey: "recordingMicrophoneUID")
-    mirrorSavedVideo = defaults.bool(forKey: "mirrorSavedVideo")
+    self.followingMicrophoneUID = followingMicrophoneUID ?? defaults.data(forKey: "settings").flatMap { try? JSONDecoder().decode(PrompterSettings.self, from: $0).audioDeviceUID }
+    if let saved = defaults.object(forKey: "recordingUsesSeparateMicrophone") as? Bool { storedUsesSeparateMicrophone = saved }
+    else {
+      let recording = defaults.string(forKey: "recordingMicrophoneUID")
+      let following = followingMicrophoneUID ?? defaults.data(forKey: "settings").flatMap { try? JSONDecoder().decode(PrompterSettings.self, from: $0).audioDeviceUID }
+      let separate = recording != nil && following != nil && recording != following
+      storedUsesSeparateMicrophone = separate
+      defaults.set(separate, forKey: "recordingUsesSeparateMicrophone")
+    }
+    storedPreset = defaults.string(forKey: "recordingPreset").flatMap(RecordingPreset.init) ?? .standard
+    storedFloatAudio = defaults.bool(forKey: "recordingFloatAudio")
+    storedMicrophoneUID = defaults.string(forKey: "recordingMicrophoneUID")
+    storedMirrorSavedVideo = defaults.bool(forKey: "mirrorSavedVideo")
     if let path = defaults.string(forKey: "lastRecording"), FileManager.default.fileExists(atPath: path) { lastFile = URL(fileURLWithPath: path) }
   }
   static func recordingsFolder(arguments: [String] = CommandLine.arguments,
@@ -88,7 +155,7 @@ import PrompterCore
   }
   var microphoneName: String {
     if isRecording || isBusy, let activeMicrophoneName { return activeMicrophoneName }
-    if let uid = microphoneUID { return Self.microphones().first { $0.uniqueID == uid }?.localizedName ?? "Selected microphone unavailable" }
+    if let uid = resolvedMicrophoneUID { return Self.microphones().first { $0.uniqueID == uid }?.localizedName ?? "Selected microphone unavailable" }
     return AVCaptureDevice.default(for: .audio)?.localizedName ?? "No microphone"
   }
   static func framesTimedOut(attachedAt: Date, lastFrameAt: Date?, now: Date) -> Bool {
@@ -100,7 +167,7 @@ import PrompterCore
     phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil
     recordingID = UUID()
     let takeID = recordingID
-    recordedDuration = 0; droppedFrames = 0; inputMeter.reset(); lastFrameAt = nil
+    recordedDuration = 0; droppedFrames = 0; droppedAudioBuffers = 0; inputMeter.reset(); lastFrameAt = nil
     activeMicrophoneName = nil; audioChannels = 0
     defer { if !isRecording { phase = .idle; recordingID = nil } }
     do {
@@ -114,9 +181,8 @@ import PrompterCore
       guard !cancelStart else { return }
       guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw recordingError("Allow microphone access in System Settings > Privacy & Security > Microphone before recording.", recovery: .microphonePrivacy) }
       let devices = Self.microphones()
-      let microphone = microphoneUID.flatMap { id in devices.first { $0.uniqueID == id } } ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
-      guard let microphone else { throw recordingError("The selected microphone is unavailable. Open Recording settings and choose another microphone.", recovery: .microphone) }
-      if microphoneUID != nil { microphoneUID = microphone.uniqueID }
+      let microphone = resolvedMicrophoneUID.flatMap { id in devices.first { $0.uniqueID == id } } ?? (resolvedMicrophoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
+      guard let microphone else { throw recordingError("The selected microphone is unavailable. Open Microphone settings and choose another microphone.", recovery: .microphone) }
       recovery = .storage
       let folder = Self.recordingsFolder()
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -139,6 +205,11 @@ import PrompterCore
         Task { @MainActor in
           guard let self, self.recordingID == takeID, self.isRecording else { return }
           self.inputMeter.show(channelPeaks: levels)
+        }
+      }, onAudioDrop: { [weak self] count in
+        Task { @MainActor in
+          guard let self, self.recordingID == takeID else { return }
+          self.droppedAudioBuffers = count
         }
       }) { [weak self] error in
         Task { @MainActor [weak self] in
@@ -227,7 +298,8 @@ import PrompterCore
         lastFile = result.0; savedTake = result.0
         defaults.set(result.0.path, forKey: "lastRecording")
         droppedFrames = result.1
-        announce("Saved recording \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
+        droppedAudioBuffers = result.2
+        announce("Saved \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
       } catch {
         recovery = Self.recovery(for: error)
         errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)"
@@ -235,6 +307,7 @@ import PrompterCore
       takeFailure = errorMessage
 
       shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; phase = .idle
+      announce("Recording stopped")
     }
     stopTask = task; await task.value; stopTask = nil
   }
@@ -250,9 +323,9 @@ import PrompterCore
       return
     }
     do {
-      let device = microphoneUID.flatMap { id in Self.microphones().first { $0.uniqueID == id } }
-        ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
-      guard let device else { throw recordingError("Open Recording settings and choose an available microphone.", recovery: .microphone) }
+      let device = resolvedMicrophoneUID.flatMap { id in Self.microphones().first { $0.uniqueID == id } }
+        ?? (resolvedMicrophoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
+      guard let device else { throw recordingError("Open Microphone settings and choose an available microphone.", recovery: .microphone) }
       let test = try RecordingAudioTest(device: device, floatAudio: floatAudio) { [weak self] levels in
         Task { @MainActor in
           guard let self, self.testGeneration == generation, self.isTestingInput else { return }
@@ -270,9 +343,9 @@ import PrompterCore
     if let test = inputTest { inputTestStop = Task { await test.stop() } }
     inputTest = nil
   }
-  private func announce(_ message: String) {
+  private func announce(_ message: String, priority: NSAccessibilityPriorityLevel = .medium) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
-      userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      userInfo: [.announcement: message, .priority: priority.rawValue])
   }
   static func recovery(for error: Error) -> Recovery {
     let error = error as NSError
@@ -303,14 +376,16 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   private let mirrored: Bool
   private let onFrame: @Sendable (TimeInterval) -> Void
   private let onAudio: @Sendable ([Float]) -> Void
+  private let onAudioDrop: @Sendable (Int) -> Void
+  private var earlyAudioDrops = 0
   private var firstFrame: CMTime?
   private let spec: AudioSpec
   private let floatAudio: Bool
   private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable ([Float]) -> Void, onFailure: @escaping @Sendable (Error) -> Void) {
-    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable ([Float]) -> Void, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
@@ -333,14 +408,20 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
       } else {
         onAudio(RecordingAudioTest.channelPeaks(in: sampleBuffer))
-        try writer?.append(audio: sampleBuffer)
+        if let writer { try writer.append(audio: sampleBuffer) } else { earlyAudioDrops += 1 }
+        onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
       }
     } catch { failure = error; onFailure(error) }
+  }
+  func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    guard output === audio else { return }
+    earlyAudioDrops += 1
+    onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
   }
   static func recordingTransform(rotation: CameraRotation, mirrored: Bool) -> CGAffineTransform {
     CGAffineTransform(rotationAngle: rotation.radians).concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1))
   }
-  func finish() async throws -> (URL, Int) {
+  func finish() async throws -> (URL, Int, Int) {
     let value: MovieWriter = try await withCheckedThrowingContinuation { continuation in
       queue.async { [self] in
         if let failure { continuation.resume(throwing: failure) }
@@ -349,6 +430,6 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
       }
     }
     let file = try await value.finish()
-    return (file, value.droppedFrames)
+    return (file, value.droppedFrames, earlyAudioDrops + value.droppedAudioBuffers)
   }
 }

@@ -79,6 +79,10 @@ enum ScriptShortcuts {
           Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
           Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
           Divider()
+          PresenterVideoItems()
+          ExposureMenuItems()
+          Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
+            .keyboardShortcut("f", modifiers: [.command, .control])
         }
         CommandMenu("Format") {
           Button("Bold") { FormattedMarkdownEditor.formatFocused(.bold) }.keyboardShortcut("b")
@@ -91,7 +95,7 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Open camera-only presenter") { PresenterController.shared.presentCamera(store: store) }
+          Button("Camera Only presenter") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Open the floating presenter for framing; add a script later. Shares camera settings with the separate monitor.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
@@ -106,13 +110,11 @@ enum ScriptShortcuts {
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
           RecordingMenuItems()
           Divider()
-          PresenterVideoItems()
           Button("Pin Selected Text over Camera") { PresenterController.shared.monitorSelection(store: store) }
             // Not Option-Command-M: that is Window > Minimise All.
             .keyboardShortcut("l", modifiers: [.command, .option])
             .help("Pin the selected passage over the camera picture, as a reference monitor")
-          Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
-            .keyboardShortcut("f", modifiers: [.command, .control])
+          Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
         }
         CameraCommands()
         UpdateCommands()
@@ -123,7 +125,7 @@ enum ScriptShortcuts {
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Separate Camera Monitor", id: "camera") {
+    Window("Camera Monitor", id: "camera") {
       CameraView(zoom: store.uiZoom)
         .background(MainWindowConfigurator(size: NSSize(width: 760, height: 480)))
         .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
@@ -150,8 +152,15 @@ struct PresenterVideoItems: View {
     Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
     Toggle("Camera Only", isOn: choice(.videoOnly))
-    Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
-      .disabled(!camera.presentsWithVideo)
+  }
+}
+
+struct ExposureMenuItems: View {
+  @ObservedObject private var camera = CameraModel.shared
+  var body: some View {
+    Toggle("Clean View", isOn: $camera.cleanView).keyboardShortcut("k", modifiers: [.option, .command])
+    Toggle("Zebras", isOn: $camera.guides.zebras).keyboardShortcut("z", modifiers: [.option, .command])
+    Toggle("False Colour", isOn: $camera.guides.falseColour).keyboardShortcut("x", modifiers: [.option, .command])
   }
 }
 
@@ -209,7 +218,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open separate camera monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Camera Monitor Window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }
@@ -342,11 +351,11 @@ struct RecordingMenuItems: View {
   @ObservedObject private var recorder = CameraRecorder.shared
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
-    Button(recorder.isRecording ? "Stop Recording" : "Record Camera") {
+    Button(recorder.isRecording ? "Stop Recording" : "Record") {
       Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera) } }
     }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy || (!recorder.isRecording && !camera.isReadyToRecord))
       .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStartRunningNotification)) { _ in camera.objectWillChange.send() }
       .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStopRunningNotification)) { _ in camera.objectWillChange.send() }
-    Button("Open Recordings Folder") { recorder.openRecordingsFolder() }
+    Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
   }
 }

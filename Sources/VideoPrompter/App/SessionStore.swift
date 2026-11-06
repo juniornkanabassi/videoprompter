@@ -391,7 +391,7 @@ final class SessionStore: ObservableObject {
   }
 
   func startMicrophoneTest(deviceUID: String?, gain: Double) {
-    guard !isActivelyRunning else {
+    guard !isActivelyRunning || isManual else {
       microphoneTestNotice = "Pause the presenter before testing the microphone."
       return
     }
@@ -411,10 +411,10 @@ final class SessionStore: ObservableObject {
         guard self.lifecycleGeneration == generation else { return }
         self.isTestingMicrophone = false
         self.microphoneTestTask = nil
-        self.microphoneTestNotice = "Allow Video Prompter in System Settings > Privacy & Security > Microphone, then press Test microphone again."
+        self.microphoneTestNotice = "Allow Video Prompter in System Settings > Privacy & Security > Microphone, then try again."
         return
       }
-      guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning else {
+      guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning || self.isManual else {
         return
       }
       do {
@@ -654,7 +654,7 @@ final class SessionStore: ObservableObject {
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
-      failAudio("Choose a microphone in Settings > Voice, then press Start reading.")
+      failAudio("Choose a microphone in Settings > Microphone, then press Start reading.")
       return
     }
     isPreparingVoice = true
@@ -763,6 +763,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var isClipping = false
   @Published private(set) var channelPeaks: [Float] = []
   private(set) var lastSampleAt: TimeInterval?
+  private(set) var lastAudibleSampleAt: TimeInterval?
   func isFresh(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
     lastSampleAt.map { now - $0 < 1.5 } ?? false
   }
@@ -773,10 +774,11 @@ final class SessionStore: ObservableObject {
   }
   func show(peakDBFS: Float, isClipping: Bool) {
     lastSampleAt = ProcessInfo.processInfo.systemUptime
+    if peakDBFS > -60 { lastAudibleSampleAt = lastSampleAt }
     if self.peakDBFS != peakDBFS { self.peakDBFS = peakDBFS }
     if self.isClipping != isClipping { self.isClipping = isClipping }
   }
-  func reset() { show(peakDBFS: -.infinity, isClipping: false); if !channelPeaks.isEmpty { channelPeaks = [] }; lastSampleAt = nil }
+  func reset() { show(peakDBFS: -.infinity, isClipping: false); if !channelPeaks.isEmpty { channelPeaks = [] }; lastSampleAt = nil; lastAudibleSampleAt = nil }
 }
 
 private final class AudioFrameCounter: @unchecked Sendable {

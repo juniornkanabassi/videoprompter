@@ -10,7 +10,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   var textOpacity = 1.0
   var backgroundOpacity = 0.82
   /// The backdrop's opacity over the camera picture; the Prompter-only 0.82 blacked it out.
-  var videoDimming = 0.25
+  var videoDimming = 0.5
   var guideFraction = 0.35
   var guideOpacity = 0.82
   var horizontalMirror = false
@@ -33,7 +33,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   var paragraphSpacing = 0.34
   /// The script column as a fraction of the presenter's width, centred. It replaced the old
   /// fixed "Horizontal margin" (points), which could not narrow a full-screen column.
-  var textWidth = 1.0 { didSet { textWidth = Self.clampedTextWidth(textWidth) } }
+  var textWidth = 0.75 { didSet { textWidth = Self.clampedTextWidth(textWidth) } }
   /// Modes older builds saved. Timed and the old Manual become the new Manual; Sound and anything
   /// unknown become Voice.
   static let legacyModes: Set<String> = ["Timed", "Manual", "Sound"]

@@ -35,10 +35,11 @@ extension AppStore {
       let alert = NSAlert()
       alert.messageText = "This script was edited since it came from Google Docs"
       alert.informativeText = "Updating replaces those edits with the document as it is in Google Docs now."
+      alert.addButton(withTitle: "Cancel")
       alert.addButton(withTitle: "Replace with the Google Doc")
-      alert.addButton(withTitle: "Keep This Version")
-      guard alert.runModal() == .alertFirstButtonReturn else { return }
+      guard alert.runModal() == .alertSecondButtonReturn else { return }
     }
+    libraryNotice = "Updating from Google Docs…"
     let id = script.id
     let before = script.markdown
     Task {
@@ -52,7 +53,9 @@ extension AppStore {
         }
         MacGoogleDocs.links[id] = .init(document: link.document, fingerprint: MarkdownLibrary.fingerprint(markdown))
         updateMarkdown(markdown, for: id)
+        libraryNotice = markdown == before ? "Already up to date" : "Updated"
       } catch {
+        libraryNotice = nil
         errorMessage = error.localizedDescription
       }
     }

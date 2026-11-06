@@ -32,7 +32,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published var namingNewFolder = false
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
-  @Published var settings = PrompterSettings() { didSet { persistSettings() } }
+  @Published var settings = PrompterSettings() { didSet { persistSettings(); CameraRecorder.shared.useSettings(settings) } }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
   @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
@@ -45,6 +45,7 @@ private enum PresenterSaveError: LocalizedError {
   static let uiZoomSteps = [1, 1.1, 1.25, 1.5, 1.75, 2]
   static let presenterFontSizes = 18.0...120.0
   static let editorFontSizes = 12.0...40.0
+  @Published var libraryNotice: String?
   @Published var errorMessage: String?
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
@@ -134,7 +135,7 @@ private enum PresenterSaveError: LocalizedError {
         || saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") })
       {
         isolatedDefaults.set(true, forKey: Self.modeMigrationPendingKey)
-        modeMigrationNotice = "Reading now has two modes. The older Timed and Manual modes now use Automatic scroll: choose a words-per-minute speed and press Start reading. Saved settings that used Sound now use Voice follow."
+        modeMigrationNotice = "Reading now has two modes. The older Timed and Manual modes now use Automatic scroll: choose a words-per-minute speed and press Start reading. Reading presets that used Sound now use Voice follow."
       } else {
         isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
       }
@@ -350,7 +351,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
   func trashSelectionFromMenu(in window: NSWindow? = NSApp.keyWindow) {
     guard Self.canTrashSelection(in: window) else { return }
-    delete(selectedIDs)
+    delete(selectedIDs, undoManager: window?.undoManager)
   }
   static func canTrashSelection(in window: NSWindow?) -> Bool {
     guard !(window is PresenterPanel), !(window?.firstResponder is NSTextView) else { return false }
@@ -402,7 +403,15 @@ private enum PresenterSaveError: LocalizedError {
       errorMessage = "Copy some text first, then choose Paste Copied Text."
       return
     }
-    create(title: "Pasted Script", markdown: markdown)
+    create(title: Self.pastedTitle(markdown), markdown: markdown)
+  }
+  static func pastedTitle(_ markdown: String) -> String {
+    let lines = markdown.components(separatedBy: .newlines)
+    if let heading = lines.first(where: { $0.range(of: #"^\s{0,3}#{1,6}\s+\S"#, options: .regularExpression) != nil }) {
+      return String(heading.replacingOccurrences(of: #"^\s*#+\s+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).prefix(60))
+    }
+    let words = (lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? "").split(whereSeparator: { $0.isWhitespace }).prefix(6).joined(separator: " ")
+    return words.isEmpty ? "Pasted Script" : String(words.prefix(60))
   }
   struct PendingEditsError: Error, CustomStringConvertible {
     let description: String
@@ -422,9 +431,31 @@ private enum PresenterSaveError: LocalizedError {
     return item
   }
   func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
-    for id in ids {
-      withLibrary { [self] _ in try await deleteScript(id) }
+    let googleLinks = Dictionary(uniqueKeysWithValues: ids.compactMap { id in MacGoogleDocs.links[id].map { (id, $0) } })
+    withLibrary { [self] _ in
+      var deleted = Set<UUID>()
+      do {
+        for id in ids { try await deleteScript(id); deleted.insert(id) }
+      } catch {
+        registerDeletedScripts(deleted, googleLinks: googleLinks, undoManager: undoManager)
+        throw error
+      }
+      registerDeletedScripts(deleted, googleLinks: googleLinks, undoManager: undoManager)
     }
+  }
+  private func registerDeletedScripts(_ ids: Set<UUID>, googleLinks: [UUID: GoogleDocLinks.Link], undoManager: UndoManager?) {
+    guard !ids.isEmpty else { return }
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in
+      // Register synchronously while UndoManager is undoing, so this becomes Redo.
+      undoManager?.registerUndo(withTarget: target) { [weak undoManager] store in store.delete(ids, undoManager: undoManager) }
+      undoManager?.setActionName("Move to Trash")
+      target.withLibrary { _ in
+        for id in ids { try await target.restoreScript(id); MacGoogleDocs.links[id] = googleLinks[id] }
+      }
+    }
+    undoManager?.setActionName("Move to Trash")
+    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [.announcement: "Moved \(ids.count) \(ids.count == 1 ? "script" : "scripts") to Recently Deleted", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
   }
   func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -692,7 +723,7 @@ private enum PresenterSaveError: LocalizedError {
     preset.id = UUID()
     preset.name =
       name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      ? "Saved settings \(presets.count + 1)" : name.trimmingCharacters(in: .whitespacesAndNewlines)
+      ? "Reading preset \(presets.count + 1)" : name.trimmingCharacters(in: .whitespacesAndNewlines)
     presets.append(preset)
   }
   func renamePreset(_ id: UUID, name: String) {
@@ -726,7 +757,10 @@ private enum PresenterSaveError: LocalizedError {
     compared.speechLanguage = settings.speechLanguage
     return compared == settings
   }
-  func applyPreset(_ preset: PrompterSettings) {
+  func applyPreset(_ preset: PrompterSettings, undoManager: UndoManager? = nil) {
+    let previous = settings
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in target.applyPreset(previous, undoManager: undoManager) }
+    undoManager?.setActionName("Apply Reading Preset")
     var applied = preset
     applied.mode = PrompterSettings.normalisedMode(applied.mode)
     applied.name = settings.name

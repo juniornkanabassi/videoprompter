@@ -101,10 +101,10 @@ import XCTest
       recorder.savedTake = nil
       recorder.phase = .idle
       store.uiZoom = 1
-      try await snapshot(TakeSetupPanel(store: store, camera: camera, recorder: recorder), name: "take-setup-\(mode)", size: .init(width: 540, height: 600), scheme: scheme, destination: destination)
+      try await snapshot(PresenterSettingsPopover(store: store), name: "take-setup-\(mode)", size: .init(width: 540, height: 600), scheme: scheme, destination: destination)
       try await snapshot(PresenterReferenceCue(passage: String(repeating: "A short reference to check the composition. ", count: 20), fontName: "Helvetica Neue", readingSize: 48, zoom: 2, end: {}), name: "reference-cue-200-\(mode)", size: .init(width: 1000, height: 220), scheme: scheme, destination: destination)
 
-      try await snapshot(SettingsPage(store: store, tab: .voice).uiZoom(2), name: "settings-Voice-200-\(mode)", size: .init(width: 560, height: 700), scheme: scheme, destination: destination)
+      try await snapshot(SettingsPage(store: store, tab: .microphone).uiZoom(2), name: "settings-Voice-200-\(mode)", size: .init(width: 560, height: 700), scheme: scheme, destination: destination)
       camera.guides.zebras = true; camera.guides.falseColour = true
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-active-\(mode)", size: .init(width: 480, height: 900), scheme: scheme, destination: destination)
       camera.guides.zebras = false; camera.guides.falseColour = false
@@ -186,8 +186,44 @@ import XCTest
     XCTAssertTrue(NSApp.windows.allSatisfy { !$0.isVisible })
   }
 
+  func testDesignSpecFixtures() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let destination = URL(fileURLWithPath: output)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    let defaults = freshDefaults("DesignSpecSnapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["snapshot", "--data-directory", root.path], defaults: defaults))
+    let record = try await store.createScript(title: "A clear opening", markdown: "# A clear opening\n\nRead these opening words at your own pace.\n\nA second paragraph keeps the reading line easy to follow.")
+    store.session.present(record: record, settings: store.settings)
+    let draft = PresenterDraft(record: record)
+    let camera = CameraModel(defaults: defaults); camera.recordingReadyOverride = true
+    let recorder = CameraRecorder(defaults: defaults)
+    let monitor = ReferenceMonitor()
+    for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom; camera.displayMode = .prompterWithVideo; recorder.phase = .idle
+        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-idle-camera-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        if zoom != 1.5 {
+          recorder.phase = .recording; recorder.inputMeter.show(channelPeaks: [0.2, 0.4])
+          try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+          recorder.phase = .idle
+          for tab in SettingsTab.allCases {
+            try await snapshot(SettingsPage(store: store, tab: tab).uiZoom(zoom), name: "settings-\(tab.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
+          }
+        }
+      }
+      store.uiZoom = 1; camera.cleanView = true
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-clean-view-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      camera.cleanView = false; camera.displayMode = .videoOnly; store.uiZoom = 2
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, hasScript: false, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-camera-only-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      store.uiZoom = 1; recorder.usesSeparateMicrophone = true
+      try await snapshot(MicrophonePage(store: store, recorder: recorder), name: "microphone-separate-\(mode)", size: .init(width: 560, height: 750), scheme: scheme, destination: destination)
+      try await snapshot(CameraExposureSettings(model: camera), name: "exposure-panel-\(mode)", size: .init(width: 560, height: 600), scheme: scheme, destination: destination)
+    }
+  }
+
   func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL) async throws {
-    let host = NSHostingView(rootView: content.background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
+    let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     let window = NSWindow(contentRect: NSRect(origin: .init(x: -20000, y: -20000), size: size), styleMask: [.titled], backing: .buffered, defer: true)
     window.isReleasedWhenClosed = false
     window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -211,10 +247,17 @@ import XCTest
     window.effectiveAppearance.performAsCurrentDrawingAppearance {
       host.cacheDisplay(in: host.bounds, to: bitmap)
     }
+    let corner = bitmap.colorAt(x: 0, y: 0)
+    let hasRenderedContent = stride(from: 0, to: bitmap.pixelsHigh, by: max(1, bitmap.pixelsHigh / 64)).contains { y in
+      stride(from: 0, to: bitmap.pixelsWide, by: max(1, bitmap.pixelsWide / 64)).contains { x in
+        bitmap.colorAt(x: x, y: y) != corner
+      }
+    }
+    XCTAssertTrue(hasRenderedContent, "The snapshot must not be a blank compositor surface: \(name)")
     let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
     try data.write(to: destination.appendingPathComponent(name + ".png"))
     XCTAssertGreaterThan(data.count, 2_000, "A page must contain rendered content")
-    let metadata: [String: Any] = ["page": name, "width": size.width, "height": size.height, "visible": window.isVisible, "renderer": "NSHostingView.cacheDisplay", "limit": "Offscreen content only; native window glass and active toolbar require live review"]
+    let metadata: [String: Any] = ["page": name, "width": size.width, "height": size.height, "visible": window.isVisible, "renderer": "NSHostingView.cacheDisplay", "presenterAppearance": "Solid Reduce Transparency fallback", "limit": "Offscreen content only; native window glass and active toolbar require live review"]
     try JSONSerialization.data(withJSONObject: metadata, options: [.prettyPrinted, .sortedKeys]).write(to: destination.appendingPathComponent(name + "-snapshot.json"))
     print("SNAPSHOT \(destination.appendingPathComponent(name + ".png").path)")
   }

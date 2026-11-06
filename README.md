@@ -37,12 +37,14 @@ From the first release built with Sparkle, Video Prompter checks for updates onc
 
 A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Welcome Script brings it back.
 
-1. Choose Add to import a file, or create a New Script.
-2. Press Present.
-3. Open **Set up this take** and choose Voice follow or Automatic scroll.
-4. In the presenter, press Start. Pause stops, and Back to start returns to the first word.
+1. Choose **Paste Copied Text** to paste a script, or use **Add** to create or import one. Pasted scripts take their title from the text.
+2. Choose **Present**.
+3. Open **Microphone** to check the live level, then close the popover.
+4. Choose **Start reading**. **Pause** stops reading and **Back to start** returns to the first word.
 
-New libraries start with simple controls. More in Settings reveals the detailed appearance, voice and saved settings. Showing or hiding them does not change anything you have saved.
+Reading and recording are separate actions. With a camera shown, **Record** sits beside **Start reading**. In Script only view, **Show camera** switches the presenter to Script and camera.
+
+Settings has five pages: **General**, **Reading**, **Reading presets**, **Microphone**, and **Camera & Recording**. General holds interface and editor sizes. Reading holds the script's appearance and following mode. The presenter's **More > Settings…** opens those same reading, microphone and camera controls in a popover.
 
 Voice follow tracks your spoken words using speech recognition on your Mac, including mixed English and French. Automatic scroll moves at the speed you choose and needs no microphone or speech download. The first time you use Voice follow in a language, macOS may need to download Apple's speech files for it, so you need to be online then. A Mac that has never been online may not be ready for Voice follow. If Voice follow cannot get ready, check your connection and permissions and try again, or use Automatic scroll.
 
@@ -52,13 +54,21 @@ Voice tracking is still a preview. It can hesitate when your wording differs fro
 
 Scripts are stored as Markdown. When you import a Markdown file it stays linked both ways with the original. Edits in Video Prompter change the file, and changes to the file appear in Video Prompter. Other formats are converted on import and are not linked.
 
-The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. When the camera is on, the bar's camera picker lets you preview and switch cameras, and **Framing guides** opens the rule of thirds, centre cross, centre target and frame marker controls. **Camera Settings…** in the View menu also holds rotation and mirroring.
+The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. The camera picker, **Guides**, **Zebras**, **False colour** and **Exposure…** are on the tools row. When space is limited, **Camera tools** groups them in one menu. **Clean view** temporarily hides the script, backdrop and all guides, and pauses reading. **Exit clean view** or Esc returns to the same reading position.
 
-To record without a script, press **Present** with no script selected, or choose **Open camera-only presenter** from the Prompter menu. The presenter shows just the camera. Select a script and press **Present** again to add it over the same picture.
+Choose **Camera Only** in the library to check framing or record without a script. The **Camera Monitor** window provides a second view of the same camera for another display.
 
-To use the presenter as a reference monitor, drag across a passage in the presenter or the editor, then choose **Pin Selected Text over Camera** from the View menu or the Prompter menu (⌥⌘L). The passage sits above the camera picture, with Expand passage for longer text. Press **Back to script** or Esc to return. A single click in the presenter still moves the reading position.
+Drag across a passage in the presenter or editor, then choose **Pin Selected Text over Camera** from **More** or the Prompter menu (⌥⌘L). **Expand passage** reveals longer text. **Back to script** or Esc returns to reading. Clicking a word in the presenter moves the reading position. **Edit script** opens an unsaved draft; **Save changes** (⌘Return) saves it, and **Cancel editing** keeps the original wording.
 
-Choose **Set up this take** in the presenter to check both microphones, reading settings and saved-video settings. **Start reading** does not record. **Record camera** records the camera and selected recording microphone using the pinned preview format, normally no larger than 1920×1080. Audio health stays visible during a take; stopping leaves a named saved-take receipt with Review and Show in Finder. I have not yet tested recording with real cameras and microphones. The presenter window is normally hidden from screen capture, so it should not appear in a screen recording, though I have not yet confirmed this with specific recording and screen-sharing apps.
+**Microphone** normally chooses one device for both Voice follow and recorded sound. In Settings > Microphone > Advanced, **Record from a different microphone** enables a separate recording input. Camera, rotation and saved-video settings are locked while a take is preparing, recording or saving.
+
+Choose **Record**, optionally **Start reading**, then **Stop recording**. The fixed transport row keeps Stop and the REC timer visible while the tools row recedes. **More controls** brings the tools back. The health line shows the recording microphone, its input level and any sound problem. Dropped audio buffers are reported during the take and retained with its saved message.
+
+After a take, **Saved [file name]** offers **Play**, **Show in Finder** and **Hide**. The library's **Recordings** button and Prompter > **Show Recordings Folder** reopen the folder later. Settings > Camera & Recording holds H.264, HEVC and ProRes 422 recording formats, saved-video mirroring and take names. Frame markers and exposure aids only affect the preview.
+
+Move to Trash is reversible with **Edit > Undo** for the whole selected batch. Applying a reading preset can also be undone. Google Docs updates show progress and report **Updated** or **Already up to date**; replacing locally edited text requires an explicit choice, with Cancel selected by default.
+
+Physical camera and microphone recording, spoken VoiceOver, active-window Liquid Glass and capture-app exclusion still need live checks. Offscreen snapshots use the solid Reduce Transparency appearance because bitmap capture cannot composite Liquid Glass.
 
 ## Privacy
 
