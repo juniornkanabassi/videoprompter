@@ -292,9 +292,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
-    // Geometry, not just AX presence: the whole guide stays inside the 200% detail column.
+    // The interactive example stays inside the enlarged detail column.
     let guidance = try XCTUnwrap(accessibilityObjects(host).first {
-      labels($0).first?.contains("Then choose Present") == true
+      labels($0).first?.contains("Try the three reading steps") == true
     })
     XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
     let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue

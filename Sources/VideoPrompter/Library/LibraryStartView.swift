@@ -20,17 +20,16 @@ struct LibraryStartView: View {
         VStack(alignment: .leading, spacing: Space.sm) {
           Text("Ready when you are").font(store.uiZoom >= 1.5 ? UIType.title : .largeTitle.bold())
         }
-        VStack(alignment: .leading, spacing: Space.md) {
+        VStack(alignment: .leading, spacing: Space.sm) {
           Button { store.importClipboard() } label: {
             Label("Paste Copied Text", systemImage: "doc.on.clipboard")
           }.buttonStyle(.borderedProminent)
           Text("Copy your script, then paste it here.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
-        Text("Then choose **Present**, then **Start reading**. Voice follow moves the words as you speak. Reading does not record a video.")
-          .font(.callout).fixedSize(horizontal: false, vertical: true)
           Button("Quick Reading Practice", action: practice).buttonStyle(.bordered)
             .help("Open a short guided practice, then choose Start reading")
           Text("Try reading for 30 seconds.").font(.callout)
+          ReadingWorkflowExample()
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button(action: camera) { Label("Camera Only", systemImage: "video") }
@@ -48,6 +47,60 @@ struct LibraryStartView: View {
       }.foregroundStyle(.primary).frame(maxWidth: 620, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .topLeading).padding(Space.margin)
     }
+  }
+}
+
+/// A local illustration: trying each step never starts capture or changes a script.
+struct ReadingWorkflowExample: View {
+  enum Step: Int, CaseIterable {
+    case add, present, read
+    var title: String {
+      switch self {
+      case .add: "1. Add text"
+      case .present: "2. Present"
+      case .read: "3. Read"
+      }
+    }
+    var caption: String {
+      switch self {
+      case .add: "Example · Write or paste your words."
+      case .present: "Example · Present opens the reading window."
+      case .read: "Example · Start reading moves the words."
+      }
+    }
+  }
+  @State var step: Step = .add
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      HStack(spacing: Space.sm) {
+        ForEach(Step.allCases, id: \.self) { item in
+          Button { step = item } label: {
+            Text(item.title).underline(step == item)
+              .frame(maxWidth: .infinity, minHeight: 24)
+          }.buttonStyle(.bordered)
+            .accessibilityValue(step == item ? "Selected" : "")
+            .accessibilityHint("Shows an example of this step. Does not start reading or recording.")
+        }
+      }
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text(step.caption).font(.callout)
+          .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: Space.xs) {
+          Image(systemName: step == .add ? "doc.text" : "text.alignleft")
+            .accessibilityHidden(true)
+          Text("Take a breath. \(Text("Speak").bold().foregroundColor(step == .read ? .yellow : step == .add ? .primary : .white)) in your own time.")
+            .font(step == .add ? .body : .title3)
+            .fixedSize(horizontal: false, vertical: true)
+        }.padding(Space.sm)
+          .frame(maxWidth: .infinity, alignment: .leading)
+          .foregroundStyle(step == .add ? Color.primary : .white)
+          .background(step == .add ? Color(nsColor: .textBackgroundColor) : Color(white: 0.12))
+      }
+      Text("Reading does not record a video.").font(.callout)
+    }.foregroundStyle(.primary)
+      .accessibilityElement(children: .contain)
+      .accessibilityLabel("Try the three reading steps")
   }
 }
 

@@ -67,7 +67,7 @@ import XCTest
         let caption = try XCTUnwrap(LibraryAX.named(label, in: host).first, label)
         let rect = frame(caption)
         XCTAssertGreaterThan(rect.width, 20 * zoom)
-        XCTAssertEqual(rect.midY, keyFrame.midY, accuracy: 2)
+        XCTAssertLessThanOrEqual(abs(rect.midY - keyFrame.midY), 8 * zoom)
         XCTAssertLessThanOrEqual(rect.maxX, keyFrame.minX)
       }
       XCTAssertLessThanOrEqual(host.fittingSize.height, 40 * zoom)

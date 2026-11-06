@@ -18,10 +18,13 @@ struct EditorTextControls: View {
       Text("Changes only the writing surface.").font(UIType.secondary)
         .foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
       if showsReadingLink {
-        Button("Reading text size…") {
+        Button {
           AppSettingsView.requestTab(.reading)
           openSettings()
-        }.buttonStyle(.link)
+        } label: {
+          Text("Reading text size…").underline().foregroundStyle(.primary)
+            .frame(minHeight: 24).contentShape(Rectangle())
+        }.buttonStyle(.plain)
           .help("Open Reading text size in Settings > Reading")
       }
     }
