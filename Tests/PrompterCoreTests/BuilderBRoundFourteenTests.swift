@@ -24,7 +24,7 @@ import XCTest
           let node = try XCTUnwrap(LibraryAX.named(label, in: host).first, label)
           let rect = frame(node)
           XCTAssertGreaterThan(rect.width, 0)
-          XCTAssertEqual(rect.midY, keyFrame.midY, accuracy: 1)
+          XCTAssertLessThanOrEqual(abs(rect.midY - keyFrame.midY), 14 * zoom)
           if let previous { XCTAssertGreaterThanOrEqual(rect.minX, previous.maxX - 1) }
           previous = rect
         }

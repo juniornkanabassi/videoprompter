@@ -24,6 +24,7 @@ struct ExposureGuidance: View {
     "Yellow: nearly white. Check that bright areas still show detail.",
     "Red: the received picture is at or near white. Check for lost detail on your camera."
   ]
+  static let cameraJudgement = "Your camera’s own monitor is the final judge of exposure."
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.md) {
@@ -137,7 +138,7 @@ struct ExposureLegend: View {
   @State private var showsHelp = false
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
-    case .brightAreas: "Find blown highlights · Zebras"
+    case .brightAreas: "Check bright areas · Zebras"
     case .faceReference: "Check brightness · Zebras"
     case .custom: "Check custom brightness · Zebras"
     }
@@ -154,15 +155,7 @@ struct ExposureLegend: View {
         if model.guides.falseColour {
           ViewThatFits(in: .horizontal) {
             FalseColourStrip()
-            HStack(spacing: 0) {
-              ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
-                Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-                  .frame(minWidth: Space.xs, maxWidth: .infinity)
-                  .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
-              }
-            }.frame(height: Space.xxl)
-              .accessibilityElement(children: .contain)
-              .accessibilityLabel("False colour strip")
+            FalseColourStrip(showsLabels: false)
           }
         }
         else {
@@ -194,29 +187,31 @@ struct ExposureLegend: View {
 
 }
 
-/// Each caption covers only its measured bands; yellow is near-white, not clipping.
+/// Discrete measured bands, with quiet ticks and captions away from the colour.
 struct FalseColourStrip: View {
-  static let captions = ["Too dark", "Mid-tones", "Bright", "Clipping"]
+  static let captions = ["Very dark", "Mid-tones", "Bright", "Near white"]
   static let bandGroups = [0..<2, 2..<4, 4..<5, 5..<6]
+  var showsLabels = true
   var body: some View {
-    HStack(spacing: Space.xs) {
+    HStack(spacing: showsLabels ? Space.sm : Space.xs) {
       ForEach(Self.captions.indices, id: \.self) { index in
-        Text(Self.captions[index]).font(.callout).foregroundStyle(.white)
-          .lineLimit(1).fixedSize()
-          .padding(.horizontal, Space.xs)
-          .background(.black.opacity(0.9))
-          .frame(maxWidth: .infinity)
-          .frame(height: Space.xxl)
-          .background {
-            HStack(spacing: 0) {
-              ForEach(Self.bandGroups[index], id: \.self) { bandIndex in
-                let band = CameraExposure.bands[bandIndex]
-                Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-                  .frame(minWidth: Space.xs, maxWidth: .infinity)
-                  .accessibilityLabel("\(FalseColourKey.labels[bandIndex]). \(band.name)")
-              }
+        VStack(spacing: 0) {
+          HStack(spacing: Space.xs) {
+            ForEach(Self.bandGroups[index], id: \.self) { bandIndex in
+              let band = CameraExposure.bands[bandIndex]
+              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                .frame(minWidth: Space.xs, maxWidth: .infinity)
+                .frame(height: Space.xs)
+                .accessibilityLabel("\(FalseColourKey.labels[bandIndex]). \(band.name)")
             }
           }
+          Rectangle().fill(.white.opacity(0.6)).frame(width: 1, height: Space.xs)
+            .accessibilityHidden(true)
+          if showsLabels {
+            Text(Self.captions[index]).font(.callout).foregroundStyle(.white)
+              .lineLimit(1).fixedSize()
+          }
+        }.frame(maxWidth: .infinity)
           .accessibilityHint(index == 3
             ? "At or near white in the received picture, not proof of camera sensor clipping. Open Key for brightness levels."
             : "Open Key for received-picture brightness levels.")
@@ -245,6 +240,7 @@ struct ExposureKeyHelp: View {
   @ObservedObject var model: CameraModel
   var body: some View {
     VStack(alignment: .leading, spacing: Space.md) {
+      Text(ExposureGuidance.cameraJudgement)
       Text(model.guides.zebras ? ExposureGuidance.zebraAction(model.guides) : ExposureGuidance.colourAction)
         .fontWeight(.semibold).initialPopoverFocus()
       if model.guides.zebras { Text(ExposureGuidance.zebraLookFor(model.guides)) }
@@ -256,7 +252,7 @@ struct ExposureKeyHelp: View {
       if model.guides.falseColour {
         FalseColourKey()
         ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
-        Text("Clipping marks 99–100% brightness in the received picture, not proof of camera sensor clipping. Check important detail on your camera, especially with a flat picture setting.")
+        Text("Near white marks 99–100% brightness in the received picture, not proof of camera sensor clipping. Check important detail on your camera, especially with a flat picture setting.")
       }
       Text("These guides show the received picture. They do not change your camera or saved video.")
     }.font(.callout).foregroundStyle(.primary)
@@ -268,7 +264,7 @@ struct ExposureKeyHelp: View {
 
 /// Use the renderer's ranges, so the detailed key cannot drift from its colours.
 struct FalseColourKey: View {
-  static let labels = ["Almost black", "Dark", "Mid-tones", "Brighter mid-tones", "Near white", "At white"]
+  static let labels = ["Almost black", "Very dark", "Mid-tones", "Brighter mid-tones", "Bright", "Near white"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
     "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
   }

@@ -43,6 +43,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       guard !recordingLocked, newValue != storedSelectedUID else { return }
       let transferringGuides = pendingGuides != nil && newValue != nil
       storedSelectedUID = newValue
+      framingGuidesBypassed = false
       if let pendingGuides, newValue != nil {
         self.pendingGuides = nil
         guides = pendingGuides
@@ -77,11 +78,14 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) {
         exposureBypassed = false
       }
+      if !loadingGuides, (value.thirds && !old.thirds) || (value.axes && !old.axes) || (value.bullseye && !old.bullseye) || (value.marker != nil && value.marker != old.marker) {
+        framingGuidesBypassed = false
+      }
       storedGuides = value
       if !loadingGuides {
         guideStore.set(value, for: selectedUID)
-        if value.zebras != old.zebras { announceExposure("Zebras", on: value.zebras) }
-        if value.falseColour != old.falseColour { announceExposure("False colour", on: value.falseColour) }
+        if value.zebras != old.zebras { announceExposure(ExposureLegend.zebraTitle(for: value.validatedZebraPurpose), on: value.zebras) }
+        if value.falseColour != old.falseColour { announceExposure("Check brightness · False colour", on: value.falseColour) }
       }
     }
   }
@@ -93,6 +97,21 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   @Published var cleanView = false
   @Published var exposureBypassed = false
   var exposureIsConfigured: Bool { guides.zebras || guides.falseColour }
+  @Published var framingGuidesBypassed = false
+  var framingIsConfigured: Bool { guides.thirds || guides.axes || guides.bullseye || guides.marker != nil }
+  var framingIsVisible: Bool { framingIsConfigured && !framingGuidesBypassed && !cleanView }
+  func toggleFramingGuides() {
+    if framingIsVisible { framingGuidesBypassed = true }
+    else {
+      if !framingIsConfigured { guides.thirds = true }
+      framingGuidesBypassed = false; cleanView = false
+    }
+    announceExposure("Framing guides", on: framingIsVisible)
+  }
+  func togglePictureExposureCheck() {
+    if !exposureIsConfigured { guides.falseColour = true; cleanView = false }
+    else { toggleExposureCheck() }
+  }
   var monitorGuides: CameraGuides {
     var value = guides
     if exposureBypassed { value.zebras = false; value.falseColour = false }
@@ -101,7 +120,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   var previewGuides: CameraGuides {
     var value = monitorGuides
     if cleanView { value.zebras = false; value.falseColour = false }
-    if cleanView { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
+    if cleanView || framingGuidesBypassed { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
     return value
   }
   var exposureCheckState: String {
@@ -597,6 +616,7 @@ struct PresenterRecordButton: View {
   @ObservedObject var camera: CameraModel
   var compact = false
   var showsStatus = true
+  var secondary = false
   var body: some View {
     Group {
       if recorder.phase == .preparing || recorder.phase == .waitingForFrames {
@@ -624,7 +644,7 @@ struct PresenterRecordButton: View {
         Button { Task { await recorder.start(camera: camera) } } label: {
           Label { Text("Record").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "record.circle").foregroundStyle(.red) }
         }.accessibilityLabel("Record")
-          .buttonStyle(PresenterButtonStyle()).disabled(!camera.isReadyToRecord)
+          .buttonStyle(PresenterButtonStyle(prominent: !secondary)).disabled(!camera.isReadyToRecord)
           .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : camera.recordingBlockReason)
           .accessibilityHint(camera.isReadyToRecord ? "Reading starts separately" : camera.recordingBlockReason)
       }
@@ -856,20 +876,15 @@ struct ExposureToggle: View {
   enum Kind { case zebras, falseColour }
   @ObservedObject var model: CameraModel
   let kind: Kind
-  var compact = false
   var presenter = true
   private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour, presenter: presenter) }
   private var on: Bool { binding.wrappedValue }
-  private var title: String { kind == .zebras ? "Zebras" : "False colour" }
+  private var title: String { kind == .zebras ? ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose) : "Check brightness · False colour" }
   var body: some View {
-    Button {
-      binding.wrappedValue.toggle()
-    } label: {
-      if compact {
-        if kind == .falseColour { VStack(spacing: 0) { Text("False"); Text("colour") }.fixedSize() }
-        else { Text(title).fixedSize() }
-      } else { Label(title, systemImage: kind == .zebras ? "circle.lefthalf.striped.horizontal" : on ? "paintpalette.fill" : "paintpalette") }
-    }.help(kind == .zebras ? "Mark bright areas in the received picture" : "Show brightness levels in the received picture").tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
+    Button { binding.wrappedValue.toggle() } label: {
+      Text(title).fixedSize(horizontal: false, vertical: true)
+    }.help(kind == .zebras ? ExposureGuidance.zebraLookFor(model.guides) : ExposureGuidance.colourPurpose)
+      .tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
   }
 }
 
@@ -903,7 +918,7 @@ extension CameraModel {
 
 extension CameraRecorder {
   func frameRateConfirmation(camera: CameraModel) -> String {
-    guard let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) else { return "Frame rate unknown" }
+    guard camera.pictureSize != nil, let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) else { return "Frame rate unknown" }
     let seconds = device.activeVideoMinFrameDuration.seconds
     guard seconds.isFinite, seconds > 0 else { return "Frame rate unknown" }
     return String(format: "%.2f fps", 1 / seconds)
@@ -938,14 +953,8 @@ extension CameraRecorder {
   func outputSummary(camera: CameraModel) -> String {
     let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
     var parts: [String] = []
-    if let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) {
-      let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
-      let rotated = camera.guides.rotation.swapsAxes
-      parts.append("\(rotated ? size.height : size.width) × \(rotated ? size.width : size.height)")
-      let duration = device.activeVideoMinFrameDuration.seconds
-      if duration.isFinite && duration > 0 { parts.append(String(format: "%.2f fps", 1 / duration)) }
-    }
-    if parts.isEmpty { parts.append("Resolution unknown") }
+    parts.append(compactOutputConfirmation(camera: camera))
+    parts.append(frameRateConfirmation(camera: camera))
     parts.append("\(camera.guides.rotation.label) saved rotation")
     parts.append(codec)
     parts.append(mirrorSavedVideo ? "mirrored output" : "unmirrored output")
