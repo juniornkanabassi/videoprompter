@@ -32,13 +32,13 @@ struct ReadingSettingsPage: View {
           .help("See your reading appearance settings in the presenter")
           .disabled(store.selected == nil)
       }
-      Section("Preview") { ReadingAppearancePreview(settings: store.settings, overVideo: camera.presentsWithVideo) }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
         Button("Narrow column") { store.settings.textWidth = 0.65 }
         ReadingChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment, zoom: store.uiZoom)
         percent("Line spacing", $store.settings.lineSpacing, 0...0.5)
         percent("Paragraph spacing", $store.settings.paragraphSpacing, 0...1)
+        ReadingLayoutPreview(settings: store.settings, overVideo: camera.presentsWithVideo)
       }
       Section("Reading guide") {
         percent("Guide position", $store.settings.guideFraction, 0.1...0.85)

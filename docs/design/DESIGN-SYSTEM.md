@@ -251,7 +251,7 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
 
 - ExposureLegend is one line: six equal swatches and a small **Key** button with
   a chevron. At 100/150/200% its height is determined only by the button and
-  padding. It has no wrapping labels or measurements. Builder A anchors it to
+  padding. Its three short labels are Too dark, Face and Clipping, with no wrapping. Numerical measurements stay in Key. Builder A anchors it to
   the bottom of the camera picture, outside the reading lane.
 - Key opens a bounded scrolling popover. The first line says what to do on the
   camera; colour names, renderer ranges, received-picture calibration and
@@ -270,3 +270,25 @@ ExposureLegend accepts the actual Interface size as zoom, scales once, and const
   both at entry and when selected. Neither is required before pasting a script.
 - Camera picker entry focuses the selected camera row, falling back to the first
   row, while retaining arrow navigation and exact-opener focus on exit.
+
+
+## Round 15 reading and exposure refinement
+
+- Reading presets is exclusively the reading-preset destination. Save and Apply
+  reading presets come first; Saved shoot setups belongs on its own clearly
+  named camera/recording route. Reading presets preserve the separate microphone
+  and spoken-language choices. The settings host owns this separation.
+- The Library-owned reading preview follows the layout controls in their section.
+  Two short paragraphs use the presenter's Markdown renderer, including an active
+  word and emphasis. Font size, weight, text width, alignment, line and paragraph
+  spacing, colour, mirroring and rotation use the current settings. Rendering at
+  65% scales spacing after layout styles are made. Its height is bounded; larger samples scroll. It starts no reading session.
+- Exposure switches have plain-language subtitles while off as well as on.
+  Face reference describes stripes on the lit side of a face before selection;
+  skin-tone and flat-profile qualifications remain beside the camera advice.
+- The bottom-edge false-colour strip stays one row with all six renderer colours.
+  Too dark, Face and Clipping identify its key groups at callout size. Labels sit
+  on an opaque-enough black backing for contrast, never on bare bright colours.
+  Face is a qualified reference, not a universal target. Key retains exact ranges,
+  grey-gap explanation and the received-picture qualification. The host keeps
+  this strip outside the reading lane and centre of the subject.
