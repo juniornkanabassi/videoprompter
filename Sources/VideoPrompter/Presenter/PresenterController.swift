@@ -420,7 +420,8 @@ enum PresenterFrameMemory {
     guard let saved = defaults?.dictionary(forKey: key), let text = saved["offset"] as? String,
       let screen = display(for: saved, in: screens) else { return nil }
     let offset = NSRectFromString(text)
-    guard offset.width >= 100, offset.height >= 100 else { return nil }
+    guard [offset.origin.x, offset.origin.y, offset.width, offset.height].allSatisfy({ $0.isFinite }),
+      offset.width >= 100, offset.height >= 100 else { return nil }
     return clamp(offset.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY), into: screen.visibleFrame)
   }
 

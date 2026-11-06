@@ -32,19 +32,19 @@ private enum PresenterSaveError: LocalizedError {
   @Published var namingNewFolder = false
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
-  @Published var settings = PrompterSettings() { didSet { persistSettings(); CameraRecorder.shared.useSettings(settings) } }
+  @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); CameraRecorder.shared.useSettings(settings) } }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
-  @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
+  @Published var sourceFontSize = 17.0 { didSet { let safe = InputValidation.editorSize.repair(sourceFontSize); if sourceFontSize != safe { sourceFontSize = safe }; persistSettings() } }
   @Published var previewFontName = "Lexend Deca" { didSet { persistSettings() } }
-  @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
+  @Published var previewFontSize = 18.0 { didSet { let safe = InputValidation.editorSize.repair(previewFontSize); if previewFontSize != safe { previewFontSize = safe }; persistSettings() } }
   /// View > Zoom In, Zoom Out and Actual Size: the whole library window and the presenter's controls.
-  @Published var uiZoom = 1.0 { didSet { persistSettings() } }
+  @Published var uiZoom = 1.0 { didSet { let safe = InputValidation.zoom.repair(uiZoom); if uiZoom != safe { uiZoom = safe }; persistSettings() } }
   /// Nothing below 100%: zoomed out, a pane's AppKit views are laid out wider than their column,
   /// and AppKit then refuses clicks on the part that would overlap the next column.
   static let uiZoomSteps = [1, 1.1, 1.25, 1.5, 1.75, 2]
-  static let presenterFontSizes = 18.0...120.0
-  static let editorFontSizes = 12.0...40.0
+  static let presenterFontSizes = InputValidation.fontSize.range
+  static let editorFontSizes = InputValidation.editorSize.range
   @Published var libraryNotice: String?
   @Published var errorMessage: String?
   @Published var linkedSyncStatus: String?
@@ -148,13 +148,13 @@ private enum PresenterSaveError: LocalizedError {
     let savedSettings: PrompterSettings? = stored("settings")
     let savedSimple = isolatedDefaults.object(forKey: "simpleInterface") == nil || isolatedDefaults.bool(forKey: "simpleInterface")
     let savedZoom = isolatedDefaults.double(forKey: "uiZoom")
-    if savedZoom > 0 { uiZoom = min(max(savedZoom, Self.uiZoomSteps.first!), Self.uiZoomSteps.last!) }
+    uiZoom = InputValidation.zoom.repair(savedZoom)
     if let savedPresets { presets = savedPresets }
     if let savedTypography {
       sourceFontName = savedTypography.sourceFontName
-      sourceFontSize = min(max(savedTypography.sourceFontSize, Self.editorFontSizes.lowerBound), Self.editorFontSizes.upperBound)
+      sourceFontSize = InputValidation.editorSize.repair(savedTypography.sourceFontSize)
       previewFontName = savedTypography.previewFontName
-      previewFontSize = min(max(savedTypography.previewFontSize, Self.editorFontSizes.lowerBound), Self.editorFontSizes.upperBound)
+      previewFontSize = InputValidation.editorSize.repair(savedTypography.previewFontSize)
     }
     if let savedSettings { settings = savedSettings }
     else { settings.audioDeviceUID = AVCaptureDevice.default(for: .audio)?.uniqueID }

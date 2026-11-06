@@ -58,8 +58,10 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
         value.rotation = storedGuides.rotation
         value.automaticRotation = storedGuides.automaticRotation
       }
+      value.sanitise()
       let old = storedGuides
       guard value != old else { return }
+      if !loadingGuides, (value.zebras && !old.zebras) || (value.falseColour && !old.falseColour) { exposureBypassed = false }
       storedGuides = value
       if !loadingGuides {
         guideStore.set(value, for: selectedUID)

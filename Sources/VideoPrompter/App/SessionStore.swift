@@ -77,6 +77,7 @@ final class SessionStore: ObservableObject {
     if readingStatus == "Needs microphone" { return "Needs microphone" }
     if !isActivelyRunning { return "Paused" }
     if isManual { return "Scrolling" }
+    if case .uncertain = state, hasLiveRecognition { return "Matching words" }
     return hasLiveRecognition ? "Following" : "Listening"
   }
   var readingDetail: String? {
@@ -179,6 +180,8 @@ final class SessionStore: ObservableObject {
   }
 
   func present(record: ScriptRecord, settings: PrompterSettings) {
+    var settings = settings
+    settings.sanitise()
     if activeRecord?.metadata.id != record.metadata.id {
       stopTasks()
       if activeRecord != nil {
@@ -222,6 +225,8 @@ final class SessionStore: ObservableObject {
   }
 
   func updateSettings(_ value: PrompterSettings) {
+    var value = value
+    value.sanitise()
     if value.mode != "Voice" || settings.audioDeviceUID != value.audioDeviceUID {
       stopMicrophoneTest()
     }
