@@ -1,0 +1,9 @@
+{
+  "height" : 700,
+  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
+  "page" : "presenter-dark",
+  "presenterAppearance" : "Solid Reduce Transparency fallback",
+  "renderer" : "NSHostingView.cacheDisplay",
+  "visible" : false,
+  "width" : 1000
+}

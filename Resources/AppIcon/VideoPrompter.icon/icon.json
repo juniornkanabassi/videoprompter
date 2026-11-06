@@ -4,11 +4,11 @@
   },
   "groups": [
     {
-      "name": "Approved microphone and script",
+      "name": "Microphone",
       "layers": [
         {
-          "name": "Default",
-          "image-name": "VideoPrompter.png",
+          "name": "Microphone support Default",
+          "image-name": "Microphone-support-Default.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -26,8 +26,8 @@
           ]
         },
         {
-          "name": "Dark",
-          "image-name": "VideoPrompter-Dark-R3.png",
+          "name": "Microphone support Dark",
+          "image-name": "Microphone-support-Dark.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [
@@ -45,8 +45,321 @@
           ]
         },
         {
-          "name": "Tinted",
-          "image-name": "VideoPrompter.png",
+          "name": "Microphone support Tinted",
+          "image-name": "Microphone-support-Tinted.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "Microphone Default",
+          "image-name": "Microphone-Default.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Microphone Dark",
+          "image-name": "Microphone-Dark.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Microphone Tinted",
+          "image-name": "Microphone-Tinted.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "specular": false
+    },
+    {
+      "name": "Script page",
+      "layers": [
+        {
+          "name": "Reading marker Default",
+          "image-name": "Reading-marker-Default.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Reading marker Dark",
+          "image-name": "Reading-marker-Dark.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Reading marker Tinted",
+          "image-name": "Reading-marker-Tinted.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "Script lines Default",
+          "image-name": "Script-lines-Default.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Script lines Dark",
+          "image-name": "Script-lines-Dark.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Script lines Tinted",
+          "image-name": "Script-lines-Tinted.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        },
+        {
+          "name": "Script page Default",
+          "image-name": "Script-page-Default.svg",
+          "glass": true,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Script page Dark",
+          "image-name": "Script-page-Dark.svg",
+          "glass": true,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Script page Tinted",
+          "image-name": "Script-page-Tinted.svg",
+          "glass": true,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.15
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0
+      },
+      "specular": true
+    },
+    {
+      "name": "Background",
+      "layers": [
+        {
+          "name": "Background Default",
+          "image-name": "Background-Default.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 1
+            },
+            {
+              "appearance": "dark",
+              "value": 0
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Background Dark",
+          "image-name": "Background-Dark.svg",
+          "glass": false,
+          "hidden": false,
+          "opacity-specializations": [
+            {
+              "value": 0
+            },
+            {
+              "appearance": "dark",
+              "value": 1
+            },
+            {
+              "appearance": "tinted",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "name": "Background Tinted",
+          "image-name": "Background-Tinted.svg",
           "glass": false,
           "hidden": false,
           "opacity-specializations": [

@@ -21,12 +21,15 @@ enum ReadingContrast {
     return (backgroundRange.lowerBound + 0.05) / (foregroundRange.upperBound + 0.05)
   }
 
-  static func minimumDarkness(textHex: String, textOpacity: Double, backgroundHex: String) -> Double? {
+  static func minimumDarkness(textHex: String, textOpacity: Double, backgroundHex: String,
+    threshold: Double = 3, highlightHex: String? = nil) -> Double? {
     func passes(_ value: Double) -> Bool {
-      worstCase(textHex: textHex, textOpacity: textOpacity, backgroundHex: backgroundHex, darkness: value) >= 3
+      let colours = [textHex] + (highlightHex.map { [$0] } ?? [])
+      return colours.allSatisfy {
+        worstCase(textHex: $0, textOpacity: textOpacity, backgroundHex: backgroundHex, darkness: value) >= threshold
+      }
     }
     if passes(0) { return 0 }
-    // Search from light to dark, so coloured combinations also get their first passing interval.
     for step in 1...1000 where passes(Double(step) / 1000) {
       var low = Double(step - 1) / 1000, high = Double(step) / 1000
       for _ in 0..<40 {

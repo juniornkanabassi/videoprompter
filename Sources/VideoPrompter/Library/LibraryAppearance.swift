@@ -3,9 +3,6 @@ import SwiftUI
 
 /// Resolve semantic colours before a split view reparents its row hosts into vibrant surfaces.
 enum LibraryAppearance {
-  static func selectionBackground(scheme: ColorScheme) -> Color {
-    scheme == .dark ? Color(red: 0.18, green: 0.27, blue: 0.37) : Color(red: 0.81, green: 0.89, blue: 0.97)
-  }
   static func color(_ color: NSColor, scheme: ColorScheme) -> Color {
     var resolved = color
     NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)!.performAsCurrentDrawingAppearance {

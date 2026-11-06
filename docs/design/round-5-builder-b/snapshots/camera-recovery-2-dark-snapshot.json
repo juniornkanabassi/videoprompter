@@ -1,0 +1,9 @@
+{
+  "height" : 300,
+  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
+  "page" : "camera-recovery-2-dark",
+  "presenterAppearance" : "Solid Reduce Transparency fallback",
+  "renderer" : "NSHostingView.cacheDisplay",
+  "visible" : false,
+  "width" : 540
+}

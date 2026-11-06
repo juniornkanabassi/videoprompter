@@ -24,6 +24,9 @@ struct ReadingSettingsPage: View {
         slider("Reading text size", value: $store.settings.fontSize, range: AppStore.presenterFontSizes, readout: "\(Int(store.settings.fontSize)) pt", spoken: "\(Int(store.settings.fontSize)) points")
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
+        Button("Show Presenter") { PresenterController.shared.presentFromLibrary(store: store) }
+          .help("See your reading appearance settings in the presenter")
+          .disabled(store.selected == nil)
       }
       Section("Preview") { ReadingAppearancePreview(settings: store.settings, overVideo: camera.presentsWithVideo) }
       Section("Layout") {
