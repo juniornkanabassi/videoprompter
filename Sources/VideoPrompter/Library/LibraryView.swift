@@ -12,6 +12,7 @@ struct LibraryView: View {
   @State private var showsDeleted = false
   @State private var showsPractice = false
   @State private var showsReadingTip = true
+  @State private var showsFolders = true
   @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   @State private var importing = false
@@ -28,7 +29,13 @@ struct LibraryView: View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
       VStack(spacing: 0) {
         HStack {
-          sidebarHeading("Folders")
+          Button { showsFolders.toggle() } label: {
+            HStack(spacing: Space.xs) {
+              Image(systemName: showsFolders ? "chevron.down" : "chevron.right")
+              sidebarHeading("Folders")
+            }
+          }.buttonStyle(.plain).accessibilityLabel("Folders")
+            .accessibilityValue(showsFolders ? "Expanded" : "Collapsed")
           Spacer()
           Menu {
             Button("New Folder…") { store.namingNewFolder = true }
@@ -37,24 +44,26 @@ struct LibraryView: View {
             .accessibilityLabel("Folder actions").help("Create a folder")
             .disabled(!store.libraryAvailable)
         }.padding(.horizontal, Space.md).padding(.top, Space.md)
-        List(selection: scopeSelection) {
-          scopeRow("All Scripts", symbol: "tray", scope: .all)
-          Group {
-            ForEach(store.folders) { folder in
-              scopeRow(folder.name, symbol: "folder", scope: .folder(folder.id))
-                .help(folder.name)
-                .contextMenu {
-                  Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
-                  Button("Remove Folder, Keep Scripts", role: .destructive) {
-                    store.deleteFolder(folder.id, undoManager: undoManager)
+        if showsFolders {
+          List(selection: scopeSelection) {
+            scopeRow("All Scripts", symbol: "tray", scope: .all)
+            Group {
+              ForEach(store.folders) { folder in
+                scopeRow(folder.name, symbol: "folder", scope: .folder(folder.id))
+                  .help(folder.name)
+                  .contextMenu {
+                    Button("Rename Folder…") { renamingFolder = folder; renamedFolderName = folder.name }
+                    Button("Remove Folder, Keep Scripts", role: .destructive) {
+                      store.deleteFolder(folder.id, undoManager: undoManager)
+                    }
                   }
-                }
+              }
             }
-          }
-          scopeRow("Recently Deleted", symbol: "trash", scope: .deleted)
-        }.listStyle(.inset)
-          .accessibilityLabel("Script folders")
-          .frame(height: min(220, CGFloat((store.folders.count + 2) * 28) + Space.lg))
+            scopeRow("Recently Deleted", symbol: "trash", scope: .deleted)
+          }.listStyle(.inset)
+            .accessibilityLabel("Script folders")
+            .frame(height: Self.folderHeight(count: store.folders.count, availableHeight: geometry.size.height, zoom: store.uiZoom))
+        }
         Divider()
         HStack {
           sidebarHeading(scriptScopeTitle)
@@ -251,13 +260,18 @@ struct LibraryView: View {
     if let id = store.selectedFolderID, let folder = store.folders.first(where: { $0.id == id }) {
       return "Scripts in \(folder.name)"
     }
-    return "Scripts"
+    return "All Scripts"
   }
 
   private func sidebarHeading(_ title: String) -> some View {
     Text(title).font(UIType.secondary.weight(.semibold))
       .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
       .fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isHeader)
+  }
+
+  /// Account for the enclosing zoom before reserving space; scripts keep most of the sidebar.
+  static func folderHeight(count: Int, availableHeight: CGFloat, zoom: Double) -> CGFloat {
+    min(220, CGFloat((count + 2) * 28) + Space.lg, availableHeight * 0.3 / zoom)
   }
 
   private var showsStart: Bool {
@@ -279,7 +293,7 @@ struct LibraryView: View {
 
   private func scopeRow(_ title: String, symbol: String, scope: LibraryScope) -> some View {
     Label(title, systemImage: symbol)
-      .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+      .fixedSize(horizontal: false, vertical: true)
       .foregroundStyle(LibraryAppearance.color(scopeSelection.wrappedValue == scope ? (controlActiveState == .key ? .alternateSelectedControlTextColor : .unemphasizedSelectedTextColor) : .labelColor, scheme: colorScheme))
       .tag(scope)
   }
@@ -324,7 +338,7 @@ private struct ScriptRow: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       HStack(spacing: Space.xs) {
         Text(script.metadata.title)
-          .lineLimit(2).help(script.metadata.title).layoutPriority(1)
+          .fixedSize(horizontal: false, vertical: true).help(script.metadata.title).layoutPriority(1)
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
@@ -334,7 +348,7 @@ private struct ScriptRow: View {
         }
       }
       if !script.metadata.tags.isEmpty {
-        Text(script.metadata.tags.joined(separator: ", ")).font(UIType.secondary).lineLimit(1)
+        Text(script.metadata.tags.joined(separator: ", ")).font(UIType.secondary).fixedSize(horizontal: false, vertical: true)
       }
     }.foregroundStyle(LibraryAppearance.color(selected ? (controlActiveState == .key ? .alternateSelectedControlTextColor : .unemphasizedSelectedTextColor) : .labelColor, scheme: colorScheme)).tag(script.metadata.id)
   }

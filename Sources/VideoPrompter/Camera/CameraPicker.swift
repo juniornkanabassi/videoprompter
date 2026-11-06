@@ -31,7 +31,7 @@ struct CameraPicker: View {
     let label = Self.label(for: model.selectedUID, in: model.devices)
     Button { isOpen.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text(label).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        Text(label).fixedSize(horizontal: false, vertical: true)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
         Image(systemName: "chevron.up.chevron.down").imageScale(.small)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
@@ -56,6 +56,8 @@ struct CameraPickerList: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
   var startsPreview = true
+  /// Hosts with their own recovery card suppress the duplicate explanation and action.
+  var showsRecovery = true
   var devicesOverride: [CameraDevice]? = nil
   private var devices: [CameraDevice] { devicesOverride ?? model.devices }
   let close: () -> Void
@@ -113,7 +115,7 @@ struct CameraPickerList: View {
 
   private var choiceRows: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      if devices.isEmpty || model.authorization != .authorized { emptyState }
+      if showsRecovery && (devices.isEmpty || model.authorization != .authorized) { emptyState }
       ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
     }
   }
@@ -132,7 +134,9 @@ struct CameraPickerList: View {
         }
       }
       }
-      Button("Refresh Cameras") { model.refresh() }
+      if model.authorization == .authorized {
+        Button("Refresh Cameras") { model.refresh() }
+      }
     }.font(.callout).foregroundStyle(.primary).padding(Space.sm)
   }
 

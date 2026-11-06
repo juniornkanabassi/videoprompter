@@ -75,7 +75,7 @@ struct RelinkSheet: View {
           ForEach(candidates) { candidate in
             Button { Task { await select(candidate.url) } } label: {
               VStack(alignment: .leading, spacing: 2) {
-                Text(candidate.url.path).lineLimit(1).truncationMode(.middle)
+                Text(candidate.url.path).fixedSize(horizontal: false, vertical: true)
                 Text([candidate.sameName ? "Same file name" : nil, candidate.sameContent ? "Same text" : nil]
                   .compactMap { $0 }.joined(separator: " · "))
                   .font(UIType.secondary).foregroundStyle(.primary)
@@ -89,7 +89,7 @@ struct RelinkSheet: View {
 
   private func confirmation(_ url: URL) -> some View {
     VStack(alignment: .leading, spacing: Space.md) {
-      Label(url.path, systemImage: "doc.text").lineLimit(2).truncationMode(.middle)
+      Label(url.path, systemImage: "doc.text").fixedSize(horizontal: false, vertical: true)
       if let comparison {
         RelinkComparisonView(comparison: comparison)
         Text("Choose which version to use. A replaced version is preserved before anything changes.")

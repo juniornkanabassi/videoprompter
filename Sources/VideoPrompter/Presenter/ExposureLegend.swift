@@ -85,6 +85,8 @@ struct ExposureToolToggles: View {
 
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
+  var zoom = 1.0
+  @State private var showsHelp = false
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
     case .brightAreas: "Check bright areas · Zebras"
@@ -100,26 +102,49 @@ struct ExposureLegend: View {
 
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.md) {
-        if model.guides.zebras {
-          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
-          ExposureGuidance(zebras: true, guides: model.guides, falseColour: false)
+      VStack(alignment: .leading, spacing: Space.sm) {
+        Text("Received picture. Not a universal face target.")
+        DisclosureGroup("How to read this", isExpanded: $showsHelp) {
+          ScrollView {
+            VStack(alignment: .leading, spacing: Space.sm) {
+              ExposureGuidance(zebras: model.guides.zebras, guides: model.guides, falseColour: model.guides.falseColour)
+              if model.guides.zebras {
+                Text(Self.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+              }
+              if model.guides.falseColour {
+                Text(ExposureGuidance.colourAction).fontWeight(.semibold)
+                ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
+              }
+              Text("Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
+              Text("These guides show the received picture. They do not change your camera or saved video.")
+            }.frame(maxWidth: .infinity, alignment: .leading)
+              .fixedSize(horizontal: false, vertical: true)
+          }.frame(maxHeight: 180 / zoom)
         }
-        if model.guides.falseColour { FalseColourKey() }
-        DisclosureGroup("Help") {
+        ScrollView {
           VStack(alignment: .leading, spacing: Space.sm) {
             if model.guides.zebras {
-              Text(Self.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+              Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
+              Text(Self.compactMeasurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
+                .monospacedDigit()
             }
-            if model.guides.falseColour {
-              ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
-              Text("Grey areas fall between the coloured bands. Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
-            }
-            Text("These guides show the received picture. They do not change your camera or saved video.")
-          }.foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-        }
-      }.frame(maxWidth: 480, alignment: .leading).font(.callout).foregroundStyle(.primary).padding(Space.sm).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
+            if model.guides.falseColour { FalseColourKey() }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+        }.frame(maxHeight: 160 / zoom).scrollIndicators(.visible)
+      }.font(.callout).foregroundStyle(.primary)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: 480 / zoom, alignment: .leading)
+        .padding(Space.sm)
+        .background(Color(white: 0.12), in: .rect(cornerRadius: 12))
+        .environment(\.colorScheme, .dark)
+        .uiZoom(zoom)
+        .fixedSize(horizontal: false, vertical: true)
     }
+  }
+
+  static func compactMeasurement(level: Int, range: Int) -> String {
+    range > 0 ? "Stripes: \(max(0, level - range))–\(min(100, level + range)) / 100"
+      : "Stripes: \(level) and above / 100"
   }
 }
 
@@ -132,24 +157,35 @@ struct FalseColourKey: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text("Check brightness · False colour").fontWeight(.semibold)
-      Text(ExposureGuidance.colourPurpose)
-      Text(ExposureGuidance.colourLookFor)
-      Text(ExposureGuidance.colourAction).fontWeight(.semibold)
-      HStack(alignment: .top, spacing: Space.xs) {
-        ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
-          VStack(spacing: Space.xs) {
-            Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-              .frame(height: Space.md)
-            Text(Self.labels[index])
-            Text(Self.rangeLabel(band.range)).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
-          }.frame(maxWidth: .infinity)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(Self.labels[index]). \(band.name)")
-            .accessibilityValue(Self.rangeLabel(band.range))
-        }
+      ViewThatFits(in: .horizontal) {
+        bands(columns: 6)
+        bands(columns: 3)
+        bands(columns: 2)
       }
       Text("Grey shows brightness between these bands.")
         .foregroundStyle(Color.primary.opacity(0.75))
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
+  }
+
+  private func bands(columns: Int) -> some View {
+    Grid(horizontalSpacing: Space.xs, verticalSpacing: Space.xs) {
+      ForEach(0..<(6 / columns), id: \.self) { row in
+        GridRow(alignment: .top) {
+          ForEach(0..<columns, id: \.self) { column in
+            let index = row * columns + column
+            let band = CameraExposure.bands[index]
+            VStack(spacing: Space.xs) {
+              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                .frame(height: Space.md)
+              Text(Self.labels[index])
+              Text(Self.rangeLabel(band.range)).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
+            }.frame(minWidth: 68, maxWidth: .infinity)
+              .accessibilityElement(children: .ignore)
+              .accessibilityLabel("\(Self.labels[index]). \(band.name)")
+              .accessibilityValue(Self.rangeLabel(band.range))
+          }
+        }
+      }
+    }
   }
 }
