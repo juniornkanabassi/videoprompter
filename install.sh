@@ -55,15 +55,10 @@ if ! /bin/mv -f "$CLI_STAGE" "$CLI_LINK"; then
   print -u2 'CLI setup failed; the previous app was restored.'
   exit 1
 fi
-# The previous app goes to the user's Bin, never deleted; a taken name gets a number, as Finder does.
-if [[ -e "$BACKUP" ]]; then
-  TRASHED="$HOME/.Trash/Video Prompter.app"
-  n=2
-  while [[ -e "$TRASHED" || -L "$TRASHED" ]]; do TRASHED="$HOME/.Trash/Video Prompter $n.app"; (( n++ )); done
-  if [[ ! -d "$HOME/.Trash" || -L "$HOME/.Trash" ]] || ! /bin/mv "$BACKUP" "$TRASHED" || [[ -e "$BACKUP" ]]; then
-    print -u2 "Installed Video Prompter $ACTUAL_VERSION, but the previous app could not be moved to the Bin. It is kept at $BACKUP."
-    exit 1
-  fi
+# The new app is installed and verified, so the previous copy is deleted outright (Junior's rule, 6 Nov 2026).
+# Moving it to the Bin made AppCleaner offer to remove the app's real settings after every update.
+if [[ -e "$BACKUP" ]] && ! /bin/rm -rf "$BACKUP"; then
+  print -u2 "Installed Video Prompter $ACTUAL_VERSION, but the previous app could not be removed. It is kept at $BACKUP."
 fi
 # Retire the pre-2.0 command link, only if it is a symlink.
 [[ ! -L "$BIN_DIR/vidprompt" ]] || /bin/rm -f "$BIN_DIR/vidprompt"
