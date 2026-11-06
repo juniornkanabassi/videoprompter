@@ -77,8 +77,33 @@ import XCTest
       recorder.inputMeter.show(channelPeaks: [0.1, 0.5])
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-recording-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       try await snapshot(RecordingInputLevel(meter: recorder.inputMeter).padding().uiZoom(2), name: "recording-meter-200-\(mode)", size: .init(width: 700, height: 320), scheme: scheme, destination: destination)
+      for zoom in [1.0, 1.5, 2.0] {
+        for phase in [CameraRecorder.Phase.preparing, .recording, .saving, .idle] {
+          recorder.phase = phase
+          recorder.savedTake = phase == .idle ? URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov") : nil
+          try await snapshot(RecordingStatusPanel(recorder: recorder, camera: camera, zoom: zoom, dismiss: {}), name: "recording-status-\(phase.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 440), scheme: scheme, destination: destination)
+        }
+      }
+      let failedRecorder = CameraRecorder(defaults: defaults)
+      let disconnectedCamera = CameraModel(defaults: defaults)
+      disconnectedCamera.selectedUID = nil
+      await failedRecorder.start(camera: disconnectedCamera)
+      failedRecorder.errorMessage = nil
+      for zoom in [1.0, 1.5, 2.0] {
+        try await snapshot(RecordingStatusPanel(recorder: failedRecorder, camera: disconnectedCamera, zoom: zoom, dismiss: {}), name: "recording-status-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 700, height: 440), scheme: scheme, destination: destination)
+      }
+      recorder.savedTake = URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov")
+      store.settings.mode = "Manual"
+      store.session.updateSettings(store.settings)
+      store.session.play()
+      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-saved-reading-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      store.session.pause()
+      recorder.savedTake = nil
       recorder.phase = .idle
       store.uiZoom = 1
+      try await snapshot(TakeSetupPanel(store: store, camera: camera, recorder: recorder), name: "take-setup-\(mode)", size: .init(width: 540, height: 600), scheme: scheme, destination: destination)
+      try await snapshot(PresenterReferenceCue(passage: String(repeating: "A short reference to check the composition. ", count: 20), fontName: "Helvetica Neue", readingSize: 48, zoom: 2, end: {}), name: "reference-cue-200-\(mode)", size: .init(width: 1000, height: 220), scheme: scheme, destination: destination)
+
       try await snapshot(SettingsPage(store: store, tab: .voice).uiZoom(2), name: "settings-Voice-200-\(mode)", size: .init(width: 560, height: 700), scheme: scheme, destination: destination)
       camera.guides.zebras = true; camera.guides.falseColour = true
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-active-\(mode)", size: .init(width: 480, height: 900), scheme: scheme, destination: destination)

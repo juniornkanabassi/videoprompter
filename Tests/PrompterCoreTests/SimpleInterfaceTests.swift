@@ -83,7 +83,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       let close = try buttonFrame("Close presenter")
       let restart = try buttonFrame("Back to start")
       let edit = try buttonFrame("Edit script")
-      let reading = try buttonFrame("Reading")
+      let reading = try buttonFrame("Set up this take")
       XCTAssertFalse(labels(content).joined(separator: "|").contains("Record camera"), "Script-only reading omits recording setup")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, close, restart, edit, reading] {
@@ -349,7 +349,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let expected: [(SettingsTab, [String])] = [
       (.general, ["Open Reading settings", "Interface size", "Align presenter to screen edges"]),
       (.reading, ["Reading mode", "Reading text size", "Mirror for teleprompter glass"]),
-      (.voice, ["Voice-follow microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.voice, ["Following microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
       (.editor, ["Editor font", "Editor size"]),
       (.presets, ["Settings name", "Save Settings", "Saved settings"])
     ]

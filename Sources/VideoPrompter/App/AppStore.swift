@@ -134,7 +134,7 @@ private enum PresenterSaveError: LocalizedError {
         || saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") })
       {
         isolatedDefaults.set(true, forKey: Self.modeMigrationPendingKey)
-        modeMigrationNotice = "Following now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Start to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
+        modeMigrationNotice = "Reading now has two modes. The older Timed and Manual modes now use Automatic scroll: choose a words-per-minute speed and press Start reading. Saved settings that used Sound now use Voice follow."
       } else {
         isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
       }

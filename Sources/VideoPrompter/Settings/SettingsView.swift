@@ -65,6 +65,7 @@ struct AppSettingsView: View {
 
 /// Also rendered directly by the headless snapshot check so every tab is covered.
 struct SettingsPage: View {
+  @Environment(\.colorScheme) private var scheme
   @ObservedObject var store: AppStore
   let tab: SettingsTab
   @Environment(\.undoManager) private var undoManager
@@ -76,7 +77,9 @@ struct SettingsPage: View {
 
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
-    if tab == .voice { VoiceSettingsPage(store: store) } else if tab == .reading { InspectorView(store: store) } else { form }
+    Group {
+      if tab == .voice { VoiceSettingsPage(store: store) } else if tab == .reading { InspectorView(store: store) } else { form }
+    }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
   }
 
   private var form: some View {
@@ -105,7 +108,7 @@ struct SettingsPage: View {
           Stepper(value: $store.previewFontSize, in: AppStore.editorFontSizes, step: 1) {
             Text("Editor size  \(Int(store.previewFontSize)) pt").monospacedDigit()
           }.accessibilityLabel("Editor text size").help("Change text size while editing")
-        } header: { Text("Editor text") } footer: { Text("Change the presenter text in Reading settings. Editor text only affects writing here.") }
+        } header: { Text("Editor text").foregroundStyle(.primary) } footer: { Text("Change the presenter text in Reading settings. Editor text only affects writing here.").foregroundStyle(.primary) }
       case .presets:
         Section("Save current presenter settings") {
           TextField("Settings name", text: $presetName, prompt: Text("For example, Studio"))
@@ -148,7 +151,7 @@ struct SettingsPage: View {
                 .help("Remove these saved settings; choose Edit > Undo to restore it")
             }
           }
-        } header: { Text("Saved settings") } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.") }
+        } header: { Text("Saved settings").foregroundStyle(.primary) } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.").foregroundStyle(.primary) }
       }
     }.formStyle(.grouped)
       .confirmationDialog("Replace \(replacingPreset?.name ?? "saved settings")?", isPresented: Binding(get: { replacingPreset != nil }, set: { if !$0 { replacingPreset = nil } })) {
@@ -165,13 +168,13 @@ struct SettingsPage: View {
   }
 }
 
-private struct VoiceSettingsPage: View {
+struct VoiceSettingsPage: View {
   @ObservedObject var store: AppStore
   @State private var devices: [AudioInputDevice] = []
   @State private var deviceObserver: AudioInputDeviceObserver?
   @State private var supportedSpeechLocales: [Locale] = []
   @State private var gainDraft: Double?
-  @ObservedObject private var recorder = CameraRecorder.shared
+  @ObservedObject var recorder = CameraRecorder.shared
   private var session: SessionStore { store.session }
 
   var body: some View {
@@ -189,12 +192,14 @@ private struct VoiceSettingsPage: View {
         session.microphoneDevicesDidChange(available)
       }
     }
-    .onDisappear { commitGain(); deviceObserver = nil; session.stopMicrophoneTest() }
+    .onDisappear { commitGain(); deviceObserver = nil; session.stopMicrophoneTest(); recorder.stopInputTest() }
   }
 
   @ViewBuilder private var sections: some View {
     Section {
-      Picker("Voice-follow microphone", selection: Binding(
+      Text("Microphone for following your words").font(.callout)
+      Menu {
+      Picker("Following microphone", selection: Binding(
         get: { store.settings.audioDeviceUID ?? "" },
         set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
       ) {
@@ -203,13 +208,11 @@ private struct VoiceSettingsPage: View {
           Text("Selected microphone unavailable").tag(uid)
         }
         ForEach(devices) { Text($0.name).tag($0.uid) }
-      }.help("Choose the microphone that Voice listens to")
-      Text("Used for following your words, not automatically for the saved take.").font(.callout)
-      Text("Recording mic: \(recorder.microphoneName)").fixedSize(horizontal: false, vertical: true)
-      Button("Use this microphone for recording") { recorder.microphoneUID = store.settings.audioDeviceUID }
-        .disabled(recorder.isRecording || recorder.isBusy || store.settings.audioDeviceUID == nil)
-      RecordingSettingsLink(store: store)
-      Text("Voice follow mic: \(devices.first(where: { $0.uid == store.settings.audioDeviceUID })?.name ?? "Choose a microphone")").fixedSize(horizontal: false, vertical: true)
+      }.labelsHidden()
+      } label: {
+        Text(devices.first(where: { $0.uid == store.settings.audioDeviceUID })?.name ?? "Choose a microphone")
+          .fixedSize(horizontal: false, vertical: true)
+      }.accessibilityLabel("Following microphone").help("Choose the microphone that Voice follow listens to")
       MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain)
       VStack(alignment: .leading, spacing: Space.sm) {
         Text("Microphone volume")
@@ -220,7 +223,12 @@ private struct VoiceSettingsPage: View {
           .accessibilityValue(String(format: "%.2f times", gainDraft ?? store.settings.inputGain))
       }.help("Reduce the volume if the sound distorts")
       LabeledContent("Loudest sound") { LoudestSoundReadout(meter: session.meter) }
-    } header: { Text("Microphone") } footer: { Text("Press Test microphone and speak normally. If you see Sound too loud, lower Microphone volume. The dBFS number is a technical level; 0 is the maximum.") }
+    } header: { Text("Following microphone").foregroundStyle(.primary) } footer: { Text("Press Test microphone and speak normally. If you see Sound too loud, lower Microphone volume. The dBFS number is a technical level; 0 is the maximum.").foregroundStyle(.primary) }
+    Section {
+      Button("Use the following microphone for recording") { recorder.microphoneUID = store.settings.audioDeviceUID }
+        .disabled(recorder.isRecording || recorder.isBusy || store.settings.audioDeviceUID == nil)
+    } footer: { Text("Following your words and recording sound are separate jobs. Use one microphone for both, or choose a different recording input below.").foregroundStyle(.primary) }
+    RecordingMicrophoneSection(recorder: recorder)
     Section("Recognition") {
       Picker("Spoken language", selection: $store.settings.speechLanguage) {
         Text("Mixed English & French").tag("Mixed")
@@ -445,14 +453,44 @@ struct PeakHold {
 }
 
 
-private struct RecordingSettingsLink: View {
+/// One in-context route, reusing the existing reading and microphone controls.
+struct TakeSetupPanel: View {
   @ObservedObject var store: AppStore
-  @State private var showsSettings = false
+  @ObservedObject var camera: CameraModel
+  @ObservedObject var recorder: CameraRecorder
+  var hasScript = true
+  var initialTab = 0
+  @State private var tab = 0
   var body: some View {
-    Button("Recording input…") { showsSettings = true }
-      .accessibilityLabel("Recording microphone and input test")
-      .popover(isPresented: $showsSettings) {
-        RecordingSettingsPanel(recorder: .shared, camera: .shared, zoom: store.uiZoom).frame(width: 420, height: 560).uiZoom(store.uiZoom)
+    VStack(spacing: Space.sm) {
+      Text("Set up this take").font(.headline).padding(.top, Space.md)
+      TabView(selection: $tab) {
+        if hasScript {
+          VStack(spacing: 0) {
+            if !store.presets.isEmpty {
+              Menu("Apply saved reading settings") {
+                ForEach(store.presets) { preset in
+                  Button(preset.name) { store.applyPreset(preset) }
+                }
+              }.padding(Space.sm)
+            }
+            InspectorView(store: store, camera: camera, onVoiceSettings: { tab = 1 })
+          }.uiZoom(store.uiZoom).tabItem { Text("Reading") }.tag(0)
+        }
+        VoiceSettingsPage(store: store, recorder: recorder).uiZoom(store.uiZoom)
+          .tabItem { Text("Microphones") }.tag(1)
+        RecordingSettingsPanel(includesMicrophone: false, recorder: recorder, camera: camera, zoom: store.uiZoom).uiZoom(store.uiZoom)
+          .tabItem { Text("Saved video") }.tag(2)
       }
+      VStack(alignment: .leading, spacing: Space.sm) {
+        Text("Reading does not record. Recorded microphone: \(recorder.microphoneName)")
+          .font(.callout).fixedSize(horizontal: false, vertical: true)
+        if !camera.presentsWithVideo {
+          Button("Show camera to prepare recording") { camera.displayMode = hasScript ? .prompterWithVideo : .videoOnly }
+        } else {
+          RecordingControls(recorder: recorder, camera: camera, showsSetup: false, zoom: store.uiZoom)
+        }
+      }.padding(Space.md).uiZoom(store.uiZoom)
+    }.onAppear { tab = !hasScript && initialTab == 0 ? 1 : initialTab }
   }
 }

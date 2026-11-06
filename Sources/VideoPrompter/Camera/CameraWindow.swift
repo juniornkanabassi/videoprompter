@@ -56,6 +56,17 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
   @Published var mirrored: Bool { didSet {
     defaults.set(mirrored, forKey: "cameraMirrored")
   } }
+  @Published var exposureBypassed = false
+  var exposureIsConfigured: Bool { guides.zebras || guides.falseColour }
+  var previewGuides: CameraGuides {
+    var value = guides
+    if exposureBypassed { value.zebras = false; value.falseColour = false }
+    return value
+  }
+  func applySkinExposurePreset() {
+    guides.zebras = true; guides.zebraLevel = 60; guides.zebraRange = 5
+    guides.falseColour = false; exposureBypassed = false
+  }
   @Published var alwaysOnTop: Bool { didSet { defaults.set(alwaysOnTop, forKey: "cameraAlwaysOnTop") } }
   /// Script only, script over the live picture, or the live picture alone. The presenter's own
   /// controls are unaffected. The old Bool key is still written, so an older build reads it too.
@@ -196,7 +207,7 @@ struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
   func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
-    view.apply(uid: model.selectedUID, guides: model.guides, mirrored: model.mirrored)
+    view.apply(uid: model.selectedUID, guides: model.previewGuides, mirrored: model.mirrored)
   }
   static func dismantleNSView(_ view: CameraStageView, coordinator: ()) { view.stop() }
 }
@@ -277,7 +288,7 @@ struct CameraChoiceItems: ToolbarContent {
     // The picker previews each camera on hover, so choosing one is never blind.
     ToolbarItem { CameraPicker(model: model).disabled(recording) }
     ToolbarItem {
-      ToolbarPopUp(title: "Camera rotation", help: "Rotate the camera picture, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation).disabled(recording)
+      ToolbarPopUp(title: "Camera rotation", help: "Rotate the preview and saved video, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation).disabled(recording)
     }
   }
 }
@@ -349,9 +360,10 @@ struct CameraSettingsPanel: View {
         Text("Camera and framing choices are shared with the presenter and Camera Monitor.").font(.callout)
         LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
           .help("Choose the camera shown behind your script")
-        Picker("Rotation", selection: model.rotationChoice) {
+        Picker("Preview and saved rotation", selection: model.rotationChoice) {
           ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-        }.help("Rotate the camera picture, or choose Automatic")
+        }.help("Rotate the preview and saved video, or choose Automatic")
+        Text("Rotation also sets the saved video orientation.").font(.callout)
         Toggle("Mirror camera preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
       }
       CameraGuideSections(model: model)
@@ -457,6 +469,7 @@ struct RecordingControls: View {
   @State private var settings = false
   var compact = false
   var showsSetup = true
+  var showsHealth = true
   var zoom = 1.0
   var body: some View {
     Group {
@@ -472,38 +485,85 @@ struct RecordingControls: View {
       if recorder.phase != .idle {
         if recorder.phase == .recording {
           let seconds = Int(recorder.recordedDuration)
-          Label(String(format: "REC %02d:%02d", seconds / 60, seconds % 60), systemImage: "record.circle.fill")
-            .monospacedDigit().accessibilityLabel("Recording, \(seconds) seconds elapsed")
+          HStack(spacing: Space.xs) {
+            Circle().fill(Color(red: 0.9, green: 0.08, blue: 0.12)).frame(width: 12, height: 12)
+            Text(String(format: "REC %02d:%02d", seconds / 60, seconds % 60)).monospacedDigit()
+          }.accessibilityElement(children: .ignore).accessibilityLabel("Recording, \(seconds) seconds elapsed")
         } else { Text(recorder.phase.message) }
         if recorder.phase == .preparing { Button("Cancel preparation") { Task { await recorder.stop() } } }
       }
+      if showsHealth && (recorder.isRecording || recorder.isBusy) {
+        RecordingAudioHealth(recorder: recorder)
+      }
+      if recorder.phase == .idle { RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom) }
       if showsSetup {
-        Text("Recording mic: \(recorder.microphoneName)").font(.callout)
-          .lineLimit(1).truncationMode(.middle).frame(maxWidth: compact ? 200 : nil)
-          .help("Recorded with your video. The Voice follow microphone can be different.")
-        Text(recorder.outputSummary(camera: camera)).font(.caption)
-        if recorder.isRecording || recorder.isTestingInput { RecordingInputLevel(meter: recorder.inputMeter) }
-        if recorder.phase == .idle, let file = recorder.lastFile {
-          Text("Last saved take: \(file.lastPathComponent)").lineLimit(1).truncationMode(.middle).frame(maxWidth: 200).help(file.path)
-          Button("Review last take") { NSWorkspace.shared.open(file) }
-          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
-        }
-        Button("Recording settings", systemImage: "slider.horizontal.3") { settings.toggle() }
-          .popover(isPresented: $settings) {
-            RecordingSettingsPanel(recorder: recorder, camera: camera, zoom: zoom).frame(width: 420, height: 560).uiZoom(zoom)
-          }
+        Button("Set up recording", systemImage: "slider.horizontal.3") { settings.toggle() }
       }
       if recorder.droppedFrames > 0 { Label("\(recorder.droppedFrames) video frames dropped", systemImage: "exclamationmark.triangle") }
     }
     .alert("Recording needs attention", isPresented: Binding(get: { recorder.errorMessage != nil && !settings }, set: { if !$0 { recorder.errorMessage = nil } })) {
-      Button("Recording settings") { recorder.errorMessage = nil; settings = true }
-      Button("Open Privacy Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy")!) }
+      RecordingRecoveryActions(recorder: recorder, camera: camera) { recorder.errorMessage = nil; settings = true }
       Button("Dismiss", role: .cancel) { recorder.errorMessage = nil }
     } message: { Text((recorder.errorMessage ?? "") + (recorder.lastFile.map { " Last saved take: \($0.lastPathComponent)." } ?? " No completed take is available.")) }
+    .popover(isPresented: $settings) {
+      RecordingSettingsPanel(recorder: recorder, camera: camera, zoom: zoom).frame(width: 480, height: 560).uiZoom(zoom)
+    }
+  }
+}
+
+/// Also shown in the persistent result, because an alert can close when recording stops.
+struct RecordingRecoveryActions: View {
+  @ObservedObject var recorder: CameraRecorder
+  @ObservedObject var camera: CameraModel
+  var configure: () -> Void
+  var body: some View {
+      switch recorder.recovery {
+      case .cameraPrivacy:
+        Button("Allow camera access") { openPrivacy("Camera") }
+      case .microphonePrivacy:
+        Button("Allow microphone access") { openPrivacy("Microphone") }
+      case .camera, .microphone:
+        Button("Choose \(recorder.recovery == .camera ? "camera" : "microphone")") { configure() }
+      case .format:
+        Button("Change recording format") { configure() }
+      case .storage:
+        Button("Open recordings folder") { recorder.openRecordingsFolder() }
+      case .retry:
+        Button("Try recording again") { Task { await recorder.start(camera: camera) } }
+      }
+  }
+  private func openPrivacy(_ pane: String) {
+    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_" + pane)!)
+  }
+}
+
+struct RecordingMicrophoneSection: View {
+  @ObservedObject var recorder: CameraRecorder
+  var body: some View {
+      Section("Recording microphone") {
+        Text("Microphone saved with video").font(.callout)
+        Menu {
+        Picker("Microphone saved with video", selection: Binding(get: { recorder.microphoneUID ?? "" }, set: { recorder.stopInputTest(); recorder.microphoneUID = $0.isEmpty ? nil : $0 })) {
+          Text("System default (\(AVCaptureDevice.default(for: .audio)?.localizedName ?? "unavailable"))").tag("")
+          ForEach(CameraRecorder.microphones(), id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
+          if let uid = recorder.microphoneUID, !CameraRecorder.microphones().contains(where: { $0.uniqueID == uid }) { Text("Selected microphone unavailable").tag(uid) }
+        }.labelsHidden()
+        } label: {
+          Text(recorder.microphoneName).fixedSize(horizontal: false, vertical: true)
+        }.accessibilityLabel("Recording microphone").disabled(recorder.isRecording || recorder.isBusy)
+        Text("This microphone records the take. Voice follow uses the following microphone.").font(.callout)
+        Button(recorder.isTestingInput ? "Stop input test" : "Test recording input") {
+          if recorder.isTestingInput { recorder.stopInputTest() } else { Task { await recorder.startInputTest() } }
+        }.disabled(recorder.isRecording || recorder.isBusy)
+        if recorder.isTestingInput || recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
+        Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy)
+        Text("Uncompressed sound gives more room for volume changes in an editor. It cannot repair distortion at the microphone.").font(.callout)
+      }
   }
 }
 
 struct RecordingSettingsPanel: View {
+  var includesMicrophone = true
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject var camera: CameraModel
   var zoom = 1.0
@@ -524,21 +584,7 @@ struct RecordingSettingsPanel: View {
         Toggle("Mirror saved video", isOn: $recorder.mirrorSavedVideo).disabled(recorder.isRecording || recorder.isBusy)
         Text("Mirror camera preview changes only your monitor. This switch changes the saved file.").font(.callout)
       }
-      Section("Recording microphone") {
-        Picker("Microphone saved with video", selection: Binding(get: { recorder.microphoneUID ?? "" }, set: { recorder.stopInputTest(); recorder.microphoneUID = $0.isEmpty ? nil : $0 })) {
-          Text("System default (\(AVCaptureDevice.default(for: .audio)?.localizedName ?? "unavailable"))").tag("")
-          ForEach(CameraRecorder.microphones(), id: \.uniqueID) { Text($0.localizedName).tag($0.uniqueID) }
-          if let uid = recorder.microphoneUID, !CameraRecorder.microphones().contains(where: { $0.uniqueID == uid }) { Text("Selected microphone unavailable").tag(uid) }
-        }.disabled(recorder.isRecording || recorder.isBusy)
-        Text("This microphone records the take. Voice follow has its own microphone in Settings > Voice.").font(.callout)
-        Text("Selected: \(recorder.microphoneName)").fixedSize(horizontal: false, vertical: true)
-        Button(recorder.isTestingInput ? "Stop input test" : "Test recording input") {
-          if recorder.isTestingInput { recorder.stopInputTest() } else { Task { await recorder.startInputTest() } }
-        }.disabled(recorder.isRecording || recorder.isBusy)
-        if recorder.isTestingInput || recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
-        Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy)
-        Text("Uncompressed sound gives more room for volume changes in an editor. It cannot repair distortion at the microphone.").font(.callout)
-      }
+      if includesMicrophone { RecordingMicrophoneSection(recorder: recorder) }
       Section("Recordings") {
         Button("Open Recordings Folder") { recorder.openRecordingsFolder() }
         if let file = recorder.lastFile { Button("Show last take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
@@ -550,18 +596,31 @@ struct RecordingSettingsPanel: View {
 
 struct RecordingInputLevel: View {
   @ObservedObject var meter: InputMeter
+  var compact = false
   var body: some View {
     TimelineView(.periodic(from: .now, by: 0.25)) { _ in
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text(!meter.isFresh() ? "Waiting for audio samples. Check the microphone connection." : meter.isClipping ? "Sound too loud. Lower the microphone level." : meter.peakDBFS < -60 ? "Very quiet or silent. Speak to check the level." : "Receiving recording audio")
-        if let at = meter.lastSampleAt {
+        Text(compact
+          ? (!meter.isFresh() ? "No recent audio. Check microphone." : meter.isClipping ? "Too loud. Lower microphone level." : meter.peakDBFS < -60 ? "Quiet or silent. Check microphone." : "Receiving recording audio")
+          : (!meter.isFresh() ? "Waiting for audio samples. Check the microphone connection." : meter.isClipping ? "Sound too loud. Lower the microphone level." : meter.peakDBFS < -60 ? "Very quiet or silent. Speak to check the level." : "Receiving recording audio"))
+        if !compact, let at = meter.lastSampleAt {
           Text(String(format: "Last sample %.1f seconds ago", max(0, ProcessInfo.processInfo.systemUptime - at))).monospacedDigit()
         }
         ForEach(Array(meter.channelPeaks.enumerated()), id: \.offset) { index, peak in
           HStack {
             Text("Ch \(index + 1)")
             Text(peak > 0 && meter.isFresh() ? String(format: "%.1f dBFS", AudioCapture.decibels(fullScalePeak: peak)) : "Silent").monospacedDigit()
-            InputLevelMeter(peakDBFS: meter.isFresh() ? AudioCapture.decibels(fullScalePeak: peak) : -.infinity, isClipping: peak >= 0.99)
+            if compact {
+              let fraction = meter.isFresh() ? max(0, min(1, (Double(AudioCapture.decibels(fullScalePeak: peak)) + 60) / 60)) : 0
+              ZStack(alignment: .leading) {
+                Capsule().fill(.secondary.opacity(0.2))
+                Capsule().fill(peak >= 0.99 ? Color.red : Color.green).frame(width: 120 * fraction)
+              }.frame(width: 120, height: 8)
+                .accessibilityLabel("Recording channel \(index + 1) level")
+                .accessibilityValue(meter.isFresh() ? "\(Int(fraction * 100)) percent" : "No recent audio")
+            } else {
+              InputLevelMeter(peakDBFS: meter.isFresh() ? AudioCapture.decibels(fullScalePeak: peak) : -.infinity, isClipping: peak >= 0.99)
+            }
           }
         }
       }.font(.caption)
@@ -571,20 +630,27 @@ struct RecordingInputLevel: View {
 
 struct ExposureLegend: View {
   @ObservedObject var model: CameraModel
+  @State private var expanded = false
   var body: some View {
-    if model.guides.zebras || model.guides.falseColour {
+    if model.exposureIsConfigured {
       VStack(alignment: .leading, spacing: Space.xs) {
-        if model.guides.zebras { Text("Zebras: \(model.guides.zebraLevel) IRE" + (model.guides.zebraRange > 0 ? " ±\(model.guides.zebraRange)" : " and above")) }
-        if model.guides.falseColour {
-          Text("ARRI-style · received feed")
-          ForEach(CameraExposure.bands, id: \.name) { band in
-            Label { Text(band.name) } icon: {
-              Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+        Button(model.exposureBypassed ? "Show exposure aids" : "Clean picture", systemImage: "sun.max") {
+          model.exposureBypassed.toggle()
+        }
+        if !model.exposureBypassed {
+          DisclosureGroup("Received-feed brightness", isExpanded: $expanded) {
+            if model.guides.zebras { Text("Stripes: \(model.guides.zebraLevel) IRE" + (model.guides.zebraRange > 0 ? " ±\(model.guides.zebraRange)" : " and above")) }
+            if model.guides.falseColour {
+              Text("ARRI-style · received feed")
+              ForEach(CameraExposure.bands, id: \.name) { band in
+                Label { Text(band.name) } icon: {
+                  Image(systemName: "square.fill").foregroundStyle(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                }
+              }
             }
           }
         }
-        Button("Clean picture") { model.guides.zebras = false; model.guides.falseColour = false }
-      }.font(.caption).padding(Space.sm).background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.sm))
+      }.font(.caption).padding(Space.sm).background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.md))
     }
   }
 }
@@ -596,9 +662,14 @@ struct CameraExposureSettings: View {
 
 struct CameraExposureSections: View {
   @ObservedObject var model: CameraModel
+  @State private var details = false
   var body: some View {
       Section("Exposure") {
+        Button("Skin exposure check") { model.applySkinExposurePreset() }
+        Text("For a standard video feed, stripes around 60 IRE can help check a lit face. Skin tones and camera profiles vary: use this as a reference, not a target for every face.").font(.callout)
+        Text("Bright-area stripes warn where detail may wash out. Lower exposure on your camera if important highlights lose detail. False colour helps compare the brightness of different areas.").font(.callout)
         Text("These colours and stripes measure the brightness of the feed received by your Mac. Adjust exposure on your camera, not here. They do not change the saved recording. The right levels depend on your camera and picture profile.").font(.callout)
+        DisclosureGroup("Custom exposure levels", isExpanded: $details) {
         Toggle("Zebra stripes", isOn: $model.guides.zebras).help("Stripe the parts of the picture at a chosen brightness, in IRE")
         if model.guides.zebras {
           Picker("Zebra type", selection: Binding(get: { model.guides.zebraRange > 0 }, set: { model.guides.zebraRange = $0 ? max(model.guides.zebraRange, 2) : 0 })) {
@@ -623,7 +694,8 @@ struct CameraExposureSections: View {
               }
             }
             Text("Everything else shows in grey.")
-          }.font(.caption).foregroundStyle(.secondary)
+          }.font(.caption).foregroundStyle(.primary)
+        }
         }
       }
   }
@@ -647,6 +719,7 @@ extension CameraRecorder {
       let duration = device.activeVideoMinFrameDuration.seconds
       if duration.isFinite && duration > 0 { parts.append(String(format: "%.2f fps", 1 / duration)) }
     }
+    parts.append("\(camera.guides.rotation.label) saved rotation")
     parts.append(codec)
     parts.append(mirrorSavedVideo ? "mirrored output" : "unmirrored output")
     parts.append(camera.guides.marker.map { "\($0.label) guide only; full frame saved" } ?? "full frame")
@@ -654,21 +727,42 @@ extension CameraRecorder {
   }
 }
 
-struct RecordingSetupSummary: View {
+struct RecordingAudioHealth: View {
   @ObservedObject var recorder: CameraRecorder
-  @ObservedObject var camera: CameraModel
-  var zoom = 1.0
-  @State private var settings = false
   var body: some View {
-    Text("Recording mic: \(recorder.microphoneName)").font(.callout)
-      .lineLimit(1).truncationMode(.middle).help(recorder.microphoneName)
-    Text(recorder.outputSummary(camera: camera)).font(.caption)
-    Button("Recording settings") { settings = true }
-      .popover(isPresented: $settings) { RecordingSettingsPanel(recorder: recorder, camera: camera, zoom: zoom).frame(width: 420, height: 560).uiZoom(zoom) }
-    if recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
-    if let file = recorder.lastFile, recorder.phase == .idle {
-      Button("Review last take") { NSWorkspace.shared.open(file) }
-      Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+    VStack(alignment: .leading, spacing: Space.xs) {
+      Text("Recording mic: \(recorder.microphoneName)").font(.caption).lineLimit(2)
+      RecordingInputLevel(meter: recorder.inputMeter, compact: true)
+    }.frame(maxWidth: 300, alignment: .leading)
+  }
+}
+
+struct RecordingReceipt: View {
+  @ObservedObject var recorder: CameraRecorder
+  @ObservedObject var camera: CameraModel = .shared
+  var configure: (() -> Void)? = nil
+  var zoom = 1.0
+  @State private var recoverySettings = false
+  var body: some View {
+    if let failure = recorder.takeFailure {
+      Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout)
+      RecordingRecoveryActions(recorder: recorder, camera: camera) {
+        if let configure { configure() } else { recoverySettings = true }
+      }.popover(isPresented: $recoverySettings) {
+        RecordingSettingsPanel(recorder: recorder, camera: camera, zoom: zoom).frame(width: 480, height: 560).uiZoom(zoom)
+      }
+    }
+    if let file = recorder.savedTake {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Label("Saved \(file.lastPathComponent)", systemImage: "checkmark.circle.fill")
+          .font(.callout.weight(.semibold)).fixedSize(horizontal: false, vertical: true).help(file.path)
+          .accessibilityLabel("Saved \(file.lastPathComponent)")
+        WrapLayout(spacing: Space.sm) {
+          Button("Review last take") { NSWorkspace.shared.open(file) }
+          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+          Button("Dismiss receipt") { recorder.savedTake = nil }
+        }
+      }.frame(maxWidth: .infinity, alignment: .leading)
     }
   }
 }
@@ -676,21 +770,21 @@ struct RecordingSetupSummary: View {
 struct RecordingStatusPanel: View {
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject var camera: CameraModel
+  var zoom = 1.0
   var dismiss: () -> Void
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.sm) {
-      if recorder.phase != .idle {
-        WrapLayout(spacing: Space.sm) {
-          RecordingControls(recorder: recorder, camera: camera, showsSetup: false)
+    ScrollView {
+      VStack(alignment: .leading, spacing: Space.sm) {
+        if recorder.phase != .idle {
+          WrapLayout(spacing: Space.sm) {
+            RecordingControls(recorder: recorder, camera: camera, showsSetup: false, zoom: zoom)
+          }
+        } else {
+          RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom)
+          if recorder.savedTake == nil && recorder.takeFailure == nil { Text("No completed take was saved.") }
+          Button("Close", action: dismiss)
         }
-      } else {
-        if let error = recorder.errorMessage { Label(error, systemImage: "exclamationmark.triangle") }
-        if let file = recorder.lastFile {
-          Text("Last saved take: \(file.lastPathComponent)").lineLimit(2)
-          Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
-        } else { Text("No completed take was saved.") }
-        Button("Close", action: dismiss)
-      }
-    }.padding(Space.md)
+      }.padding(Space.md).frame(maxWidth: .infinity, alignment: .leading)
+    }.uiZoom(zoom)
   }
 }

@@ -91,9 +91,9 @@ enum ScriptShortcuts {
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
-          Button("Camera-only Presenter") { PresenterController.shared.presentCamera(store: store) }
+          Button("Open camera-only presenter") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Open the presenter with just the camera; present a script later to add it")
+            .help("Open the floating presenter for framing; add a script later. Shares camera settings with the separate monitor.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
@@ -123,7 +123,11 @@ enum ScriptShortcuts {
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Camera Monitor", id: "camera") { CameraView(zoom: store.uiZoom).background(MainWindowConfigurator(size: NSSize(width: 760, height: 480))) }
+    Window("Separate Camera Monitor", id: "camera") {
+      CameraView(zoom: store.uiZoom)
+        .background(MainWindowConfigurator(size: NSSize(width: 760, height: 480)))
+        .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
+    }
       .defaultSize(width: 760, height: 480)
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
   }
@@ -205,7 +209,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open separate camera monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

@@ -112,7 +112,7 @@ final class SessionStoreTests: XCTestCase {
     settings.audioDeviceUID = "test-microphone"
     session.present(record: record(), settings: settings)
     session.play(captureAudio: false)
-    XCTAssertEqual(session.readingStatus, "Ready to read")
+    XCTAssertEqual(session.readingStatus, "Waiting for your voice")
     XCTAssertFalse(session.hasLiveRecognition)
     session.pause()
     XCTAssertEqual(session.readingStatus, "Paused")

@@ -32,6 +32,11 @@ import PrompterCore
   @Published private(set) var startedAt: Date?
   private(set) var recordingID: UUID?
   @Published private(set) var lastFile: URL?
+  /// Receipt belongs to the latest attempt, never to an older successful take.
+  @Published var savedTake: URL?
+  @Published private(set) var takeFailure: String?
+  enum Recovery: Equatable { case cameraPrivacy, microphonePrivacy, camera, microphone, storage, format, retry }
+  @Published private(set) var recovery = Recovery.retry
   @Published var errorMessage: String? { didSet { if let errorMessage, errorMessage != oldValue { announce(errorMessage) } } }
   @Published var preset: RecordingPreset { didSet { defaults.set(preset.rawValue, forKey: "recordingPreset") } }
   @Published var floatAudio: Bool { didSet { if floatAudio != oldValue { stopInputTest() }; defaults.set(floatAudio, forKey: "recordingFloatAudio") } }
@@ -92,7 +97,7 @@ import PrompterCore
   func start(camera: CameraModel) async {
     guard !isBusy, !isRecording else { return }
     stopInputTest()
-    phase = .preparing; cancelStart = false; errorMessage = nil
+    phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil
     recordingID = UUID()
     let takeID = recordingID
     recordedDuration = 0; droppedFrames = 0; inputMeter.reset(); lastFrameAt = nil
@@ -101,22 +106,24 @@ import PrompterCore
     do {
       await inputTestStop?.value
       guard !cancelStart else { return }
-      guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.") }
+      guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.", recovery: .camera) }
       if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .video) }
       guard !cancelStart else { return }
-      guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { throw recordingError("Allow camera access in System Settings > Privacy & Security > Camera before recording.") }
+      guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else { throw recordingError("Allow camera access in System Settings > Privacy & Security > Camera before recording.", recovery: .cameraPrivacy) }
       if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined { _ = await AVCaptureDevice.requestAccess(for: .audio) }
       guard !cancelStart else { return }
-      guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw recordingError("Allow microphone access in System Settings > Privacy & Security > Microphone before recording.") }
+      guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else { throw recordingError("Allow microphone access in System Settings > Privacy & Security > Microphone before recording.", recovery: .microphonePrivacy) }
       let devices = Self.microphones()
       let microphone = microphoneUID.flatMap { id in devices.first { $0.uniqueID == id } } ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
-      guard let microphone else { throw recordingError("The selected microphone is unavailable. Open Recording settings and choose another microphone.") }
+      guard let microphone else { throw recordingError("The selected microphone is unavailable. Open Recording settings and choose another microphone.", recovery: .microphone) }
       if microphoneUID != nil { microphoneUID = microphone.uniqueID }
+      recovery = .storage
       let folder = Self.recordingsFolder()
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       let free = try folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
-      guard Self.hasRecordingSpace(free) else { throw recordingError("Free at least 2 GB on the recording drive, then try Record again.") }
+      guard Self.hasRecordingSpace(free) else { throw recordingError("Free at least 2 GB on the recording drive, then try Record again.", recovery: .storage) }
       activeMicrophoneName = microphone.localizedName
+      recovery = .microphone
       let input = try AVCaptureDeviceInput(device: microphone)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
@@ -136,6 +143,7 @@ import PrompterCore
       }) { [weak self] error in
         Task { @MainActor [weak self] in
           guard let self, self.isRecording else { return }
+          self.recovery = Self.recovery(for: error)
           self.errorMessage = "Recording stopped after a writer failure: \(error.localizedDescription)"
           await self.stop()
         }
@@ -157,7 +165,7 @@ import PrompterCore
           session.commitConfiguration(); continuation.resume(returning: success)
         }
       }
-      guard attached else { shared.release(); throw recordingError("This camera cannot start recording. Choose another camera or close other apps using it, then try again.") }
+      guard attached else { shared.release(); throw recordingError("This camera cannot start recording. Choose another camera or close other apps using it, then try again.", recovery: .camera) }
       self.sink = sink; phase = .waitingForFrames
       if cancelStart || camera.selectedUID != uid { await stop(); return }
       let attachedAt = Date()
@@ -166,6 +174,7 @@ import PrompterCore
           try? await Task.sleep(for: .seconds(1))
           guard !Task.isCancelled, let self, self.isRecording else { return }
           if Self.framesTimedOut(attachedAt: attachedAt, lastFrameAt: self.lastFrameAt, now: Date()) {
+            self.recovery = .camera
             self.errorMessage = "No camera frames received for 5 seconds. Check the camera connection and try again."
             await self.stop()
             return
@@ -177,12 +186,16 @@ import PrompterCore
           let lostUID = (notification.object as? AVCaptureDevice)?.uniqueID
           Task { @MainActor [weak self] in
             guard let self, self.isRecording, lostUID == nil || lostUID == uid || lostUID == microphone.uniqueID else { return }
+            self.recovery = lostUID == microphone.uniqueID ? .microphone : .camera
             self.errorMessage = "A recording device disconnected or capture was interrupted. Recording was stopped."
             await self.stop()
           }
         })
       }
-    } catch { errorMessage = error.localizedDescription }
+    } catch {
+      errorMessage = error.localizedDescription
+      takeFailure = errorMessage
+    }
   }
   func stop() async {
     if let stopTask { await stopTask.value; return }
@@ -209,7 +222,18 @@ import PrompterCore
           session.commitConfiguration(); continuation.resume()
         }
       }
-      do { let result = try await sink.finish(); lastFile = result.0; defaults.set(result.0.path, forKey: "lastRecording"); droppedFrames = result.1; announce("Saved recording \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : "")) } catch { errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)" }
+      do {
+        let result = try await sink.finish()
+        lastFile = result.0; savedTake = result.0
+        defaults.set(result.0.path, forKey: "lastRecording")
+        droppedFrames = result.1
+        announce("Saved recording \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
+      } catch {
+        recovery = Self.recovery(for: error)
+        errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)"
+      }
+      takeFailure = errorMessage
+
       shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; phase = .idle
     }
     stopTask = task; await task.value; stopTask = nil
@@ -222,13 +246,13 @@ import PrompterCore
     await inputTestStop?.value
     guard generation == testGeneration else { return }
     guard await AudioCapture.requestPermission(), generation == testGeneration else {
-      if generation == testGeneration { isTestingInput = false; errorMessage = "Allow microphone access in System Settings > Privacy & Security > Microphone, then test again." }
+      if generation == testGeneration { isTestingInput = false; recovery = .microphonePrivacy; errorMessage = "Allow microphone access in System Settings > Privacy & Security > Microphone, then test again." }
       return
     }
     do {
       let device = microphoneUID.flatMap { id in Self.microphones().first { $0.uniqueID == id } }
         ?? (microphoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
-      guard let device else { throw recordingError("Open Recording settings and choose an available microphone.") }
+      guard let device else { throw recordingError("Open Recording settings and choose an available microphone.", recovery: .microphone) }
       let test = try RecordingAudioTest(device: device, floatAudio: floatAudio) { [weak self] levels in
         Task { @MainActor in
           guard let self, self.testGeneration == generation, self.isTestingInput else { return }
@@ -241,7 +265,8 @@ import PrompterCore
     } catch { if generation == testGeneration { stopInputTest(); errorMessage = error.localizedDescription } }
   }
   func stopInputTest() {
-    testGeneration = UUID(); isTestingInput = false; inputMeter.reset()
+    testGeneration = UUID(); isTestingInput = false
+    if !isRecording && !isBusy { inputMeter.reset() }
     if let test = inputTest { inputTestStop = Task { await test.stop() } }
     inputTest = nil
   }
@@ -249,7 +274,21 @@ import PrompterCore
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
       userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
   }
-  private func recordingError(_ message: String) -> NSError { NSError(domain: "CameraRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: message]) }
+  static func recovery(for error: Error) -> Recovery {
+    let error = error as NSError
+    if error.domain == "CameraRecorder", error.code == 2 { return .camera }
+    if error.domain == "MovieWriter", error.code == 1 { return .microphone }
+    if error.domain == NSCocoaErrorDomain {
+      if error.code == CocoaError.featureUnsupported.rawValue { return .format }
+      if (512...640).contains(error.code) { return .storage }
+    }
+    return .retry
+  }
+
+  private func recordingError(_ message: String, recovery: Recovery = .retry) -> NSError {
+    self.recovery = recovery
+    return NSError(domain: "CameraRecorder", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+  }
 }
 
 /// AVFoundation delegate callbacks and the writer belong exclusively to queue.

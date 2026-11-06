@@ -34,7 +34,7 @@ final class SessionStore: ObservableObject {
     if settings.mode == "Voice", settings.audioDeviceUID == nil || (!isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true) { return "Needs microphone" }
     guard isActivelyRunning else { return "Paused" }
     if isManual { return "Scrolling" }
-    if !hasLiveRecognition { return "Ready to read" }
+    if !hasLiveRecognition { return "Waiting for your voice" }
     if case .uncertain = state { return "Matching words" }
     return "Listening"
   }

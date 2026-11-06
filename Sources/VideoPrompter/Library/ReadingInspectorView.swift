@@ -5,7 +5,10 @@ import SwiftUI
 struct ReadingInspectorView: View {
   @ObservedObject var store: AppStore
   @ObservedObject var camera: CameraModel
-  init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
+  var onVoiceSettings: (() -> Void)?
+  init(store: AppStore, camera: CameraModel = .shared, onVoiceSettings: (() -> Void)? = nil) {
+    self.store = store; self.camera = camera; self.onVoiceSettings = onVoiceSettings
+  }
   @State private var typography = false
   @State private var guide = false
   @State private var backdrop = false
@@ -35,7 +38,9 @@ struct ReadingInspectorView: View {
             slider("Reading speed", value: $store.settings.speed, range: 20...300,
               readout: "\(Int(store.settings.speed)) words/min", spoken: "\(Int(store.settings.speed)) words per minute")
           } else {
-            Button("Voice and Microphone Settings…") { AppSettingsView.requestVoiceTab(); openSettings() }.buttonStyle(.link)
+            Button("Voice and Microphone Settings…") {
+              if let onVoiceSettings { onVoiceSettings() } else { AppSettingsView.requestVoiceTab(); openSettings() }
+            }.buttonStyle(.link)
           }
         }
         InspectorSection("Reading text") {

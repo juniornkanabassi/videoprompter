@@ -18,19 +18,19 @@ enum WelcomeScript {
 
     ## Choose how to read
 
-    Open **Reading** in the presenter. Voice follows the words you say. Manual scrolls at a steady speed without a microphone, and you can set its speed here.
+    Open **Set up this take** in the presenter. Voice follow keeps your place as you speak. Automatic scroll moves at a steady speed without a microphone, and you can set its speed here.
 
-    For Voice, open **Voice settings** to check your microphone and spoken language. Press **Test microphone** and speak normally. When you start reading, wait for Preparing to finish, then read the script aloud. Listening means speech recognition has received your words.
+    For Voice follow, open **Microphones** in **Set up this take** to check your microphone and spoken language. Press **Test microphone** and speak normally. When you start reading, wait for Preparing to finish, then read the script aloud. Listening means speech recognition has received your words.
 
     ## Make yourself comfortable
 
-    Use **Reading** to change the text size. The Presenter inspector in the library has fonts, spacing, colours and Mirror for teleprompter glass.
+    Use **Set up this take** to change the reading text size. The library’s **Reading settings** also has fonts, spacing, colours and Mirror for teleprompter glass.
 
     Click a word to read from there. The arrow keys move between passages. **Back to start** returns to the beginning. **Pause** stops the script. **Edit script** lets you make a correction; choose **Finish editing** to save it.
 
     ## Camera and recording
 
-    The **View** menu lets you show your script, your camera, or both. Choose your camera and use **Framing guides** to line up your shot. You can also select a passage and choose **Monitor Selection with Camera** to pin those words over the picture.
+    The **View** menu lets you show your script, your camera, or both. Choose your camera and use **Framing guides** to line up your shot. You can also select a passage and choose **Pin Selected Text over Camera** to pin those words over the picture.
 
     **Start reading** moves the script. **Record camera** records the camera and the microphone named beside it. These are separate actions. Press **Stop recording** when finished, wait for Saved, then choose **Show in Finder** to find your take. Recordings go in Movies, inside Video Prompter.
 

@@ -38,15 +38,15 @@ From the first release built with Sparkle, Video Prompter checks for updates onc
 A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Welcome Script brings it back.
 
 1. Choose Add to import a file, or create a New Script.
-2. Open Settings and choose Voice or Manual.
-3. Press Present.
+2. Press Present.
+3. Open **Set up this take** and choose Voice follow or Automatic scroll.
 4. In the presenter, press Start. Pause stops, and Back to start returns to the first word.
 
 New libraries start with simple controls. More in Settings reveals the detailed appearance, voice and saved settings. Showing or hiding them does not change anything you have saved.
 
-Voice follows your spoken words using speech recognition on your Mac, including mixed English and French. Manual scrolls at the speed you choose and needs no microphone or speech download. The first time you use Voice in a language, macOS may need to download Apple's speech files for it, so you need to be online then. A Mac that has never been online may not be ready for Voice. If Voice cannot get ready, check your connection and permissions and try again, or use Manual.
+Voice follow tracks your spoken words using speech recognition on your Mac, including mixed English and French. Automatic scroll moves at the speed you choose and needs no microphone or speech download. The first time you use Voice follow in a language, macOS may need to download Apple's speech files for it, so you need to be online then. A Mac that has never been online may not be ready for Voice follow. If Voice follow cannot get ready, check your connection and permissions and try again, or use Automatic scroll.
 
-Voice tracking is still a preview. It can hesitate when your wording differs from the script while it finds the right passage, and one false-start timing check is still open. Manual scrolling is always there as a fallback.
+Voice tracking is still a preview. It can hesitate when your wording differs from the script while it finds the right passage, and one false-start timing check is still open. Automatic scroll is always there as a fallback.
 
 ## Scripts, camera and recording
 
@@ -54,11 +54,11 @@ Scripts are stored as Markdown. When you import a Markdown file it stays linked 
 
 The **View** menu on the presenter bar switches between Script only, Script and camera, and Camera only. When the camera is on, the bar's camera picker lets you preview and switch cameras, and **Framing guides** opens the rule of thirds, centre cross, centre target and frame marker controls. **Camera Settings…** in the View menu also holds rotation and mirroring.
 
-To record without a script, press **Present** with no script selected, or choose **Present Camera Only** from the Prompter menu. The presenter shows just the camera. Select a script and press **Present** again to add it over the same picture.
+To record without a script, press **Present** with no script selected, or choose **Open camera-only presenter** from the Prompter menu. The presenter shows just the camera. Select a script and press **Present** again to add it over the same picture.
 
-To use the presenter as a reference monitor, drag across a passage in the presenter or the editor, then choose **Monitor Selection with Camera** from the View menu or the Prompter menu (⌥⌘L). The camera fills the presenter with that passage pinned across the bottom. Press **Back to script** or Esc to return. A single click in the presenter still moves the reading position.
+To use the presenter as a reference monitor, drag across a passage in the presenter or the editor, then choose **Pin Selected Text over Camera** from the View menu or the Prompter menu (⌥⌘L). The passage sits above the camera picture, with Expand passage for longer text. Press **Back to script** or Esc to return. A single click in the presenter still moves the reading position.
 
-Recording is in the Camera toolbar and uses the preview format you have pinned, normally no larger than 1920×1080. I have not yet tested recording with real cameras and microphones. The presenter window is normally hidden from screen capture, so it should not appear in a screen recording, though I have not yet confirmed this with specific recording and screen-sharing apps.
+Choose **Set up this take** in the presenter to check both microphones, reading settings and saved-video settings. **Start reading** does not record. **Record camera** records the camera and selected recording microphone using the pinned preview format, normally no larger than 1920×1080. Audio health stays visible during a take; stopping leaves a named saved-take receipt with Review and Show in Finder. I have not yet tested recording with real cameras and microphones. The presenter window is normally hidden from screen capture, so it should not appear in a screen recording, though I have not yet confirmed this with specific recording and screen-sharing apps.
 
 ## Privacy
 

@@ -14,6 +14,7 @@ import SwiftUI
   private let recorder: CameraRecorder
   @Published var asksToCloseRecording = false
   private var recordingWindow: NSPanel?
+  private weak var presentationStore: AppStore?
   private var keepsRecordingOnClose = false
   private var videoObserver: AnyCancellable?
   /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
@@ -166,6 +167,7 @@ import SwiftUI
   /// The camera alone, as a monitor for recording without a script. Presenting a script later adds
   /// it over the same picture; the View menu adds the camera to a script the other way round.
   func presentCamera(store: AppStore) {
+    presentationStore = store
     guard draft?.isEditing != true else { panel?.makeKeyAndOrderFront(nil); return }
     closesAfterFullScreen = false
     endMonitor()
@@ -196,6 +198,7 @@ import SwiftUI
   }
 
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
+    presentationStore = store
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
       if activate { panel?.makeKeyAndOrderFront(nil) } else { panel?.orderFrontRegardless() }
@@ -261,7 +264,7 @@ import SwiftUI
     Task {
       let previousError = recorder.errorMessage
       await recorder.stop()
-      if recorder.errorMessage == previousError { closeNow() }
+      if recorder.errorMessage == previousError { showRecordingStatus(); closeNow() }
     }
   }
   func keepRecordingAndClose() {
@@ -275,14 +278,20 @@ import SwiftUI
   func preserveRecordingStatus() {
     if recorder.isRecording || recorder.isBusy { showRecordingStatus() }
   }
+  func observeInterfaceSettings(_ store: AppStore) { presentationStore = store }
+
   private func showRecordingStatus() {
     if recordingWindow == nil {
-      let window = NSPanel(contentRect: NSRect(x: 160, y: 160, width: 520, height: 160),
-        styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+      let window = NSPanel(contentRect: NSRect(x: 160, y: 160, width: 640, height: 400),
+        styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
       window.title = "Camera recording"; window.level = .floating
       window.isReleasedWhenClosed = false; window.hidesOnDeactivate = false
       window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-      window.contentView = NSHostingView(rootView: RecordingStatusPanel(recorder: recorder, camera: camera) { [weak self] in self?.recordingWindow?.orderOut(nil) })
+      if let store = presentationStore {
+        window.contentView = NSHostingView(rootView: ScaledRecordingStatus(store: store, recorder: recorder, camera: camera) { [weak self] in self?.recordingWindow?.orderOut(nil) })
+      } else {
+        window.contentView = NSHostingView(rootView: RecordingStatusPanel(recorder: recorder, camera: camera) { [weak self] in self?.recordingWindow?.orderOut(nil) })
+      }
       recordingWindow = window
     }
     recordingWindow?.orderFrontRegardless()
@@ -608,6 +617,7 @@ class PresenterPanel: NSPanel {
 
 struct PresenterView: View {
   @Environment(\.openSettings) private var openSettings
+  @Environment(\.colorScheme) private var scheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
   @ObservedObject private var controller = PresenterController.shared
   @ObservedObject var store: AppStore
@@ -635,13 +645,12 @@ struct PresenterView: View {
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
   @State private var showsGuideSettings = false
-  @State private var showsReadingSettings = false
   @State private var showsExposureSettings = false
   @State private var controlsRevealed = false
-  @State private var pointerInControls = false
-  @State private var revealGeneration = 0
+  @State private var showsTakeSetup = false
+  @State private var takeSetupTab = 0
   private var isTaking: Bool { session.isActivelyRunning || recorder.isRecording || recorder.isBusy }
-  private var showsSetup: Bool { !isTaking || controlsRevealed || draft.isEditing || showsReadingSettings || showsCameraSettings || showsGuideSettings || showsExposureSettings }
+  private var showsSetup: Bool { !isTaking || controlsRevealed || draft.isEditing || showsCameraSettings || showsGuideSettings || showsExposureSettings || showsTakeSetup }
   static func backdropOpacity(saved: Double, reduceTransparency: Bool) -> Double { reduceTransparency ? 1 : saved }
   @State private var presenterWidth: CGFloat = 1000
   @State private var presenterHeight: CGFloat = 600
@@ -692,16 +701,7 @@ struct PresenterView: View {
             .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Space.md))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        if let passage = monitor.passage, !showsScript {
-          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName, readingSize: store.settings.fontSize, zoom: store.uiZoom) {
-            PresenterController.shared.endMonitor()
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-          .padding(.bottom, 8)
-          // Read through the same glass as the script.
-          .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
-          .rotationEffect(.degrees(Double(store.settings.rotation)))
-        }
+
       }
     }.background(Color.clear)
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presenterWidth = $0 }
@@ -724,7 +724,7 @@ struct PresenterView: View {
         }
       }
       .frame(width: 72, height: 24)
-      .background(.ultraThinMaterial, in: Capsule())
+      .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Space.sm))
       .padding(.top, 4)
       .accessibilityLabel("Drag presenter window")
       .accessibilityHint("Drag to move the presenter window")
@@ -734,6 +734,15 @@ struct PresenterView: View {
       .uiZoom(store.uiZoom)
       .fixedSize()
       }.frame(maxWidth: .infinity)
+      }
+    }
+    .safeAreaInset(edge: .top, spacing: 0) {
+      if let passage = monitor.passage, !showsScript {
+        PresenterReferenceCue(passage: passage, fontName: store.settings.fontName, readingSize: store.settings.fontSize, zoom: store.uiZoom) {
+          PresenterController.shared.endMonitor()
+        }
+        .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
+        .rotationEffect(.degrees(Double(store.settings.rotation)))
       }
     }
     // Both notices and controls reserve their actual wrapped height for reading and editing.
@@ -753,7 +762,7 @@ struct PresenterView: View {
         }
         WrapLayout(spacing: 8) {
           if showsScript {
-          Label(draft.isEditing ? "Editing" : session.readingStatus,
+          Label(draft.isEditing ? "Editing" : "\(store.settings.mode == "Voice" ? "Voice follow" : "Automatic scroll") · \(session.readingStatus)",
                 systemImage: draft.isEditing ? "pencil" : session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
             .font(.caption.weight(.semibold))
             .fixedSize()
@@ -770,29 +779,33 @@ struct PresenterView: View {
               CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script (⌥⌘R)", action: session.restart)
             }
           }.disabled(!showsScript || draft.isEditing)
-          if showsSetup {
-          Button("Reading", systemImage: "textformat.size") { showsReadingSettings = true }
-            .help("Change reading mode, speed and text size")
-            .popover(isPresented: $showsReadingSettings) {
-              InspectorView(store: store, camera: camera).frame(width: 400, height: 540).uiZoom(store.uiZoom)
-            }
-          }
+
           }
           if isTaking {
             Button(showsSetup ? "Hide controls" : "Show controls", systemImage: "slider.horizontal.3") { controlsRevealed.toggle() }
           }
-          if camera.presentsWithVideo || recorder.isRecording || recorder.isBusy {
-            RecordingControls(recorder: recorder, camera: camera, compact: compactControls, showsSetup: false, zoom: store.uiZoom)
+          if recorder.isRecording || recorder.isBusy {
+            RecordingControls(recorder: recorder, camera: camera, compact: compactControls, showsSetup: false, showsHealth: false, zoom: store.uiZoom)
+          }
+          if showsScript && !recorder.isRecording && !recorder.isBusy {
+            Text("Reading does not record").font(.caption)
+          }
+          if showsSetup {
+            Button("Set up this take", systemImage: "slider.horizontal.3") { takeSetupTab = 0; showsTakeSetup = true }
+              .popover(isPresented: $showsTakeSetup) {
+                TakeSetupPanel(store: store, camera: camera, recorder: recorder, hasScript: hasScript, initialTab: takeSetupTab)
+                  .frame(width: 540, height: 600)
+              }
           }
         }.buttonStyle(.bordered).padding(Space.sm)
+        if recorder.isRecording || recorder.isBusy {
+          RecordingAudioHealth(recorder: recorder).padding(.horizontal, Space.md)
+        }
+        if recorder.phase == .idle {
+          RecordingReceipt(recorder: recorder, camera: camera, configure: { takeSetupTab = recorder.recovery == .microphone ? 1 : 2; showsTakeSetup = true }, zoom: store.uiZoom).padding(.horizontal, Space.md)
+        }
         if showsSetup {
 
-        if camera.presentsWithVideo {
-        WrapLayout(spacing: 8) {
-          RecordingSetupSummary(recorder: recorder, camera: camera, zoom: store.uiZoom)
-        }.buttonStyle(.bordered).padding(8)
-
-        }
         WrapLayout(spacing: 8) {
           // A conventional menu keeps the whole View label predictable.
           Menu {
@@ -823,7 +836,7 @@ struct PresenterView: View {
           }
           // Camera setup is available only while showing a camera.
           if camera.presentsWithVideo {
-            CameraPicker(model: camera, zoom: store.uiZoom, darkSurface: true).frame(width: Self.cameraPickerWidth).disabled(recorder.isRecording || recorder.isBusy)
+            CameraPicker(model: camera, zoom: store.uiZoom, darkSurface: scheme == .dark).frame(width: Self.cameraPickerWidth).disabled(recorder.isRecording || recorder.isBusy)
             CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", displayTitle: compactControls ? "Guides" : nil,
                           help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
               showsGuideSettings = true
@@ -854,23 +867,19 @@ struct PresenterView: View {
 
         .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
         }
-      }.background(.regularMaterial)
-        .onHover { inside in pointerInControls = inside; revealControls() }
+      }.padding(Space.xs)
+        .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.lg))
         .frame(maxWidth: .infinity, alignment: .center)
-        .controlSize(compactControls ? .small : .regular)
+        .controlSize(.regular)
         .uiZoom(store.uiZoom)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
-        .modifier(PresenterControlViewport(maxHeight: presenterHeight * 0.55))
+        .modifier(PresenterControlViewport(maxHeight: min(presenterHeight * 0.55, 360)))
     }
     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { presenterHeight = $0 }
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.revealControls"))) { notification in
       if (notification.object as? NSWindow) === controller.panel { revealControls() }
-    }
-    .task(id: revealGeneration) {
-      guard controlsRevealed else { return }
-      try? await Task.sleep(for: .seconds(4))
-      if !Task.isCancelled && !pointerInControls { controlsRevealed = false }
     }
     .confirmationDialog("Close while a take is active?", isPresented: $controller.asksToCloseRecording) {
       Button("Stop and save, then close") { controller.stopAndClose() }
@@ -893,7 +902,7 @@ struct PresenterView: View {
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
   }
 
-  private func revealControls() { controlsRevealed = true; revealGeneration += 1 }
+  private func revealControls() { controlsRevealed = true }
 
   private func announce(_ message: String) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
@@ -914,8 +923,8 @@ struct PresenterView: View {
       if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage { Text(notice) }
       if session.anchorNotice != nil && store.settings.mode == "Voice" {
         WrapLayout(spacing: 8) {
-          Button("Voice settings…") { AppSettingsView.requestVoiceTab(); openSettings() }
-          Button("Use Manual") { store.settings.mode = "Manual" }
+          Button("Set up this take") { takeSetupTab = 1; showsTakeSetup = true }
+          Button("Use Automatic scroll") { store.settings.mode = "Manual" }
           if session.anchorNotice?.contains("System Settings") == true {
             Button("Microphone permission…") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!) }
           }
@@ -954,6 +963,7 @@ struct PresenterEditorView: View {
         let tokens = session.document.spokenTokens
         return tokens.indices.contains(index) ? tokens[index].sourceRange.upperBound : nil
       })
+      .background(PresenterLinkContrast(colour: NSColor(hex: settings.textColorHex) ?? .white))
   }
   private func presenterTypography(_ settings: PrompterSettings, sideInset: CGFloat) -> EditorTypography {
     EditorTypography(
@@ -1113,5 +1123,60 @@ private struct PresenterControlViewport: ViewModifier {
     }
     .frame(height: min(contentHeight, maxHeight))
     .scrollDisabled(contentHeight <= maxHeight)
+  }
+}
+
+/// The status window observes the same accommodation even after the presenter is closed.
+private struct ScaledRecordingStatus: View {
+  @ObservedObject var store: AppStore
+  @ObservedObject var recorder: CameraRecorder
+  @ObservedObject var camera: CameraModel
+  var dismiss: () -> Void
+  var body: some View {
+    RecordingStatusPanel(recorder: recorder, camera: camera, zoom: store.uiZoom, dismiss: dismiss)
+  }
+}
+
+/// Reserve room above the image instead of covering the composition with the pinned passage.
+struct PresenterReferenceCue: View {
+  let passage: String
+  let fontName: String
+  let readingSize: Double
+  var zoom = 1.0
+  var end: () -> Void
+  @State private var expanded = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      HStack {
+        Text("Pinned reference").font(.headline)
+        Spacer()
+        Button(expanded ? "Collapse passage" : "Expand passage") { expanded.toggle() }
+        Button("Back to script", action: end).keyboardShortcut(.escape, modifiers: [])
+      }.uiZoom(zoom)
+      if expanded {
+        ScrollView { Text(passage).font(.custom(fontName, size: readingSize)).frame(maxWidth: .infinity, alignment: .leading) }
+          .frame(maxHeight: 160)
+      } else {
+        Text(passage).font(.custom(fontName, size: readingSize)).lineLimit(2)
+          .help("Expand passage to read and scroll through all the pinned text")
+      }
+    }.padding(Space.md).foregroundStyle(.white).background(.black)
+  }
+}
+
+private struct PresenterLinkContrast: NSViewRepresentable {
+  let colour: NSColor
+  func makeNSView(context: Context) -> NSView { NSView() }
+  func updateNSView(_ view: NSView, context: Context) {
+    // SwiftUI updates the editor after the background; apply to its native sibling next turn.
+    DispatchQueue.main.async {
+      func update(_ node: NSView) {
+        if let text = node as? NSTextView {
+          text.linkTextAttributes = [.foregroundColor: colour, .underlineStyle: NSUnderlineStyle.single.rawValue]
+        }
+        node.subviews.forEach(update)
+      }
+      if let root = view.window?.contentView { update(root) }
+    }
   }
 }
