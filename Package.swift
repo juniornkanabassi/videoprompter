@@ -17,6 +17,8 @@ let package = Package(
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",
                                                                     "-Xlinker", "-rpath", "-Xlinker", "@executable_path"])]),
         .executableTarget(name: "VideoPrompterCLI", dependencies: ["PrompterCore"], path: "Sources/VideoPrompterCLI"),
-        .testTarget(name: "PrompterCoreTests", dependencies: ["PrompterCore", "VideoPrompter"], path: "Tests/PrompterCoreTests", resources: [.copy("Fixtures")])
+        // Keeps every test window invisible and stops tests activating the process (see TestOffscreen.m).
+        .target(name: "TestOffscreen", path: "Tests/TestOffscreen"),
+        .testTarget(name: "PrompterCoreTests", dependencies: ["PrompterCore", "VideoPrompter", "TestOffscreen"], path: "Tests/PrompterCoreTests", resources: [.copy("Fixtures")])
     ]
 )
