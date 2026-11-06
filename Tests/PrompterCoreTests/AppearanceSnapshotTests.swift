@@ -6,6 +6,32 @@ import XCTest
 
 /// Opt-in, offscreen snapshots. No window is ordered, camera requested or account connected.
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
+  func testRoundNineCountdownAndCameraSections() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("R9Snapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let record = try await store.createScript(title: "Settle before reading", markdown: "# Settle before reading\n\nRead these opening words at your own pace.")
+    store.settings.mode = "Manual"
+    store.session.present(record: record, settings: store.settings)
+    store.session.countdownTick = .seconds(60)
+    let camera = CameraModel(defaults: defaults)
+    camera.recordingReadyOverride = true; camera.displayMode = .prompterWithVideo
+    let recorder = CameraRecorder(defaults: defaults)
+    for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      for zoom in [1.0, 1.5, 2.0] {
+        store.uiZoom = zoom; store.session.startReading()
+        try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r9-countdown-\(Int(zoom * 100))-\(mode)", size: .init(width: 720, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+        store.session.pause()
+        for section in ["Camera", "Recording", "Framing", "Exposure"] {
+          try await snapshot(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false, section: section).uiZoom(zoom), name: "r9-settings-\(section)-\(Int(zoom * 100))-\(mode)", size: .init(width: 560 * zoom, height: 640), scheme: scheme, destination: URL(fileURLWithPath: output))
+        }
+      }
+    }
+  }
+
   func testRoundEightCompactStates() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

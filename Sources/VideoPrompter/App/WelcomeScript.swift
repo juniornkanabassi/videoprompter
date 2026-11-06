@@ -12,27 +12,27 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > Choose **Present**, then **Microphone** to check your sound. Close the popover and choose **Start reading**.
+    > Choose **Present**, then **Controls → Microphone** to check your sound. Close the popover and choose **Start reading**.
 
     Hello, and welcome. This is a practice script. Pause whenever you like. [Look at the camera.]
 
     ## Choose how to read
 
-    Voice follow keeps your place as you speak. **Listening** means your words are being received. Choose the reading status beside **Start reading** to switch mode or adjust the automatic speed. Before starting, it says **Follows your voice** or **Scrolls at** your chosen speed.
+    Voice follow keeps your place as you speak. **Listening** means your words are being received. Choose **Controls → Reading mode** to switch mode or adjust the automatic speed. Automatic scroll waits for the **Start delay**, normally three seconds. **Cancel countdown** stops the countdown.
 
     ## Make yourself comfortable
 
-    Use **Text** on the presenter bar to make the words bigger or smaller. **Settings**, under **Reading**, holds fonts, spacing, colours and Mirror for teleprompter glass.
+    Use **Controls → Text** to make the words bigger or smaller. **Controls → Presenter options → Settings…**, under **Reading**, holds fonts, spacing, colours and Mirror for teleprompter glass.
 
-    Click a word to read from there. The arrow keys move between passages when the script has focus. Open **More** for **Back to start** or **Edit script**; choose **Save changes** when finished. At **End of script**, **Back to start** is also beside the reading button.
+    Click a word to read from there. The arrow keys move between passages when the script has focus. Open **Controls → Back to start**, or **Controls → Edit script**; choose **Save changes** when finished. **Back to start** returns to the opening without stopping a recording.
 
     ## Camera and recording
 
-    **View** shows the script, the camera, or both in this presenter. In a compact window, open **Setup** to choose your camera and **Framing Guides**. In a wide window these controls are on the bar. **Zebras** and **False colour** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
+    **Controls → View** shows the script, the camera, or both in this presenter. Open **Controls → Camera** to choose your camera and **Framing guides**. **Zebras** and **False colour** under **Controls** help check exposure and stay available during a take. **Clean view** removes the script and picture overlays while keeping reading and recording controls available.
 
     **Open Camera Monitor** in the Window menu opens a second-display view. Both windows share the camera and recording setup.
 
-    **Record** sits beside **Start reading**. Each is a separate action. Choose **Stop recording** when finished, wait for **Saved**, then **Play** or **Show in Finder**. The library's **Recordings** button opens your takes.
+    **Record** sits beside **Start reading**. Each is a separate action. Choose **Stop recording** when finished, wait for **Show saved take…**, then **Play**, or use **Show in Finder** directly. **Saved with problems** names a fault: review it before recording again. The library's **Recordings** button opens your takes.
 
     ## Your own scripts
 

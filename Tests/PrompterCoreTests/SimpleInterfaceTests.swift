@@ -81,13 +81,13 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let start = try buttonFrame("Start reading")
       let camera = try buttonFrame("Show camera")
-      let edit = try buttonFrame("More")
+      let edit = try buttonFrame("Controls")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, camera, edit] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
       XCTAssertEqual(start.midY, camera.midY, accuracy: 2)
-      XCTAssertGreaterThan(start.midY, edit.midY, "Transport stays above secondary actions")
+      XCTAssertEqual(start.midY, edit.midY, accuracy: 2, "Controls has a stable transport slot")
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)
@@ -346,7 +346,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
       (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
       (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
-      (.camera, ["Camera", "Recording setup"]),
+      (.camera, ["Camera", "Camera & Recording section"]),
       (.presets, ["Preset name", "Save Reading Preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {

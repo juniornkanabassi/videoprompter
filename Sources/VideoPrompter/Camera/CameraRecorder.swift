@@ -103,7 +103,10 @@ import PrompterCore
   }
   var followingMicrophoneUID: String?
   var resolvedMicrophoneUID: String? { usesSeparateMicrophone ? microphoneUID : followingMicrophoneUID }
-  func useSettings(_ settings: PrompterSettings) { if !settingsLocked { followingMicrophoneUID = settings.audioDeviceUID } }
+  func useSettings(_ settings: PrompterSettings) {
+    // A separate recording input stays locked, while the Voice choice remains editable.
+    if !settingsLocked || usesSeparateMicrophone { followingMicrophoneUID = settings.audioDeviceUID }
+  }
   private let defaults: UserDefaults
   private var sink: RecordingSink?
   private var cancelStart = false

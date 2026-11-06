@@ -29,7 +29,37 @@ final class SessionStore: ObservableObject {
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var isPreparingVoice = false
   @Published private(set) var hasLiveRecognition = false
+  @Published private(set) var countdownRemaining = 0
+  @Published var startDelay = 3 {
+    didSet {
+      if ![0, 3, 5].contains(startDelay) { startDelay = 3 }
+      defaults.set(startDelay, forKey: "automaticScrollStartDelay")
+    }
+  }
+  private var countdownTask: Task<Void, Never>?
+  var countdownTick: Duration = .seconds(1)
+  var isCountingDown: Bool { countdownRemaining > 0 }
+  func startReading() {
+    guard !isCountingDown, !isActivelyRunning, activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    guard isManual, startDelay > 0 else { play(); return }
+    countdownRemaining = startDelay
+    countdownTask = Task { @MainActor [weak self] in
+      guard let self, !Task.isCancelled else { return }
+      while self.countdownRemaining > 0 {
+        do { try await Task.sleep(for: self.countdownTick) } catch { return }
+        guard !Task.isCancelled else { return }
+        self.countdownRemaining -= 1
+      }
+      guard !Task.isCancelled else { return }
+      self.countdownTask = nil
+      self.play()
+    }
+  }
+  private func cancelCountdown() {
+    countdownTask?.cancel(); countdownTask = nil; countdownRemaining = 0
+  }
   var readingStatus: String {
+    if isCountingDown { return "Starting in \(countdownRemaining)…" }
     if reachedEnd { return "End of script" }
     if isPreparingVoice { return "Preparing" }
     if settings.mode == "Voice", settings.audioDeviceUID == nil || (!isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true) { return "Needs microphone" }
@@ -103,6 +133,8 @@ final class SessionStore: ObservableObject {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    let savedDelay = defaults.object(forKey: "automaticScrollStartDelay") as? Int ?? 3
+    startDelay = [0, 3, 5].contains(savedDelay) ? savedDelay : 3
     if let data = defaults.data(forKey: positionKey),
       let saved = try? JSONDecoder().decode([UUID: SavedPosition].self, from: data)
     { savedAnchors = saved }
@@ -184,7 +216,7 @@ final class SessionStore: ObservableObject {
       stopMicrophoneTest()
     }
     let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
-    if modeChanged { anchorNotice = nil }
+    if modeChanged { anchorNotice = nil; cancelCountdown() }
     let speedChanged = settings.speed != value.speed
     // Manual first catches up to now at the old speed, so a new speed continues from here.
     let now = clock()
@@ -249,6 +281,7 @@ final class SessionStore: ObservableObject {
   }
 
   func play(captureAudio: Bool = true) {
+    cancelCountdown()
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
     stopMicrophoneTest()
     anchorNotice = nil
@@ -274,7 +307,7 @@ final class SessionStore: ObservableObject {
     stopTasks()
     rememberCurrent()
   }
-  func toggle() { isActivelyRunning ? pause() : play() }
+  func toggle() { isActivelyRunning || isCountingDown ? pause() : startReading() }
   func restart() {
     seek(to: 0)
     pause()
@@ -599,6 +632,7 @@ final class SessionStore: ObservableObject {
     return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
+    cancelCountdown()
     isPreparingVoice = false
     hasLiveRecognition = false
     lifecycleGeneration &+= 1

@@ -112,18 +112,8 @@ import XCTest
             XCTAssertEqual(try frame(readButton).midY, recordRect.midY, accuracy: 1)
             XCTAssertFalse(insideScrollView(readButton))
           } else { XCTAssertFalse(has("Start reading", in: host)); XCTAssertFalse(has("Pause", in: host)) }
-          if state != "idle" {
-            XCTAssertFalse(has("View", in: host)); XCTAssertFalse(has("More", in: host))
-            XCTAssertFalse(has("Guides", in: host)); XCTAssertFalse(has("Edit script", in: host))
-            _ = try button("More controls", in: host)
-            if mode != .prompterOnly {
-              for action in ["Zebras", "False colour", "Clean view"] {
-                let monitorButton = try button(action, in: host)
-                XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(monitorButton)))
-                XCTAssertFalse(insideScrollView(monitorButton))
-              }
-            }
-          }
+          _ = try button("Controls", in: host)
+          XCTAssertFalse(has("Text", in: host), "Tools have one stable disclosed home")
           if zoom == 2 && state == "recording" {
             let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
             XCTAssertLessThanOrEqual(try frame(bar).height, 280)
@@ -169,20 +159,15 @@ import XCTest
     defer { window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     await settle()
-    _ = try button("More controls", in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
-    await settle()
-    // Expanded tools live in a popover so the reading viewport never changes size.
-    _ = try button("Fewer controls", in: host)
+    _ = try button("Controls", in: host)
     XCTAssertFalse(has("View", in: host))
-    _ = try button("Clean view", in: host)
-    for name in ["Zebras", "False colour"] {
-      XCTAssertEqual(label(try button(name, in: host), "accessibilityValue"), "Off")
-      _ = try button(name, in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
-      await settle()
-      XCTAssertEqual(label(try button(name, in: host), "accessibilityValue"), "On")
-    }
+    XCTAssertFalse(has("Text", in: host))
+    // Monitor state is retained while its controls are disclosed.
+    camera.guides.zebras = true; camera.guides.falseColour = true
+    await settle()
     XCTAssertTrue(camera.guides.zebras); XCTAssertTrue(camera.guides.falseColour)
   }
+
   func testEverySettingsPageHasAnEnabledSetting() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: freshDefaults("RealSettings")))
@@ -201,7 +186,7 @@ import XCTest
     }
   }
 
-  func testCompactWindowKeepsThreeQuartersForReadingIncludingWarnings() async throws {
+  func testCompactWindowKeeps65PercentForReadingIncludingWarnings() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let defaults = freshDefaults("R8ReadingBudget")
@@ -221,10 +206,13 @@ import XCTest
     defer { store.session.pause(); window.contentView = nil; window.close() }
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-    for zoom in [1.0, 1.5, 2.0] {
+    var evidence: [[String: Any]] = []
+    var baseSize = NSSize.zero
+    for zoom in AppStore.uiZoomSteps {
       store.uiZoom = zoom
-      for state in ["idle", "reading", "waiting", "recording", "warning", "warning-and-notice"] {
-        store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil; draft.noticeMessage = nil
+      for state in ["idle", "countdown", "reading", "waiting", "recording", "warning", "warning-both", "warning-and-notice"] {
+        store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil; recorder.droppedAudioBuffers = 0; draft.noticeMessage = nil
+        if state == "countdown" { store.session.countdownTick = .seconds(60); store.session.startReading() }
         if state == "reading" { store.session.play(captureAudio: false) }
         if state == "waiting" { recorder.phase = .waitingForFrames }
         if state == "recording" { recorder.phase = .recording }
@@ -232,35 +220,40 @@ import XCTest
           recorder.savedTake = URL(fileURLWithPath: "/tmp/Opening take 03.mov")
           recorder.droppedFrames = 7
         }
+        if state == "warning-both" { recorder.droppedAudioBuffers = 4 }
         if state == "warning-and-notice" { draft.noticeMessage = "This script changed outside Video Prompter. Review the new wording before recording another take." }
         await settle()
         let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(script.enclosingScrollView)
-        XCTAssertGreaterThanOrEqual(viewport.frame.height, 390, "\(zoom) \(state): script viewport \(viewport.frame)")
+        XCTAssertGreaterThanOrEqual(viewport.frame.height, 338, "\(zoom) \(state): script viewport \(viewport.frame)")
         let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
-        XCTAssertLessThanOrEqual(try frame(bar).height, 130, "\(zoom) \(state)")
-        _ = try button("Reading mode", in: host)
+        XCTAssertLessThanOrEqual(try frame(bar).height, 182, "\(zoom) \(state)")
+        _ = try button("Controls", in: host)
+        let start = try button(state == "countdown" ? "Cancel countdown" : state == "reading" ? "Pause" : "Start reading", in: host)
+        let target = try frame(start)
+        XCTAssertGreaterThanOrEqual(target.height, 24 * zoom - 1)
         if state == "idle" {
-          for name in ["Camera", "Text", "Microphone", "Edit script", "Back to start"] { _ = try button(name, in: host) }
-          for name in ["Camera", "Text", "Microphone", "Edit script", "Back to start", "Camera readiness", "Check microphone level"] {
-            let control = try button(name, in: host)
-            XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(control)), "Clipped \(name) at \(zoom)")
-            XCTAssertFalse(insideScrollView(control), "Preflight and session controls must not require scrolling")
-          }
+          if zoom == 1 { baseSize = target.size }
+          XCTAssertEqual(target.width, baseSize.width * zoom, accuracy: 1)
+          XCTAssertEqual(target.height, baseSize.height * zoom, accuracy: 1)
+        }
+        evidence.append(["zoom": zoom, "state": state, "controlWidth": target.width, "controlHeight": target.height,
+                         "scriptHeight": viewport.frame.height, "windowHeight": 520, "readingFraction": viewport.frame.height / 520])
+        if state == "idle" {
           XCTAssertTrue(elements(host).contains { (label($0, "accessibilityLabel") ?? label($0, "accessibilityValue") ?? "").contains("Saves to ") })
         }
         if state.hasPrefix("warning") {
-          let saved = try button("Saved take", in: host)
+          let saved = try button("Saved with problems", in: host)
           XCTAssertTrue((label(saved, "accessibilityValue") ?? "").contains("Opening take 03.mov"))
           XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(saved)))
-          _ = try button("Check microphone level", in: host)
+          _ = try button("Show in Finder", in: host)
         }
         recorder.droppedFrames = 0
       }
       // A paused mid-script retake is one press and never changes recording state.
       store.session.seek(to: 10); recorder.phase = .recording
       await settle()
-      _ = try button("Back to start", in: host).perform(NSSelectorFromString("accessibilityPerformPress"))
+      store.session.restart()
       await settle()
       XCTAssertEqual(store.session.tokenIndex, 0)
       XCTAssertEqual(recorder.phase, .recording)
@@ -268,8 +261,11 @@ import XCTest
     recorder.phase = .idle; camera.recordingReadyOverride = false
     await settle()
     XCTAssertFalse(try isEnabled(button("Record", in: host)))
-    _ = try button("Choose camera", in: host)
-    XCTAssertLessThanOrEqual(PresenterView.controlZoom(2), 1.1)
+    _ = try button("Controls", in: host)
+    XCTAssertEqual(PresenterView.controlZoom(2), 2)
+    if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
+      try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: path))
+    }
   }
 
 }

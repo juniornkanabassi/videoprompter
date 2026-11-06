@@ -303,7 +303,7 @@ struct CameraView: View {
         Menu {
           Text("Second-display camera view. Shares camera and recording setup with the presenter.")
           Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
-          Button("Framing Guides…") { showsGuideSettings = true }
+          Button("Framing guides…") { showsGuideSettings = true }
             .help("Choose framing guides and a frame marker")
           Button("Camera & Recording Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
           Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Camera window above other windows")
@@ -509,25 +509,28 @@ struct PresenterRecordButton: View {
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject var camera: CameraModel
   var compact = false
+  var showsStatus = true
   var body: some View {
     Group {
       if recorder.phase == .preparing || recorder.phase == .waitingForFrames {
         Button { Task { await recorder.stop() } } label: {
           Text(compact ? "Cancel" : "Cancel preparation")
         }.accessibilityLabel("Cancel preparation")
-        Text(recorder.phase == .waitingForFrames ? "Waiting for camera" : "Preparing…")
-          .font(.callout).fixedSize(horizontal: false, vertical: true)
+        if showsStatus { Text(recorder.phase == .waitingForFrames ? "Waiting for camera" : "Preparing…")
+          .font(.callout).fixedSize(horizontal: false, vertical: true) }
       } else if recorder.isRecording {
         Button { Task { await recorder.stop() } } label: {
-          if compact { VStack(spacing: 0) { Text("Stop"); Text("recording") }.fixedSize() }
+          if compact { Text("Stop recording").fixedSize() }
           else { Label("Stop recording", systemImage: "stop.circle.fill") }
         }.accessibilityLabel("Stop recording")
           .buttonStyle(PresenterButtonStyle(prominent: true)).tint(.red)
+        if showsStatus {
         let seconds = Int(recorder.recordedDuration)
         HStack(spacing: Space.xs) {
           Circle().fill(.red).frame(width: 8, height: 8)
           Text(String(format: "REC %02d:%02d", seconds / 60, seconds % 60)).monospacedDigit().font(.callout)
         }.accessibilityElement(children: .combine).layoutPriority(2)
+        }
       } else if recorder.phase == .saving {
         Text("Saving…").font(.callout)
       } else {
@@ -748,6 +751,16 @@ extension CameraModel {
 }
 
 extension CameraRecorder {
+  func outputGlance(camera: CameraModel) -> String {
+    let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
+    guard let uid = camera.selectedUID, let device = AVCaptureDevice(uniqueID: uid) else {
+      return "Resolution pending camera · \(camera.guides.rotation.label) · \(codec)"
+    }
+    let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
+    let width = camera.guides.rotation.swapsAxes ? size.height : size.width
+    let height = camera.guides.rotation.swapsAxes ? size.width : size.height
+    return "\(width) × \(height) · \(height > width ? "Portrait" : "Landscape") · \(codec)"
+  }
   func outputSummary(camera: CameraModel) -> String {
     let codec = preset == .standard ? "H.264" : preset == .high ? "HEVC" : "ProRes 422"
     var parts: [String] = []
@@ -840,14 +853,25 @@ struct RecordingReceipt: View {
   @State private var focusRevision = 0
   @FocusState private var receiptFocused: Bool
   @AccessibilityFocusState private var receiptAXFocused: Bool
-  private var receiptLabel: String { recorder.savedTake == nil ? "Take not saved" : "Saved take" }
+  private var receiptLabel: String { recorder.savedTake == nil ? "Take not saved" : recorder.qualityWarning == nil ? "Show saved take…" : "Saved with problems" }
+  static func problemSummary(frames: Int, audio: Int, failure: String?) -> String {
+    if let failure { return failure }
+    if frames > 0 && audio > 0 { return "Picture and sound dropped. Review take." }
+    if audio > 0 { return "Sound dropped. Review take." }
+    return "Picture dropped. Review take."
+  }
   var body: some View {
     if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
+      HStack(alignment: .center, spacing: Space.sm) {
       Button { showsDetails.toggle() } label: {
-        Label(recorder.savedTake.map { "Saved " + $0.lastPathComponent } ?? "Take not saved",
-          systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle")
-          .lineLimit(1).truncationMode(.middle)
-      }.labelStyle(.titleAndIcon).accessibilityLabel(receiptLabel)
+        VStack(alignment: .leading, spacing: 0) {
+          Label(receiptLabel, systemImage: recorder.qualityWarning == nil && recorder.savedTake != nil ? "checkmark.circle" : "exclamationmark.triangle.fill")
+          if recorder.qualityWarning != nil {
+            Text(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure))
+              .font(.callout).lineLimit(2)
+          }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+            }.buttonStyle(.plain).labelStyle(.titleAndIcon).foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange).accessibilityLabel(receiptLabel)
         .focusable().focused($receiptFocused).accessibilityFocused($receiptAXFocused)
         .background(PresenterFocusReturn(target: receiptLabel, revision: focusRevision))
         .onChange(of: showsDetails) { _, open in
@@ -865,6 +889,10 @@ struct RecordingReceipt: View {
           RecordingReceipt(recorder: recorder, camera: camera, configure: configure, zoom: zoom)
             .frame(width: 440).padding(Space.sm).uiZoom(zoom)
         }
+      if let file = recorder.savedTake {
+        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+      }
+      }
     } else if recorder.savedTake != nil || recorder.takeFailure != nil {
       VStack(alignment: .leading, spacing: Space.sm) {
         if let file = recorder.savedTake {

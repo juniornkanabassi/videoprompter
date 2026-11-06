@@ -274,7 +274,7 @@ private struct ValueSlider: View {
       HStack(alignment: .firstTextBaseline) {
         Text(title)
         Spacer()
-        Text(readout).font(.caption).monospacedDigit().foregroundStyle(.primary)
+        Text(readout).font(.body).monospacedDigit().foregroundStyle(.primary)
           .multilineTextAlignment(.trailing)
       }
       Slider(value: $value, in: range) { Text(title) }.labelsHidden().accessibilityLabel(title).accessibilityValue(readout.replacingOccurrences(of: "%", with: " percent").replacingOccurrences(of: " pt", with: " points"))
@@ -485,20 +485,30 @@ struct CameraRecordingPage: View {
   @ObservedObject var camera = CameraModel.shared
   @ObservedObject var recorder = CameraRecorder.shared
   var startsCamera = true
+  @State var section = "Camera"
   var body: some View {
-    Form {
-      if camera.authorization == .notDetermined {
-        Section("Camera access") {
-          Text("Allow access to choose and preview your camera here.").font(.callout)
-          Button("Allow Camera Access") { camera.start() }
+    VStack(spacing: Space.sm) {
+      Picker("Camera & Recording section", selection: $section) {
+        ForEach(["Camera", "Recording", "Framing", "Exposure"], id: \.self) { Text($0).tag($0) }
+      }.pickerStyle(.menu).padding(.horizontal, Space.md)
+      Form {
+        switch section {
+        case "Camera":
+          if camera.authorization == .notDetermined {
+            Section("Camera access") {
+              Text("Allow access to choose and preview your camera here.").font(.callout)
+              Button("Allow Camera Access") { camera.start() }
+            }
+          }
+          CameraSettingsSections(model: camera, zoom: store.uiZoom)
+        case "Recording":
+          RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
+          RecordingFolderSection(recorder: recorder)
+        case "Framing": CameraGuideSections(model: camera)
+        default: CameraExposureSections(model: camera)
         }
-      }
-      CameraSettingsSections(model: camera, zoom: store.uiZoom)
-      RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom)
-      CameraGuideSections(model: camera)
-      CameraExposureSections(model: camera)
-      RecordingFolderSection(recorder: recorder)
-    }.formStyle(.grouped)
+      }.formStyle(.grouped)
+    }
   }
 }
 
@@ -526,5 +536,17 @@ struct ReadingAppearancePreview: View {
         }
       }.frame(height: 140).clipped().accessibilityLabel("Sample of current reading appearance")
     }
+  }
+}
+
+struct AutomaticScrollDelay: View {
+  @ObservedObject var session: SessionStore
+  var body: some View {
+    Picker("Start delay", selection: $session.startDelay) {
+      Text("Off").tag(0)
+      Text("3 seconds").tag(3)
+      Text("5 seconds").tag(5)
+    }
+    Text("Gives you time to settle before the text moves. Cancel countdown stops it.").font(.callout)
   }
 }

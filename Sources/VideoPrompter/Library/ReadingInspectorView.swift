@@ -17,6 +17,7 @@ struct ReadingSettingsPage: View {
   var body: some View {
     Form {
       Section("Following") {
+        if store.settings.mode == "Manual" { AutomaticScrollDelay(session: store.session) }
         ReadingChoice(title: "Mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode, zoom: store.uiZoom)
         if store.settings.mode == "Manual" {
           slider("Reading speed", value: $store.settings.speed, range: 20...300, readout: "\(Int(store.settings.speed)) words/min", spoken: "\(Int(store.settings.speed)) words per minute")

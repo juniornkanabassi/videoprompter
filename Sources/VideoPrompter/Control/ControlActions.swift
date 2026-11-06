@@ -515,7 +515,7 @@ import Speech
       guard !presenter.isShowingWithoutScript else { return .error("camera_only_view", "The presenter shows only the camera. Present a script first: videoprompter present <id|title>") }
       guard presenter.panel?.isMiniaturized != true else { return .error("presenter_minimised", "The presenter is minimised. Restore its window first.") }
       guard presenter.canStartReading else { return .error("camera_only_view", "The presenter shows only the camera. Show the script first: videoprompter camera set on") }
-      store.session.play()
+      store.session.startReading()
     case "back_to_start": store.session.restart()
     default:
       // The Prompter menu's passage items, which do nothing while only the camera shows.

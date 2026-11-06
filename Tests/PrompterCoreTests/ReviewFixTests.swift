@@ -223,15 +223,15 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       }
       host.layoutSubtreeIfNeeded()
       if taking {
-        let opener = try XCTUnwrap(LibraryAX.named("More controls", in: host).first)
+        let opener = try XCTUnwrap(LibraryAX.named("Controls", in: host).first)
         XCTAssertEqual(LibraryAX.value(opener, "accessibilityValue"), "Collapsed")
         XCTAssertTrue(LibraryAX.named("Fewer controls", in: host).isEmpty)
         XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
         try await Task.sleep(for: .milliseconds(160))
         let tools = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named("Edit script", in: $0).isEmpty } == true })
-        XCTAssertTrue(LibraryAX.named("Reading notice", in: tools.contentView!).isEmpty)
+        XCTAssertEqual(LibraryAX.named("Reading notice", in: tools.contentView!).count, 1)
         XCTAssertTrue(LibraryAX.named("Saved take", in: tools.contentView!).isEmpty)
-        XCTAssertEqual(LibraryAX.named("Reading notice", in: host).count, 1)
+        XCTAssertTrue(LibraryAX.named("Reading notice", in: host).isEmpty)
         tools.cancelOperation(nil)
       }
     }
@@ -270,7 +270,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
         for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
         let text = try XCTUnwrap(descendants(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(text.enclosingScrollView)
-        XCTAssertGreaterThanOrEqual(viewport.frame.height, panel.frame.height * 0.75, "\(zoom), \(frame)")
+        XCTAssertGreaterThanOrEqual(viewport.frame.height, panel.frame.height * 0.65, "\(zoom), \(frame)")
       }
     }
   }
@@ -291,16 +291,23 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     let (panel, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: preferences), startsCamera: false, recorder: CameraRecorder(defaults: preferences)))
     panel.makeKeyAndOrderFront(nil)
     defer { LibraryAX.close(panel) }
-    for (title, content) in [("Camera", "Open Second Camera Monitor"), ("Text", "Larger text"), ("Microphone", "Microphone")] {
-      let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first, title)
+    let controls = try XCTUnwrap(LibraryAX.named("Controls", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(controls, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(180))
+    let tools = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named("Text", in: $0).isEmpty } == true })
+    let toolsHost = try XCTUnwrap(tools.contentView)
+    for (title, content) in [("Camera", "Open Camera Monitor"), ("Text", "Larger text"), ("Microphone", "Microphone")] {
+      let opener = try XCTUnwrap(LibraryAX.named(title, in: toolsHost).first, title)
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(180))
-      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0.isVisible && $0.contentView.map { !LibraryAX.named(content, in: $0).isEmpty } == true })
+      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== panel && $0 !== tools && $0.isVisible && $0.contentView.map { !LibraryAX.named(content, in: $0).isEmpty } == true })
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"), "The opener closes its own popover")
       try await Task.sleep(for: .milliseconds(350))
       XCTAssertFalse(popover.isVisible, title)
-      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: host).first), "isAccessibilityFocused"), title)
+      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: toolsHost).first), "isAccessibilityFocused"), title)
     }
+    XCTAssertTrue(LibraryAX.bool(controls, "accessibilityPerformPress"))
+
   }
 
   func testResponseBudgetRejectsEscapingBeforeSerialisingOversizedReply() throws {

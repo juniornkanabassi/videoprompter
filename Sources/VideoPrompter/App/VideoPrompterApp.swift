@@ -91,7 +91,7 @@ enum ScriptShortcuts {
           Button("Add or Edit Link…") { FormattedMarkdownEditor.formatFocused(.link) }.keyboardShortcut("k")
         }
         CommandMenu("Prompter") {
-          Button("Present Script") { PresenterController.shared.present(store: store) }
+          Button("Present") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("p", modifiers: [.command, .option])
             .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
             .disabled(store.selected == nil)
@@ -218,7 +218,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Second Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Camera Monitor") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }

@@ -466,6 +466,9 @@ public actor MarkdownLibrary {
           let imported = try createScript(
             title: url.deletingPathExtension().lastPathComponent, markdown: external,
             folderID: metadata.folderID, tags: metadata.tags, link: (url.path, bookmark))
+          waitingForLinks[id] = nil
+          unsupportedLinks[id] = nil
+          preservedEncodings[id] = nil
           return RelinkOutcome(
             current: ScriptRecord(metadata: index.scripts[position], markdown: local), imported: imported)
         } catch { index = old; throw error }

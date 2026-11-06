@@ -180,7 +180,8 @@ final class SessionStoreTests: XCTestCase {
   }
 
   func testTogglePausesAndResumesManualSession() {
-    let session = SessionStore()
+    let session = SessionStore(defaults: freshDefaults("ImmediateToggle"))
+    session.startDelay = 0
     var settings = PrompterSettings()
     settings.mode = "Manual"
     session.present(record: record(), settings: settings)
