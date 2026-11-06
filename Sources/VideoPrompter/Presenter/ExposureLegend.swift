@@ -26,14 +26,49 @@ struct ExposureGuidance: View {
   ]
 
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.sm) {
+    VStack(alignment: .leading, spacing: Space.md) {
       if zebras {
-        Text(guides.zebraGuidance)
+        VStack(alignment: .leading, spacing: Space.sm) {
+          Text(Self.zebraPurpose(guides))
+          Text(guides.zebraGuidance)
+        }
       }
       if falseColour {
-        Text("Check dark and bright areas for detail. Adjust brightness on your camera, not here.")
+        VStack(alignment: .leading, spacing: Space.sm) {
+          Text(Self.colourPurpose)
+          Text(Self.colourAction)
+        }
       }
     }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
+  }
+
+  static func zebraPurpose(_ guides: CameraGuides) -> String {
+    switch guides.validatedZebraPurpose {
+    case .brightAreas: "Stripes show the brightest areas."
+    case .faceReference: "Stripes mark your chosen face reference."
+    case .custom: "Stripes show your chosen brightness range."
+    }
+  }
+  static let colourPurpose = "Colours show dark, medium and bright areas in the received picture."
+  static let colourAction = "Check dark and bright areas for detail. Adjust brightness on your camera, not here."
+}
+
+/// Shared settings rows keep each tool's purpose beside its switch, even when off.
+struct ExposureToolToggles: View {
+  @ObservedObject var model: CameraModel
+  var body: some View {
+    Toggle(isOn: $model.guides.zebras) {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text("Zebras").fontWeight(.semibold)
+        Text(ExposureGuidance.zebraPurpose(model.guides))
+      }
+    }.accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
+    Toggle(isOn: $model.guides.falseColour) {
+      VStack(alignment: .leading, spacing: Space.xs) {
+        Text("False colour").fontWeight(.semibold)
+        Text(ExposureGuidance.colourPurpose)
+      }
+    }.accessibilityLabel("False colour").accessibilityHint(ExposureGuidance.colourPurpose)
   }
 }
 
@@ -54,9 +89,9 @@ struct ExposureLegend: View {
 
   var body: some View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
-      VStack(alignment: .leading, spacing: Space.sm) {
+      VStack(alignment: .leading, spacing: Space.md) {
         if model.guides.zebras {
-          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose))
+          Text(Self.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
           ExposureGuidance(zebras: true, guides: model.guides, falseColour: false)
         }
         if model.guides.falseColour { FalseColourKey() }
@@ -70,7 +105,7 @@ struct ExposureLegend: View {
               Text("Grey areas fall between the coloured bands. Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
             }
             Text("These guides show the received picture. They do not change your camera or saved video.")
-          }.fixedSize(horizontal: false, vertical: true)
+          }.foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
         }
       }.frame(maxWidth: 480, alignment: .leading).font(.callout).foregroundStyle(.primary).padding(Space.sm).modifier(PresenterGlass(radius: 12)).environment(\.colorScheme, .dark)
     }
@@ -85,15 +120,15 @@ struct FalseColourKey: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Text("Check brightness · False colour")
-      Text("Brightness in the received picture")
+      Text("Check brightness · False colour").fontWeight(.semibold)
+      Text(ExposureGuidance.colourPurpose)
       HStack(alignment: .top, spacing: Space.xs) {
         ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
           VStack(spacing: Space.xs) {
             Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
               .frame(height: Space.md)
             Text(Self.labels[index])
-            Text(Self.rangeLabel(band.range)).monospacedDigit()
+            Text(Self.rangeLabel(band.range)).monospacedDigit().foregroundStyle(Color.primary.opacity(0.75))
           }.frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(Self.labels[index]). \(band.name)")
@@ -101,6 +136,8 @@ struct FalseColourKey: View {
         }
       }
       Text("Grey shows brightness between these bands.")
+        .foregroundStyle(Color.primary.opacity(0.75))
+      Text(ExposureGuidance.colourAction)
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
   }
 }

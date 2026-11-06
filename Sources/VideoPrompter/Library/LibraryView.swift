@@ -224,16 +224,19 @@ struct LibraryView: View {
         RelinkSheet(store: store, script: script).uiZoom(store.uiZoom).frame(minWidth: 520 * store.uiZoom)
       }
     }
-    .alert("New Folder", isPresented: $store.namingNewFolder) {
-      TextField("Folder name", text: $newFolderName).help("Enter a name for this folder")
-      Button("Create", action: createFolder)
-        .disabled(newFolderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-      Button("Cancel", role: .cancel) { newFolderName = "" }
+    .sheet(isPresented: $store.namingNewFolder, onDismiss: { newFolderName = "" }) {
+      FolderNameSheet(title: "New Folder", name: $newFolderName, action: "Create", zoom: store.uiZoom,
+        cancel: { store.namingNewFolder = false }, save: {
+          createFolder()
+          store.namingNewFolder = false
+        })
     }
-    .alert("Rename Folder", isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
-      TextField("Folder name", text: $renamedFolderName).help("Enter a new name for this folder")
-      Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
-      Button("Cancel", role: .cancel) { renamingFolder = nil }
+    .sheet(isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
+      FolderNameSheet(title: "Rename Folder", name: $renamedFolderName, action: "Save", zoom: store.uiZoom,
+        cancel: { renamingFolder = nil }, save: {
+          if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }
+          renamingFolder = nil
+        })
     }
     .onChange(of: geometry.size.width < 560 * store.uiZoom, initial: true) { _, compact in
       columnVisibility = compact ? .detailOnly : .all
@@ -358,7 +361,7 @@ private struct EditorView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: Space.sm) {
+      VStack(alignment: .leading, spacing: Space.xs) {
         LibraryTitleField(title: $title)
         HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
           Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
@@ -366,15 +369,18 @@ private struct EditorView: View {
             .fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
         }
-        HStack(alignment: .firstTextBaseline, spacing: Space.md) {
-          Button("Editor text size") { showsTextSize = true }
+        HStack(alignment: .center, spacing: Space.md) {
+          Button { showsTextSize = true } label: {
+            Text("Editor text size").frame(minHeight: 24).contentShape(Rectangle())
+          }
             .accessibilityLabel("Editor text size")
-            .buttonStyle(.link).help("Change the editor font and text size")
+            .buttonStyle(.plain).help("Change the editor font and text size")
             .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
           Button { showsDetails.toggle() } label: {
             Label("Script details", systemImage: showsDetails ? "chevron.down" : "chevron.right")
-          }.buttonStyle(.plain).accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
+              .frame(minHeight: 24).contentShape(Rectangle())
+          }.buttonStyle(.plain).focusable().accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
           if script.metadata.linkedPath != nil {
             Label("Linked", systemImage: "link")
               .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
@@ -395,7 +401,7 @@ private struct EditorView: View {
             }
           }.font(.callout)
         }
-      }.padding(.horizontal, Space.xxl).padding(.vertical, Space.md)
+      }.padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
       Divider()
       if let status = store.linkedSyncStatus {
         Text(status).font(.callout).accessibilityIdentifier("linked-sync-status")

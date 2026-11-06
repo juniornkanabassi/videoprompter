@@ -164,7 +164,7 @@ import XCTest
     store.uiZoom = 2
     let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}).uiZoom(2), size: .init(width: 840, height: 700))
     defer { LibraryAX.close(window) }
-    let practice = try XCTUnwrap(LibraryAX.named("Try the Practice Script", in: host).first)
+    let practice = try XCTUnwrap(LibraryAX.named("Quick Reading Practice", in: host).first)
     let frame = try XCTUnwrap(practice.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "Teaching route stays in the first viewport")
   }

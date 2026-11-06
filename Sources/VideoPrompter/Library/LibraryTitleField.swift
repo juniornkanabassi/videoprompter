@@ -11,7 +11,7 @@ struct LibraryTitleField: NSViewRepresentable {
     field.isEditable = true
     field.isSelectable = true
     field.maximumNumberOfLines = 3
-    field.font = .systemFont(ofSize: NSFont.preferredFont(forTextStyle: .title2).pointSize, weight: .regular)
+    field.font = .systemFont(ofSize: NSFont.preferredFont(forTextStyle: .title3).pointSize, weight: .regular)
     field.delegate = context.coordinator
     field.setAccessibilityLabel("Script title")
     field.toolTip = "Title, tags and script text save automatically"

@@ -171,3 +171,23 @@ Smaller text and Larger text with the current point value and disabled limits.
   Check custom brightness for Zebras, and Check brightness for False colour.
   Keep the received-picture qualification and state beside the false-colour
   swatches that grey shows brightness between the coloured bands.
+
+## Round 10 library and exposure refinement
+
+- New Folder and Rename Folder use a labelled native sheet. The actual input
+  exposes Folder name, including before typing; Create/Save is unavailable for
+  a blank or whitespace-only name. The existing folder actions are unchanged.
+- Quick Reading Practice opens the short rehearsal in the presenter. Getting
+  Started Guide in Help selects the longer welcome guide in the library.
+- The editor title is regular title3. Metadata stays at callout size and the
+  established readable muted colour. Editor text size and Script details use
+  matching plain controls with at least 24-point-high targets at 100%. Their
+  focus indication remains native. The Markdown heading stays in the script.
+- Exposure guidance reads in this order: semibold job/purpose, what to look for,
+  what to do on the camera, then calibration details. False colour retains the
+  six labelled swatches and renderer ranges; numbers are quieter than actions.
+- Each exposure settings toggle has a purpose line alongside it, visible when
+  off as well as on, through ExposureToolToggles. Face guidance retains the
+  selected reference, varied skin tones and flat-profile caveat. Custom ranges
+  never imply a face target. None of these controls changes the saved picture.
+- The original app icon is unchanged; earlier icon-edit directions do not apply.

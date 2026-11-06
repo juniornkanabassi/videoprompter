@@ -24,9 +24,9 @@ struct LibraryStartView: View {
           }.buttonStyle(.borderedProminent)
           Text("Copy your script, then paste it here.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
-        Text("Then choose **Present**, then **Start reading**. Voice follow moves the text as you speak.")
+        Text("Then choose **Present**, then **Start reading**. Start reading moves the words. Record saves a video.")
           .font(.callout).fixedSize(horizontal: false, vertical: true)
-          Button("Try the Practice Script", action: practice).buttonStyle(.bordered)
+          Button("Quick Reading Practice", action: practice).buttonStyle(.bordered)
             .help("Open a short guided practice, then choose Start reading")
         }
         VStack(alignment: .leading, spacing: Space.md) {
