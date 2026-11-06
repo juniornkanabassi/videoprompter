@@ -78,7 +78,7 @@ struct RelinkSheet: View {
                 Text(candidate.url.path).lineLimit(1).truncationMode(.middle)
                 Text([candidate.sameName ? "Same file name" : nil, candidate.sameContent ? "Same text" : nil]
                   .compactMap { $0 }.joined(separator: " · "))
-                  .font(UIType.caption).foregroundStyle(.secondary)
+                  .font(UIType.secondary).foregroundStyle(.primary)
               }.frame(maxWidth: .infinity, alignment: .leading)
             }.buttonStyle(.bordered).help("Review this matching file before linking it")
           }
@@ -282,8 +282,8 @@ struct RelinkComparisonView: View {
       if comparison.libraryText != comparison.fileText {
         Text("Changed words are bold and underlined. Unchanged text is hidden until you show the full versions.")
           .font(.callout).fixedSize(horizontal: false, vertical: true)
-        preview("− Removed from saved script", tokens: diff.saved, changed: diff.removed, date: comparison.libraryDate)
-        preview("+ Added in chosen file", tokens: diff.file, changed: diff.added, date: comparison.fileDate)
+        preview("In the saved script, not in the file", tokens: diff.saved, changed: diff.removed, date: comparison.libraryDate)
+        preview("In the file, not in the saved script", tokens: diff.file, changed: diff.added, date: comparison.fileDate)
         Toggle("Show full versions", isOn: $fullVersions)
       }
     }.foregroundStyle(.primary)
@@ -295,7 +295,7 @@ struct RelinkComparisonView: View {
       ScrollView {
         markedText(tokens, changed: changed).textSelection(.enabled)
           .frame(maxWidth: .infinity, alignment: .leading)
-      }.frame(height: 120).padding(Space.sm).background(.background, in: .rect(cornerRadius: Space.xs))
+      }.frame(height: 120).padding(Space.sm).background(.background, in: .rect(cornerRadius: Space.md))
     }
   }
   private func markedText(_ tokens: [String], changed: Set<Int>) -> Text {

@@ -15,6 +15,7 @@ extension CameraDevice {
 /// the arrow keys are on, so nobody has to pick blind between several devices.
 struct CameraPicker: View {
   @ObservedObject var model: CameraModel
+  @ObservedObject var recorder: CameraRecorder = .shared
   /// The library's UI zoom. A popover is its own hosting view, so the parent's zoom never reaches it.
   var zoom = 1.0
   var darkSurface = false
@@ -23,23 +24,27 @@ struct CameraPicker: View {
 
   /// Never blank. A remembered camera that is gone reads as the one `refresh` will fall back to.
   static func label(for uid: String?, in devices: [CameraDevice]) -> String {
-    CameraModel.resolve(uid, in: devices)?.displayName ?? "No camera"
+    CameraModel.resolve(uid, in: devices)?.displayName ?? "Choose camera"
   }
 
   var body: some View {
     let label = Self.label(for: model.selectedUID, in: model.devices)
     Button { isOpen.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text(label).fixedSize(horizontal: false, vertical: true)
+        Text(label).lineLimit(2).fixedSize(horizontal: false, vertical: true)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
         Image(systemName: "chevron.up.chevron.down").imageScale(.small)
           .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
       }
     }
-    .help("Choose a camera; preview each before selecting. Current camera: " + label)
+    .disabled(recorder.isRecording || recorder.isBusy)
+    .help(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : label)
+    .onChange(of: recorder.phase) { _, _ in
+      if recorder.isRecording || recorder.isBusy { isOpen = false }
+    }
     .accessibilityLabel("Camera")
     .accessibilityValue(label)
-    .accessibilityHint("Lists the cameras with a live preview of each")
+    .accessibilityHint(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : "Lists the cameras with a live preview of each")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
       CameraPickerList(model: model, zoom: zoom) { isOpen = false }.uiZoom(zoom)
     }
@@ -163,10 +168,10 @@ struct CameraPickerList: View {
         }
       }
       .frame(width: 240, height: 135)
-      .clipShape(.rect(cornerRadius: Space.sm))
+      .clipShape(.rect(cornerRadius: Space.md))
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(note ?? "Live preview of \(caption)")
-      Text(caption).font(UIType.caption).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).frame(width: 240)
+      Text(caption).font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).frame(width: 240)
         .accessibilityHidden(true)
     }
   }
@@ -205,8 +210,12 @@ struct CameraPickerList: View {
   /// a DeckLink input cannot be open in two sessions at once.
   private func choose(_ uid: String) {
     if let device = devices.first(where: { $0.uid == uid }) { LibraryAnnouncement.post("Camera selected: " + device.displayName) }
+    guard !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy else { return }
     if uid != model.selectedUID {
-      preview.stop { [model] in model.selectedUID = uid }
+      preview.stop { [model] in
+        guard !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy else { return }
+        model.selectedUID = uid
+      }
     }
     close()
   }

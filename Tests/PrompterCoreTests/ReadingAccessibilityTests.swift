@@ -29,3 +29,32 @@ import XCTest
     XCTAssertGreaterThan(caption.passage.count, 1000)
   }
 }
+
+extension ReadingAccessibilityTests {
+  func testReadingChoicesExposeTheSelectedValueAtEveryZoom() async throws {
+    for zoom in [1.0, 1.5, 2.0] {
+      for (label, values, names, selected) in [
+        ("Mode", ["Voice", "Manual"], ["Voice follow", "Automatic scroll"], "Voice"),
+        ("Reading font", ["SF Pro", "Lexend"], ["SF Pro", "Lexend"], "SF Pro"),
+        ("Alignment", ["Left", "Center", "Right"], ["Left", "Centre", "Right"], "Center")
+      ] {
+        let (window, host) = await LibraryAX.host(ReadingChoice(title: label, values: values, names: names, selection: .constant(selected), zoom: zoom).uiZoom(zoom))
+        defer { LibraryAX.close(window) }
+        let expected = names[try XCTUnwrap(values.firstIndex(of: selected))]
+        let controls = LibraryAX.named(label, in: host).filter {
+          ["AXMenuButton", "AXPopUpButton"].contains(LibraryAX.value($0, "accessibilityRole"))
+        }
+        let control = try XCTUnwrap(controls.first, "\(label) at \(zoom)")
+        XCTAssertEqual(LibraryAX.value(control, "accessibilityValue"), expected)
+        let (optionWindow, optionHost) = await LibraryAX.host(ReadingChoiceOption(name: expected, isSelected: true).uiZoom(zoom))
+        defer { LibraryAX.close(optionWindow) }
+        let selectedOption = try XCTUnwrap(LibraryAX.named(expected, in: optionHost).first)
+        XCTAssertTrue(LibraryAX.bool(selectedOption, "isAccessibilitySelected"))
+        if let popup = control as? NSPopUpButtonCell {
+          XCTAssertEqual(popup.selectedItem?.title, expected)
+          XCTAssertEqual(popup.selectedItem?.state, .on)
+        }
+      }
+    }
+  }
+}

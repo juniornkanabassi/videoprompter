@@ -14,6 +14,7 @@ enum Space {
 
 /// Native text styles scale with accessibility settings. Script fonts remain user-controlled.
 enum UIType {
+  static let title = Font.title2.weight(.semibold)
   static let body = Font.body
   static let secondary = Font.callout
   static let caption = Font.caption

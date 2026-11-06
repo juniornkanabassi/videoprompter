@@ -7,6 +7,11 @@ struct LibraryStartView: View {
   let practice: () -> Void
   let camera: () -> Void
 
+  @ViewBuilder private var otherScriptActions: some View {
+    Button("Import a File…") { importing = true }
+    Button("Write a Script") { store.create() }
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.xxl) {
@@ -21,14 +26,13 @@ struct LibraryStartView: View {
           }.buttonStyle(.borderedProminent)
           Text("Copy your script first. This pastes it straight into a new script.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
-          HStack(spacing: Space.lg) {
-            Button("Import a File…") { importing = true }
-            Button("Write a Script") { store.create() }
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: Space.lg) { otherScriptActions }
+            VStack(alignment: .leading, spacing: Space.sm) { otherScriptActions }
           }
-          Text("Then choose Present to open your script, and Start reading when you are ready.")
+          Text("Then choose **Present**, then **Start reading**.")
             .fixedSize(horizontal: false, vertical: true)
         }
-        Divider()
         VStack(alignment: .leading, spacing: Space.md) {
           Button(action: camera) { Label("Camera Only", systemImage: "video") }
           Text("Check your framing or record without a script.")
@@ -38,8 +42,8 @@ struct LibraryStartView: View {
           store.showWelcomeScript()
           practice()
         }.buttonStyle(.link)
-      }.foregroundStyle(.primary).frame(maxWidth: 480, alignment: .leading)
-        .frame(maxWidth: .infinity, minHeight: 460).padding(Space.section)
+      }.foregroundStyle(.primary).frame(maxWidth: 620, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 460).padding(Space.margin)
     }
   }
 }

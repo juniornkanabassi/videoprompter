@@ -1,0 +1,8 @@
+{
+  "height" : 120,
+  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
+  "page" : "camera-picker-recording-locked-dark",
+  "renderer" : "NSHostingView.cacheDisplay",
+  "visible" : false,
+  "width" : 420
+}

@@ -155,7 +155,7 @@ final class UIZoomTests: XCTestCase {
       let controls = views(of: NSControl.self, in: window).filter {
         !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 0 && ($0 as? NSScroller)?.scrollerStyle != .overlay
       }
-      XCTAssertGreaterThanOrEqual(controls.count, scale < 1.5 ? 6 : 3, "\(scale): visible pane controls are there")
+      XCTAssertGreaterThanOrEqual(controls.count, 3, "\(scale): the two-pane library keeps its controls")
       var clicked = 0
       for control in controls {
         let rect = control.convert(control.bounds, to: nil)

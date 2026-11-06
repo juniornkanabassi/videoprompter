@@ -48,13 +48,17 @@ struct InspectorChoice<Value: Hashable>: NSViewRepresentable {
     button.action = #selector(Coordinator.choose(_:))
     button.font = .systemFont(ofSize: NSFont.systemFontSize)
     button.setAccessibilityLabel(title)
+    button.cell?.setAccessibilityLabel(title)
     return button
   }
   func updateNSView(_ button: NSPopUpButton, context: Context) {
     context.coordinator.parent = self
     button.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
     if button.itemTitles != names { button.removeAllItems(); button.addItems(withTitles: names) }
-    if let index = values.firstIndex(of: selection) { button.selectItem(at: index) }
+    if let index = values.firstIndex(of: selection) {
+      button.selectItem(at: index)
+      for (itemIndex, item) in button.itemArray.enumerated() { item.state = itemIndex == index ? .on : .off }
+    }
   }
   func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSPopUpButton, context: Context) -> CGSize? {
     CGSize(width: proposal.width ?? nsView.fittingSize.width, height: nsView.fittingSize.height)

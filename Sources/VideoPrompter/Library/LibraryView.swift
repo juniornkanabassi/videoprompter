@@ -39,8 +39,6 @@ struct LibraryView: View {
                 store.deleteFolder(folder.id, undoManager: undoManager)
               }.help("Scripts stay in All Scripts. Undo restores the folder.")
             }
-            Divider()
-            Button("Open Recordings Folder") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
           } label: { Image(systemName: "ellipsis.circle") }
             .menuIndicator(.hidden).fixedSize().accessibilityLabel("Folder actions")
         }.padding(Space.md)
@@ -78,7 +76,7 @@ struct LibraryView: View {
       .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
         guard !showsDeleted, press.modifiers == .command, !selection.isEmpty,
           AppStore.canTrashSelection(in: NSApp.keyWindow) else { return .ignored }
-        store.delete(selection)
+        store.delete(selection, undoManager: undoManager)
         return .handled
       }
       .onChange(of: store.selectedID) { _, id in
@@ -89,7 +87,14 @@ struct LibraryView: View {
       .frame(minWidth: 200 * store.uiZoom)
       .navigationSplitViewColumnWidth(min: 200 * store.uiZoom, ideal: 260 * store.uiZoom, max: 360 * store.uiZoom)
     } detail: {
-      Group {
+      VStack(spacing: 0) {
+        if let notice = store.libraryNotice {
+          Text(notice).font(UIType.secondary).foregroundStyle(.primary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Space.margin).padding(.vertical, Space.md)
+            .accessibilityAddTraits(.updatesFrequently)
+        }
+        Group {
         if showsDeleted {
           ContentUnavailableView("Recently Deleted", systemImage: "trash",
             description: Text("Choose Restore Script to return a deleted script to your library."))
@@ -107,22 +112,11 @@ struct LibraryView: View {
               description: Text(store.visible.isEmpty ? "Try another search or choose All Scripts." : "Choose a script on the left, then press Present."))
           }
         }
+        }
       }.uiZoom(store.uiZoom)
     }
     .navigationSplitViewStyle(.balanced)
-    .inspector(isPresented: Binding(get: { store.inspector && store.uiZoom < 1.5 && !showsStart && !showsDeleted }, set: { store.inspector = $0 })) {
-      // The column width is what the split view honours; a `frame` inside it let the form
-      // out-size the pane and slide under the editor.
-      ReadingInspectorView(store: store, camera: camera)
-        .environment(\.colorScheme, colorScheme)
-        .uiZoom(store.uiZoom)
-        // The inspector ideal stays fixed; zoom only raises the sidebar minimum.
-        .inspectorColumnWidth(min: 280, ideal: 320, max: 480 * store.uiZoom)
-    }
-    .sheet(isPresented: Binding(get: { store.inspector && store.uiZoom >= 1.5 && !showsStart && !showsDeleted }, set: { store.inspector = $0 })) {
-      ReadingSettingsSheet(store: store, camera: camera)
-    }
-    .navigationTitle(showsStart ? "Get started" : showsDeleted ? "Recently Deleted" : store.selected?.metadata.title ?? "Scripts")
+    .navigationTitle(showsStart ? "Get started" : showsDeleted ? "Recently Deleted" : "Scripts")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup(placement: .navigation) {
@@ -139,18 +133,7 @@ struct LibraryView: View {
           .help("Add a script or folder").disabled(!store.libraryAvailable)
       }
       ToolbarItemGroup(placement: .primaryAction) {
-        Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
-          .labelStyle(.titleAndIcon)
-          .help("Check framing or record without a script")
-        Button("Reading settings", systemImage: "sidebar.trailing") { store.inspector.toggle() }
-          .labelStyle(.iconOnly)
-          .help(store.inspector ? "Hide reading settings" : "Show reading settings")
-        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
-          .labelStyle(.titleAndIcon)
-          .buttonStyle(.borderedProminent)
-          .tint(.accentColor)
-          .help(store.selected == nil ? "Open the presenter with just the camera; add a script any time" : "Open the selected script in the floating presenter (⌥⌘P)")
-          .disabled(!store.libraryAvailable || showsDeleted)
+        LibraryPresenterActions(store: store, showsDeleted: showsDeleted)
       }
     }
     .alert(
@@ -185,7 +168,7 @@ struct LibraryView: View {
     }
     .sheet(isPresented: Binding(get: { importPreview != nil }, set: { if !$0 { importPreview = nil } })) {
       if let value = importPreview {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: Space.md) {
         Text("Import \(value.sourceURL.lastPathComponent)").font(.headline)
         ScrollView {
           Text(value.markdown).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
@@ -208,7 +191,7 @@ struct LibraryView: View {
             importPreview = nil
           }.keyboardShortcut(.defaultAction).help("Add this script; Markdown originals stay linked for editing")
         }
-      }.padding(24).uiZoom(store.uiZoom)
+      }.padding(Space.xxl).uiZoom(store.uiZoom)
         // The zoomed layout takes only what the sheet offers, so the sheet must be asked for the
         // scaled minimum here or the preview is laid out narrower than its text and clipped.
         .frame(minWidth: min(648 * store.uiZoom, 900), minHeight: min(448 * store.uiZoom, 700))
@@ -233,7 +216,7 @@ struct LibraryView: View {
       Button("Save") { if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }; renamingFolder = nil }.help("Save the folder’s new name")
       Button("Cancel", role: .cancel) { renamingFolder = nil }
     }
-    // Allow the 200% sidebar plus the inspector and editor without changing window constraints mid-zoom.
+    // Keep the sidebar and editor usable at 200% without changing constraints mid-zoom.
     .frame(minWidth: 1132, minHeight: 500)
   }
 
@@ -260,7 +243,7 @@ struct LibraryView: View {
     Button("Present") { store.selectedID = id; PresenterController.shared.present(store: store) }
     Button("Duplicate") { store.selectedID = id; store.duplicate() }.keyboardShortcut("d")
     Menu("Move to Folder") {
-      Button("All Scripts") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil) }
+      Button("No Folder") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil) }
       ForEach(store.folders) { folder in
         Button(folder.name) { store.moveSelectedScripts(store.contextSelection(for: id), to: folder.id) }
       }
@@ -273,7 +256,7 @@ struct LibraryView: View {
       if broken { Button("Find Linked File…") { store.relinkingID = id } }
     }
     Divider()
-    Button("Move to Trash", role: .destructive) { store.delete(store.contextSelection(for: id)) }.keyboardShortcut(.delete)
+    Button("Move to Trash", role: .destructive) { store.delete(store.contextSelection(for: id), undoManager: undoManager) }.keyboardShortcut(.delete)
   }
 
   private func createFolder() {
@@ -290,7 +273,7 @@ private struct ScriptRow: View {
   @Environment(\.colorScheme) private var colorScheme
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      HStack(spacing: 4) {
+      HStack(spacing: Space.xs) {
         Image(systemName: "doc.text").foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
         Text(script.metadata.title).fontWeight(selected ? .semibold : .regular)
           .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
@@ -298,13 +281,13 @@ private struct ScriptRow: View {
         if let path = script.metadata.linkedPath {
           let present = !(link?.isBroken ?? false)
           Image(systemName: present ? "link" : "link.badge.plus")
-            .font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
+            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme))
             .accessibilityLabel(present ? "Linked file" : "Linked file unavailable")
             .help(path)
         }
       }
       if !script.metadata.tags.isEmpty {
-        Text(script.metadata.tags.joined(separator: ", ")).font(.caption).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).lineLimit(1)
+        Text(script.metadata.tags.joined(separator: ", ")).font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme)).lineLimit(1)
       }
     }.foregroundColor(LibraryAppearance.color(.labelColor, scheme: colorScheme)).tag(script.metadata.id)
   }
@@ -317,6 +300,7 @@ private struct EditorView: View {
   @State private var title = ""
   @State private var tags = ""
   @State private var showsDetails = false
+  @State private var showsTextSize = false
   @State private var editNotice: String?
   @Environment(\.colorScheme) private var colorScheme
   @StateObject private var saver = LibraryEditorSave()
@@ -331,16 +315,18 @@ private struct EditorView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 8) {
-        TextField("Title", text: $title, axis: .vertical).textFieldStyle(.plain).font(.body.weight(.medium)).lineLimit(1...3)
+      VStack(alignment: .leading, spacing: Space.sm) {
+        TextField("Title", text: $title, axis: .vertical).textFieldStyle(.plain).font(UIType.title).lineLimit(1...3)
           .accessibilityLabel("Script title")
           .help("Title, tags and script text save automatically")
         HStack(alignment: .firstTextBaseline) {
-          Text(saver.message).font(.caption)
+          Text("\(saver.isSaving || saver.failed ? saver.message : "Changes save automatically") · \(PrompterDocument(markdown: text).spokenTokens.count) words")
+            .font(UIType.secondary).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
           Spacer()
-          Button("Text size…") { store.inspector = true }
-            .buttonStyle(.link).help("Open Reading settings for reading and editor text sizes")
+          Button("Text size") { showsTextSize = true }
+            .buttonStyle(.link).help("Change the editor font and text size")
+            .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
         }
         DisclosureGroup("Script details", isExpanded: $showsDetails) {
           VStack(alignment: .leading, spacing: Space.sm) {
@@ -375,7 +361,7 @@ private struct EditorView: View {
       FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
         fontSize: store.previewFontSize, onUnsupportedEdit: {
           editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-        }).help("Type or paste your script; changes save automatically").padding(24)
+        }).help("Type or paste your script; changes save automatically").padding(Space.xxl)
     }
     .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id); scheduleSave() }
     .onChange(of: title) { _, _ in scheduleSave() }
@@ -394,3 +380,22 @@ private struct EditorView: View {
 }
 
 private enum LibraryScope: Hashable { case all, folder(UUID), deleted }
+
+/// The exact trailing toolbar content, also renderable in offscreen accessibility checks.
+struct LibraryPresenterActions: View {
+  @ObservedObject var store: AppStore
+  var showsDeleted = false
+  var body: some View {
+        Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
+          .labelStyle(.titleAndIcon).help("Open the Recordings folder")
+        Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
+          .labelStyle(.titleAndIcon)
+          .help("Check framing or record without a script")
+        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
+          .labelStyle(.titleAndIcon)
+          .buttonStyle(.borderedProminent)
+          .tint(.accentColor)
+          .help("Reading settings are in Settings (⌘,)")
+          .disabled(!store.libraryAvailable || showsDeleted)
+  }
+}

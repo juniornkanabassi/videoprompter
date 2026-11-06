@@ -19,6 +19,7 @@ struct ScriptTextView: NSViewRepresentable {
   var paragraphSpacing = 0.34
   var horizontalMargin = 42.0
   var alignment = "Left"
+  var overVideo = false
   var showCues = true
   var highlightActiveWord = false
   /// The session's fractional token position, painted on a display link while running: Manual's
@@ -86,13 +87,13 @@ struct ScriptTextView: NSViewRepresentable {
     coordinator.isActivelyRunning = isActivelyRunning
     coordinator.releaseHandScroll()
     coordinator.updateDisplayLink(for: scroll)
-    let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
+    let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)|\(overVideo)"
     if coordinator.needsRender(document: document, style: style) {
       coordinator.render(
         document: document, fontName: fontName, fontSize: fontSize, textOpacity: textOpacity,
         fontWeight: fontWeight, textColorHex: textColorHex, lineSpacing: lineSpacing,
         paragraphSpacing: paragraphSpacing,
-        alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord)
+        alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord, overVideo: overVideo)
     }
     coordinator.updateGeneration &+= 1
     let generation = coordinator.updateGeneration
@@ -290,7 +291,7 @@ struct ScriptTextView: NSViewRepresentable {
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
       paragraphSpacing: Double = 0.34, alignment: String = "Left",
-      showCues: Bool = true, highlightActiveWord: Bool = false)
+      showCues: Bool = true, highlightActiveWord: Bool = false, overVideo: Bool = false)
     {
       guard let textView else { return }
       self.textOpacity = textOpacity
@@ -307,6 +308,13 @@ struct ScriptTextView: NSViewRepresentable {
           lineSpacing: max(3, fontSize * lineSpacing), paragraphSpacing: max(10, fontSize * paragraphSpacing),
           alignment: NSTextAlignment(setting: alignment))))
       let full = NSRange(location: 0, length: attributed.length)
+      if overVideo {
+        let halo = NSShadow()
+        halo.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        halo.shadowBlurRadius = 6
+        halo.shadowOffset = .zero
+        attributed.addAttribute(.shadow, value: halo, range: full)
+      }
       // Presenter clicks seek within the script, including linked words.
       attributed.removeAttribute(.link, range: full)
       if fontWeight == "Bold" {

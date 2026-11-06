@@ -1,0 +1,8 @@
+{
+  "height" : 800,
+  "limit" : "Offscreen content only; native window glass and active toolbar require live review",
+  "page" : "first-launch-200-light",
+  "renderer" : "NSHostingView.cacheDisplay",
+  "visible" : false,
+  "width" : 1132
+}

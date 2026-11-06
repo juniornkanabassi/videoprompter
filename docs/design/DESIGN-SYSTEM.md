@@ -1,38 +1,98 @@
-# Video Prompter interface tokens
+# Video Prompter design system
 
-Application controls keep macOS semantic colours, native controls and text styles. The script's font, colour, size and background are saved user choices and remain independent.
+The 6 November 2026 design specification is authoritative. This is the durable interface contract, replacing earlier round-by-round notes. Preserve existing saved settings and features. Library and Settings use native macOS controls; presenter chrome follows the glass rules below.
 
-`Sources/VideoPrompter/UI/DesignTokens.swift` owns the four-point spacing scale. Use `Space.xs` (4), `sm` (8), `md` (12), `lg` (16), `xl` (20), `xxl` (24) and `section` (32). Page margins use `Space.margin` (20). Native form and toolbar spacing stays under system control. Hairlines and compact row dividers may use 1 or 2 points. Image aspect ratios and live script/camera geometry are not spacing tokens.
+## 0. Principles
 
-Use `UIType.heading`, `body`, `secondary` and `caption` for application copy. These are semantic SwiftUI fonts, not fixed point sizes. Presenter fonts stay controlled by the saved script settings.
+These settle every argument the reviews kept reopening.
 
-The grid check rejects off-grid literal padding, stack spacing and corner radii in the audited application chrome. Runtime text/camera positioning and the established reading line are excluded so the typography cleanup cannot alter scrolling or speech following.
+1. **Doing is on the surface, choosing is one level down.** Anything the creator *does* during a session (start reading, record, stop, check exposure, see the clean picture) is a button on the presenter bar. Anything they *choose* once (fonts, formats, thresholds) lives on a settings page.
+2. **One home per setting.** Every setting is fully configured on exactly one page view. That page may be shown in the Settings window or in a presenter popover, but it is the same view type with the same bindings. A setting may also have at most one *quick control* elsewhere (listed in section 2.7). The quick control uses the same label and the same binding. There are no signpost pages.
+3. **The transport never moves or hides.** Reading state, Start/Pause, Record/Stop and the recording timer sit in one fixed row in a fixed order. They are never inside a popover, a scroll view or a "Show controls" state.
+4. **Reading and recording stay separate actions.** Neither starts the other. Each has its own button next to the other one.
+5. **Enlarging means fewer things, not more rows.** At bigger interface sizes, the same controls get bigger and secondary ones fold into menus. The script keeps at least 60% of the presenter's height.
+6. **Words over icons.** Every bar control has a visible word. Icons support the word.
 
-Run `python3 checks/check-grid.py` and `zsh checks/check-snapshots.sh`. Snapshot output is intentionally offscreen native content, not a screen capture. Review the emitted PNGs; toolbar glass, active-window appearance and hardware video still require a live check.
+### 2.7 Quick controls (the only allowed duplicates)
 
-## Reading and library hierarchy
+| Setting | Home | Quick control |
+|---|---|---|
+| Reading text size | Settings > Reading | Presenter **Text** A− A+ (steps of 4 pt, announces "Reading text 48 points") |
+| Editor font and size | Settings > General | Library editor **Text size** popover |
+| Microphone | Settings > Microphone | Presenter **Microphone** popover |
+| Camera | Settings > Camera & Recording | Presenter **Camera** picker, Camera Monitor toolbar |
+| Zebras, False colour | Settings > Camera & Recording > Exposure | Presenter bar toggles, Camera Monitor toolbar, View menu |
+| Framing guides | Settings > Camera & Recording | Presenter **Guides** popover, Camera Monitor Options |
+| Presenter view | Presenter **View** menu | View menu in the menu bar |
+| Reading presets | Settings > Reading presets | Presenter More ▸ Reading presets |
 
-`Library/ReadingInspectorView.swift` is the shared reading configuration. `InspectorView` remains an alias for compatibility. Keep the view/mode/font/size decisions visible and the detailed spacing, guide, backdrop and cue controls disclosed. Enlarged popup controls must retain a full readable current-value label even when the native popup abbreviates its title. Slider values must include units in accessibility values.
+Interface size is under General only, plus ⌘+ / ⌘− / ⌘0.
 
-The first-launch library starts with the user's job, not appearance controls. Keep library scopes independent from the scrolling document list and keep routine metadata in Script details. Broken-link and failed-save recovery stays visible. In rendered Markdown, callout blocks use the available text width and primary text for their titles; colour is supporting decoration. Hidden presenter cues must also be absent from accessible/selectable text, with source mapping retained for seeking.
+## 7. Vocabulary
 
-## Round 3 library and reading controls
+One name per concept. UI text, help text, accessibility labels, menus, the Welcome Script and the README use these words. Menu items use title case of the same words.
 
-The library sidebar has one compact scope selector and one document list. Folder
-management and the recordings-folder action live in the adjacent Folder actions
-menu. Scope is a filter, not a second highlighted document. The start page does
-not highlight Welcome until its script is displayed. Rows use two lines with a
-full-title tooltip so the list remains useful with hundreds of scripts.
+| Concept | Use | Never use |
+|---|---|---|
+| A piece of text to read | script | document, file (unless it is the linked file) |
+| The floating reading window | presenter | prompter window, camera-only presenter |
+| What the presenter shows | view: Script only, Script and camera, Camera only | Presenter view, Video only, Prompter only |
+| Making the words move | Start reading, Pause, Back to start | Start or Pause (menu only), play |
+| Following modes | Voice follow, Automatic scroll | Manual, Timed |
+| Recording the camera | Record, Stop recording | Record camera, Record Camera |
+| One recording | take | clip, recording file |
+| Where takes go | Recordings folder | Movies folder, output folder |
+| After a take | Saved [file name] · Play · Show in Finder · Hide | Review last take, Dismiss receipt |
+| The input device | microphone | mic (except "Mic:" in the health line), input, following microphone |
+| Second device (advanced) | recording microphone | microphone saved with video |
+| Exposure stripes | Zebras | zebra stripes, stripes |
+| Brightness colours | False colour | |
+| Skin preset | Face brightness | Skin exposure check |
+| The picture with nothing over it | Clean view | Clean picture, Hide exposure aids |
+| Composition lines | Framing guides (Guides in compact) | |
+| Output shape outline | Frame marker | |
+| Saved reading looks | Reading presets | Saved settings |
+| Text sizes | Reading text size, Editor text size, Interface size | Text size alone in Settings |
+| Editing in the presenter | Edit script, Save changes, Cancel editing; status "Editing · not saved yet" | Finish editing |
+| Second camera window | Camera Monitor | Separate Camera Monitor, separate camera monitor |
+| Pasting a script | Paste Copied Text | Paste as New Script |
+| Folder removal from a script | No Folder | All Scripts (as a destination) |
+| Codec choice | Recording format: H.264 (most compatible), HEVC (smaller files), ProRes 422 (for editing) | Recording quality, Standard, High, Edit |
 
-Reading settings is the single home for reading and editor typography. The
-editor and Settings > Editor link there. Interface size remains under General,
-with a link from Reading. At 150% and above, the library opens Reading settings
-in a wide sheet rather than narrowing the editor around three large columns.
-The shared groups resolve their background and label colours explicitly because
-native grouped Form surfaces can resolve white inside a dark split-view host.
-Section titles, labels and short explanations remain distinct without faint text.
+## 8. Visual rules
 
-Relinking shows additions and removals first, using written labels, bold and
-underlines. Full original versions remain available. Camera keyboard previews
-scroll their highlighted row into view and empty states offer a privacy-settings
-route plus Refresh. No preview hover requests camera permission.
+### 8.1 Materials
+- Presenter bar: one `GlassEffectContainer` with `.glassEffect(.regular.tint(.black.opacity(0.35)), in: RoundedRectangle(cornerRadius: 20))`. Under Reduce Transparency, a solid `Color(white: 0.12)` fill. `.regularMaterial` is removed from the presenter.
+- Bar buttons: `.buttonStyle(.glass)`. Start reading uses `.glassProminent` with the accent tint. Record uses `.glass` with a red record symbol; while recording, the Stop button is `.glassProminent` tinted red.
+- Notices above the bar and the exposure legend: the same tinted glass, radius 12.
+- Library, Settings and popovers: native materials and grouped forms only. No custom cards around Form sections; the Reading page uses `Form { Section }` with `.formStyle(.grouped)` like every other page.
+
+### 8.2 Radii
+Bar container 20. Notices, legend, popover inner cards 12. Bar buttons capsule. Drag handle 8. Everything else is system-drawn. These are the only literal radii in app chrome, and `checks/check-grid.py` must accept them.
+
+### 8.3 Spacing
+Only `Space` tokens. Inside the bar: 8 between buttons in a group, 16 between groups, 12 padding inside the container. Form rows: system. Page margins `Space.margin` (20). Section gaps `Space.xxl` (24).
+
+### 8.4 Type scale (`UI/DesignTokens.swift` `UIType`)
+| Token | Font | Use |
+|---|---|---|
+| `title` | `.title2.weight(.semibold)` | library editor title, start page headings below the large title |
+| `heading` | `.headline` | section headings |
+| `body` | `.body` | labels, buttons, bar buttons |
+| `secondary` | `.callout` | explanations, status capsule, health line, metadata |
+| `caption` | `.caption` | numbers beside meters only |
+
+Rule for a dyslexic reader: nothing a person must read to act is smaller than `.callout`. Explanations use primary colour at `.callout`, never `.secondary` foreground on light backgrounds. No explanation longer than two lines sits above a control; longer text goes in a "How … works" disclosure.
+
+### 8.5 Contrast over the camera picture
+- New `PrompterSettings` default `videoDimming = 0.5` (was 0.25). Saved settings keep their value.
+- When the script is over a camera picture, the script text gets a soft dark halo (shadow radius 6, black at 60%). Toggle-free; it is part of the over-video rendering.
+- The Reading page Colours section shows a warning when the worst case falls below 3:1 (text colour at Text visibility over the background colour at Background darkness, on a white picture): "Text may be hard to read over a bright picture." with a **Make Readable** button that sets Background darkness to the lowest value reaching 3:1. It never changes saved values on its own.
+- Presenter chrome is always the dark appearance, so bar text is light on dark glass in both system appearances.
+
+### 8.6 Icon finish
+SF Symbols only, `.symbolRenderingMode(.hierarchical)`, weight matching the label. Filled variants mean "on". Red is reserved for recording and for problems. The app icon is out of scope for this spec.
+
+## Verification
+
+Run `zsh test.sh`, `zsh checks/check-snapshots.sh` and the included grid check. Inspect every changed light and dark image. All tests and renders stay offscreen with disposable scripts and preferences. Offscreen renders do not prove live glass, hardware recording or spoken VoiceOver.
