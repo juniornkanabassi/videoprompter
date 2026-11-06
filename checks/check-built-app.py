@@ -151,7 +151,7 @@ try:
     assert command(['status'])['running']
     manifest = json.loads(subprocess.check_output([str(cli), 'mcp-manifest'], text=True))
     tool_count = len(manifest['tools'])
-    assert tool_count == 40, tool_count
+    assert tool_count == 41, tool_count
     requests = [{'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18'}},
                 {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
                 {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
