@@ -310,6 +310,10 @@ extension View {
   func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
 }
 
+extension NSResponder {
+  @objc fileprivate func agentScreen_noResponder(for eventSelector: Selector) {}
+}
+
 extension NSApplication {
   /// Hidden agent copies (`--agent-screen`) must never come to the front and take focus from Junior.
   func activateUnlessAgentScreen() {
@@ -322,6 +326,11 @@ extension NSWindow {
   /// `--agent-screen` (the packaged checks) runs the real app with nothing visible on any of Junior's displays:
   /// windows stay ordered in, so Accessibility still reads them, but are transparent and let clicks through.
   static func keepEveryWindowInvisible() {
+    // Unhandled key presses from agent checks would otherwise play the system alert sound.
+    if let old = class_getInstanceMethod(NSResponder.self, #selector(NSResponder.noResponder(for:))),
+      let new = class_getInstanceMethod(NSResponder.self, #selector(NSResponder.agentScreen_noResponder(for:))) {
+      method_exchangeImplementations(old, new)
+    }
     NotificationCenter.default.addObserver(forName: NSWindow.didUpdateNotification, object: nil, queue: .main) { note in
       guard let window = note.object as? NSWindow, window.alphaValue != 0 || !window.ignoresMouseEvents else { return }
       MainActor.assumeIsolated { window.alphaValue = 0; window.ignoresMouseEvents = true }

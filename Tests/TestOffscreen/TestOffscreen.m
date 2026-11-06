@@ -1,5 +1,5 @@
 // Every window a test orders in stays invisible, and nothing a test does activates the test process,
-// so `swift test`, test.sh and the snapshot checks never appear on Junior's screens or take focus.
+// so `swift test`, test.sh and the snapshot checks never appear on Junior's screens, take focus or beep.
 // Windows are still ordered in (isVisible, layout, hit tests and offscreen rendering all work); they are
 // just fully transparent and let clicks through. Runs when the test bundle loads, before any test.
 #import <AppKit/AppKit.h>
@@ -28,6 +28,11 @@ static void swap(Class type, SEL original, SEL replacement) {
 - (void)testOffscreen_makeKeyAndOrderFront:(id)sender { [self testOffscreen_hide]; [self testOffscreen_makeKeyAndOrderFront:sender]; }
 @end
 
+@implementation NSResponder (TestOffscreen)
+// An unhandled key press ends here and plays the system alert sound; tests must stay silent.
+- (void)testOffscreen_noResponderFor:(SEL)eventSelector {}
+@end
+
 @implementation NSApplication (TestOffscreen)
 - (void)testOffscreen_activateIgnoringOtherApps:(BOOL)flag {}
 - (void)testOffscreen_activate {}
@@ -40,6 +45,7 @@ __attribute__((constructor)) static void installTestOffscreen(void) {
   swap(window, @selector(orderFront:), @selector(testOffscreen_orderFront:));
   swap(window, @selector(orderFrontRegardless), @selector(testOffscreen_orderFrontRegardless));
   swap(window, @selector(makeKeyAndOrderFront:), @selector(testOffscreen_makeKeyAndOrderFront:));
+  swap(NSResponder.class, @selector(noResponderFor:), @selector(testOffscreen_noResponderFor:));
   swap(app, @selector(activateIgnoringOtherApps:), @selector(testOffscreen_activateIgnoringOtherApps:));
   swap(app, @selector(activate), @selector(testOffscreen_activate));
 }

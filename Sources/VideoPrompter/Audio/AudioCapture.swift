@@ -40,8 +40,7 @@ public final class AudioCapture: @unchecked Sendable {
   }
 
   public static func requestPermission() async -> Bool {
-    if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized { return true }
-    return await AVCaptureDevice.requestAccess(for: .audio)
+    await CaptureAccess.request(.audio)
   }
 
   public static func resolveInput(_ uid: String?, devices: [AudioInputDevice], defaultID: AudioDeviceID) -> AudioInputDevice? {

@@ -1,6 +1,8 @@
+import AVFoundation
 import AppKit
 import TestOffscreen
 import XCTest
+@testable import VideoPrompter
 
 /// Tests never show anything on Junior's screens or take focus.
 @MainActor final class TestOffscreenTests: XCTestCase {
@@ -19,5 +21,17 @@ import XCTest
     }
     NSApp.activate(ignoringOtherApps: true)
     XCTAssertFalse(NSApp.isActive, "a test must never bring the test process forward")
+  }
+}
+
+/// Tests never trigger macOS camera or microphone prompts: each test binary is a new app identity to macOS.
+final class CaptureAccessTests: XCTestCase {
+  func testTestsNeverAskForCameraOrMicrophone() async {
+    XCTAssertTrue(CaptureAccess.isAgentOrTest)
+    for media in [AVMediaType.video, .audio] where AVCaptureDevice.authorizationStatus(for: media) != .authorized {
+      XCTAssertFalse(CaptureAccess.mayUse(media))
+      let granted = await CaptureAccess.request(media)
+      XCTAssertFalse(granted)
+    }
   }
 }

@@ -417,7 +417,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
 
   /// Session queue only: start with the format held, then check it.
   func start(_ session: AVCaptureSession) {
-    if !session.isRunning { holdingFormat(session) { session.startRunning() } }
+    if !session.isRunning, CaptureAccess.mayUse(.video) { holdingFormat(session) { session.startRunning() } }
     watch(session)
   }
 
