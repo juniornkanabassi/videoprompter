@@ -35,7 +35,7 @@ From the first release built with Sparkle, Video Prompter checks for updates onc
 
 ## First use
 
-A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Practice Script brings it back.
+A new library starts with a script called Welcome to Video Prompter. Present it and read it aloud for a tour of every feature, trying each one as you go. If you delete it, Help › Getting Started Guide brings it back.
 
 1. Choose **Paste Copied Text** to paste a script, or use **Add** to create or import one. Pasted scripts take their title from the text.
 2. Choose **Present**.

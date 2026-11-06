@@ -61,7 +61,7 @@ enum ScriptShortcuts {
           SidebarCommands()
           InspectorCommands()
           PrivacyCommands()
-          CommandGroup(after: .help) { Button("Practice Script") { store.showWelcomeScript() } }
+          CommandGroup(after: .help) { Button("Getting Started Guide") { store.showWelcomeScript() } }
         }
         Group {
           ICloudCommands(store: store)
