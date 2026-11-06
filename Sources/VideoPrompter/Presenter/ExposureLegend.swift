@@ -61,6 +61,7 @@ struct ExposureGuidance: View {
     }
   }
   static let colourPurpose = "Colours show dark, medium and bright areas in the received picture."
+  static let facePurpose = "Stripes mark a brightness reference for the lit side of a face."
   static let colourAction = "Adjust brightness on your camera for the detail you want to keep."
 }
 
@@ -72,13 +73,13 @@ struct ExposureToolToggles: View {
     Toggle(isOn: model.exposureBinding(\.zebras, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("Zebras").fontWeight(.semibold)
-        Text(ExposureGuidance.zebraPurpose(model.guides))
+        Text(ExposureGuidance.zebraPurpose(model.guides)).font(.callout)
       }
     }.initialPopoverFocus().accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
     Toggle(isOn: model.exposureBinding(\.falseColour, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("False colour").fontWeight(.semibold)
-        Text(ExposureGuidance.colourPurpose)
+        Text(ExposureGuidance.colourPurpose).font(.callout)
       }
     }.accessibilityLabel("False colour").accessibilityHint(ExposureGuidance.colourPurpose)
   }
@@ -97,12 +98,18 @@ struct ExposureSettingsContent: View {
         get: { model.guides.validatedZebraPurpose },
         set: { model.guides.useZebraPreset($0) }
       )) {
-        Text("Face reference").tag(CameraGuides.ZebraPurpose.faceReference)
-        Text("Bright areas").tag(CameraGuides.ZebraPurpose.brightAreas)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Face reference").fontWeight(.semibold)
+          Text(ExposureGuidance.facePurpose).font(.callout)
+        }.tag(CameraGuides.ZebraPurpose.faceReference)
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text("Bright areas").fontWeight(.semibold)
+          Text("Stripes mark the brightest parts of the picture.").font(.callout)
+        }.tag(CameraGuides.ZebraPurpose.brightAreas)
         if model.guides.validatedZebraPurpose == .custom {
           Text("Custom levels").tag(CameraGuides.ZebraPurpose.custom)
         }
-      }
+      }.pickerStyle(.radioGroup).fixedSize(horizontal: false, vertical: true)
       Text(ExposureGuidance.zebraAction(model.guides)).fontWeight(.semibold)
       Text(ExposureGuidance.zebraLookFor(model.guides))
       if model.exposureBypassed || (presenter && model.cleanView) {
@@ -174,16 +181,29 @@ struct ExposureLegend: View {
 
 }
 
-/// The strip has no text that can wrap. Names, calibration and actions belong in Key.
+/// Three short captions locate the key bands without adding a second row over the picture.
 struct FalseColourStrip: View {
+  static let captions = ["Too dark", "Face", "Clipping"]
   var body: some View {
-    HStack(spacing: 0) {
-      ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
-        Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-          .frame(minWidth: Space.xs, maxWidth: .infinity)
-          .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
+    HStack(spacing: Space.xs) {
+      ForEach(0..<3) { group in
+        ZStack {
+          HStack(spacing: 0) {
+            ForEach((group * 2)..<(group * 2 + 2), id: \.self) { index in
+              let band = CameraExposure.bands[index]
+              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                .frame(minWidth: Space.xs, maxWidth: .infinity)
+                .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
+            }
+          }
+          Text(Self.captions[group]).font(.callout).foregroundStyle(.white)
+            .lineLimit(1).fixedSize()
+            .padding(.horizontal, Space.xs)
+            .background(.black.opacity(0.9))
+            .accessibilityHint(group == 1 ? "Reference only. Skin tones vary; open Key for brightness levels." : "Open Key for brightness levels.")
+        }.frame(maxWidth: .infinity).frame(height: Space.xxl)
       }
-    }.frame(maxWidth: 240).frame(height: Space.sm)
+    }.frame(maxWidth: 480).fixedSize(horizontal: false, vertical: true)
       .accessibilityElement(children: .contain)
       .accessibilityLabel("False colour strip")
   }

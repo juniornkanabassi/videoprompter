@@ -121,7 +121,7 @@ extension AppearanceSnapshotTests {
     camera.guides.falseColour = true
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
-      try await snapshot(ExposureLegend(model: camera, zoom: zoom), name: "r14-strip-\(Int(zoom * 100))-\(mode)", size: .init(width: 240, height: 100), scheme: scheme, destination: destination)
+      try await snapshot(ExposureLegend(model: camera, zoom: zoom), name: "r14-strip-\(Int(zoom * 100))-\(mode)", size: .init(width: 720, height: 100), scheme: scheme, destination: destination)
       try await snapshot(ExposureKeyPanel(model: camera, zoom: zoom), name: "r14-key-help-\(Int(zoom * 100))-\(mode)", size: .init(width: 320 * zoom, height: 300 * zoom), scheme: scheme, destination: destination)
       try await snapshot(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped).uiZoom(zoom), name: "r14-exposure-settings-\(Int(zoom * 100))-\(mode)", size: .init(width: 600, height: 800), scheme: scheme, destination: destination)
       try await snapshot(ReadingFirstUseTip(dismiss: {}).padding(Space.sm).uiZoom(zoom), name: "r14-inline-tip-\(Int(zoom * 100))-\(mode)", size: .init(width: 500, height: 100), scheme: scheme, destination: destination)
