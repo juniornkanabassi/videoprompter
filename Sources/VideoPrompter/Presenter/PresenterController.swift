@@ -949,6 +949,7 @@ struct PresenterView: View {
   private var secondaryOpacity: Double {
     controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? 0.75 : 1
   }
+  private var showsReceipt: Bool { !recorder.isRecording && !recorder.isBusy && (recorder.savedTake != nil || recorder.takeFailure != nil) }
   private var barContent: some View {
     VStack(spacing: 0) {
       transport
@@ -964,12 +965,17 @@ struct PresenterView: View {
         if camera.presentsWithVideo {
           Text(recordingStatusTitle).fontWeight(recorder.isRecording || recorder.isBusy ? .bold : .regular).monospacedDigit().fixedSize(horizontal: false, vertical: true)
             .accessibilityLabel("Recording status").accessibilityValue(recordingStatusTitle)
+          if recorder.isRecording {
+            RecordingBarLevel(meter: recorder.inputMeter, compact: true)
+            RecordingHealthNotice(recorder: recorder, zoom: controlZoom, compact: compactControls)
+              .help("Recording microphone: " + recorder.microphoneName)
+          }
         }
         if camera.cleanView { Button("Exit clean view") { camera.cleanView = false } }
         Spacer(minLength: 0)
-        if !camera.presentsWithVideo { moreMenu.opacity(secondaryOpacity) }
+        if !camera.presentsWithVideo || showsReceipt { moreMenu.opacity(secondaryOpacity) }
       }.font(.callout)
-      if camera.presentsWithVideo { pictureRow }
+      if camera.presentsWithVideo && !showsReceipt { pictureRow }
         if camera.presentsWithVideo && !camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording && recorder.savedTake == nil && recorder.takeFailure == nil {
           Button {
             if camera.authorization == .denied || camera.authorization == .restricted {
@@ -989,14 +995,7 @@ struct PresenterView: View {
             .accessibilityLabel("Dismiss shoot setup message")
         }.font(.callout)
       }
-      if recorder.isRecording {
-        HStack(spacing: Space.xs) {
-          Text("Mic: " + recorder.microphoneName).lineLimit(1).truncationMode(.middle)
-            .help(recorder.microphoneName)
-          RecordingBarLevel(meter: recorder.inputMeter, compact: compactControls)
-          RecordingHealthNotice(recorder: recorder, zoom: controlZoom, compact: compactControls)
-        }.font(.callout)
-      } else if recorder.isBusy {
+      if recorder.isRecording || recorder.isBusy {
         EmptyView()
       } else if recorder.savedTake != nil || recorder.takeFailure != nil {
         receipt
