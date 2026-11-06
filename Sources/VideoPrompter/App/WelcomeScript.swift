@@ -30,7 +30,7 @@ enum WelcomeScript {
 
     Choose **Show camera** before recording if only your script is showing. Under **Tools**, use **View** to choose Script only, Script and camera, or Camera view. **Choose camera…** selects your camera and **Framing guides…** helps you compose the picture.
 
-    In the Exposure group, **Zebras** marks bright areas and **False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. **Bypass exposure aids** temporarily hides configured aids; **Restore exposure aids** brings them back. Neither enables a tool by itself.
+    In the Exposure group, **Zebras** marks bright areas and **Check brightness · False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. **Bypass exposure aids** temporarily hides configured aids; **Restore exposure aids** brings them back. Neither enables a tool by itself.
 
     **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays.
 
