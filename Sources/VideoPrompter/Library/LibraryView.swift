@@ -414,7 +414,8 @@ private struct EditorView: View {
         }
         HStack(alignment: .center, spacing: Space.md) {
           Button { showsTextSize = true } label: {
-            Text("Editor text size").frame(minHeight: 24).contentShape(Rectangle())
+            Label("Editor text size", systemImage: "chevron.down")
+              .frame(minHeight: 24).contentShape(Rectangle())
           }
             .accessibilityLabel("Editor text size")
             .buttonStyle(.plain).help("Change the editor font and text size")

@@ -59,7 +59,9 @@ import XCTest
     let slider = try XCTUnwrap(LibraryAX.named("Editor text size", in: host).first {
       LibraryAX.value($0, "accessibilityRole") == "AXSlider"
     })
-    XCTAssertTrue(LibraryAX.bool(slider, "accessibilityPerformIncrement"))
+    let editorSize = store.previewFontSize
+    _ = LibraryAX.bool(slider, "accessibilityPerformIncrement")
+    XCTAssertGreaterThan(store.previewFontSize, editorSize)
     XCTAssertEqual(store.settings.fontSize, readingSize)
     XCTAssertFalse(LibraryAX.named("Changes only the writing surface.", in: host).isEmpty)
   }

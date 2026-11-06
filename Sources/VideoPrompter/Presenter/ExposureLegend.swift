@@ -19,10 +19,10 @@ struct ExposureGuidance: View {
   static let colourMeanings = [
     "Purple: almost black. Detail may be lost in shadows.",
     "Blue: very dark. Brighten important shadow areas if you need to see detail.",
-    "Green: medium brightness. Check your face still has natural detail.",
-    "Pink: brighter areas. Skin tones vary; this is not a target for every face.",
+    "Green: medium brightness. Check important areas still have detail.",
+    "Pink: brighter mid-tones. Check important areas still have detail.",
     "Yellow: nearly white. Check that bright areas still show detail.",
-    "Red: the brightest areas. Lower brightness on the camera if important detail disappears."
+    "Red: the received picture is at or near white. Check for lost detail on your camera."
   ]
 
   var body: some View {
@@ -39,7 +39,7 @@ struct ExposureGuidance: View {
 
   static func zebraLookFor(_ guides: CameraGuides) -> String {
     switch guides.validatedZebraPurpose {
-    case .brightAreas: "Look for stripes where important bright areas lose detail."
+    case .brightAreas: "Stripes flag bright areas to check; they do not prove that detail is lost. Check important highlights on your camera."
     case .faceReference: "Look for natural detail on the lit cheek. Skin tones vary; there is no single target for every face. For a flat picture setting, follow your camera's guidance."
     case .custom: "Look for stripes within your chosen brightness range. This is a measurement, not a face target."
     }
@@ -56,12 +56,12 @@ struct ExposureGuidance: View {
   static func zebraPurpose(_ guides: CameraGuides) -> String {
     switch guides.validatedZebraPurpose {
     case .brightAreas: "Stripes show the brightest areas."
-    case .faceReference: "Stripes mark your chosen face reference."
+    case .faceReference: "Stripes mark the selected brightness reference."
     case .custom: "Stripes show your chosen brightness range."
     }
   }
   static let colourPurpose = "Colours show dark, medium and bright areas in the received picture."
-  static let facePurpose = "Stripes mark a brightness reference for the lit side of a face."
+  static let facePurpose = "A reference for the lit cheek in standard video, not a target for every face. Skin tones vary; for flat picture settings, follow your camera's guidance."
   static let colourAction = "Adjust brightness on your camera for the detail you want to keep."
 }
 
@@ -72,16 +72,16 @@ struct ExposureToolToggles: View {
   var body: some View {
     Toggle(isOn: model.exposureBinding(\.zebras, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text("Zebras").fontWeight(.semibold)
+        Text(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
         Text(ExposureGuidance.zebraPurpose(model.guides)).font(.callout)
       }
-    }.initialPopoverFocus().accessibilityLabel("Zebras").accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
+    }.initialPopoverFocus().accessibilityLabel(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
     Toggle(isOn: model.exposureBinding(\.falseColour, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text("False colour").fontWeight(.semibold)
+        Text("Check brightness · False colour").fontWeight(.semibold)
         Text(ExposureGuidance.colourPurpose).font(.callout)
       }
-    }.accessibilityLabel("False colour").accessibilityHint(ExposureGuidance.colourPurpose)
+    }.accessibilityLabel("Check brightness · False colour").accessibilityHint(ExposureGuidance.colourPurpose)
   }
 }
 
@@ -137,8 +137,8 @@ struct ExposureLegend: View {
   @State private var showsHelp = false
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
-    case .brightAreas: "Check bright areas · Zebras"
-    case .faceReference: "Check your face · Zebras"
+    case .brightAreas: "Find blown highlights · Zebras"
+    case .faceReference: "Check brightness · Zebras"
     case .custom: "Check custom brightness · Zebras"
     }
   }
@@ -151,7 +151,20 @@ struct ExposureLegend: View {
   var body: some View {
     if model.exposureIsConfigured && (!respectsPresenterCleanView || !model.cleanView) && !model.exposureBypassed {
       HStack(spacing: Space.sm) {
-        if model.guides.falseColour { FalseColourStrip() }
+        if model.guides.falseColour {
+          ViewThatFits(in: .horizontal) {
+            FalseColourStrip()
+            HStack(spacing: 0) {
+              ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
+                Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                  .frame(minWidth: Space.xs, maxWidth: .infinity)
+                  .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
+              }
+            }.frame(height: Space.xxl)
+              .accessibilityElement(children: .contain)
+              .accessibilityLabel("False colour strip")
+          }
+        }
         else {
           Image(systemName: "circle.lefthalf.striped.horizontal")
             .accessibilityLabel("Zebras on")
@@ -181,27 +194,32 @@ struct ExposureLegend: View {
 
 }
 
-/// Three short captions locate the key bands without adding a second row over the picture.
+/// Each caption covers only its measured bands; yellow is near-white, not clipping.
 struct FalseColourStrip: View {
-  static let captions = ["Too dark", "Face", "Clipping"]
+  static let captions = ["Too dark", "Mid-tones", "Bright", "Clipping"]
+  static let bandGroups = [0..<2, 2..<4, 4..<5, 5..<6]
   var body: some View {
     HStack(spacing: Space.xs) {
-      ForEach(0..<3) { group in
-        ZStack {
-          HStack(spacing: 0) {
-            ForEach((group * 2)..<(group * 2 + 2), id: \.self) { index in
-              let band = CameraExposure.bands[index]
-              Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-                .frame(minWidth: Space.xs, maxWidth: .infinity)
-                .accessibilityLabel("\(FalseColourKey.labels[index]). \(band.name)")
+      ForEach(Self.captions.indices, id: \.self) { index in
+        Text(Self.captions[index]).font(.callout).foregroundStyle(.white)
+          .lineLimit(1).fixedSize()
+          .padding(.horizontal, Space.xs)
+          .background(.black.opacity(0.9))
+          .frame(maxWidth: .infinity)
+          .frame(height: Space.xxl)
+          .background {
+            HStack(spacing: 0) {
+              ForEach(Self.bandGroups[index], id: \.self) { bandIndex in
+                let band = CameraExposure.bands[bandIndex]
+                Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
+                  .frame(minWidth: Space.xs, maxWidth: .infinity)
+                  .accessibilityLabel("\(FalseColourKey.labels[bandIndex]). \(band.name)")
+              }
             }
           }
-          Text(Self.captions[group]).font(.callout).foregroundStyle(.white)
-            .lineLimit(1).fixedSize()
-            .padding(.horizontal, Space.xs)
-            .background(.black.opacity(0.9))
-            .accessibilityHint(group == 1 ? "Reference only. Skin tones vary; open Key for brightness levels." : "Open Key for brightness levels.")
-        }.frame(maxWidth: .infinity).frame(height: Space.xxl)
+          .accessibilityHint(index == 3
+            ? "At or near white in the received picture, not proof of camera sensor clipping. Open Key for brightness levels."
+            : "Open Key for received-picture brightness levels.")
       }
     }.frame(maxWidth: 480).fixedSize(horizontal: false, vertical: true)
       .accessibilityElement(children: .contain)
@@ -238,8 +256,8 @@ struct ExposureKeyHelp: View {
       if model.guides.falseColour {
         FalseColourKey()
         ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
+        Text("Clipping marks 99–100% brightness in the received picture, not proof of camera sensor clipping. Check important detail on your camera, especially with a flat picture setting.")
       }
-      Text("Skin tones vary; green and pink are not targets for every face. For flat picture settings, follow your camera's guidance.")
       Text("These guides show the received picture. They do not change your camera or saved video.")
     }.font(.callout).foregroundStyle(.primary)
       .fixedSize(horizontal: false, vertical: true)
@@ -250,7 +268,7 @@ struct ExposureKeyHelp: View {
 
 /// Use the renderer's ranges, so the detailed key cannot drift from its colours.
 struct FalseColourKey: View {
-  static let labels = ["Black", "Dark", "Mid", "Bright", "High", "White"]
+  static let labels = ["Almost black", "Dark", "Mid-tones", "Brighter mid-tones", "Near white", "At white"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
     "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
   }

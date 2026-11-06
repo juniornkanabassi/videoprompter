@@ -11,8 +11,8 @@ struct EditorTextControls: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text("Editor text size")
       Text("\(Int(store.previewFontSize)) pt").font(UIType.secondary).monospacedDigit()
-      Slider(value: $store.previewFontSize, in: AppStore.editorFontSizes)
-        .accessibilityLabel("Editor text size").accessibilityValue("\(Int(store.previewFontSize)) points")
+      ReadingSlider(value: $store.previewFontSize, range: AppStore.editorFontSizes,
+        title: "Editor text size", spokenValue: "\(Int(store.previewFontSize)) points")
     }
     VStack(alignment: .leading, spacing: Space.sm) {
       Text("Changes only the writing surface.").font(UIType.secondary)
