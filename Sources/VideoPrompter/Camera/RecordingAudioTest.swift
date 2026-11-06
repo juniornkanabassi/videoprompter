@@ -21,7 +21,7 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
   }
   func start() async {
     await withCheckedContinuation { continuation in
-      queue.async { self.session.startRunning(); continuation.resume() }
+      queue.async { if CaptureAccess.mayUse(.audio) { self.session.startRunning() }; continuation.resume() }
     }
   }
   func stop() async {

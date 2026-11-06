@@ -184,7 +184,7 @@ enum PresenterDisplayMode: String, CaseIterable, Identifiable {
     }
     Task {
       if authorization == .notDetermined {
-        _ = await AVCaptureDevice.requestAccess(for: .video)
+        _ = await CaptureAccess.request(.video)
         authorization = AVCaptureDevice.authorizationStatus(for: .video)
       }
       refresh()

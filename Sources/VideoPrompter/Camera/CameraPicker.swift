@@ -475,7 +475,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
     if session.canAddOutput(output) { session.addOutput(output) }
     session.commitConfiguration()
     CameraPreviewConnection.connect(layer, to: session, mirrored: mirrored)
-    session.startRunning()
+    if CaptureAccess.mayUse(.video) { session.startRunning() }
     applied = device.activeFormat
   }
 
