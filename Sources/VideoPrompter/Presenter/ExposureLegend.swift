@@ -29,18 +29,29 @@ struct ExposureGuidance: View {
     VStack(alignment: .leading, spacing: Space.md) {
       if zebras {
         VStack(alignment: .leading, spacing: Space.sm) {
-          Text(Self.zebraPurpose(guides))
-          Text(guides.zebraGuidance)
+          Text(Self.zebraLookFor(guides))
+          Text(Self.zebraAction(guides)).fontWeight(.semibold)
         }
       }
-      if falseColour {
-        VStack(alignment: .leading, spacing: Space.sm) {
-          Text(Self.colourPurpose)
-          Text(Self.colourAction)
-        }
-      }
+      if falseColour { Text(Self.colourLookFor) }
     }.font(.callout).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
   }
+
+  static func zebraLookFor(_ guides: CameraGuides) -> String {
+    switch guides.validatedZebraPurpose {
+    case .brightAreas: "Look for stripes where important bright areas lose detail."
+    case .faceReference: "Look for natural detail on the lit cheek. Skin tones vary; there is no single target for every face. For a flat picture setting, follow your camera's guidance."
+    case .custom: "Look for stripes within your chosen brightness range. This is a measurement, not a face target."
+    }
+  }
+
+  static func zebraAction(_ guides: CameraGuides) -> String {
+    if let warning = guides.zebraWarning { return warning }
+    return guides.validatedZebraPurpose == .brightAreas
+      ? "Lower exposure on your camera if important detail disappears."
+      : "Adjust exposure on your camera for the detail you want to keep."
+  }
+  static let colourLookFor = "Look for detail in the dark and bright areas."
 
   static func zebraPurpose(_ guides: CameraGuides) -> String {
     switch guides.validatedZebraPurpose {
@@ -50,7 +61,7 @@ struct ExposureGuidance: View {
     }
   }
   static let colourPurpose = "Colours show dark, medium and bright areas in the received picture."
-  static let colourAction = "Check dark and bright areas for detail. Adjust brightness on your camera, not here."
+  static let colourAction = "Adjust brightness on your camera for the detail you want to keep."
 }
 
 /// Shared settings rows keep each tool's purpose beside its switch, even when off.
@@ -122,6 +133,8 @@ struct FalseColourKey: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       Text("Check brightness · False colour").fontWeight(.semibold)
       Text(ExposureGuidance.colourPurpose)
+      Text(ExposureGuidance.colourLookFor)
+      Text(ExposureGuidance.colourAction).fontWeight(.semibold)
       HStack(alignment: .top, spacing: Space.xs) {
         ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
           VStack(spacing: Space.xs) {
@@ -137,7 +150,6 @@ struct FalseColourKey: View {
       }
       Text("Grey shows brightness between these bands.")
         .foregroundStyle(Color.primary.opacity(0.75))
-      Text(ExposureGuidance.colourAction)
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
   }
 }

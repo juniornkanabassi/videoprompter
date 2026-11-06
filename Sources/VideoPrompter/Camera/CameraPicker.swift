@@ -44,7 +44,7 @@ struct CameraPicker: View {
     }
     .accessibilityLabel("Camera")
     .accessibilityValue(label)
-    .accessibilityHint(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : "Lists the cameras with a live preview of each")
+    .accessibilityHint(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : "Lists cameras, with previews when camera access is allowed")
     .restoringPopoverFocus(isPresented: $isOpen, identifier: "camera-picker")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
       CameraPickerList(model: model, zoom: zoom) { isOpen = false }.uiZoom(zoom)
@@ -62,6 +62,7 @@ struct CameraPickerList: View {
   @StateObject private var preview = CameraPickerPreview()
   /// The row under the pointer or the keyboard, which is the camera previewed.
   @State private var highlighted: String?
+  @State private var navigated = false
   @FocusState private var focused: Bool
 
   private var selected: String? { CameraModel.resolve(model.selectedUID, in: devices)?.uid }
@@ -74,9 +75,9 @@ struct CameraPickerList: View {
           ScrollViewReader { proxy in
             ScrollView { choiceRows }
               .onChange(of: highlighted) { _, uid in
-                if let uid { proxy.scrollTo(uid) }
+                if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
               }
-              .onAppear { if let selected { proxy.scrollTo(selected) } }
+              .onAppear { if let selected, model.authorization == .authorized { proxy.scrollTo(selected) } }
           }
         }.frame(width: 240, height: 300)
       } else {
@@ -92,6 +93,9 @@ struct CameraPickerList: View {
     .onKeyPress(.escape) { close(); return .handled }
     .onAppear { focused = true; highlighted = selected }
     .onChange(of: highlighted) { _, uid in if startsPreview { preview.show(uid, mirrored: model.mirrored) } }
+    .onChange(of: model.authorization) { _, _ in
+      if startsPreview { preview.show(highlighted, mirrored: model.mirrored) }
+    }
     .onDisappear { preview.stop() }
   }
 
@@ -101,15 +105,15 @@ struct CameraPickerList: View {
         choiceRows
       }
       .onChange(of: highlighted) { _, uid in
-        if let uid { proxy.scrollTo(uid) }
+        if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
       }
-      .onAppear { if let selected { proxy.scrollTo(selected) } }
-    }.frame(width: 240, height: devices.isEmpty ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
+      .onAppear { if let selected, model.authorization == .authorized { proxy.scrollTo(selected) } }
+    }.frame(width: 240, height: devices.isEmpty || model.authorization != .authorized ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
   }
 
   private var choiceRows: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      if devices.isEmpty { emptyState }
+      if devices.isEmpty || model.authorization != .authorized { emptyState }
       ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
     }
   }
@@ -163,6 +167,7 @@ struct CameraPickerList: View {
     .focusable(false)
     .onHover { inside in
       if inside {
+        navigated = true
         highlighted = device.uid
       } else if highlighted == device.uid {
         highlighted = nil
@@ -170,7 +175,16 @@ struct CameraPickerList: View {
     }
     .accessibilityLabel(device.displayName)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .accessibilityValue(isHighlighted ? "Previewing" : "")
+    .accessibilityValue(Self.rowStatus(selected: isSelected, highlighted: isHighlighted, authorization: model.authorization))
+  }
+
+  /// Navigation is not evidence that the camera has delivered a picture.
+  static func rowStatus(selected: Bool, highlighted: Bool, authorization: AVAuthorizationStatus) -> String {
+    var parts = [String]()
+    if selected { parts.append("Selected") }
+    if highlighted { parts.append("Highlighted") }
+    if authorization != .authorized { parts.append(recovery(for: authorization).title) }
+    return parts.joined(separator: ". ")
   }
 
   private var pane: some View {
@@ -188,7 +202,7 @@ struct CameraPickerList: View {
       .frame(width: 240, height: 135)
       .clipShape(.rect(cornerRadius: Space.md))
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel(note ?? "Live preview of \(caption)")
+      .accessibilityLabel(note ?? "Camera preview: \(caption)")
       Text(caption).font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).frame(width: 240)
         .accessibilityHidden(true)
     }
@@ -210,9 +224,10 @@ struct CameraPickerList: View {
   }
 
   private func move(_ step: Int) -> KeyPress.Result {
+    navigated = true
     highlighted = Self.nextHighlight(highlighted, selected: selected, devices: devices, step: step)
     if let device = devices.first(where: { $0.uid == highlighted }) {
-      LibraryAnnouncement.post("Previewing " + device.displayName)
+      LibraryAnnouncement.post(device.displayName + ". " + Self.rowStatus(selected: device.uid == selected, highlighted: true, authorization: model.authorization))
     }
     return .handled
   }

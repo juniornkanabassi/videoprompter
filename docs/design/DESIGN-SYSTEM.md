@@ -202,3 +202,18 @@ Smaller text and Larger text with the current point value and disabled limits.
 - Entering Camera only cancels reading and its countdown. Entering Clean view cancels a pending countdown, while an already running reading continues.
 
 - Custom frame dimensions must be finite, greater than 0 and no more than 100, using the same rule as CLI input. Invalid input retains the current marker and explains the range. Saved invalid markers are removed on load without changing other guide settings. The Custom editor stays open when an intermediate value matches a preset.
+
+
+## Round 11 Builder B clarification
+
+- Direct-paste users see a short Voice follow explanation above the editor as
+  well as on the start page. Got it dismisses the editor tip for that library
+  window session, across script changes. It does not alter or save script text.
+- Camera rows say Selected and/or Highlighted, never Previewing merely because
+  a row is highlighted. Blocked camera access is named and its recovery action
+  remains available even when macOS can enumerate devices.
+- Exposure switches own their purpose lines. Guidance below the preset names
+  what to look for and gives one camera action with stronger weight. The monitor
+  key keeps its six swatches and quieter calibrated values after that guidance.
+  Retain skin-tone, flat-profile and custom-range qualifications.
+- The Reading mode target remains Builder A's PresenterController responsibility.
