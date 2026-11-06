@@ -1,0 +1,9 @@
+{
+  "fullSuite": "Executed 542 tests, with 15 tests skipped and 0 failures (0 unexpected) in 170.045 (170.100) seconds",
+  "snapshots": 248,
+  "ownedSnapshotsReviewed": 40,
+  "grid": "PASS grid: 5 audited chrome files",
+  "focusedTests": 6,
+  "focusedFailures": 0,
+  "notes": "15 opt-in/snapshot-only tests skipped by full suite; snapshots run separately in both appearances."
+}

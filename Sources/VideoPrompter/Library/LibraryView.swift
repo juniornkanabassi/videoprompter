@@ -59,7 +59,7 @@ struct LibraryView: View {
           sidebarHeading(scriptScopeTitle)
           Spacer()
           Text("\(showsDeleted ? store.trash.count : store.visible.count)")
-            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
         }.padding(.horizontal, Space.md).padding(.vertical, Space.sm)
         List(selection: $selection) {
           if showsDeleted {
@@ -362,7 +362,7 @@ private struct EditorView: View {
         LibraryTitleField(title: $title)
         HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
           Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
-            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
             .fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
         }
@@ -377,7 +377,7 @@ private struct EditorView: View {
           }.buttonStyle(.plain).accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
           if script.metadata.linkedPath != nil {
             Label("Linked", systemImage: "link")
-              .foregroundStyle(LibraryAppearance.color(.secondaryLabelColor, scheme: colorScheme))
+              .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
               .help("Edits also change the linked file. Open Script details to see the file or unlink it.")
           }
         }.font(.callout)

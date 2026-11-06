@@ -11,11 +11,12 @@ extension View {
 private struct PopoverFocus: ViewModifier {
   @Binding var isPresented: Bool
   let identifier: String
+  @State private var instanceID = UUID().uuidString
   @FocusState private var focused: Bool
   @AccessibilityFocusState private var accessibilityFocused: Bool
   func body(content: Content) -> some View {
-    content.accessibilityIdentifier(identifier).focusable().focused($focused).accessibilityFocused($accessibilityFocused)
-      .background(PopoverFocusAnchor(isPresented: isPresented, identifier: identifier))
+    content.accessibilityIdentifier(identifier + instanceID).focusable().focused($focused).accessibilityFocused($accessibilityFocused)
+      .background(PopoverFocusAnchor(isPresented: isPresented, identifier: identifier + instanceID))
       .onChange(of: isPresented) { _, open in
         if !open {
           DispatchQueue.main.async { focused = true; accessibilityFocused = true }

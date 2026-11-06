@@ -49,7 +49,7 @@ struct ExposureLegend: View {
     if model.exposureIsConfigured && !model.cleanView && !model.exposureBypassed {
       VStack(alignment: .leading, spacing: Space.sm) {
         if model.guides.zebras {
-          Text("Zebras · " + model.guides.validatedZebraPurpose.label)
+          Text(model.guides.validatedZebraPurpose.label + " · Zebras")
           ExposureGuidance(zebras: true, guides: model.guides, falseColour: false)
         }
         if model.guides.falseColour { FalseColourKey() }
@@ -72,9 +72,9 @@ struct ExposureLegend: View {
 
 /// Use the renderer's ranges, so the visible monitor key cannot drift from its colours.
 struct FalseColourKey: View {
-  static let labels = ["Black", "Dark", "Mid", "Bright", "Near white", "White"]
+  static let labels = ["Black", "Dark", "Mid", "Bright", "High", "White"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
-    "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1)) ))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
+    "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
   }
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
@@ -89,6 +89,7 @@ struct FalseColourKey: View {
           }.frame(maxWidth: .infinity)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(Self.labels[index]). \(band.name)")
+            .accessibilityValue(Self.rangeLabel(band.range))
         }
       }
     }.font(.callout).fixedSize(horizontal: false, vertical: true)

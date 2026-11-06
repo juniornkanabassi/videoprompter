@@ -52,11 +52,11 @@ import XCTest
       let (window, host) = await LibraryAX.host(FocusFixture().uiZoom(zoom))
       defer { LibraryAX.close(window) }
       window.makeKeyAndOrderFront(nil)
-      let button = try XCTUnwrap(LibraryAX.named("Adjust text", in: host).first)
       for dismissal in ["Selection", "Escape"] {
+        let button = try XCTUnwrap(LibraryAX.named("Adjust text", in: host).first)
         XCTAssertTrue(LibraryAX.bool(button, "accessibilityPerformPress"))
         try await Task.sleep(for: .milliseconds(180))
-        let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.contentView.map { !LibraryAX.named("Done adjusting", in: $0).isEmpty } == true })
+        let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Done adjusting", in: $0).isEmpty } == true })
         if dismissal == "Selection" {
           let done = try XCTUnwrap(LibraryAX.named("Done adjusting", in: popover.contentView!).first)
           XCTAssertTrue(LibraryAX.bool(done, "accessibilityPerformPress"))
@@ -66,8 +66,48 @@ import XCTest
           popover.sendEvent(escape)
         }
         try await Task.sleep(for: .milliseconds(180))
-        XCTAssertTrue(LibraryAX.bool(button, "isAccessibilityFocused"), "Native focus at \(zoom), \(dismissal)")
+        XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Adjust text", in: host).first), "isAccessibilityFocused"), "Native focus at \(zoom), \(dismissal)")
       }
+    }
+  }
+
+  func testTwoPopoverOpenersKeepTheirOwnNativeFocus() async throws {
+    let (window, host) = await LibraryAX.host(HStack {
+      FocusFixture(title: "First text control")
+      FocusFixture(title: "Second text control")
+    })
+    defer { LibraryAX.close(window) }
+    window.makeKeyAndOrderFront(nil)
+    for title in ["Second text control", "First text control"] {
+      let opener = try XCTUnwrap(LibraryAX.named(title, in: host).first)
+      XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
+      try await Task.sleep(for: .milliseconds(180))
+      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Done adjusting", in: $0).isEmpty } == true })
+      let done = try XCTUnwrap(LibraryAX.named("Done adjusting", in: popover.contentView!).first)
+      XCTAssertTrue(LibraryAX.bool(done, "accessibilityPerformPress"))
+      try await Task.sleep(for: .milliseconds(180))
+      XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named(title, in: host).first), "isAccessibilityFocused"), title)
+    }
+  }
+
+  func testRealLibraryTextPopoverRestoresFocusAfterEscape() async throws {
+    let (store, camera) = fixture()
+    let script = try await store.createScript(title: "Focus check", markdown: "My script stays unchanged.")
+    store.selectedID = script.id
+    for zoom in [1.0, 1.5, 2.0] {
+      store.uiZoom = zoom
+      let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1000, height: 800))
+      defer { LibraryAX.close(window) }
+      window.makeKeyAndOrderFront(nil)
+      let opener = try XCTUnwrap(LibraryAX.named("Editor text size", in: host).first)
+      XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
+      try await Task.sleep(for: .milliseconds(180))
+      let popover = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.isVisible && $0.contentView.map { !LibraryAX.named("Editor font", in: $0).isEmpty } == true })
+      let escape = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+        windowNumber: popover.windowNumber, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+      popover.sendEvent(escape)
+      try await Task.sleep(for: .milliseconds(180))
+      XCTAssertTrue(LibraryAX.bool(opener, "isAccessibilityFocused"), "Library text size at \(zoom)")
     }
   }
 
@@ -114,8 +154,9 @@ import XCTest
 
 private struct FocusFixture: View {
   @State private var open = false
+  var title = "Adjust text"
   var body: some View {
-    Button("Adjust text") { open = true }
+    Button(title) { open = true }
       .restoringPopoverFocus(isPresented: $open, identifier: "focus-fixture")
       .popover(isPresented: $open) {
         Button("Done adjusting") { open = false }.padding(24)
