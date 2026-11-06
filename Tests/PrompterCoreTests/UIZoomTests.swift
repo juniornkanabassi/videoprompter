@@ -27,6 +27,7 @@ final class UIZoomTests: XCTestCase {
     suite = "VideoPrompterTests.\(UUID().uuidString)"
     defaults = TestDefaults.suite(named: suite)!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    store.settings.audioDeviceUID = nil // Geometry fixtures must not open real microphones.
   }
 
   override func tearDown() async throws {
@@ -241,6 +242,7 @@ final class UIZoomTests: XCTestCase {
           panel.setFrame(NSRect(origin: panel.frame.origin, size: NSSize(width: width, height: height)), display: true)
           store.uiZoom = zoom
           await settle(panel)
+          store.session.updateSettings(store.settings)
           if !manual {
             store.session.play()
             XCTAssertNotNil(store.session.anchorNotice)

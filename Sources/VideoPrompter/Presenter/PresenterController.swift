@@ -555,6 +555,7 @@ class PresenterPanel: NSPanel {
 }
 
 struct PresenterView: View {
+  @Environment(\.openSettings) private var openSettings
   @ObservedObject var store: AppStore
   let session: SessionStore
   @StateObject private var presentation: PresenterSessionState
@@ -579,6 +580,11 @@ struct PresenterView: View {
   @State private var editorNotice: String?
   @State private var showsCameraSettings = false
   @State private var showsGuideSettings = false
+  @State private var showsReadingSettings = false
+  @State private var presenterWidth: CGFloat = 1000
+  @State private var presenterHeight: CGFloat = 600
+  private var compactControls: Bool { presenterWidth / store.uiZoom < 600 }
+  @ObservedObject private var recorder = CameraRecorder.shared
   /// The picker's fixed slot: a long camera name truncates instead of widening the bar.
   static let cameraPickerWidth: CGFloat = 120
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
@@ -634,11 +640,14 @@ struct PresenterView: View {
           .rotationEffect(.degrees(Double(store.settings.rotation)))
         }
       }
-    }.background(Color.clear).onChange(of: store.settings) { _, value in
+    }.background(Color.clear)
+    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presenterWidth = $0 }
+    .onChange(of: store.settings) { _, value in
       session.updateSettings(value)
     }
     .onChange(of: camera.displayMode) { _, mode in monitor.displayModeDidChange(mode) }
     .safeAreaInset(edge: .top, spacing: 0) {
+      HStack(spacing: Space.sm) {
       ZStack {
         RoundedRectangle(cornerRadius: 2).frame(width: 24, height: 4)
           .foregroundStyle(.primary)
@@ -657,31 +666,71 @@ struct PresenterView: View {
       .accessibilityHidden(draft.isEditing)
       .uiZoom(store.uiZoom)
       .fixedSize()
-      .frame(maxWidth: .infinity)
+      if recorder.isRecording {
+        let seconds = Int(recorder.recordedDuration)
+        Text(recorder.startedAt == nil ? "Preparing" : String(format: "REC %02d:%02d", seconds / 60, seconds % 60))
+          .font(.caption.weight(.semibold)).monospacedDigit().foregroundStyle(.red)
+          .uiZoom(store.uiZoom).fixedSize()
+      }
+      }.frame(maxWidth: .infinity)
     }
     // Both notices and controls reserve their actual wrapped height for reading and editing.
     .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(spacing: 0) {
+        if camera.presentsWithVideo, let message = camera.unavailableMessage {
+          Label(message, systemImage: "video.slash").font(.callout)
+          if camera.authorization == .denied {
+            Button("Open System Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!) }
+          }
+        }
+        if let detail = session.readingDetail, session.isActivelyRunning {
+          Text(detail).font(.callout)
+        }
         if hasBottomNotice {
           bottomNotice.padding(.horizontal, Space.md).padding(.top, Space.sm)
         }
         WrapLayout(spacing: 8) {
-          Label(draft.isEditing ? "Editing" : session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
+          Label(draft.isEditing ? "Editing" : session.readingStatus,
                 systemImage: draft.isEditing ? "pencil" : session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
             .font(.caption.weight(.semibold))
-            .frame(width: 88)
+            .fixedSize()
             .foregroundStyle(Color.primary)
             .padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
             .background((draft.isEditing ? Color.orange : session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
-            .help(draft.isEditing ? "Editing the script. Finish with ⌘Return, or cancel." : session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
+            .help(draft.isEditing ? "Editing the script. Finish with ⌘Return, or cancel." : session.isActivelyRunning ? session.readingStatus : "Press Start reading to begin or continue")
           // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
           Group {
-            CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
-                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position (⌥⌘S)", action: session.toggle)
+            CapsuleButton(session.isActivelyRunning ? "Pause" : "Start reading",
+                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, help: "Start or pause following at the current position (⌥⌘S)", action: session.toggle)
               .buttonStyle(.borderedProminent)
-            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script (⌥⌘R)", action: session.restart)
+            if !compactControls {
+              CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script (⌥⌘R)", action: session.restart)
+            }
           }.disabled(!showsScript || draft.isEditing)
-          // The View menu's primary action shows or hides the camera; its arrow has every view.
+          Button("Reading", systemImage: "textformat.size") { showsReadingSettings = true }
+            .help("Change reading mode, speed and text size")
+            .popover(isPresented: $showsReadingSettings) {
+              Form {
+                Button("Back to start") { session.restart() }
+                Picker("Reading mode", selection: $store.settings.mode) {
+                  Text("Voice").tag("Voice"); Text("Manual").tag("Manual")
+                }
+                if store.settings.mode == "Manual" {
+                  Slider(value: $store.settings.speed, in: 20...300) { Text("Speed") }
+                  Text("\(Int(store.settings.speed)) words per minute")
+                }
+                Stepper("Text size: \(Int(store.settings.fontSize)) pt", value: $store.settings.fontSize, in: AppStore.presenterFontSizes, step: 2)
+                Button("Voice and microphone settings…") { AppSettingsView.requestVoiceTab(); openSettings() }
+              }.formStyle(.grouped).frame(width: 360, height: 280).uiZoom(store.uiZoom)
+            }
+        }.buttonStyle(.bordered).padding(8)
+          .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.md))
+        WrapLayout(spacing: 8) {
+          RecordingControls(recorder: recorder, camera: camera, compact: compactControls)
+        }.buttonStyle(.bordered).padding(8)
+          .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.md))
+        WrapLayout(spacing: 8) {
+          // A conventional menu keeps the whole View label predictable.
           Menu {
             Picker("What to show", selection: $camera.displayMode) {
               ForEach(PresenterDisplayMode.allCases) { mode in
@@ -698,33 +747,29 @@ struct PresenterView: View {
             // A titled label: an icon-only one dropped the menu from the accessibility tree, and a
             // Text image drew as a blank square in the bordered bar.
             Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.titleAndIcon)
-          } primaryAction: {
-            // One click still turns the camera on or off, as the old camera button did.
-            PresenterController.shared.toggleVideo()
           }
           .menuStyle(.button).menuIndicator(.visible).fixedSize().frame(width: 88)
           .accessibilityLabel("Presenter view")
           .accessibilityValue(camera.displayMode.label)
-          .help("Click to show or hide the camera; the arrow has every view, Camera Settings and the monitor. \(camera.displayMode.label) now")
+          .help("Choose a view, Camera Settings or the reference monitor. \(camera.displayMode.label) now")
           .background {
             Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
-              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
+              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom).disabled(recorder.isRecording || recorder.isBusy)
             }
           }
-          // Always in the bar at a fixed width, dimmed while the camera is off, so the bar keeps
-          // the same width with the camera on or off.
-          Group {
-            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth)
-            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3",
+          // Camera choices stay together when the picture is visible.
+          if camera.presentsWithVideo {
+            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth).disabled(recorder.isRecording || recorder.isBusy)
+            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3", displayTitle: compactControls ? "Guides" : nil,
                           help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
               showsGuideSettings = true
             }
             .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
               CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
             }
-          }.disabled(!camera.presentsWithVideo)
+          }
           CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
-                        systemImage: draft.isEditing ? "checkmark" : "pencil",
+                        systemImage: draft.isEditing ? "checkmark" : "pencil", displayTitle: compactControls ? (draft.isEditing ? "Finish" : "Edit") : nil,
                         shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
             if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
           }.disabled(draft.isSaving || !showsScript)
@@ -732,17 +777,20 @@ struct PresenterView: View {
             CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction, help: "Leave editing; confirm before discarding an unsaved draft") { draft.requestCancel() }
               .disabled(draft.isSaving)
           } else {
-            CapsuleButton("Close presenter", systemImage: "xmark", help: "Close the presenter and pause following") { PresenterController.shared.close() }
+            CapsuleButton("Close presenter", systemImage: "xmark", displayTitle: compactControls ? "Close" : nil, help: "Close the presenter and pause following") { PresenterController.shared.close() }
           }
         }
         .buttonStyle(.bordered).padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Space.xxl))
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.md))
         .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
       }.frame(maxWidth: .infinity, alignment: .center)
+        .controlSize(compactControls ? .small : .regular)
         .uiZoom(store.uiZoom)
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity)
+        .modifier(PresenterControlViewport(maxHeight: presenterHeight * 0.55))
     }
+    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { presenterHeight = $0 }
     .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
       Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
         draft.cancel(resuming: !draft.discardCloses)
@@ -752,8 +800,16 @@ struct PresenterView: View {
     } message: {
       Text("The draft has not been saved to the script library.")
     }
+    .onChange(of: session.readingStatus) { _, value in announce(value) }
+    .onChange(of: session.anchorNotice) { _, value in if let value { announce(value) } }
+    .onChange(of: draft.errorMessage) { _, value in if let value { announce(value) } }
     .onChange(of: draft.markdown) { editorNotice = nil }
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
+  }
+
+  private func announce(_ message: String) {
+    NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+      userInfo: [.announcement: message, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
   }
 
   private var bottomNotice: some View {
@@ -768,6 +824,15 @@ struct PresenterView: View {
           .disabled(draft.isSaving)
       }
       if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage { Text(notice) }
+      if session.anchorNotice != nil && store.settings.mode == "Voice" {
+        WrapLayout(spacing: 8) {
+          Button("Voice settings…") { AppSettingsView.requestVoiceTab(); openSettings() }
+          Button("Use Manual") { store.settings.mode = "Manual" }
+          if session.anchorNotice?.contains("System Settings") == true {
+            Button("Microphone permission…") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!) }
+          }
+        }
+      }
     }
     .font(.caption).multilineTextAlignment(.center)
     .fixedSize(horizontal: false, vertical: true)
@@ -843,17 +908,18 @@ private struct PresenterScriptView: View {
 private struct CapsuleButton: View {
   let title: String
   let systemImage: String
+  var displayTitle: String?
   var shortcut: KeyboardShortcut?
   var showsTitle = false
   var width: CGFloat?
   var help: String?
   let action: () -> Void
-  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = false, width: CGFloat? = nil, help: String? = nil, action: @escaping () -> Void) {
-    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.showsTitle = showsTitle; self.width = width; self.help = help; self.action = action
+  init(_ title: String, systemImage: String, displayTitle: String? = nil, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = true, width: CGFloat? = nil, help: String? = nil, action: @escaping () -> Void) {
+    self.title = title; self.systemImage = systemImage; self.displayTitle = displayTitle; self.shortcut = shortcut; self.showsTitle = showsTitle; self.width = width; self.help = help; self.action = action
   }
   var body: some View {
     Button(action: action) {
-      if showsTitle { Label(title, systemImage: systemImage).labelStyle(.titleAndIcon).frame(width: width) }
+      if showsTitle { Label(displayTitle ?? title, systemImage: systemImage).labelStyle(.titleAndIcon).frame(width: width) }
       else { Label(title, systemImage: systemImage).labelStyle(.iconOnly) }
     }
       .keyboardShortcut(shortcut)
@@ -942,5 +1008,18 @@ struct WrapLayout: Layout {
       rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
     }
     return rows
+  }
+}
+
+/// Long recovery messages and enlarged controls stay reachable without consuming the script.
+private struct PresenterControlViewport: ViewModifier {
+  let maxHeight: CGFloat
+  @State private var contentHeight: CGFloat = 200
+  func body(content: Content) -> some View {
+    ScrollView(.vertical) {
+      content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+    }
+    .frame(height: min(contentHeight, maxHeight))
+    .scrollDisabled(contentHeight <= maxHeight)
   }
 }

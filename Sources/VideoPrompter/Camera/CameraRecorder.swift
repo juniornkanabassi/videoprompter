@@ -6,6 +6,7 @@ import PrompterCore
   static let shared = CameraRecorder(defaults: AppStore.preferences())
   @Published private(set) var isRecording = false
   @Published private(set) var isBusy = false
+  @Published private(set) var recordedDuration: TimeInterval = 0
   @Published private(set) var startedAt: Date?
   private(set) var recordingID: UUID?
   @Published private(set) var lastFile: URL?
@@ -17,6 +18,12 @@ import PrompterCore
   private var sink: RecordingSink?
   private var cancelStart = false
   private var stopTask: Task<Void, Never>?
+  private var watchdog: Task<Void, Never>?
+  private var lastFrameAt: Date?
+  @Published private(set) var droppedFrames = 0
+  @Published private(set) var activeMicrophoneName: String?
+  @Published private(set) var audioChannels = 0
+  let inputMeter = InputMeter()
   private var observers: [NSObjectProtocol] = []
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
@@ -40,10 +47,21 @@ import PrompterCore
   static func microphones() -> [AVCaptureDevice] {
     AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices
   }
+  var microphoneName: String {
+    if isRecording || isBusy, let activeMicrophoneName { return activeMicrophoneName }
+    if let uid = microphoneUID { return Self.microphones().first { $0.uniqueID == uid }?.localizedName ?? "Selected microphone unavailable" }
+    return AVCaptureDevice.default(for: .audio)?.localizedName ?? "No microphone"
+  }
+  static func framesTimedOut(attachedAt: Date, lastFrameAt: Date?, now: Date) -> Bool {
+    now.timeIntervalSince(lastFrameAt ?? attachedAt) > 5
+  }
   func start(camera: CameraModel) async {
     guard !isBusy, !isRecording else { return }
     isBusy = true; cancelStart = false; errorMessage = nil
     recordingID = UUID()
+    let takeID = recordingID
+    lastFile = nil; recordedDuration = 0; droppedFrames = 0; inputMeter.reset(); lastFrameAt = nil
+    activeMicrophoneName = nil; audioChannels = 0
     defer { isBusy = false; if !isRecording { recordingID = nil } }
     do {
       guard let uid = camera.selectedUID, AVCaptureDevice(uniqueID: uid) != nil else { throw recordingError("Choose an available camera first.") }
@@ -61,10 +79,24 @@ import PrompterCore
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       let free = try folder.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]).volumeAvailableCapacityForImportantUsage ?? 0
       guard Self.hasRecordingSpace(free) else { throw recordingError("Recording needs at least 2 GB of free space.") }
+      activeMicrophoneName = microphone.localizedName
       let input = try AVCaptureDeviceInput(device: microphone)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
-      let sink = RecordingSink(url: Self.fileURL(in: folder), preset: preset, rotation: camera.guides.rotation, audio: spec, floatAudio: floatAudio, microphone: input) { [weak self] error in
+      audioChannels = spec.channels
+      let sink = RecordingSink(url: Self.fileURL(in: folder), preset: preset, rotation: camera.guides.rotation, mirrored: camera.mirrored, audio: spec, floatAudio: floatAudio, microphone: input, onFrame: { [weak self] duration in
+        Task { @MainActor in
+          guard let self, self.recordingID == takeID, self.isRecording else { return }
+          if self.startedAt == nil { self.startedAt = Date() }
+          self.recordedDuration = duration
+          self.lastFrameAt = Date()
+        }
+      }, onAudio: { [weak self] peak in
+        Task { @MainActor in
+          guard let self, self.recordingID == takeID, self.isRecording else { return }
+          self.inputMeter.show(peakDBFS: AudioCapture.decibels(fullScalePeak: peak), isClipping: peak >= 0.99)
+        }
+      }) { [weak self] error in
         Task { @MainActor [weak self] in
           guard let self, self.isRecording else { return }
           self.errorMessage = "Recording stopped after a writer failure: \(error.localizedDescription)"
@@ -72,6 +104,7 @@ import PrompterCore
         }
       }
       let shared = SharedCameraSession.shared
+      shared.select(uid)
       shared.retain()
       let attached = await withCheckedContinuation { continuation in
         shared.reconfigure { session in
@@ -88,8 +121,20 @@ import PrompterCore
         }
       }
       guard attached else { shared.release(); throw recordingError("The camera session cannot add recording outputs with this device.") }
-      self.sink = sink; isRecording = true; startedAt = Date()
+      self.sink = sink; isRecording = true
       if cancelStart || camera.selectedUID != uid { await stop(); return }
+      let attachedAt = Date()
+      watchdog = Task { [weak self] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .seconds(1))
+          guard !Task.isCancelled, let self, self.isRecording else { return }
+          if Self.framesTimedOut(attachedAt: attachedAt, lastFrameAt: self.lastFrameAt, now: Date()) {
+            self.errorMessage = "No camera frames received for 5 seconds. Check the camera connection and try again."
+            await self.stop()
+            return
+          }
+        }
+      }
       for name in [AVCaptureDevice.wasDisconnectedNotification, AVCaptureSession.runtimeErrorNotification, AVCaptureSession.wasInterruptedNotification] {
         observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] notification in
           let lostUID = (notification.object as? AVCaptureDevice)?.uniqueID
@@ -111,6 +156,7 @@ import PrompterCore
       }
       return
     }
+    watchdog?.cancel(); watchdog = nil
     isBusy = true; isRecording = false
     let task = Task { @MainActor [self] in
       for observer in observers { NotificationCenter.default.removeObserver(observer) }; observers.removeAll()
@@ -126,7 +172,7 @@ import PrompterCore
           session.commitConfiguration(); continuation.resume()
         }
       }
-      do { lastFile = try await sink.finish() } catch { errorMessage = "Recording could not be finished: \(error.localizedDescription)" }
+      do { let result = try await sink.finish(); lastFile = result.0; droppedFrames = result.1 } catch { errorMessage = "No completed take was saved. Recording could not be finished: \(error.localizedDescription)" }
       shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; isBusy = false
     }
     stopTask = task; await task.value; stopTask = nil
@@ -135,7 +181,7 @@ import PrompterCore
 }
 
 /// AVFoundation delegate callbacks and the writer belong exclusively to queue.
-private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
   let video = AVCaptureVideoDataOutput()
   let audio = AVCaptureAudioDataOutput()
   let microphone: AVCaptureDeviceInput
@@ -143,13 +189,17 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
   private let url: URL
   private let preset: RecordingPreset
   private let rotation: CameraRotation
+  private let mirrored: Bool
+  private let onFrame: @Sendable (TimeInterval) -> Void
+  private let onAudio: @Sendable (Float) -> Void
+  private var firstFrame: CMTime?
   private let spec: AudioSpec
   private let floatAudio: Bool
   private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFailure: @escaping @Sendable (Error) -> Void) {
-    self.url = url; self.preset = preset; self.rotation = rotation; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable (Float) -> Void, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
@@ -163,13 +213,29 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
         if writer == nil {
           guard let format = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
           let dimensions = CMVideoFormatDescriptionGetDimensions(format)
-          writer = try MovieWriter(url: url, width: Int(dimensions.width), height: Int(dimensions.height), transform: CGAffineTransform(rotationAngle: rotation.radians), preset: preset, audio: spec, floatAudio: floatAudio)
+          writer = try MovieWriter(url: url, width: Int(dimensions.width), height: Int(dimensions.height), transform: Self.recordingTransform(rotation: rotation, mirrored: mirrored), preset: preset, audio: spec, floatAudio: floatAudio)
         }
-        try writer?.append(video: sampleBuffer)
-      } else { try writer?.append(audio: sampleBuffer) }
+        if try writer?.append(video: sampleBuffer) == true {
+          let time = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+          if firstFrame == nil { firstFrame = time }
+          onFrame(max(0, (time - firstFrame!).seconds))
+        }
+      } else {
+        if let block = CMSampleBufferGetDataBuffer(sampleBuffer) {
+          let size = CMBlockBufferGetDataLength(block)
+          var samples = [Float](repeating: 0, count: size / MemoryLayout<Float>.size)
+          guard !samples.isEmpty else { return }
+          let copied = samples.withUnsafeMutableBytes { CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: $0.count, destination: $0.baseAddress!) }
+          if copied == kCMBlockBufferNoErr { onAudio(samples.reduce(0) { max($0, abs($1)) }) }
+        }
+        try writer?.append(audio: sampleBuffer)
+      }
     } catch { failure = error; onFailure(error) }
   }
-  func finish() async throws -> URL {
+  static func recordingTransform(rotation: CameraRotation, mirrored: Bool) -> CGAffineTransform {
+    CGAffineTransform(rotationAngle: rotation.radians).concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1))
+  }
+  func finish() async throws -> (URL, Int) {
     let value: MovieWriter = try await withCheckedThrowingContinuation { continuation in
       queue.async { [self] in
         if let failure { continuation.resume(throwing: failure) }
@@ -177,6 +243,7 @@ private final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBuffe
         else { continuation.resume(throwing: NSError(domain: "CameraRecorder", code: 2, userInfo: [NSLocalizedDescriptionKey: "No video frames arrived."])) }
       }
     }
-    return try await value.finish()
+    let file = try await value.finish()
+    return (file, value.droppedFrames)
   }
 }

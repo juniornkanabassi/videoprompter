@@ -53,12 +53,12 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
   /// ARRI's false colour bands, in percent of full scale; everything else shows as grey.
   static let bands: [(range: ClosedRange<Double>, name: String, rgb: (UInt8, UInt8, UInt8))] = [
-    (0...2.5, "Purple: crushed black", (128, 0, 160)),
-    (2.5...4, "Blue: just above black", (0, 80, 255)),
-    (38...42, "Green: middle grey (18%)", (0, 200, 0)),
-    (52...56, "Pink: one stop over grey, typical skin", (255, 120, 190)),
-    (97...99, "Yellow: just below clipping", (255, 230, 0)),
-    (99...100, "Red: clipped", (230, 0, 0)),
+    (0...2.5, "Purple: 0–2.5% brightness", (128, 0, 160)),
+    (2.5...4, "Blue: 2.5–4% brightness", (0, 80, 255)),
+    (38...42, "Green: 38–42% brightness", (0, 200, 0)),
+    (52...56, "Pink: 52–56% brightness", (255, 120, 190)),
+    (97...99, "Yellow: 97–99% brightness", (255, 230, 0)),
+    (99...100, "Red: 99–100% brightness", (230, 0, 0)),
   ]
 
   /// Luma byte to an RGBA pixel as laid out in memory (R first), for every possible byte.

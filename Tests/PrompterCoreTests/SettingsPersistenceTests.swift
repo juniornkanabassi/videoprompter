@@ -1,8 +1,23 @@
+import AVFoundation
 import Foundation
 import XCTest
 @testable import VideoPrompter
 
 @MainActor final class SettingsPersistenceTests: XCTestCase {
+  func testFirstRunChoosesDefaultMicrophoneButExistingChoiceIsPreserved() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("first-mic-\(UUID())")
+    let suite = "SettingsPersistence.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: suite))
+    defer { TestDefaults.remove(suite); try? FileManager.default.removeItem(at: root) }
+    let first = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await first.waitForInitialLoad()
+    XCTAssertEqual(first.settings.audioDeviceUID, AVCaptureDevice.default(for: .audio)?.uniqueID)
+    first.settings.audioDeviceUID = "deliberately-selected-missing-device"
+    _ = await first.flushPendingSaves()
+    let reopened = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    await reopened.waitForInitialLoad()
+    XCTAssertEqual(reopened.settings.audioDeviceUID, "deliberately-selected-missing-device")
+  }
   func testSliderBurstPerformance() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-\(UUID())")
     let suite = "SettingsPersistence.\(UUID())"

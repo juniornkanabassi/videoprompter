@@ -17,8 +17,8 @@ final class CameraTests: XCTestCase {
   func testTheRememberedCameraWinsWhileItIsStillConnected() {
     XCTAssertEqual(CameraModel.resolve("uid-obs", in: cameras)?.uid, "uid-obs")
   }
-  func testAnUnpluggedCameraFallsBackToTheFirstOneLeft() {
-    XCTAssertEqual(CameraModel.resolve("uid-gone", in: cameras)?.uid, "uid-built-in")
+  func testAnUnpluggedCameraNeverSubstitutesAnotherDevice() {
+    XCTAssertNil(CameraModel.resolve("uid-gone", in: cameras))
     XCTAssertEqual(CameraModel.resolve(nil, in: cameras)?.uid, "uid-built-in")
   }
   func testNoCamerasResolveToNothing() {

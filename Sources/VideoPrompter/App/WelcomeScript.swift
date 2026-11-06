@@ -12,37 +12,27 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > This is a practice script. Lines like this one are notes for you: they show in the editor but never in the presenter, and Voice ignores them. Press **Present** in the toolbar, then **Start**, and read the rest out loud.
+    > This is a practice script. Lines like this one are notes for you: they show in the editor but never in the presenter, and Voice ignores them. Press **Present** in the toolbar, then **Start reading**, and read the rest out loud.
 
-    Hello, and welcome to Video Prompter. If you are reading this in the presenter, you have already done the hardest part. [Look at the camera, not the screen.]
+    Hello, and welcome. This is a short script to practise with. You can pause whenever you like. [Look at the camera, not the screen.]
 
-    Words in square brackets are stage directions, such as a reminder to look at the camera. They are hidden in the presenter until you turn on Show stage directions in the Presenter pane on the right of the library window, under Advanced, Mirroring and cues, and Voice skips past them either way, so you never have to say them.
+    ## Choose how to read
 
-    ## Voice or Manual
+    Open **Reading** in the presenter. Voice follows the words you say. Manual scrolls at a steady speed without a microphone, and you can set its speed here.
 
-    There are two ways for the script to move. In Voice, the app listens through your microphone and follows the words as you say them, all on your Mac. Pause for a moment and it waits for you. Skip a line or say something slightly different and it catches up when your words match the script again.
+    For Voice, open **Voice settings** to check your microphone and spoken language. Press **Test microphone** and speak normally. When you start reading, wait for Preparing to finish, then read the script aloud. Listening means speech recognition has received your words.
 
-    In Manual, the script scrolls at a steady speed that you set in words per minute, and no microphone is needed. You choose between them in Settings, under General. Open Settings from the Video Prompter menu or with Command and comma, and the Voice page there has your microphone and spoken language.
+    ## Make yourself comfortable
 
-    ## Moving around
+    Use **Reading** to change the text size. The Presenter inspector in the library has fonts, spacing, colours and Mirror for teleprompter glass.
 
-    Each paragraph is a passage. Press the right arrow key to jump to the next one and the left arrow key to go back. Try it now, then come back here.
-
-    Click any word to carry on reading from there. **Back to start** takes you to the first word, and **Pause** stops everything until you press **Start** again. If you spot a mistake while you are recording, choose **Edit script**, fix it, and press Command and Return to save.
-
-    ## Making it comfortable
-
-    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In the Presenter pane on the right of the library window you can change the text size and the font, the width of the text column, and under Typography the colours and line spacing.
-
-    If you read through teleprompter glass, turn on Mirror for teleprompter glass in the same pane so the words read the right way round. More mirroring and rotation options are under Advanced, Mirroring and cues. For a large screen, choose **Presenter Full Screen** from the Prompter menu.
+    Click a word to read from there. The arrow keys move between passages. **Back to start** returns to the beginning. **Pause** stops the script. **Edit script** lets you make a correction; choose **Finish editing** to save it.
 
     ## Camera and recording
 
-    Video Prompter can show your camera behind the script, so you can check your framing while you read. Open the **View** menu on the presenter bar, choose **Script and camera**, and allow camera access when macOS asks. **Camera Settings** in the same menu has the framing guides that help you line up your shot.
+    The **View** menu lets you show your script, your camera, or both. Choose your camera and use **Framing guides** to line up your shot. You can also select a passage and choose **Monitor Selection with Camera** to pin those words over the picture.
 
-    You can also use the presenter as a reference monitor. Drag across a few lines, then choose **Monitor Selection with Camera** from the View menu. The camera fills the window with those lines at the bottom, and Escape brings the script back. With no script selected, **Present** shows just the camera.
-
-    To record, open the Camera window from the Window menu and press **Record**. Recordings are saved in the Video Prompter folder inside Movies.
+    **Start reading** moves the script. **Record camera** records the camera and the microphone named beside it. These are separate actions. Press **Stop recording** when finished, wait for Saved, then choose **Show in Finder** to find your take. Recordings go in Movies, inside Video Prompter.
 
     ## Your own scripts
 

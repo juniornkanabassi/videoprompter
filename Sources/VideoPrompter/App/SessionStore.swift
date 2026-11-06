@@ -27,6 +27,21 @@ final class SessionStore: ObservableObject {
   @Published private(set) var tokenIndex = 0
   @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
+  @Published private(set) var isPreparingVoice = false
+  @Published private(set) var hasLiveRecognition = false
+  var readingStatus: String {
+    if isPreparingVoice { return "Preparing" }
+    if settings.mode == "Voice", settings.audioDeviceUID == nil || (!isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true) { return "Needs microphone" }
+    guard isActivelyRunning else { return "Paused" }
+    if isManual { return "Scrolling" }
+    if !hasLiveRecognition { return "Ready to read" }
+    if case .uncertain = state { return "Matching words" }
+    return "Listening"
+  }
+  var readingDetail: String? {
+    if case .uncertain(let message) = state { return message }
+    return nil
+  }
   @Published private(set) var acceptedWords = 0
   @Published private(set) var anchorNotice: String?
   /// The microphone level lives in its own object: the presenter and the settings form observe
@@ -396,7 +411,7 @@ final class SessionStore: ObservableObject {
         guard self.lifecycleGeneration == generation else { return }
         self.isTestingMicrophone = false
         self.microphoneTestTask = nil
-        self.microphoneTestNotice = "Microphone permission is required."
+        self.microphoneTestNotice = "Allow Video Prompter in System Settings > Privacy & Security > Microphone, then press Test microphone again."
         return
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning else {
@@ -484,6 +499,7 @@ final class SessionStore: ObservableObject {
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
     else { return }
+    hasLiveRecognition = true
     let tokens = document.spokenTokens
     if speechGeneration != candidate.generation {
       speechGeneration = candidate.generation
@@ -575,6 +591,8 @@ final class SessionStore: ObservableObject {
     return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
+    isPreparingVoice = false
+    hasLiveRecognition = false
     lifecycleGeneration &+= 1
     pendingSpeechCandidate = nil
     runTask?.cancel()
@@ -636,9 +654,10 @@ final class SessionStore: ObservableObject {
     guard let uid = settings.audioDeviceUID,
       let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
     else {
-      failAudio("Choose a microphone in Presenter settings")
+      failAudio("Choose a microphone in Settings > Voice, then press Start reading.")
       return
     }
+    isPreparingVoice = true
     let generation = lifecycleGeneration
     let previousStop = providerStopTask
     speechTask = Task { [weak self] in
@@ -647,7 +666,7 @@ final class SessionStore: ObservableObject {
         self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       guard await AudioCapture.requestPermission() else {
         guard self.lifecycleGeneration == generation, !Task.isCancelled else { return }
-        self.failAudio("Microphone permission is required")
+        self.failAudio("Allow Video Prompter in System Settings > Privacy & Security > Microphone, then press Start reading.")
         return
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
@@ -657,7 +676,6 @@ final class SessionStore: ObservableObject {
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
         guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
-        self.state = .running
         let capture = AudioCapture(
           device: device, outputFormat: format, gain: Float(self.settings.inputGain))
         self.audioCapture = capture
@@ -694,6 +712,8 @@ final class SessionStore: ObservableObject {
           capture.stop()
           return
         }
+        self.isPreparingVoice = false
+        self.state = .uncertain("Microphone ready. Read the script to begin following.")
         try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
           guard let self, self.lifecycleGeneration == generation else { return }
           self.acceptSpeechCandidate(candidate)

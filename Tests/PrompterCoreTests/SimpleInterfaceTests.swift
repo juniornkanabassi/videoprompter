@@ -37,7 +37,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
   }
 
-  func testPresenterSingleRowIsCentredAt100And150AndReportsEditing() async throws {
+  func testPresenterGroupsStayInsideWindowAt100And150AndReportEditing() async throws {
     _ = NSApplication.shared
     try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
@@ -71,16 +71,18 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       // narrow-window wrapping is covered by UIZoomTests.
       panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
-      let start = try buttonFrame("Start")
+      let start = try buttonFrame("Start reading")
       let close = try buttonFrame("Close presenter")
       let restart = try buttonFrame("Back to start")
       let edit = try buttonFrame("Edit script")
-      // The fixed-width status pill plus the existing row spacing precedes Start.
-      let left = start.minX - (88 + 16 + 8) * scale
-      XCTAssertEqual((left + close.maxX) / 2, panel.frame.midX, accuracy: 2, "\(scale): the row is centred")
-      for frame in [close, restart, edit] {
-        XCTAssertEqual(frame.midY, start.midY, accuracy: 2, "\(scale): all controls stay in one row")
+      let reading = try buttonFrame("Reading")
+      let recording = try buttonFrame("Record camera")
+      let screenBounds = panel.convertToScreen(content.bounds)
+      for frame in [start, close, restart, edit, reading, recording] {
+        XCTAssertTrue(screenBounds.contains(frame), "\(scale): grouped controls stay inside the presenter")
       }
+      XCTAssertEqual(close.midY, edit.midY, accuracy: 2, "Editing and closing share the secondary row")
+      XCTAssertGreaterThan(start.midY, close.midY, "Reading sits above secondary actions")
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)
@@ -321,7 +323,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     for label in ["Size", "Typography", "Mirror for teleprompter glass", "Mirroring and cues"] {
       XCTAssertTrue(inspector.contains(label), label)
     }
-    for label in ["Spoken language", "Microphone volume", "Saved settings", "How it follows you", "Editor font"] {
+    for label in ["Spoken language", "Voice-follow input level", "Saved settings", "How it follows you", "Editor font"] {
       XCTAssertFalse(inspector.contains(label), label)
     }
     store.simpleInterface = false
@@ -334,9 +336,9 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     XCTAssertTrue(advanced.contains("Highlight active word"))
     let expected: [(SettingsTab, [String])] = [
       (.general, ["How it follows you", "Interface size", "Align presenter to screen edges"]),
-      (.voice, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.voice, ["Voice-follow microphone", "Spoken language", "Voice-follow input level", "Loudest sound"]),
       (.editor, ["Editor font", "Editor size"]),
-      (.presets, ["Preset name", "Save Preset", "Saved settings"])
+      (.presets, ["Settings name", "Save Settings", "Saved settings"])
     ]
     for (tab, pageLabels) in expected {
       host.rootView = AnyView(SettingsPage(store: store, tab: tab))

@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import PrompterCore
 import SwiftUI
@@ -153,6 +154,7 @@ private enum PresenterSaveError: LocalizedError {
       previewFontSize = min(max(savedTypography.previewFontSize, Self.editorFontSizes.lowerBound), Self.editorFontSizes.upperBound)
     }
     if let savedSettings { settings = savedSettings }
+    else { settings.audioDeviceUID = AVCaptureDevice.default(for: .audio)?.uniqueID }
     simpleInterface = savedSimple
     do {
       library = try MarkdownLibrary(rootURL: root)
@@ -686,12 +688,12 @@ private enum PresenterSaveError: LocalizedError {
     preset.id = UUID()
     preset.name =
       name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      ? "Preset \(presets.count + 1)" : name
+      ? "Saved settings \(presets.count + 1)" : name.trimmingCharacters(in: .whitespacesAndNewlines)
     presets.append(preset)
   }
   func renamePreset(_ id: UUID, name: String) {
     let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty, let index = presets.firstIndex(where: { $0.id == id }) else { errorMessage = "Preset names cannot be empty."; return }
+    guard !clean.isEmpty, let index = presets.firstIndex(where: { $0.id == id }) else { errorMessage = "Enter a name for these saved settings."; return }
     presets[index].name = clean
   }
   func duplicatePreset(_ id: UUID) {

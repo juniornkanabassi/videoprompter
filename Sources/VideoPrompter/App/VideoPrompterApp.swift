@@ -103,6 +103,7 @@ enum ScriptShortcuts {
             .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
           Button("Next Passage") { PresenterController.shared.moveReading { $0.nextPassage() } }
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
+          RecordingMenuItems()
           Divider()
           PresenterVideoItems()
           Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
@@ -329,5 +330,14 @@ struct MainWindowConfigurator: NSViewRepresentable {
       window.setFrame(area.centred(size).intersection(area), display: true)
       window.orderFrontRegardless()
     }
+  }
+}
+
+struct RecordingMenuItems: View {
+  @ObservedObject private var recorder = CameraRecorder.shared
+  var body: some View {
+    Button(recorder.isRecording ? "Stop Recording" : "Record Camera") {
+      Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: .shared) } }
+    }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy)
   }
 }
