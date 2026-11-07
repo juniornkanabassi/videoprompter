@@ -202,6 +202,8 @@ extension AppStore {
     // A pass already under way finishes first (it stops at its next check of the setting), so
     // it cannot link a script after this has unlinked them.
     await ICloudScripts.pass?.value
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard let library else { return }
     let states = await library.linkStates()
     var failed = 0
@@ -234,6 +236,8 @@ extension AppStore {
       await unlinkICloudScripts()
       return
     }
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard keepsScriptsInICloud, library != nil, ICloudScripts.isAvailable, ICloudScripts.pass == nil,
       Date().timeIntervalSince(ICloudScripts.lastPass) >= 5 else { return }
     ICloudScripts.lastPass = Date()

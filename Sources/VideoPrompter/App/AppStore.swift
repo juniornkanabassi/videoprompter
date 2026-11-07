@@ -117,6 +117,16 @@ private enum PresenterSaveError: LocalizedError {
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
   private var iCloudWatcher: Task<Void, Never>?
+  private var syncInProgress = false
+  private var syncWaiters: [CheckedContinuation<Void, Never>] = []
+  func acquireLibrarySync() async {
+    if !syncInProgress { syncInProgress = true; return }
+    await withCheckedContinuation { syncWaiters.append($0) }
+  }
+  func releaseLibrarySync() {
+    if syncWaiters.isEmpty { syncInProgress = false }
+    else { syncWaiters.removeFirst().resume() }
+  }
   private var initialLoad: Task<Void, Never>?
   private var welcomeTask: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
@@ -954,6 +964,8 @@ private enum PresenterSaveError: LocalizedError {
     session.applyEditedRecord(record)
   }
   func refreshExternalChanges() async {
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard let library else { return }
     lastExternalRefresh = Date()
     do {
