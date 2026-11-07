@@ -87,9 +87,9 @@ import XCTest
       let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
         modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
         characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: code))
-      XCTAssertEqual(panel.handlePassageKey(event), code != 49)
+      XCTAssertTrue(panel.handlePassageKey(event))
     }
-    XCTAssertEqual(handled, [115, 116, 121, 123, 124])
+    XCTAssertEqual(handled, [49, 115, 116, 121, 123, 124])
     XCTAssertEqual(field.stringValue, "Take label")
   }
 
