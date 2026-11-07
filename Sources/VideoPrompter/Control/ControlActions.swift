@@ -17,11 +17,13 @@ import Speech
   init(store: AppStore, presenter: PresenterController = .shared, camera: CameraModel = .shared, recorder: CameraRecorder = .shared, audioAuthorization: @escaping () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }) {
     self.store = store; self.presenter = presenter; self.camera = camera; self.recorder = recorder
     self.audioAuthorization = audioAuthorization
+    recorder.useSettings(store.settings)
   }
   private func identity(_ script: ScriptRecord) -> [String: String] { ["id": script.id.uuidString, "title": script.metadata.title] }
   private var position: [String: Int] { ["word": store.session.document.spokenTokens.isEmpty ? 0 : store.session.tokenIndex + 1, "words": store.session.document.spokenTokens.count] }
   private var state: String {
-    switch store.session.state {
+    if store.session.isCountingDown { return "starting" }
+    return switch store.session.state {
     case .stopped: "stopped"
     case .paused: "paused"
     case .running: "running"
@@ -58,9 +60,7 @@ import Speech
   private func percent(_ value: Double) -> Int { Int((value * 100).rounded()) }
   private func number(_ params: [String: String], _ key: String) -> Double? { params[key].flatMap(Double.init) }
   private static func hexColour(_ value: String) -> String? {
-    let digits = value.hasPrefix("#") ? String(value.dropFirst()) : value
-    guard digits.count == 6, digits.allSatisfy(\.isHexDigit) else { return nil }
-    return "#" + digits.uppercased()
+    PrompterSettings.normalisedHexColour(value)
   }
   private var unavailable: ControlResult { .error("library_unavailable", "The script library is unavailable.") }
   private var editing: ControlResult { .error("presenter_editing", "Finish or cancel the presenter edit first.") }
@@ -114,7 +114,8 @@ import Speech
       var result: [String: Any] = ["running": true, "headless": Headless.shared.active, "app": Bundle.main.bundleIdentifier ?? ControlProtocol.bundleID,
         "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev", "library": store.libraryAvailable, "scripts": store.scripts.count,
         "selected": store.selected.map(identity) as Any? ?? NSNull(), "presenter": presenter.isEditing ? "editing" : presenter.panel?.isVisible == true ? "visible" : "hidden",
-        "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "state": state, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
+        "script": store.session.activeRecord.map(identity) as Any? ?? NSNull(), "readingStatus": store.session.readingStatus, "nextReadingAction": store.session.readingNextAction, "state": state, "countdown": store.session.countdownRemaining, "mode": store.settings.mode.lowercased(), "position": position, "zoom": Int((store.uiZoom * 100).rounded()), "textSize": store.settings.fontSize]
+      result["linkedSyncWaiting"] = await store.library?.linkedSyncWaiting() ?? []
       result["speed"] = Int(store.settings.speed.rounded())
       result["camera"] = cameraState
       result["recording"] = recordingState
@@ -179,7 +180,7 @@ import Speech
       }
       if show {
         Headless.shared.reveal()
-        NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil)
+        NSApp.activateUnlessAgentScreen(); NSApp.windows.first { $0 is NSPanel == false && $0.title.contains("Video Prompter") }?.makeKeyAndOrderFront(nil)
       }
       return .ok(identity(record))
     case "script_rename", "script_tag", "script_move":
@@ -312,6 +313,9 @@ import Speech
         return .ok(["id": found.id.uuidString, "name": name])
       }
     case "presenter_close":
+      if recorder.isRecording || recorder.isBusy {
+        return .error("recording_active", "Stop and save the take before closing: use record stop --recording <id> or --force.")
+      }
       if presenter.isEditing { return editing }
       guard presenter.panel?.isVisible == true else { return .ok(["presenter": "hidden", "changed": false, "state": state]) }
       presenter.close()
@@ -327,7 +331,7 @@ import Speech
       store.settings.mode = mode
       return .ok(["mode": store.settings.mode.lowercased()])
     case "set_zoom":
-      guard let zoom = Double(params["zoom"] ?? ""), AppStore.uiZoomSteps.contains(zoom / 100) else { return .error("invalid_params", "Zoom must be 100, 110, 125, 150, 175 or 200.") }
+      guard let zoom = Double(params["zoom"] ?? ""), InputValidation.zoom.accepts(zoom / 100) else { return .error("invalid_params", "Zoom must be 100, 110, 125, 150, 175 or 200.") }
       store.uiZoom = zoom / 100; return .ok(["zoom": Int(zoom)])
     case "settings_get": return .ok(settingsSnapshot)
     case "settings_set": return await setSettings(params, example: command.example)
@@ -392,7 +396,7 @@ import Speech
       for device in recording where !voice.contains(where: { $0.uid == device.uniqueID }) {
         rows.append(["id": device.uniqueID, "name": device.localizedName, "voice": false, "recording": true])
       }
-      return .ok(["microphones": rows, "voiceMicrophone": store.settings.audioDeviceUID as Any? ?? NSNull(), "recordingMicrophone": recorder.microphoneUID ?? "default"])
+      return .ok(["microphones": rows, "voiceMicrophone": store.settings.audioDeviceUID as Any? ?? NSNull(), "recordingMicrophone": recorder.resolvedMicrophoneUID ?? "default"])
     case "record_start":
       guard isTrue(params["yes"]) else { return .error("confirmation_required", "Pass --yes to start recording.") }
       return await once(action, params) { [self] () -> ControlResult in await startRecording() }
@@ -419,7 +423,7 @@ import Speech
           microphoneUID = device?.uniqueID
         }
       }
-      if params["microphone"] != nil { recorder.microphoneUID = microphoneUID }
+      if params["microphone"] != nil { recorder.usesSeparateMicrophone = true; recorder.microphoneUID = microphoneUID }
       if let quality = params["quality"].flatMap(RecordingPreset.init(rawValue:)) { recorder.preset = quality }
       if let float = params["floatAudio"] { recorder.floatAudio = float == "on" }
       return .ok(recordingSettings)
@@ -510,7 +514,7 @@ import Speech
       guard !presenter.isShowingWithoutScript else { return .error("camera_only_view", "The presenter shows only the camera. Present a script first: videoprompter present <id|title>") }
       guard presenter.panel?.isMiniaturized != true else { return .error("presenter_minimised", "The presenter is minimised. Restore its window first.") }
       guard presenter.canStartReading else { return .error("camera_only_view", "The presenter shows only the camera. Show the script first: videoprompter camera set on") }
-      store.session.play()
+      store.session.startReading()
     case "back_to_start": store.session.restart()
     default:
       // The Prompter menu's passage items, which do nothing while only the camera shows.
@@ -525,7 +529,7 @@ import Speech
         presenter.moveReading { $0.previousPassage() }
       }
     }
-    return .ok(["state": state, "position": position])
+    return .ok(["state": state, "countdown": store.session.countdownRemaining, "position": position])
   }
 
   private struct Refusal: Error { let result: ControlResult }
@@ -639,6 +643,9 @@ import Speech
     if let value = params["stageDirections"] { s.showCues = value == "on" }
     if let value = params["highlightWord"] { s.highlightActiveWord = value == "on" }
     if let value = params["followRepeats"] { s.allowsBackwardVoiceTracking = value == "on" }
+    if params["microphone"] != nil, recorder.settingsLocked && !recorder.usesSeparateMicrophone {
+      return .error("recording_active", "The shared microphone cannot change during a take. Stop recording first.")
+    }
     if let name = params["microphone"] {
       if name.lowercased() == "none" { s.audioDeviceUID = nil }
       else {
@@ -671,8 +678,10 @@ import Speech
   }
   private var guidesSnapshot: [String: Any] {
     let g = camera.guides
+    let visible = camera.previewGuides
     return ["thirds": on(g.thirds), "centreCross": on(g.axes), "centreTarget": on(g.bullseye), "marker": g.marker?.label ?? "off",
-            "colour": g.colorHex, "visibility": percent(g.opacity), "shade": percent(g.shadeOpacity)]
+            "colour": g.colorHex, "visibility": percent(g.opacity), "shade": percent(g.shadeOpacity),
+            "zebras": on(visible.zebras), "zebraLevel": g.zebraLevel, "zebraRange": g.zebraRange, "falseColour": on(visible.falseColour)]
   }
   private static func access(_ status: AVAuthorizationStatus) -> String {
     switch status {
@@ -694,7 +703,7 @@ import Speech
       else {
         let parts = marker.split(separator: ":")
         guard parts.count == 2, let width = Double(parts[0]), let height = Double(parts[1]),
-          width > 0, height > 0, width <= 100, height <= 100 else { return .error("invalid_params", "Marker must be off or W:H, such as 9:16.") }
+          CameraAspect(width: width, height: height).isValid else { return .error("invalid_params", "Marker must be off or W:H, such as 9:16.") }
         g.marker = CameraAspect(width: width, height: height)
       }
     }
@@ -704,36 +713,44 @@ import Speech
     }
     if let value = number(params, "visibility") { g.opacity = value / 100 }
     if let value = number(params, "shade") { g.shadeOpacity = value / 100 }
+    if let value = params["zebras"] { g.zebras = value == "on" }
+    if let value = params["falseColour"] { g.falseColour = value == "on" }
+    if let value = number(params, "zebraLevel") { g.zebraLevel = Int(value) }
+    if let value = number(params, "zebraRange") { g.zebraRange = Int(value) }
     camera.guides = g
+    if params["zebras"] == "on" || params["falseColour"] == "on" { camera.exposureBypassed = false; camera.cleanView = false }
     return .ok(cameraState)
   }
   private var recordingSettings: [String: Any] {
-    ["quality": recorder.preset.rawValue, "microphone": recorder.microphoneUID ?? "default", "floatAudio": on(recorder.floatAudio)]
+    ["quality": recorder.preset.rawValue, "microphone": recorder.resolvedMicrophoneUID ?? "default", "floatAudio": on(recorder.floatAudio)]
   }
   private var recordingState: [String: Any] {
     var value = recordingSettings
     value["active"] = recorder.isRecording
     value["busy"] = recorder.isBusy
+    value["phase"] = recorder.phase.rawValue
+    value["mirrorSavedVideo"] = recorder.mirrorSavedVideo
     if let id = recorder.recordingID { value["recording"] = id.uuidString }
     if let started = recorder.startedAt { value["startedAt"] = ISO8601DateFormatter().string(from: started) }
     if let file = recorder.lastFile { value["lastFile"] = file.path }
     if let message = recorder.errorMessage { value["error"] = message }
     return value
   }
-  /// The Camera window's Record button, with the checks a person would see answered on screen
+  /// The Second monitor window's Record button, with the checks a person would see answered on screen
   /// made up front: no permission prompt is raised, and the camera must already be showing.
   private func startRecording() async -> ControlResult {
     if recorder.isRecording { return .error("already_recording", "A recording is already running. Stop it first: videoprompter record stop") }
     guard !recorder.isBusy else { return .error("recording_busy", "A recording is starting or finishing. Try again in a moment.") }
     guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized, AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-      return .error("permission_required", "Recording needs camera and microphone access. Record once in the Camera window so a person can answer the macOS prompts, or allow access in System Settings > Privacy & Security.")
+      return .error("permission_required", "Recording needs camera and microphone access. Record once in the Second monitor window so a person can answer the macOS prompts, or allow access in System Settings > Privacy & Security.")
     }
     let session = SharedCameraSession.shared
     guard let uid = camera.selectedUID, session.holderCount > 0, session.attachedUID == uid else {
-      return .error("camera_not_showing", "Show the camera first: open the Camera window, or present with videoprompter camera set on.")
+      return .error("camera_not_showing", "Show the camera first: open the Second monitor window, or present with videoprompter camera set on.")
     }
-    await recorder.start(camera: camera)
-    guard recorder.isRecording else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
+    recorder.useSettings(store.settings)
+    await recorder.start(camera: camera, defaultLabel: presenter.isShowingWithoutScript ? "" : store.session.activeRecord?.metadata.title ?? "")
+    guard recorder.isCapturing else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
     var value = recordingState
     value["folder"] = CameraRecorder.recordingsFolder().path
     return .ok(value)

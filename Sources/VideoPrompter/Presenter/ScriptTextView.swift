@@ -2,7 +2,8 @@ import AppKit
 import PrompterCore
 import SwiftUI
 
-struct ScriptTextView: NSViewRepresentable {
+struct ScriptTextView: View {
+  typealias Context = ScriptTextCanvas.Context
   let document: PrompterDocument
   let tokenIndex: Int
   var lastConfirmedTokenIndex: Int?
@@ -19,6 +20,7 @@ struct ScriptTextView: NSViewRepresentable {
   var paragraphSpacing = 0.34
   var horizontalMargin = 42.0
   var alignment = "Left"
+  var overVideo = false
   var showCues = true
   var highlightActiveWord = false
   /// The session's fractional token position, painted on a display link while running: Manual's
@@ -35,6 +37,10 @@ struct ScriptTextView: NSViewRepresentable {
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
   }
+  var body: some View {
+    ScriptTextCanvas(configuration: self)
+      .mask { ReadingViewportMask(flipped: verticalMirror) }
+  }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
     coordinator.stopObservingUserScrolls()
@@ -47,6 +53,8 @@ struct ScriptTextView: NSViewRepresentable {
     scroll.autohidesScrollers = true
     let text = TrackingTextView()
     text.setAccessibilityLabel("Presenter script")
+    text.setAccessibilityHelp("Select a word with the keyboard, then press Option-Command-Return to read from it.")
+    text.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Read from Selection", target: text, selector: #selector(TrackingTextView.accessibilityReadFromSelection))])
     text.isEditable = false
     text.isSelectable = true
     text.drawsBackground = false
@@ -84,13 +92,13 @@ struct ScriptTextView: NSViewRepresentable {
     coordinator.isActivelyRunning = isActivelyRunning
     coordinator.releaseHandScroll()
     coordinator.updateDisplayLink(for: scroll)
-    let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)"
+    let style = "\(fontName)|\(fontSize)|\(textOpacity)|\(fontWeight)|\(textColorHex)|\(lineSpacing)|\(paragraphSpacing)|\(alignment)|\(showCues)|\(highlightActiveWord)|\(overVideo)"
     if coordinator.needsRender(document: document, style: style) {
       coordinator.render(
         document: document, fontName: fontName, fontSize: fontSize, textOpacity: textOpacity,
         fontWeight: fontWeight, textColorHex: textColorHex, lineSpacing: lineSpacing,
         paragraphSpacing: paragraphSpacing,
-        alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord)
+        alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord, overVideo: overVideo)
     }
     coordinator.updateGeneration &+= 1
     let generation = coordinator.updateGeneration
@@ -288,7 +296,7 @@ struct ScriptTextView: NSViewRepresentable {
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
       paragraphSpacing: Double = 0.34, alignment: String = "Left",
-      showCues: Bool = true, highlightActiveWord: Bool = false)
+      showCues: Bool = true, highlightActiveWord: Bool = false, overVideo: Bool = false)
     {
       guard let textView else { return }
       self.textOpacity = textOpacity
@@ -305,6 +313,13 @@ struct ScriptTextView: NSViewRepresentable {
           lineSpacing: max(3, fontSize * lineSpacing), paragraphSpacing: max(10, fontSize * paragraphSpacing),
           alignment: NSTextAlignment(setting: alignment))))
       let full = NSRange(location: 0, length: attributed.length)
+      if overVideo {
+        let halo = NSShadow()
+        halo.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        halo.shadowBlurRadius = 6
+        halo.shadowOffset = .zero
+        attributed.addAttribute(.shadow, value: halo, range: full)
+      }
       // Presenter clicks seek within the script, including linked words.
       attributed.removeAttribute(.link, range: full)
       if fontWeight == "Bold" {
@@ -313,7 +328,7 @@ struct ScriptTextView: NSViewRepresentable {
           attributed.addAttribute(.font, value: NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask), range: range)
         }
       }
-      let visible = model.visibleIndices()
+      var visible = model.visibleIndices()
       var blockRanges: [UUID: NSRange] = [:]
       for block in document.blocks {
         let source = block.sourceRange
@@ -324,22 +339,35 @@ struct ScriptTextView: NSViewRepresentable {
       }
       mappings = []
       dropScrollGeometry()
-      let plain = attributed.string as NSString
-      let cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
+      var plain = attributed.string as NSString
+      var cueRanges = cueRanges(in: plain, document: document, blocks: blockRanges, visible: visible)
       for range in cueRanges {
         attributed.addAttribute(.foregroundColor, value: showCues ? textColour.withAlphaComponent(textOpacity * 0.42) : .clear, range: range)
       }
       if !showCues {
-        // ponytail: retain character ranges with subpixel cue width; use glyph suppression if long cues measurably affect wrapping.
-        for range in cueRanges {
-          var hiddenRange = range
-          let end = NSMaxRange(range)
-          if end < plain.length, let scalar = UnicodeScalar(plain.character(at: end)),
-            CharacterSet.whitespaces.contains(scalar)
-          { hiddenRange.length += 1 }
-          attributed.addAttribute(.font, value: NSFont.systemFont(ofSize: 0.1), range: hiddenRange)
-          attributed.addAttribute(.kern, value: CGFloat(0), range: hiddenRange)
+        // Remove hidden cues from the actual selectable/accessible string, then remap source
+        // offsets. Transparent glyphs still leak stage directions to assistive technology.
+        let removed = cueRanges.map { range -> NSRange in
+          var range = range
+          if NSMaxRange(range) < plain.length,
+            let scalar = UnicodeScalar(plain.character(at: NSMaxRange(range))),
+            CharacterSet.whitespaces.contains(scalar) { range.length += 1 }
+          return range
         }
+        visible = visible.compactMapValues { offset in
+          if removed.contains(where: { NSLocationInRange(offset, $0) }) { return nil }
+          return offset - removed.filter { NSMaxRange($0) <= offset }.reduce(0) { $0 + $1.length }
+        }
+        for range in removed.sorted(by: { $0.location > $1.location }) { attributed.deleteCharacters(in: range) }
+        plain = attributed.string as NSString
+        blockRanges.removeAll()
+        for block in document.blocks {
+          let indices = (block.sourceRange.location..<(block.sourceRange.location + block.sourceRange.length)).compactMap { visible[$0] }
+          if let low = indices.min(), let high = indices.max() {
+            blockRanges[block.id] = NSRange(location: low, length: high - low + 1)
+          }
+        }
+        cueRanges = []
       }
       var cursor = 0
       for (index, token) in document.spokenTokens.enumerated() {
@@ -406,7 +434,7 @@ struct ScriptTextView: NSViewRepresentable {
     /// Read words dim; the current word is highlighted when that is on.
     private func readColour(_ index: Int) -> NSColor {
       let confirmed = lastConfirmedTokenIndex.map { index <= $0 } ?? false
-      let alpha = confirmed ? textOpacity * 0.38 : textOpacity
+      let alpha = confirmed ? textOpacity * 0.5 : textOpacity
       return index == tokenIndex && !confirmed && highlightActiveWord
         ? .systemYellow.withAlphaComponent(alpha) : textColour.withAlphaComponent(alpha)
     }
@@ -659,9 +687,31 @@ struct ScriptTextView: NSViewRepresentable {
     }
   }
 }
-private final class TrackingTextView: NSTextView {
+final class TrackingTextView: NSTextView {
   var onCharacterClick: ((Int) -> Void)?
   var onLayout: (() -> Void)?
+  @objc func accessibilityReadFromSelection() -> Bool {
+    guard selectedRange().location < (string as NSString).length else { return false }
+    readFromSelection(nil)
+    return true
+  }
+  @objc func readFromSelection(_ sender: Any?) {
+    guard selectedRange().location < (string as NSString).length else { return }
+    onCharacterClick?(selectedRange().location)
+  }
+  override func keyDown(with event: NSEvent) {
+    if event.keyCode == 36, event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .option] {
+      readFromSelection(nil)
+    } else { super.keyDown(with: event) }
+  }
+  override func menu(for event: NSEvent) -> NSMenu? {
+    let menu = super.menu(for: event) ?? NSMenu()
+    let item = NSMenuItem(title: "Read from Selection", action: #selector(readFromSelection(_:)), keyEquivalent: "\r")
+    item.keyEquivalentModifierMask = [.command, .option]
+    item.target = self
+    menu.insertItem(item, at: 0)
+    return menu
+  }
   override func mouseDown(with event: NSEvent) {
     let point = convert(event.locationInWindow, from: nil)
     if let manager = layoutManager, let container = textContainer {
@@ -693,3 +743,30 @@ private final class TrackingTextView: NSTextView {
   }
 }
 
+/// Keep the AppKit adapter separate so SwiftUI composites the fade in offscreen renders too.
+struct ScriptTextCanvas: NSViewRepresentable {
+  let configuration: ScriptTextView
+  func makeCoordinator() -> ScriptTextView.Coordinator { configuration.makeCoordinator() }
+  func makeNSView(context: Context) -> NSScrollView { configuration.makeNSView(context: context) }
+  func updateNSView(_ view: NSScrollView, context: Context) { configuration.updateNSView(view, context: context) }
+  static func dismantleNSView(_ view: NSScrollView, coordinator: ScriptTextView.Coordinator) {
+    ScriptTextView.dismantleNSView(view, coordinator: coordinator)
+  }
+}
+
+/// Match the outer mirror/rotation so the fade stays at the visible bottom of the reading area.
+struct ReadingViewportMask: View {
+  static let fadeHeight: CGFloat = 48
+  let flipped: Bool
+  var body: some View {
+    VStack(spacing: 0) {
+      if flipped { fade }
+      Color.black
+      if !flipped { fade }
+    }
+  }
+  private var fade: some View {
+    LinearGradient(colors: flipped ? [.clear, .black] : [.black, .clear], startPoint: .top, endPoint: .bottom)
+      .frame(height: Self.fadeHeight)
+  }
+}

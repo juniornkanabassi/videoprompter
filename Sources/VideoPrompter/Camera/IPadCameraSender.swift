@@ -15,7 +15,7 @@ import VideoToolbox
 /// An iPad that allows it is also found on the same Wi-Fi with Bonjour. USB-C wins when both are
 /// there: it is faster and nothing else shares it.
 ///
-/// The camera is the one the Camera window shows, from the same shared session, so a DeckLink
+/// The camera is the one the Second monitor window shows, from the same shared session, so a DeckLink
 /// or ATEM feed is opened once. Frames are encoded to H.264 in hardware at up to 1080p.
 @MainActor final class IPadCameraSender: ObservableObject {
   static let shared = IPadCameraSender()
@@ -101,7 +101,7 @@ import VideoToolbox
     let camera = CameraModel.shared
     camera.start()
     guard let uid = camera.selectedUID else {
-      status = "Choose a camera in the Camera window first"
+      status = "Choose a camera in the Second monitor window first"
       isOn = false
       return
     }
@@ -348,14 +348,9 @@ struct IPadCameraCommands: Commands {
   @ObservedObject var sender: IPadCameraSender
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
-    CommandGroup(after: .importExport) {
-      Toggle("Send Camera to iPad", isOn: $sender.isOn)
-        .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
+    CommandGroup(after: .windowList) {
       Button("Control iPad…") { openWindow(id: "ipad-remote") }
-        .help("Chooses the script on the iPad, starts and pauses it, and sets its mode, speed and place")
-      Toggle("Also Connect over Wi-Fi", isOn: $sender.usesWiFi)
-        .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The link is encrypted with that key.")
-      if sender.isOn || sender.controlsIPad { Text(sender.status) }
+        .help("Choose the script on the iPad and control its reading")
     }
   }
 }
@@ -385,11 +380,11 @@ struct IPadRemoteView: View {
       Text("None (presenter closed)").tag(UUID?.none)
       ForEach(state.scripts, id: \.id) { Text($0.title).tag(Optional($0.id)) }
     }
-    Picker("Follow", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
-      Text("Voice").tag("Voice")
-      Text("Manual").tag("Manual")
+    Picker("Reading mode", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
+      Text("Voice follow").tag("Voice")
+      Text("Automatic scroll").tag("Manual")
     }
-    .pickerStyle(.segmented)
+    .pickerStyle(.menu)
     Stepper("Speed \(state.speed) words a minute", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
     HStack {
       Button("Back to Start", systemImage: "backward.end.fill") { link.send(.backToStart) }

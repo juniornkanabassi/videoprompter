@@ -21,7 +21,7 @@ public enum AudioCaptureError: Error, Equatable, Sendable {
 public final class AudioCapture: @unchecked Sendable {
   public let selectedDevice: AudioInputDevice
   public let outputFormat: AVAudioFormat
-  private let engine = AVAudioEngine()
+  private var engine: AVAudioEngine?
   private let processingQueue = DispatchQueue(
     label: "VideoPrompter.audio.processing", qos: .userInitiated)
   private let stateLock = NSLock()
@@ -40,8 +40,20 @@ public final class AudioCapture: @unchecked Sendable {
   }
 
   public static func requestPermission() async -> Bool {
-    if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized { return true }
-    return await AVCaptureDevice.requestAccess(for: .audio)
+    await CaptureAccess.request(.audio)
+  }
+
+  public static func resolveInput(_ uid: String?, devices: [AudioInputDevice], defaultID: AudioDeviceID) -> AudioInputDevice? {
+    uid.map { selected in devices.first { $0.uid == selected } } ?? devices.first { $0.id == defaultID }
+  }
+
+  public static func resolvedInput(_ uid: String?) -> AudioInputDevice? {
+    var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultInputDevice,
+      mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    var device: AudioDeviceID = 0
+    var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+    _ = AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device)
+    return resolveInput(uid, devices: inputDevices(), defaultID: device)
   }
 
   public static func inputDevices() -> [AudioInputDevice] {
@@ -90,12 +102,15 @@ public final class AudioCapture: @unchecked Sendable {
     onBuffer: @escaping (AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void,
     onStop: @escaping (AudioCaptureError?) -> Void
   ) throws {
-    guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+    guard CaptureAccess.mayUse(.audio) else {
       throw AudioCaptureError.permissionDenied
     }
     guard Self.inputDevices().contains(where: { $0.uid == selectedDevice.uid }) else {
       throw AudioCaptureError.deviceUnavailable
     }
+    // Construct the engine only after permission and device checks; teardown never creates input.
+    let engine = self.engine ?? AVAudioEngine()
+    self.engine = engine
     let node = engine.inputNode
     var id = selectedDevice.id
     guard let unit = node.audioUnit,
@@ -136,7 +151,7 @@ public final class AudioCapture: @unchecked Sendable {
         self.stop(reason: .deviceLost)
         return
       }
-      if !self.engine.isRunning {
+      if self.engine?.isRunning != true {
         self.stop(reason: .engineFailure("Audio engine stopped after configuration change"))
       }
     }
@@ -149,8 +164,8 @@ public final class AudioCapture: @unchecked Sendable {
       return value
     }
     guard shouldStop else { return }
-    engine.stop()
-    engine.inputNode.removeTap(onBus: 0)
+    engine?.stop()
+    engine?.inputNode.removeTap(onBus: 0)
     if let observer { NotificationCenter.default.removeObserver(observer) }
     observer = nil
     processingQueue.async { [weak self] in

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import PrompterCore
 import Security
 import Sparkle
 import SwiftUI
@@ -9,7 +10,7 @@ import SwiftUI
 /// update is a zip whose EdDSA signature must match SUPublicEDKey, and release.sh writes the appcast.
 @MainActor final class Updates {
   static let shared = Updates()
-  static let productionID = "com.juniornkanabassi.VidPrompt"
+  static let productionID = ControlProtocol.bundleID
   /// Kept alive for the life of the app; nil when updates are off.
   private var controller: SPUStandardUpdaterController?
   var updater: SPUUpdater? { controller?.updater }

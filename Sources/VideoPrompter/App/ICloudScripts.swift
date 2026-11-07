@@ -95,10 +95,8 @@ import SwiftUI
 
   /// A title made safe as a file or folder name.
   static func safeName(_ title: String) -> String {
-    let cleaned = title.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
-      .joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-    let stem = cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(120))
-    return stem.hasPrefix(".") ? "Script " + stem : stem
+    let visibleTitle = title.hasPrefix(".") ? "Script " + title : title
+    return String(InputValidation.filename(visibleTitle, fallback: "Untitled", suffix: ".md").dropLast(3))
   }
 
   /// A file name for a title that is not taken in `directory`, counting files iCloud has not
@@ -108,7 +106,7 @@ import SwiftUI
     var candidate = directory.appendingPathComponent(stem + ".md")
     var n = 2
     while exists(candidate) {
-      candidate = directory.appendingPathComponent("\(stem) \(n).md")
+      candidate = directory.appendingPathComponent(InputValidation.filename(stem, fallback: "Untitled", suffix: " \(n).md"))
       n += 1
     }
     return candidate
@@ -204,6 +202,8 @@ extension AppStore {
     // A pass already under way finishes first (it stops at its next check of the setting), so
     // it cannot link a script after this has unlinked them.
     await ICloudScripts.pass?.value
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard let library else { return }
     let states = await library.linkStates()
     var failed = 0
@@ -236,6 +236,8 @@ extension AppStore {
       await unlinkICloudScripts()
       return
     }
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard keepsScriptsInICloud, library != nil, ICloudScripts.isAvailable, ICloudScripts.pass == nil,
       Date().timeIntervalSince(ICloudScripts.lastPass) >= 5 else { return }
     ICloudScripts.lastPass = Date()
@@ -441,20 +443,6 @@ extension AppStore {
     guard let ours = ICloudScripts.encodePresets(presets), ours != fileText else { return }
     if (try? ICloudScripts.write(ours, to: url)) != nil {
       defaults.set(MarkdownLibrary.fingerprint(ours), forKey: lastSeenKey)
-    }
-  }
-}
-
-/// File › Keep Scripts in iCloud Drive for iPad.
-struct ICloudCommands: Commands {
-  @ObservedObject var store: AppStore
-  var body: some Commands {
-    CommandGroup(after: .importExport) {
-      Toggle("Keep Scripts in iCloud Drive for iPad", isOn: Binding(
-        get: { store.keepsScriptsInICloud },
-        set: { store.keepsScriptsInICloud = $0 }))
-        .disabled(!ICloudScripts.isAvailable)
-        .help("Copies every script to iCloud Drive › Video Prompter and keeps it in step with Video Prompter on iPad")
     }
   }
 }

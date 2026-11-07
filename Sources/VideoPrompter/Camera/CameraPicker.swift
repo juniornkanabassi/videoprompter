@@ -15,65 +15,150 @@ extension CameraDevice {
 /// the arrow keys are on, so nobody has to pick blind between several devices.
 struct CameraPicker: View {
   @ObservedObject var model: CameraModel
+  @ObservedObject var recorder: CameraRecorder = .shared
   /// The library's UI zoom. A popover is its own hosting view, so the parent's zoom never reaches it.
   var zoom = 1.0
+  var darkSurface = false
+  @Environment(\.colorScheme) private var colorScheme
   @State private var isOpen = false
 
   /// Never blank. A remembered camera that is gone reads as the one `refresh` will fall back to.
   static func label(for uid: String?, in devices: [CameraDevice]) -> String {
-    CameraModel.resolve(uid, in: devices)?.displayName ?? "No camera"
+    CameraModel.resolve(uid, in: devices)?.displayName ?? "Choose camera"
   }
 
   var body: some View {
     let label = Self.label(for: model.selectedUID, in: model.devices)
     Button { isOpen.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text(label).lineLimit(1).truncationMode(.middle)
-        Image(systemName: "chevron.up.chevron.down").imageScale(.small).foregroundStyle(.secondary)
+        Text(label).fixedSize(horizontal: false, vertical: true)
+          .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
+        Image(systemName: "chevron.up.chevron.down").imageScale(.small)
+          .foregroundColor(darkSurface ? .white : LibraryAppearance.color(.labelColor, scheme: colorScheme))
       }
     }
-    .help("Choose a camera; preview each before selecting. Current camera: " + label)
+    .disabled(recorder.isRecording || recorder.isBusy)
+    .help(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : label)
+    .onChange(of: recorder.phase) { _, _ in
+      if recorder.isRecording || recorder.isBusy { isOpen = false }
+    }
     .accessibilityLabel("Camera")
     .accessibilityValue(label)
-    .accessibilityHint("Lists the cameras with a live preview of each")
+    .accessibilityHint(recorder.isRecording || recorder.isBusy ? "Stop recording to change camera" : "Lists cameras, with previews when camera access is allowed")
+    .restoringPopoverFocus(isPresented: $isOpen, identifier: "camera-picker")
     .popover(isPresented: $isOpen, arrowEdge: .bottom) {
-      CameraPickerList(model: model) { isOpen = false }.uiZoom(zoom)
+      CameraPickerList(model: model, zoom: zoom) { isOpen = false }.uiZoom(zoom)
     }
   }
 }
 
-private struct CameraPickerList: View {
+struct CameraPickerList: View {
   @ObservedObject var model: CameraModel
+  var zoom = 1.0
+  var startsPreview = true
+  /// Hosts with their own recovery card suppress the duplicate explanation and action.
+  var showsRecovery = true
+  var devicesOverride: [CameraDevice]? = nil
+  private var devices: [CameraDevice] { devicesOverride ?? model.devices }
   let close: () -> Void
   @StateObject private var preview = CameraPickerPreview()
   /// The row under the pointer or the keyboard, which is the camera previewed.
   @State private var highlighted: String?
-  @FocusState private var focused: Bool
+  @State private var navigated = false
+  @FocusState private var emptyFocused: Bool
+  @FocusState private var keyboardCameraUID: String?
+  @AccessibilityFocusState private var focusedCameraUID: String?
 
-  private var selected: String? { CameraModel.resolve(model.selectedUID, in: model.devices)?.uid }
+  private var selected: String? { CameraModel.resolve(model.selectedUID, in: devices)?.uid }
 
   var body: some View {
-    HStack(alignment: .top, spacing: Space.md) {
-      VStack(alignment: .leading, spacing: 1) {
-        if model.devices.isEmpty {
-          Text("No camera found").foregroundStyle(.secondary).padding(Space.sm)
-        }
-        ForEach(model.devices, content: row)
+    Group {
+      if zoom >= 1.5 {
+        VStack(alignment: .leading, spacing: Space.md) {
+          pane
+          ScrollViewReader { proxy in
+            ScrollView { choiceRows }
+              .onChange(of: highlighted) { _, uid in
+                if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
+              }
+              .onAppear { if let selected { proxy.scrollTo(selected) } }
+          }
+        }.frame(width: 240, height: 300)
+      } else {
+        HStack(alignment: .top, spacing: Space.md) { choices; pane }
       }
-      .frame(minWidth: 200, alignment: .leading)
-      pane
     }
     .padding(Space.md)
-    .focusable()
-    .focusEffectDisabled()
-    .focused($focused)
+    .focusable(devices.isEmpty)
+    .focused($emptyFocused)
     .onKeyPress(.downArrow) { move(1) }
     .onKeyPress(.upArrow) { move(-1) }
     .onKeyPress(.return) { if let highlighted { choose(highlighted) }; return .handled }
     .onKeyPress(.escape) { close(); return .handled }
-    .onAppear { focused = true }
-    .onChange(of: highlighted) { _, uid in preview.show(uid, mirrored: model.mirrored) }
+    .onAppear {
+      if devicesOverride == nil { model.refreshDevices() }
+      highlighted = selected ?? devices.first?.uid
+      DispatchQueue.main.async {
+        emptyFocused = devices.isEmpty
+        keyboardCameraUID = highlighted
+        focusedCameraUID = highlighted
+      }
+    }
+    .onChange(of: highlighted) { _, uid in if startsPreview { preview.show(uid, mirrored: model.mirrored) } }
+    .onChange(of: model.authorization) { _, _ in
+      if startsPreview { preview.show(highlighted, mirrored: model.mirrored) }
+    }
     .onDisappear { preview.stop() }
+  }
+
+  private var choices: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        choiceRows
+      }
+      .onChange(of: highlighted) { _, uid in
+        if let uid, navigated || model.authorization == .authorized { proxy.scrollTo(uid) }
+      }
+      .onAppear { if let selected { proxy.scrollTo(selected) } }
+    }.frame(width: 240, height: devices.isEmpty || model.authorization != .authorized ? 260 : min(240, max(44, CGFloat(devices.count) * 52)))
+  }
+
+  private var choiceRows: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      if showsRecovery && (devices.isEmpty || model.authorization != .authorized) { emptyState }
+      ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
+    }
+  }
+
+  private var emptyState: some View {
+    let recovery = Self.recovery(for: model.authorization)
+    return VStack(alignment: .leading, spacing: Space.sm) {
+      Text(recovery.title).font(.headline)
+      Text(recovery.message).font(.callout).fixedSize(horizontal: false, vertical: true)
+      if model.authorization == .notDetermined {
+        Button("Allow Camera Access") { model.start() }
+      } else {
+      Button("Open Camera Privacy Settings") {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera") {
+          NSWorkspace.shared.open(url)
+        }
+      }
+      }
+      if model.authorization == .authorized {
+        Button("Refresh Cameras") { model.refresh() }
+      }
+    }.font(.callout).foregroundStyle(.primary).padding(Space.sm)
+  }
+
+  static func recovery(for authorization: AVAuthorizationStatus) -> (title: String, message: String) {
+    switch authorization {
+    case .denied, .restricted:
+      return ("Camera access is off", "Allow Video Prompter in System Settings, then refresh cameras.")
+    case .notDetermined:
+      return ("Camera access needed", "Choose Allow Camera Access to see and select your cameras here.")
+    default:
+      return ("No camera connected", "Connect or switch on your camera, then refresh. Check Camera Privacy Settings if it still does not appear.")
+    }
   }
 
   private func row(_ device: CameraDevice) -> some View {
@@ -82,7 +167,7 @@ private struct CameraPickerList: View {
     return Button { choose(device.uid) } label: {
       HStack(spacing: Space.sm) {
         Image(systemName: "checkmark").fontWeight(.semibold).opacity(isSelected ? 1 : 0)
-        Text(device.displayName).lineLimit(1)
+        Text(device.displayName).fixedSize(horizontal: false, vertical: true)
         Spacer(minLength: 0)
       }
       .padding(.horizontal, Space.sm)
@@ -93,16 +178,29 @@ private struct CameraPickerList: View {
       .contentShape(.rect)
     }
     .buttonStyle(.plain)
-    .focusable(false)
+    .focusable()
+    .focused($keyboardCameraUID, equals: device.uid)
     .onHover { inside in
       if inside {
+        navigated = true
         highlighted = device.uid
       } else if highlighted == device.uid {
         highlighted = nil
       }
     }
     .accessibilityLabel(device.displayName)
+    .accessibilityFocused($focusedCameraUID, equals: device.uid)
     .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityValue(Self.rowStatus(selected: isSelected, highlighted: isHighlighted, authorization: model.authorization))
+  }
+
+  /// Navigation is not evidence that the camera has delivered a picture.
+  static func rowStatus(selected: Bool, highlighted: Bool, authorization: AVAuthorizationStatus) -> String {
+    var parts = [String]()
+    if selected { parts.append("Selected") }
+    if highlighted { parts.append("Highlighted") }
+    if authorization != .authorized { parts.append(recovery(for: authorization).title) }
+    return parts.joined(separator: ". ")
   }
 
   private var pane: some View {
@@ -117,45 +215,58 @@ private struct CameraPickerList: View {
             .multilineTextAlignment(.center).padding(Space.md)
         }
       }
-      .frame(width: 240, height: 135)
-      .clipShape(.rect(cornerRadius: Space.sm))
+      .frame(width: 240, height: 135) // grid: ok Exact 16:9 video preview; do not distort the picture.
+      .clipShape(.rect(cornerRadius: Space.md))
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel(note ?? "Live preview of \(caption)")
-      Text(caption).font(UIType.caption).foregroundStyle(.secondary).lineLimit(1).frame(width: 240)
+      .accessibilityLabel(note ?? "Camera preview: \(caption)")
+      Text(caption).font(UIType.secondary).foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true).frame(width: 240)
         .accessibilityHidden(true)
     }
   }
 
   private var caption: String {
-    model.devices.first { $0.uid == highlighted }?.displayName ?? " "
+    devices.first { $0.uid == highlighted }?.displayName ?? " "
   }
 
   /// Read live, never requested: the picker must not raise the permission prompt by itself.
   private var note: String? {
-    switch AVCaptureDevice.authorizationStatus(for: .video) {
+    switch model.authorization {
     case .authorized: break
     case .denied, .restricted: return "Camera access is off. Allow it in System Settings to see previews."
     default: return "Previews appear once camera access is allowed."
     }
-    if highlighted == nil { return "Point to a camera to preview it" }
+    if highlighted == nil { return "Point to a camera or use the arrow keys to preview it" }
     return preview.noSignal ? "No signal" : nil
   }
 
   private func move(_ step: Int) -> KeyPress.Result {
-    let uids = model.devices.map(\.uid)
-    if let highlighted, let index = uids.firstIndex(of: highlighted) {
-      self.highlighted = uids[min(max(index + step, 0), uids.count - 1)]
-    } else {
-      highlighted = selected ?? uids.first
+    navigated = true
+    highlighted = Self.nextHighlight(highlighted, selected: selected, devices: devices, step: step)
+    keyboardCameraUID = highlighted
+    focusedCameraUID = highlighted
+    if let device = devices.first(where: { $0.uid == highlighted }) {
+      LibraryAnnouncement.post(device.displayName + ". " + Self.rowStatus(selected: device.uid == selected, highlighted: true, authorization: model.authorization))
     }
     return .handled
+  }
+
+  static func nextHighlight(_ current: String?, selected: String?, devices: [CameraDevice], step: Int) -> String? {
+    let uids = devices.map(\.uid)
+    guard !uids.isEmpty else { return nil }
+    guard let current, let index = uids.firstIndex(of: current) else { return selected ?? uids.first }
+    return uids[min(max(index + step, 0), uids.count - 1)]
   }
 
   /// The camera is handed to the shared session only once its preview session has let go of it:
   /// a DeckLink input cannot be open in two sessions at once.
   private func choose(_ uid: String) {
+    if let device = devices.first(where: { $0.uid == uid }) { LibraryAnnouncement.post("Camera selected: " + device.displayName) }
+    guard !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy else { return }
     if uid != model.selectedUID {
-      preview.stop { [model] in model.selectedUID = uid }
+      preview.stop { [model] in
+        guard !CameraRecorder.shared.isRecording && !CameraRecorder.shared.isBusy else { return }
+        model.selectedUID = uid
+      }
     }
     close()
   }
@@ -365,8 +476,8 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   /// `.medium` first, the lightest preset worth trying: a 4K v210 feed is heavy for a thumbnail.
   /// `fallBack` moves to `.high`, which runs Cam B at 1920x1080.
   private func open(_ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ mirrored: Bool) {
-    guard !isStopped, let device = AVCaptureDevice(uniqueID: uid),
-      let input = try? AVCaptureDeviceInput(device: device)
+    guard !isStopped, CaptureAccess.mayUse(.video), let device = AVCaptureDevice(uniqueID: uid),
+      let input = try? CaptureAccess.deviceInput(device, media: .video)
     else { return }
     original = (device, device.activeFormat)
     let output = AVCaptureVideoDataOutput()
@@ -378,7 +489,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
     if session.canAddOutput(output) { session.addOutput(output) }
     session.commitConfiguration()
     CameraPreviewConnection.connect(layer, to: session, mirrored: mirrored)
-    session.startRunning()
+    if CaptureAccess.mayUse(.video) { CaptureAccess.start(session) }
     applied = device.activeFormat
   }
 

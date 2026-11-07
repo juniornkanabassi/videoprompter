@@ -27,6 +27,65 @@ final class SessionStore: ObservableObject {
   @Published private(set) var tokenIndex = 0
   @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
+  @Published private(set) var isPreparingVoice = false
+  @Published private(set) var hasLiveRecognition = false
+  @Published private(set) var countdownRemaining = 0
+  @Published var startDelay = 3 {
+    didSet {
+      if ![0, 3, 5].contains(startDelay) { startDelay = 3 }
+      defaults.set(startDelay, forKey: "automaticScrollStartDelay")
+    }
+  }
+  private var countdownTask: Task<Void, Never>?
+  var countdownTick: Duration = .seconds(1)
+  var isCountingDown: Bool { countdownRemaining > 0 }
+  func startReading() {
+    hasStartedReading = true
+    guard !isCountingDown, !isActivelyRunning, activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    guard isManual, startDelay > 0 else { play(); return }
+    countdownRemaining = startDelay
+    countdownTask = Task { @MainActor [weak self] in
+      guard let self, !Task.isCancelled else { return }
+      while self.countdownRemaining > 0 {
+        do { try await Task.sleep(for: self.countdownTick) } catch { return }
+        guard !Task.isCancelled else { return }
+        self.countdownRemaining -= 1
+      }
+      guard !Task.isCancelled else { return }
+      self.countdownTask = nil
+      self.play()
+    }
+  }
+  private func cancelCountdown() {
+    countdownTask?.cancel(); countdownTask = nil; countdownRemaining = 0
+  }
+  var readingStatus: String {
+    if isCountingDown { return "Starting in \(countdownRemaining)…" }
+    if reachedEnd { return "End of script" }
+    if isPreparingVoice { return "Preparing" }
+    if settings.mode == "Voice", !isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true { return "Needs microphone" }
+    guard isActivelyRunning else { return "Paused" }
+    if isManual { return "Scrolling" }
+    if !hasLiveRecognition { return "Waiting for your voice" }
+    if case .uncertain = state { return "Matching words" }
+    return "Listening"
+  }
+  /// Short, explicit state for the persistent presenter label at every interface size.
+  private(set) var hasStartedReading = false
+  var visibleReadingState: String {
+    if isCountingDown { return "Starts in \(countdownRemaining)" }
+    if reachedEnd { return "End of script" }
+    if isPreparingVoice { return "Preparing" }
+    if hasStartedReading && readingStatus == "Needs microphone" { return "Needs microphone" }
+    if !isActivelyRunning { return hasStartedReading ? "Paused" : "Ready" }
+    if isManual { return "Scrolling" }
+    if case .uncertain = state, hasLiveRecognition { return "Matching words" }
+    return hasLiveRecognition ? "Following" : "Listening"
+  }
+  var readingDetail: String? {
+    if case .uncertain(let message) = state { return message }
+    return nil
+  }
   @Published private(set) var acceptedWords = 0
   @Published private(set) var anchorNotice: String?
   /// The microphone level lives in its own object: the presenter and the settings form observe
@@ -54,7 +113,12 @@ final class SessionStore: ObservableObject {
   private var manualBase = 0.0
   private var manualStart: TimeInterval = 0
   /// Manual ran off the end. The next Play starts again from the beginning unless a seek came first.
-  private(set) var manualCompleted = false
+  @Published private(set) var manualCompleted = false
+  var reachedEnd: Bool { manualCompleted || (lastConfirmedTokenIndex == document.spokenTokens.count - 1 && !document.spokenTokens.isEmpty) }
+  private var voiceEndTask: Task<Void, Never>?
+  var voiceEndGrace: Duration = .seconds(3)
+  var readingModeName: String { isManual ? "Automatic scroll" : "Voice follow" }
+  var readingNextAction: String { isManual ? "Scrolls at \(Int(settings.speed)) wpm" : "Follows your voice" }
   private var speechGeneration: UInt64?
   private var minimumSpeechGeneration: UInt64 = 0
   private var pendingSpeechCandidate: (event: RecognitionEvent, tracker: RecognitionTracker)?
@@ -84,6 +148,8 @@ final class SessionStore: ObservableObject {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    let savedDelay = defaults.object(forKey: "automaticScrollStartDelay") as? Int ?? 3
+    startDelay = [0, 3, 5].contains(savedDelay) ? savedDelay : 3
     if let data = defaults.data(forKey: positionKey),
       let saved = try? JSONDecoder().decode([UUID: SavedPosition].self, from: data)
     { savedAnchors = saved }
@@ -118,6 +184,8 @@ final class SessionStore: ObservableObject {
   }
 
   func present(record: ScriptRecord, settings: PrompterSettings) {
+    var settings = settings
+    settings.sanitise()
     if activeRecord?.metadata.id != record.metadata.id {
       stopTasks()
       if activeRecord != nil {
@@ -125,6 +193,7 @@ final class SessionStore: ObservableObject {
       }
       self.settings = settings
       activeRecord = record
+      hasStartedReading = false
       document = PrompterDocument(markdown: record.markdown)
       let saved = savedAnchors[record.metadata.id]
       let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown) }
@@ -161,11 +230,13 @@ final class SessionStore: ObservableObject {
   }
 
   func updateSettings(_ value: PrompterSettings) {
+    var value = value
+    value.sanitise()
     if value.mode != "Voice" || settings.audioDeviceUID != value.audioDeviceUID {
       stopMicrophoneTest()
     }
     let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
-    if modeChanged { anchorNotice = nil }
+    if modeChanged { anchorNotice = nil; cancelCountdown() }
     let speedChanged = settings.speed != value.speed
     // Manual first catches up to now at the old speed, so a new speed continues from here.
     let now = clock()
@@ -230,9 +301,11 @@ final class SessionStore: ObservableObject {
   }
 
   func play(captureAudio: Bool = true) {
+    cancelCountdown()
     guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
     stopMicrophoneTest()
     anchorNotice = nil
+    if reachedEnd { seek(to: 0) }
     if isManual {
       if manualCompleted {
         seek(to: 0)
@@ -248,13 +321,18 @@ final class SessionStore: ObservableObject {
     if captureAudio && settings.mode == "Voice" { startAudioMode() }
   }
   func pause() {
+    hasStartedReading = true
     freezeManual()
     glide.hold()
     state = activeRecord == nil ? .stopped : .paused
     stopTasks()
     rememberCurrent()
   }
-  func toggle() { isActivelyRunning ? pause() : play() }
+  func toggle() {
+    if isCountingDown { pause(); return }
+    if reachedEnd { seek(to: 0); startReading(); return }
+    isActivelyRunning ? pause() : startReading()
+  }
   func restart() {
     seek(to: 0)
     pause()
@@ -286,6 +364,7 @@ final class SessionStore: ObservableObject {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
     if incrementSeekRevision {
+      voiceEndTask?.cancel(); voiceEndTask = nil
       rebaseManual(to: Double(tokenIndex))
       pendingSpeechCandidate = nil
       seekRevision &+= 1
@@ -376,13 +455,12 @@ final class SessionStore: ObservableObject {
   }
 
   func startMicrophoneTest(deviceUID: String?, gain: Double) {
-    guard !isActivelyRunning else {
+    guard !isActivelyRunning || isManual else {
       microphoneTestNotice = "Pause the presenter before testing the microphone."
       return
     }
     stopMicrophoneTest()
-    guard let deviceUID,
-      let device = AudioCapture.inputDevices().first(where: { $0.uid == deviceUID })
+    guard let device = resolveAudioInput(deviceUID)
     else {
       microphoneTestNotice = "Choose an available microphone to test."
       return
@@ -396,10 +474,10 @@ final class SessionStore: ObservableObject {
         guard self.lifecycleGeneration == generation else { return }
         self.isTestingMicrophone = false
         self.microphoneTestTask = nil
-        self.microphoneTestNotice = "Microphone permission is required."
+        self.microphoneTestNotice = "Allow Video Prompter in System Settings > Privacy & Security > Microphone, then try again."
         return
       }
-      guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning else {
+      guard !Task.isCancelled, self.lifecycleGeneration == generation, !self.isActivelyRunning || self.isManual else {
         return
       }
       do {
@@ -484,6 +562,7 @@ final class SessionStore: ObservableObject {
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
     else { return }
+    hasLiveRecognition = true
     let tokens = document.spokenTokens
     if speechGeneration != candidate.generation {
       speechGeneration = candidate.generation
@@ -549,6 +628,17 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
+      if update.tokenIndex < document.spokenTokens.count - 1 {
+        voiceEndTask?.cancel(); voiceEndTask = nil
+      } else if update.tokenIndex > old {
+        voiceEndTask?.cancel()
+        voiceEndTask = Task { [weak self] in
+          guard let self else { return }
+          do { try await Task.sleep(for: self.voiceEndGrace) } catch { return }
+          guard !Task.isCancelled, self.reachedEnd else { return }
+          self.pause()
+        }
+      }
       rememberSoon()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
@@ -575,6 +665,10 @@ final class SessionStore: ObservableObject {
     return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
+    voiceEndTask?.cancel(); voiceEndTask = nil
+    cancelCountdown()
+    isPreparingVoice = false
+    hasLiveRecognition = false
     lifecycleGeneration &+= 1
     pendingSpeechCandidate = nil
     runTask?.cancel()
@@ -624,6 +718,8 @@ final class SessionStore: ObservableObject {
     return true
   }
 
+  var resolveAudioInput: (String?) -> AudioInputDevice? = AudioCapture.resolvedInput
+
   private func startAudioMode() {
     // Also while a start is still preparing: a second one would race it for the recogniser.
     guard audioCapture == nil, speechTask == nil else { return }
@@ -633,12 +729,12 @@ final class SessionStore: ObservableObject {
         self.microphoneDevicesDidChange(AudioCapture.inputDevices())
       }
     }
-    guard let uid = settings.audioDeviceUID,
-      let device = AudioCapture.inputDevices().first(where: { $0.uid == uid })
+    guard let device = resolveAudioInput(settings.audioDeviceUID)
     else {
-      failAudio("Choose a microphone in Presenter settings")
+      failAudio("Choose a microphone in Settings > Microphone, then press Start reading.")
       return
     }
+    isPreparingVoice = true
     let generation = lifecycleGeneration
     let previousStop = providerStopTask
     speechTask = Task { [weak self] in
@@ -647,7 +743,7 @@ final class SessionStore: ObservableObject {
         self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       guard await AudioCapture.requestPermission() else {
         guard self.lifecycleGeneration == generation, !Task.isCancelled else { return }
-        self.failAudio("Microphone permission is required")
+        self.failAudio("Allow Video Prompter in System Settings > Privacy & Security > Microphone, then press Start reading.")
         return
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
@@ -657,7 +753,6 @@ final class SessionStore: ObservableObject {
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
         guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
-        self.state = .running
         let capture = AudioCapture(
           device: device, outputFormat: format, gain: Float(self.settings.inputGain))
         self.audioCapture = capture
@@ -694,6 +789,8 @@ final class SessionStore: ObservableObject {
           capture.stop()
           return
         }
+        self.isPreparingVoice = false
+        self.state = .uncertain("Microphone ready. Read the script to begin following.")
         try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
           guard let self, self.lifecycleGeneration == generation else { return }
           self.acceptSpeechCandidate(candidate)
@@ -741,11 +838,24 @@ final class SessionStore: ObservableObject {
 @MainActor final class InputMeter: ObservableObject {
   @Published private(set) var peakDBFS: Float = -.infinity
   @Published private(set) var isClipping = false
+  @Published private(set) var channelPeaks: [Float] = []
+  private(set) var lastSampleAt: TimeInterval?
+  private(set) var lastAudibleSampleAt: TimeInterval?
+  func isFresh(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+    lastSampleAt.map { now - $0 < 1.5 } ?? false
+  }
+  func show(channelPeaks: [Float]) {
+    if self.channelPeaks != channelPeaks { self.channelPeaks = channelPeaks }
+    let peak = channelPeaks.max() ?? 0
+    show(peakDBFS: AudioCapture.decibels(fullScalePeak: peak), isClipping: peak >= 0.99)
+  }
   func show(peakDBFS: Float, isClipping: Bool) {
+    lastSampleAt = ProcessInfo.processInfo.systemUptime
+    if peakDBFS > -60 { lastAudibleSampleAt = lastSampleAt }
     if self.peakDBFS != peakDBFS { self.peakDBFS = peakDBFS }
     if self.isClipping != isClipping { self.isClipping = isClipping }
   }
-  func reset() { show(peakDBFS: -.infinity, isClipping: false) }
+  func reset() { show(peakDBFS: -.infinity, isClipping: false); if !channelPeaks.isEmpty { channelPeaks = [] }; lastSampleAt = nil; lastAudibleSampleAt = nil }
 }
 
 private final class AudioFrameCounter: @unchecked Sendable {

@@ -13,6 +13,26 @@ final class MovieWriterTests: XCTestCase {
       }
     }
   }
+  func testSavedTakePreservesRotationAndMirroring() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("orientation-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for rotation in CameraRotation.allCases {
+      for mirrored in [false, true] {
+        let transform = RecordingSink.recordingTransform(rotation: rotation, mirrored: mirrored)
+        let file = folder.appendingPathComponent("\(rotation.rawValue)-\(mirrored).mov")
+        let writer = try MovieWriter(url: file, width: 320, height: 240, transform: transform, preset: .standard, audio: nil, floatAudio: false)
+        XCTAssertTrue(try writer.append(video: video(0)))
+        _ = try await writer.finish()
+        let tracks = try await AVURLAsset(url: file).loadTracks(withMediaType: .video)
+        let saved = try await XCTUnwrap(tracks.first).load(.preferredTransform)
+        XCTAssertEqual(saved.a, transform.a, accuracy: 0.001)
+        XCTAssertEqual(saved.b, transform.b, accuracy: 0.001)
+        XCTAssertEqual(saved.c, transform.c, accuracy: 0.001)
+        XCTAssertEqual(saved.d, transform.d, accuracy: 0.001)
+      }
+    }
+  }
   private func video(_ frame: Int) throws -> CMSampleBuffer {
     var pixel: CVPixelBuffer?
     XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 240, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary, &pixel), kCVReturnSuccess)
@@ -76,4 +96,87 @@ final class MovieWriterTests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: url), original)
     }
   }
+  func testUnreadyAudioAfterVideoStartsIsCounted() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("audio-drops-\(UUID())")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let writer = try MovieWriter(url: folder.appendingPathComponent("take.mov"), width: 320, height: 240,
+      transform: .identity, preset: .standard, audio: AudioSpec(sampleRate: 48000, channels: 2), floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    writer.audioReadyOverride = false
+    try writer.append(audio: audio(0))
+    XCTAssertEqual(writer.droppedAudioBuffers, 1)
+    XCTAssertTrue(RecordingAudioHealth.message(drops: writer.droppedAudioBuffers, clipping: false, fresh: true).contains("Sound dropped"))
+    do { _ = try await writer.finish(); XCTFail("A take with no stored sound must fail verification") } catch {}
+  }
+
+  func testWaitingWriterNeverConfirmsAnUnwrittenFrame() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let writer = try MovieWriter(url: folder.appendingPathComponent("empty.mov"), width: 320, height: 240,
+      transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    writer.videoReadyOverride = false
+    XCTAssertFalse(try writer.append(video: video(0)))
+    XCTAssertEqual(writer.writtenFrames, 0)
+    XCTAssertEqual(writer.droppedFrames, 1)
+    do { _ = try await writer.finish(); XCTFail("No frame was written") } catch {}
+  }
+
+  func testTwoMinuteSparseTakeFinishesWithinBudget() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("long.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity, preset: .edit, audio: nil, floatAudio: false)
+    writer.videoReadyOverride = true
+    XCTAssertTrue(try writer.append(video: video(0)))
+    XCTAssertTrue(try writer.append(video: video(3600)))
+    let start = Date()
+    _ = try await writer.finish()
+    XCTAssertLessThan(Date().timeIntervalSince(start), 5)
+    let duration = try await AVURLAsset(url: file).load(.duration).seconds
+    XCTAssertGreaterThan(duration, 120)
+    try await MovieWriter.verify(file, expectedFrames: 3601, expectsAudio: false)
+  }
+
+  func testPlayableTakeWithFewerStoredFramesStillVerifies() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("take.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    _ = try await writer.finish()
+    try await MovieWriter.verify(file, expectedFrames: 2, expectsAudio: false)
+  }
+
+  func testVerificationRejectsTakeShorterThanWrittenTimeline() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("short.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    _ = try await writer.finish()
+    do {
+      try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: false, minimumDuration: 10)
+      XCTFail("A take missing most of its timeline must fail")
+    } catch {}
+  }
+
+  func testSavedVerificationRejectsMissingAudioAndCorruptMedia() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("silent.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity,
+      preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    _ = try await writer.finish()
+    do { try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: true); XCTFail("Missing sound must not pass") } catch {}
+    try Data("not a movie".utf8).write(to: file)
+    do { try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: false); XCTFail("Corrupt media must not pass") } catch {}
+  }
+
 }

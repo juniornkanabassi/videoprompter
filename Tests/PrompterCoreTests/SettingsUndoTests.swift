@@ -9,12 +9,25 @@ import XCTest
     XCTAssertEqual(ScriptShortcuts.newScript.key, KeyEquivalent("n"))
     XCTAssertEqual(ScriptShortcuts.newScript.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.library.modifiers, [.command, .shift])
-    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .shift])
+    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .control])
     XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent(">"))
     XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent("<"))
     XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, .command)
-    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Voice", "Editor", "Presets"])
+    let shortcuts = [ScriptShortcuts.newScript, ScriptShortcuts.library, ScriptShortcuts.camera,
+                     ScriptShortcuts.importFile, ScriptShortcuts.italic,
+                     ScriptShortcuts.biggerText, ScriptShortcuts.smallerText]
+    let reserved = [KeyboardShortcut("c", modifiers: [.command, .shift]),
+                    KeyboardShortcut("c", modifiers: [.command, .option]),
+                    KeyboardShortcut("+", modifiers: .command),
+                    KeyboardShortcut("-", modifiers: .command)]
+    for (index, shortcut) in shortcuts.enumerated() {
+      for other in Array(shortcuts.dropFirst(index + 1)) + reserved {
+        XCTAssertFalse(shortcut.key == other.key && shortcut.modifiers == other.modifiers,
+                       "Script commands must not collide with each other, Show Colors, Camera Only or interface zoom")
+      }
+    }
+    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Shoot setups", "Microphone", "Camera & Recording"])
   }
 
   func testPresetDeletionSupportsRepeatedUndoAndRedoWithoutLosingOrder() async throws {
@@ -72,12 +85,12 @@ import XCTest
     let manager = UndoManager()
     manager.groupsByEvent = true
     store.deleteFolder(folder.id, undoManager: manager)
-    for _ in 0..<100 where store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.libraryEditTask?.value
     try await store.moveScripts([moved.id], to: other.id)
     for _ in 0..<2 {
       XCTAssertTrue(manager.canUndo)
       manager.undo()
-      for _ in 0..<100 where !store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+      await store.libraryEditTask?.value
       XCTAssertEqual(store.folders.first(where: { $0.id == folder.id })?.name, folder.name)
       XCTAssertEqual(store.folders.map(\.id), originalFolderOrder, "Undo preserves alphabetical folder order")
       XCTAssertEqual(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID, folder.id)
@@ -85,12 +98,12 @@ import XCTest
       XCTAssertEqual(store.trash.first(where: { $0.id == trashed.id })?.metadata.folderID, folder.id)
       XCTAssertTrue(manager.canRedo)
       manager.redo()
-      for _ in 0..<100 where store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+      await store.libraryEditTask?.value
       XCTAssertNil(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID)
     }
     // Rapid commands remain ordered on disk as well as in memory.
     manager.undo(); manager.redo(); manager.undo()
-    for _ in 0..<100 where !store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.libraryEditTask?.value
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed, "quit waits for the complete Undo/Redo folder queue")
     let reopened = try MarkdownLibrary(rootURL: root)
@@ -130,15 +143,15 @@ import XCTest
     manager.groupsByEvent = false
     manager.beginUndoGrouping(); store.deleteFolder(folder.id, undoManager: manager); manager.endUndoGrouping()
     XCTAssertTrue(manager.canUndo, "offered before the disk change completes")
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
     manager.beginUndoGrouping(); store.deletePreset(store.presets[0].id, undoManager: manager); manager.endUndoGrouping()
     XCTAssertEqual(manager.undoActionName, "Delete Preset", "the later action is undone first")
     manager.undo()
     XCTAssertEqual(store.presets.map(\.name), ["Keep"])
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
     manager.undo()
     XCTAssertFalse(manager.canUndo)
-    XCTAssertEqual(manager.redoActionName, "Delete Folder")
+    XCTAssertEqual(manager.redoActionName, "Remove Folder")
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
     XCTAssertEqual(store.folders.map(\.id), [folder.id])
@@ -148,7 +161,7 @@ import XCTest
     _ = await store.flushPendingSaves()
     XCTAssertTrue(store.folders.isEmpty)
     XCTAssertNil(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID)
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
   }
 
   func testFailedFolderDeletionDropsOnlyItsOwnQueuedUndoAndRedo() async throws {
@@ -198,7 +211,7 @@ import XCTest
       manager.undo(); manager.redo()
       _ = await store.flushPendingSaves()
       XCTAssertTrue(manager.canUndo)
-      XCTAssertEqual(manager.undoActionName, "Delete Folder")
+      XCTAssertEqual(manager.undoActionName, "Remove Folder")
       released = manager
     }
     for _ in 0..<50 where released != nil { try await Task.sleep(for: .milliseconds(10)) }

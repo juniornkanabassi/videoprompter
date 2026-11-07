@@ -106,15 +106,81 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(afterDelete.tokenIndex, 0)
   }
 
+  func testSystemDefaultMicrophoneShowsRunningAndPausedVoiceStates() {
+    let session = SessionStore(defaults: freshDefaults("SystemDefaultVoice"))
+    session.resolveAudioInput = { uid in
+      AudioCapture.resolveInput(uid, devices: [
+        AudioInputDevice(id: 42, uid: "default-microphone", name: "Default microphone")
+      ], defaultID: 42)
+    }
+    var settings = PrompterSettings()
+    settings.mode = "Voice"
+    settings.audioDeviceUID = nil
+    session.present(record: ScriptRecord(
+      metadata: ScriptMetadata(title: "Default microphone", fileName: "default.md"),
+      markdown: "One two three four five six"), settings: settings)
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+    XCTAssertEqual(session.visibleReadingState, "Paused")
+
+    session.play(captureAudio: false)
+    XCTAssertTrue(session.isActivelyRunning)
+    XCTAssertEqual(session.readingStatus, "Waiting for your voice")
+    XCTAssertEqual(session.visibleReadingState, "Listening")
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "default-input", generation: 1, locale: Locale(identifier: "en-GB"), text: "One two three",
+      range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
+    XCTAssertTrue(session.hasLiveRecognition)
+    XCTAssertEqual(session.visibleReadingState, "Following")
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+    XCTAssertEqual(session.visibleReadingState, "Paused")
+  }
+
+  func testAbsentSystemDefaultMicrophoneShowsRecoveryAndKeepsPosition() {
+    let session = SessionStore(defaults: freshDefaults("AbsentDefaultVoice"))
+    var requestedDefault = false
+    session.resolveAudioInput = { uid in
+      requestedDefault = uid == nil
+      return AudioCapture.resolveInput(uid, devices: [], defaultID: 0)
+    }
+    var settings = PrompterSettings()
+    settings.mode = "Voice"
+    settings.audioDeviceUID = nil
+    session.present(record: record(), settings: settings)
+    session.seek(to: 1)
+    let anchor = session.anchor
+    session.startReading()
+    XCTAssertTrue(requestedDefault)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.anchor, anchor)
+    XCTAssertEqual(session.readingStatus, "Needs microphone")
+    XCTAssertEqual(session.visibleReadingState, "Needs microphone")
+    XCTAssertNotNil(session.anchorNotice)
+  }
+
+  func testVoiceNeverClaimsListeningBeforeRecognitionArrives() {
+    let session = SessionStore()
+    var settings = PrompterSettings()
+    settings.audioDeviceUID = "test-microphone"
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    XCTAssertEqual(session.readingStatus, "Waiting for your voice")
+    XCTAssertFalse(session.hasLiveRecognition)
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+  }
   func testMissingAudioInputPausesAndPreservesAnchor() {
     let session = SessionStore()
+    session.resolveAudioInput = { _ in nil }
     session.present(record: record(), settings: PrompterSettings())
     let anchor = session.anchor
     session.play()
 
     XCTAssertEqual(session.state, .paused)
     XCTAssertEqual(session.anchor, anchor)
-    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Presenter settings")
+    XCTAssertEqual(session.readingStatus, "Needs microphone")
+    XCTAssertEqual(session.anchorNotice, "Choose a microphone in Settings > Microphone, then press Start reading.")
     session.play(captureAudio: false)
     XCTAssertEqual(session.state, .running)
     XCTAssertNil(session.anchorNotice)
@@ -124,6 +190,7 @@ final class SessionStoreTests: XCTestCase {
   func testRelevantSettingsClearMissingMicrophoneNoticeWithoutMovingAnchor() {
     for change in ["mode", "microphone", "language"] {
       let session = SessionStore()
+      session.resolveAudioInput = { _ in nil }
       var settings = PrompterSettings()
       session.present(record: record(), settings: settings)
       session.seek(to: 1)
@@ -166,7 +233,8 @@ final class SessionStoreTests: XCTestCase {
   }
 
   func testTogglePausesAndResumesManualSession() {
-    let session = SessionStore()
+    let session = SessionStore(defaults: freshDefaults("ImmediateToggle"))
+    session.startDelay = 0
     var settings = PrompterSettings()
     settings.mode = "Manual"
     session.present(record: record(), settings: settings)
@@ -383,6 +451,37 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 0)
   }
 
+  func testToggleAtEndRestartsWithStartDelay() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.startDelay = 3
+    session.play()
+    now = 110
+    session.syncManualFrontier()
+    XCTAssertTrue(session.reachedEnd)
+    session.toggle()
+    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertTrue(session.isCountingDown)
+    XCTAssertFalse(session.isActivelyRunning)
+    session.pause()
+  }
+
+  func testToggleCancelsCountdownAtEnd() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.startDelay = 3
+    session.play()
+    now = 110
+    session.syncManualFrontier()
+    session.startReading()
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertTrue(session.isCountingDown)
+    session.toggle()
+    XCTAssertFalse(session.isCountingDown)
+    XCTAssertFalse(session.isActivelyRunning)
+    XCTAssertTrue(session.reachedEnd)
+  }
+
   func testManualReachingTheEndConfirmsTheLastWordAndStopsThenPlayRestarts() {
     var now = 100.0
     let session = manualSession { now }
@@ -397,6 +496,8 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.state, .paused)
     XCTAssertFalse(session.isActivelyRunning)
     XCTAssertTrue(session.manualCompleted)
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.readingStatus, "End of script")
     XCTAssertEqual(session.lastConfirmedTokenIndex, 9)
     XCTAssertEqual(session.tokenIndex, 9)
     now = 300
@@ -405,6 +506,7 @@ final class SessionStoreTests: XCTestCase {
     // Play after completion starts from the beginning.
     session.play()
     XCTAssertFalse(session.manualCompleted)
+    XCTAssertFalse(session.reachedEnd)
     XCTAssertEqual(session.state, .running)
     XCTAssertEqual(session.tokenIndex, 0)
     XCTAssertNil(session.lastConfirmedTokenIndex)
@@ -533,6 +635,45 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.voicePosition(), 7, "paused holds")
   }
 
+  func testVoiceContinuesListeningAfterReachingLastWord() async throws {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    let script = ScriptRecord(metadata: ScriptMetadata(title: "Repeated", fileName: "repeat.md"),
+      markdown: "one two thank you more words come later thank you")
+    session.present(record: script, settings: settings)
+    session.seek(to: 6)
+    session.voiceEndGrace = .milliseconds(80)
+    session.play(captureAudio: false)
+    let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
+    session.acceptSpeechCandidate(SpeechCandidate(replacementID: "last", generation: 1, locale: Locale(identifier: "en-GB"), text: "come later thank you", range: range, isFinal: true))
+    XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.isActivelyRunning, "Recognition must remain available to correct a premature match")
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.visibleReadingState, "End of script")
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertFalse(session.isActivelyRunning, "Recognition must stop after the grace period")
+    XCTAssertTrue(session.reachedEnd)
+  }
+
+  func testSeekingDuringVoiceEndGraceKeepsListening() async throws {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    let script = ScriptRecord(metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
+      markdown: "one two thank you more words come later thank you")
+    session.present(record: script, settings: settings)
+    session.voiceEndGrace = .milliseconds(80)
+    session.seek(to: 6)
+    session.play(captureAudio: false)
+    let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
+    session.acceptSpeechCandidate(SpeechCandidate(replacementID: "last", generation: 1, locale: Locale(identifier: "en-GB"), text: "come later thank you", range: range, isFinal: true))
+    XCTAssertTrue(session.reachedEnd)
+    session.seek(to: 2)
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertFalse(session.reachedEnd)
+    XCTAssertTrue(session.isActivelyRunning)
+    session.pause()
+  }
+
   func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {
     let session = SessionStore()
     var settings = PrompterSettings()
@@ -554,6 +695,10 @@ final class SessionStoreTests: XCTestCase {
     session.acceptSpeechCandidate(candidate("forward", "eight nine ten"))
     try? await Task.sleep(for: .milliseconds(40))
     XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.isActivelyRunning)
+    session.pause()
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.readingStatus, "End of script")
   }
 
   func testOverlappingEnglishAndFrenchFinalsChooseTheStrongerCandidate() {
@@ -726,6 +871,7 @@ final class SessionStoreTests: XCTestCase {
 
   func testMicrophoneTestWithoutDeviceDoesNotChangeSession() {
     let session = SessionStore()
+    session.resolveAudioInput = { _ in nil }
     var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(record: record(), settings: settings)
     let anchor = session.anchor

@@ -3,6 +3,23 @@ import PrompterCore
 import XCTest
 
 final class ControlCLITests: XCTestCase {
+  func testTargetExecutableUsesBundlePlist() throws {
+    let app = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).app")
+    let contents = app.appendingPathComponent("Contents")
+    try FileManager.default.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: app) }
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "OtherName"], format: .xml, options: 0)
+    try plist.write(to: contents.appendingPathComponent("Info.plist"))
+    XCTAssertEqual(ControlLaunch.executablePath(app: app), contents.appendingPathComponent("MacOS/OtherName").resolvingSymlinksInPath().path)
+  }
+
+  func testUnresolvableTargetDoesNotMatchAnotherRunningCopy() {
+    let app = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).app")
+    var checked = false
+    XCTAssertFalse(ControlLaunch.isRunning(app: app) { _ in checked = true; return true })
+    XCTAssertFalse(checked)
+  }
+
   func testCommandParsingHelpAndManifestShareTheTable() throws {
     // A valid value for any parameter, so every command parses from the table alone.
     func sample(_ p: ControlParam) -> String {
@@ -45,6 +62,8 @@ final class ControlCLITests: XCTestCase {
       XCTAssertEqual(try ControlCLI.parse(args + ["--request-id", "retry"]).params["requestId"], "retry")
     }
     XCTAssertEqual(try ControlCLI.parse(["script", "create", "--text", "-"]).params["text"], "-")
+    XCTAssertTrue(try ControlCLI.parse(["script", "create", "--text", "-"]).readsStandardInput)
+    XCTAssertFalse(try ControlCLI.parse(["script", "create", "--text=-"]).readsStandardInput)
     XCTAssertEqual(try ControlCLI.parse(["camera", "set", "only"]).params["view"], "only")
     XCTAssertEqual(try ControlCLI.parse(["seek", "12"]).params["word"], "12")
     for args in [["settings", "set", "--speed", "301"], ["settings", "set", "--speed", "fast"], ["settings", "set", "--mirror", "yes"], ["seek", "0"],
@@ -167,5 +186,22 @@ final class ControlCLITests: XCTestCase {
       XCTAssertEqual(try Data(contentsOf: current.appendingPathComponent(filename)), contents)
       XCTAssertEqual(try String(contentsOf: current.appendingPathComponent("after-failure"), encoding: .utf8), "new content")
     }
+  }
+}
+
+extension ControlCLITests {
+  func testDisposableLaunchCannotFallBackToRealApp() throws {
+    for path in [String?.none, "/Applications/JuniorOS Apps/Video Prompter.app", "/tmp/Video Prompter.app"] {
+      XCTAssertThrowsError(try ControlLaunch.arguments(appPath: path, bundleID: ControlProtocol.bundleID, dataDirectory: "/tmp/data"))
+    }
+    XCTAssertThrowsError(try ControlLaunch.arguments(appPath: nil, bundleID: "check", dataDirectory: "/tmp/data"))
+    XCTAssertThrowsError(try ControlLaunch.arguments(appPath: "/tmp/copy.app", bundleID: "check", dataDirectory: "/tmp/data"))
+    let copy = try ControlLaunch.arguments(appPath: "/tmp/copy.app", bundleID: "check", dataDirectory: nil)
+    XCTAssertTrue(copy.contains("--agent-screen"))
+    XCTAssertTrue(copy.contains("--headless"))
+    XCTAssertFalse(copy.contains("-n"))
+    let real = try ControlLaunch.arguments(appPath: "/Applications/JuniorOS Apps/Video Prompter.app", bundleID: ControlProtocol.bundleID, dataDirectory: nil)
+    XCTAssertTrue(real.contains("--headless"))
+    XCTAssertFalse(real.contains("--agent-screen"))
   }
 }

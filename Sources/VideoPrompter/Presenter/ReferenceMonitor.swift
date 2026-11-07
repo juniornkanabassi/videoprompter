@@ -84,34 +84,3 @@ import SwiftUI
     (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(textViews)
   }
 }
-
-/// The pinned passage, drawn across the bottom of the camera picture.
-struct ReferenceMonitorCaption: View {
-  let passage: String
-  let fontName: String
-  let end: () -> Void
-  var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Label("Reference monitor", systemImage: "video.badge.checkmark")
-          .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-        Spacer()
-        Button("Back to script", systemImage: "text.alignleft", action: end)
-          .keyboardShortcut(.cancelAction)
-          .buttonStyle(.bordered)
-          .help("Leave the reference monitor and return to the full script (Esc)")
-      }
-      // A long selection shrinks to fit rather than covering the picture it is there to check.
-      Text(passage)
-        .font(.custom(fontName, size: 22, relativeTo: .title3))
-        .foregroundStyle(.white)
-        .lineLimit(6).minimumScaleFactor(0.6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityLabel("Monitored passage")
-    }
-    .padding(12)
-    .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 14))
-    .padding(.horizontal, 16)
-    .frame(maxWidth: 820)
-  }
-}

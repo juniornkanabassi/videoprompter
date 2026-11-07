@@ -3,7 +3,7 @@ import Foundation
 /// The script a new library starts with. It doubles as the tour: a first-time user presents it and
 /// reads it aloud, and each section asks them to try the feature it describes, so Voice, the
 /// passage keys, stage directions and the camera are all met in the order they are needed.
-/// Help > Welcome Script brings it back after it has been deleted.
+/// Help > Getting Started Guide brings it back after it has been deleted.
 enum WelcomeScript {
   static let title = "Welcome to Video Prompter"
   /// Set once a library has been offered the script, so deleting it is final until Help asks again.
@@ -12,44 +12,38 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > This is a practice script. Lines like this one are notes for you: they show in the editor but never in the presenter, and Voice ignores them. Press **Present** in the toolbar, then **Start**, and read the rest out loud.
+    > Choose **Present**, then **Start reading**. Reading does not record. To check your sound first, open **Tools**, choose Microphone in **Tools section**, then **Check sound…**.
 
-    Hello, and welcome to Video Prompter. If you are reading this in the presenter, you have already done the hardest part. [Look at the camera, not the screen.]
+    Hello, and welcome. Pause whenever you like. [Look at the camera.]
 
-    Words in square brackets are stage directions, such as a reminder to look at the camera. They are hidden in the presenter until you turn on Show stage directions in the Presenter pane on the right of the library window, under Advanced, Mirroring and cues, and Voice skips past them either way, so you never have to say them.
+    ## Choose how to read
 
-    ## Voice or Manual
+    Voice follow keeps your place as you speak. Open **Tools**, choose Text, then **Reading mode…** to choose Voice follow or Automatic scroll. Automatic scroll waits for your Start delay, normally three seconds. The Cancel button stops the countdown. If reading needs attention, choose **Check reading…** beside the status for instructions and an automatic-scroll fallback.
 
-    There are two ways for the script to move. In Voice, the app listens through your microphone and follows the words as you say them, all on your Mac. Pause for a moment and it waits for you. Skip a line or say something slightly different and it catches up when your words match the script again.
+    ## Make yourself comfortable
 
-    In Manual, the script scrolls at a steady speed that you set in words per minute, and no microphone is needed. You choose between them in Settings, under General. Open Settings from the Video Prompter menu or with Command and comma, and the Voice page there has your microphone and spoken language.
+    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. The Settings sidebar also has Reading presets.
 
-    ## Moving around
-
-    Each paragraph is a passage. Press the right arrow key to jump to the next one and the left arrow key to go back. Try it now, then come back here.
-
-    Click any word to carry on reading from there. **Back to start** takes you to the first word, and **Pause** stops everything until you press **Start** again. If you spot a mistake while you are recording, choose **Edit script**, fix it, and press Command and Return to save.
-
-    ## Making it comfortable
-
-    The line across the presenter is the reading line: keep your eyes near it and the script comes to you. In the Presenter pane on the right of the library window you can change the text size and the font, the width of the text column, and under Typography the colours and line spacing.
-
-    If you read through teleprompter glass, turn on Mirror for teleprompter glass in the same pane so the words read the right way round. More mirroring and rotation options are under Advanced, Mirroring and cues. For a large screen, choose **Presenter Full Screen** from the Prompter menu.
+    Click a word to read from there. The arrow keys move between passages when the script has focus. When paused, choose **Back to start** beside **Start reading** to try again without stopping a recording. Open **Tools**, then **Edit this script**. Choose **Save changes** when finished, or **Cancel editing** to keep the original.
 
     ## Camera and recording
 
-    Video Prompter can show your camera behind the script, so you can check your framing while you read. Open the **View** menu on the presenter bar, choose **Script and camera**, and allow camera access when macOS asks. **Camera Settings** in the same menu has the framing guides that help you line up your shot.
+    Choose **Show camera** before recording if only your script is showing. Under **Tools**, choose Camera in **Tools section**, then use **View** to choose Script only, Script and camera, or Camera view. **Choose camera…** selects your camera and **Framing guides…** helps you compose the picture.
 
-    You can also use the presenter as a reference monitor. Drag across a few lines, then choose **Monitor Selection with Camera** from the View menu. The camera fills the window with those lines at the bottom, and Escape brings the script back. With no script selected, **Present** shows just the camera.
+    In the Exposure section of **Tools**, the zebra check marks bright areas and **Check brightness · False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. The direct **Exposure check** switches the aids off and on without changing your saved choices. On first use it enables brightness colours. **Guides** switches framing guides off and on, and **Switch camera** opens the camera list.
 
-    To record, open the Camera window from the Window menu and press **Record**. Recordings are saved in the Video Prompter folder inside Movies.
+    To retake a line, press Pause, click the word, then Start reading. The recording keeps going.
+
+    **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays.
+
+    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second Monitor Window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** under Tools, lets you save, apply, rename and delete complete setups. After Apply, **Restore Previous Setup** returns to your previous choices.
+
+    **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Play** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
 
     ## Your own scripts
 
-    Write a new script with **New Script**, paste one with **Paste as New Script**, or import a Word document, PDF, text file or Markdown file. A Markdown file you import stays linked, so edits here change the original, and edits to the original show up here.
+    Choose **Paste Copied Text**, **New Script**, or **Import File…**. Imported Markdown stays linked to the original file. Changes in either place appear in the other.
 
-    Headings, bold and italics all work, and a heading is a handy way to split a long script into sections.
-
-    That is the whole tour. You can delete this script whenever you like, and bring it back at any time from **Welcome Script** in the Help menu. [Smile. You made it to the end.]
+    Headings, bold and italics work. You can delete this guide and bring it back using **Getting Started Guide** in Help.
     """
 }

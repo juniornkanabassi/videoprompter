@@ -3,7 +3,7 @@ import AVFoundation
  enum RecordingPreset: String, CaseIterable, Codable, Sendable {
   case standard, high, edit
   var label: String {
-    switch self { case .standard: "Standard (H.264)"; case .high: "High (HEVC)"; case .edit: "Edit (ProRes 422)" }
+    switch self { case .standard: "H.264 (most compatible)"; case .high: "HEVC (smaller files)"; case .edit: "ProRes 422 (for editing)" }
   }
   var codec: AVVideoCodecType {
     switch self { case .standard: .h264; case .high: .hevc; case .edit: .proRes422 }
@@ -17,7 +17,12 @@ final class MovieWriter: @unchecked Sendable {
   private let audio: AVAssetWriterInput?
   private var started = false
   private var firstTime = CMTime.invalid
+  private var lastVideoTime = CMTime.invalid
   private(set) var droppedFrames = 0
+  private(set) var droppedAudioBuffers = 0
+  var audioReadyOverride: Bool?
+  var videoReadyOverride: Bool?
+  private(set) var writtenFrames = 0
   init(url: URL, width: Int, height: Int, transform: CGAffineTransform, preset: RecordingPreset, audio: AudioSpec?, floatAudio: Bool) throws {
     guard !FileManager.default.fileExists(atPath: url.path),
       (try FileManager.default.attributesOfItem(atPath: url.deletingLastPathComponent().path)[.type] as? FileAttributeType) == .typeDirectory,
@@ -42,23 +47,33 @@ final class MovieWriter: @unchecked Sendable {
       guard writer.canAdd(input) else { throw CocoaError(.featureUnsupported) }; writer.add(input); self.audio = input
     } else { self.audio = nil }
   }
-  func append(video buffer: CMSampleBuffer) throws {
+  @discardableResult
+  func append(video buffer: CMSampleBuffer) throws -> Bool {
     if !started {
       guard writer.startWriting() else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
       firstTime = CMSampleBufferGetPresentationTimeStamp(buffer)
       writer.startSession(atSourceTime: firstTime); started = true
     }
     guard writer.status == .writing else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
-    if video.isReadyForMoreMediaData {
+    if videoReadyOverride ?? video.isReadyForMoreMediaData {
       if !video.append(buffer) {
         guard writer.status != .failed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
         droppedFrames += 1
+        return false
       }
-    } else { droppedFrames += 1 }
+      lastVideoTime = CMSampleBufferGetPresentationTimeStamp(buffer)
+      writtenFrames += 1
+      return true
+    } else { droppedFrames += 1; return false }
   }
   func append(audio buffer: CMSampleBuffer) throws {
-    guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime, let audio, audio.isReadyForMoreMediaData else { return }
-    if !audio.append(buffer), writer.status == .failed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    guard let audio else { return }
+    guard started, CMSampleBufferGetPresentationTimeStamp(buffer) >= firstTime,
+      audioReadyOverride ?? audio.isReadyForMoreMediaData else { droppedAudioBuffers += 1; return }
+    if !audio.append(buffer) {
+      droppedAudioBuffers += 1
+      if writer.status == .failed { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    }
   }
   func finish() async throws -> URL {
     guard started, writer.status == .writing else {
@@ -67,6 +82,39 @@ final class MovieWriter: @unchecked Sendable {
     video.markAsFinished(); audio?.markAsFinished()
     await writer.finishWriting()
     guard writer.status == .completed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
+    try await Self.verify(writer.outputURL, expectedFrames: writtenFrames, expectsAudio: audio != nil,
+      minimumDuration: max(0, CMTimeSubtract(lastVideoTime, firstTime).seconds))
     return writer.outputURL
   }
+  /// Check tracks and a bounded sample without scanning or buffering the entire take.
+  static func verify(_ url: URL, expectedFrames: Int, expectsAudio: Bool, minimumDuration: Double = 0) async throws {
+    let asset = AVURLAsset(url: url)
+    let duration = try await asset.load(.duration).seconds
+    guard try await asset.load(.isPlayable), expectedFrames > 0, duration.isFinite, duration > 0 else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    let videoTracks = try await asset.loadTracks(withMediaType: .video)
+    let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+    guard let video = videoTracks.first, !expectsAudio || !audioTracks.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+    let videoRange = try await video.load(.timeRange)
+    guard videoRange.duration.seconds.isFinite, videoRange.duration.seconds + 0.1 >= minimumDuration else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    // Seek to a few points and read one sample at each. This bounds memory and work by
+    // the sample count, including for long takes with dropped frames.
+    for (track, fraction) in [0.0, 0.33, 0.66, 0.9].map({ (video, $0) }) + (expectsAudio ? [0.0, 0.5, 0.9].map({ (audioTracks[0], $0) }) : []) {
+      let reader = try AVAssetReader(asset: asset)
+      let range = try await track.load(.timeRange)
+      let offset = CMTimeMultiplyByFloat64(range.duration, multiplier: fraction)
+      reader.timeRange = CMTimeRange(start: CMTimeAdd(range.start, offset), duration: CMTimeSubtract(range.duration, offset))
+      let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+      guard reader.canAdd(output) else { throw CocoaError(.fileReadCorruptFile) }
+      reader.add(output)
+      guard reader.startReading(), output.copyNextSampleBuffer() != nil, reader.status != .failed else {
+        throw reader.error ?? CocoaError(.fileReadCorruptFile)
+      }
+      reader.cancelReading()
+    }
+  }
+
 }

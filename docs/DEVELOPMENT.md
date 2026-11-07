@@ -23,6 +23,25 @@ To make a download disk image from an app bundle that has already been verified,
 
 Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and `VIDEOPROMPTER_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
+`test.sh` also runs the grid checker over every Mac and iPad Swift source file and
+captures the light/dark snapshot suite in separate, invisible XCTest processes.
+Set `VIDEOPROMPTER_SNAPSHOTS` to keep the images in a chosen evidence folder;
+otherwise the script prints a temporary output folder and removes it on exit.
+An explicit XCTest filter runs only those tests; the normal unfiltered command
+always includes both snapshot passes, reusing the test bundle. A failed grid or snapshot
+check fails the normal test command. The standalone `checks/check-snapshots.sh`
+remains available. Off-grid layout literals need an inline `// grid: ok <reason>`.
+
+The library deliberately supports multiple windows (File > New Library Window,
+Shift-Command-L), and keeps an explicit Format menu for the two script editors.
+Open Second monitor window uses Control-Command-C, leaving Shift-Command-C to
+Show Colors. Text size uses Shift-Command-period/comma; interface size keeps
+Command-plus/minus/zero. Camera Only keeps Option-Command-C.
+
+The formatted editor's source-patching model is in `FormattedMarkdownEditModel.swift`;
+`PresenterView.swift` holds the presenter's views separately from its controller;
+`CameraModel.swift` owns the camera state separately from its window controls.
+
 `test.sh` records each disposable defaults suite and removes its plist after XCTest exits. Use the same runner for a Release test bundle, with testable imports enabled and a separate cache:
 
 ```sh
@@ -54,9 +73,13 @@ python3 checks/check-built-app.py "$work/Video Prompter.app"
 
 The checker creates its own `--data-directory`, runs the packaged CLI and MCP, and reads the app's accessibility state without sending input or changing focus. The terminal needs Accessibility permission for the GUI checks; if it is denied, the check fails rather than passes. Only the checker's own disposable process is stopped. Evidence is kept in the temporary folder it prints. `test.sh` separately builds and runs the XCTest bundle; external, simulator and audio acceptance tests are opt-in and reported as skipped unless configured.
 
-For a manual test with disposable data, launch the app executable with `--data-directory /private/tmp/vp-data`. This flag alone does not isolate all window restoration; use the packaged checker for its stronger disposable-home setup. `--agent-screen` uses an already-connected Agent Screen. `--capture-visible` lets the presenter be captured, for inspection only.
+Agent checks must never launch the executable directly or open the installed app. Use the packaged checkers: they re-identify and ad-hoc sign a copy, set a disposable home and data folder, and invoke the council's `launch-hidden.sh` through `checks/agent_launch.py`. `--agent-screen` keeps all windows invisible, click-through and non-activating. No visible check mode exists. If the hidden app exposes no accessibility windows, report that limit without revealing it.
+
+Only the real bundle ID installed in `/Applications` (including `JuniorOS Apps`) or the user’s `Applications` folder may request capture permission, and only while interactive. Headless launches and agent copies never ask. Opening any device requires existing authorization. Local/ad-hoc build packages use the `.development` bundle ID and the production installer refuses them.
 
 ## Command line and AI control
+
+Automatic scroll `resume` honours the saved Start delay (3 seconds by default). During it, navigation and status replies include `state: "starting"` and integer `countdown` seconds remaining. Once running, `countdown` is 0. Repeating `resume` during the countdown does not reset it. CLI help and the MCP tool description share this contract.
 
 Video Prompter exposes its existing app actions through a private Unix socket, a bundled CLI and an MCP shim. It requires macOS 26; MCP requires Node 18 or later and uses protocol version 2025-06-18. The source installer links `~/.local/bin/videoprompter` after a verified local install. A downloaded app does not create that link.
 
@@ -111,7 +134,7 @@ The short `videoprompter` examples below assume the optional command link exists
 | MCP tools manifest | `videoprompter mcp-manifest` |
 | Full help, with every option and its valid values | `videoprompter --help` |
 
-Options can go before or after the command words, and flags can be written `--text-size 60`, `--text-size=60` or `--textSize=60`. `--json` prints one response line. `--show` brings the library or presenter forward, and only works with `script open` or `present`; no other command changes focus. If Video Prompter is closed, other commands start it headless and wait up to 10 seconds, checking the socket every 20 ms. A headless copy has no library window on screen, no Dock icon, no menu bar and no update prompt; `present` still puts the presenter up. It becomes the ordinary app when a command passes `--show`, when you open Video Prompter from the Dock, Spotlight or Finder, or when you click into it, and it quits by itself after 10 minutes without a command while nothing is on screen and nothing is recording. `status` reports `headless`. A headless copy never makes its library window, and the app bundle is an agent (`LSUIElement`) that turns itself into the ordinary app on any other launch, so not even a frame of a window or a Dock tile appears. `python3 checks/check-headless.py <app>` checks this on a re-identified copy, sampling the screen every 5 ms through `checks/watch-headless.swift`; nothing appears on screen unless you add `--visible`, which also checks `--show` with the library on the Agent Screen. Exit codes: 0 success, 1 action or connection error, 2 usage error. A bundled helper uses its own app's identity. `--data-directory /private/tmp/vpc-test` isolates app data and preferences (keep the socket path under 104 UTF-8 bytes). On its own it does not isolate the whole account or window restoration; the packaged checker also uses an isolated home folder and restoration arguments.
+Options can go before or after the command words, and flags can be written `--text-size 60`, `--text-size=60` or `--textSize=60`. `--json` prints one response line. `--show` brings the library or presenter forward, and only works with `script open` or `present`; no other command changes focus. If Video Prompter is closed, commands using its normal library start it headless and wait up to 10 seconds, checking the socket every 20 ms. With `--data-directory`, the CLI never launches an app: start the re-identified copy with the authorised hidden launcher first. This prevents a startup race from opening a second copy. A headless copy has no library window on screen, no Dock icon, no menu bar and no update prompt; `present` still puts the presenter up. It becomes the ordinary app when a command passes `--show`, when you open Video Prompter from the Dock, Spotlight or Finder, or when you click into it, and it quits by itself after 10 minutes without a command while nothing is on screen and nothing is recording. `status` reports `headless`. A headless copy never makes its library window, and the installed app bundle starts as an agent (`LSUIElement`) and becomes the ordinary app on an interactive launch, so not even a frame of a window or a Dock tile appears. `python3 checks/check-headless.py <app>` checks this on a re-identified copy, sampling the screen every 5 ms through `checks/watch-headless.swift`; all launches go through the authorised hidden launcher; the check has no visible mode. Exit codes: 0 success, 1 action or connection error, 2 usage error. A bundled helper uses its own app's identity. `--data-directory /private/tmp/vpc-test` isolates app data and preferences (keep the socket path under 104 UTF-8 bytes). On its own it does not isolate the whole account or window restoration; the packaged checker also uses an isolated home folder and restoration arguments.
 
 Every command acts through the running app, so its effect shows in the library, Settings panel, presenter or Camera window at once. Commands that would discard work refuse instead: presenter commands answer `presenter_editing` while a presenter edit is open, `script delete` answers `script_presented` for the script on screen, and recording settings and camera choice answer `recording_active` while recording. Errors carry a short `code` and a message naming the next step. Creating, importing or duplicating a script selects it, as the app does, so when several agents share one app, pass a script ID to `present` rather than relying on the selection.
 
@@ -133,7 +156,7 @@ args = ["/Applications/Video Prompter.app/Contents/Resources/mcp/videoprompter-m
 
 Change these example paths to match where you installed the app. Any other stdio MCP host needs the command `node` with the matching bundled shim path as its argument; add `--data-directory /private/tmp/vpc-test` to isolate a test connection. The shim finds its own bundled helper. You set up the host yourself; the app does not run any setup command.
 
-The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. Video Prompter data and disposable test data stay separate. Creation request IDs (`script create`, `script import`, `script duplicate`, `folder create`, `preset save` and `record start`) are idempotent within one app session. A repeated ID returns the first result with `"repeated": true`. Text sent with `--text` must fit in a 64 KB request. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
+The socket is `control.sock` in the app's data folder: folder permissions 0700, socket 0600, and only processes from the same user can connect. Video Prompter data and disposable test data stay separate. Creation request IDs (`script create`, `script import`, `script duplicate`, `folder create`, `preset save` and `record start`) are idempotent within one app session. A repeated ID returns the first result with `"repeated": true`. Text sent with `--text`, including `--text -` from standard input, must fit in a 64 KB JSON request after escaping. Use `script import` for larger files. Replies share a 128 MiB budget across connected clients; oversized replies are rejected during serialisation. A stalled reply is closed after five seconds. Markdown imports are linked to the original both ways, as in the app; converted formats are not linked. Resuming Voice may ask for microphone permission if access has not been decided yet. Token savings have not been measured and are not claimed.
 
 ## Release status
 

@@ -50,7 +50,7 @@ func connectSocket(_ path: String) -> Int32? {
   return fd
 }
 /// Whether a copy of the app is running already: a process whose executable is `exact` when given (this helper's
-/// own app, so a test copy elsewhere never counts), else any `…/Contents/MacOS/<name>`. Costs well under a millisecond.
+/// target app, so a different copy never counts), else any `…/Contents/MacOS/<name>`. Costs well under a millisecond.
 func appRunning(executable name: String, exact: String? = nil) -> Bool {
   var pids = [pid_t](repeating: 0, count: 4096)
   let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
@@ -73,7 +73,10 @@ _ = _NSGetExecutablePath(&executablePath, &executablePathSize)
 let executable = URL(fileURLWithPath: String(cString: executablePath)).resolvingSymlinksInPath()
 let contents = executable.deletingLastPathComponent().deletingLastPathComponent()
 let ownApp: URL? = contents.lastPathComponent == "Contents" && executable.deletingLastPathComponent().lastPathComponent == "Helpers" ? contents.deletingLastPathComponent() : nil
-let info = ownApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
+let launchApp = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"].map {
+  URL(fileURLWithPath: $0).resolvingSymlinksInPath()
+} ?? ownApp
+let info = launchApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
 let bundleID = info?["CFBundleIdentifier"] as? String ?? ControlProtocol.bundleID
 let version = info?["CFBundleShortVersionString"] as? String ?? "dev"
 if invocation.action == "help" { print(ControlCLI.help()); exit(0) }
@@ -85,8 +88,17 @@ let path = ControlProtocol.socketURL(dataRoot: root).path
 if path.utf8.count > 103 { failure("Control socket path exceeds 103 bytes. Use a shorter --data-directory.", json: invocation.json) }
 if let value = invocation.params["path"] { invocation.params["path"] = URL(fileURLWithPath: value).path }
 // `--text -` reads the script from standard input; the request still has to fit in 64 KB.
-if invocation.params["text"] == "-" {
-  guard let text = String(data: FileHandle.standardInput.readDataToEndOfFile(), encoding: .utf8), !text.isEmpty else {
+if invocation.readsStandardInput {
+  var input = Data()
+  while input.count <= ControlProtocol.maxRequestBytes {
+    let chunk = try FileHandle.standardInput.read(upToCount: ControlProtocol.maxRequestBytes + 1 - input.count) ?? Data()
+    if chunk.isEmpty { break }
+    input.append(chunk)
+  }
+  guard input.count <= ControlProtocol.maxRequestBytes else {
+    failure("Standard input exceeds the 64 KB request limit. Use script import for larger files.", code: "usage", json: invocation.json, exitCode: 2)
+  }
+  guard let text = String(data: input, encoding: .utf8), !text.isEmpty else {
     failure("Standard input was empty or not UTF-8 text.", code: "usage", json: invocation.json, exitCode: 2)
   }
   invocation.params["text"] = text
@@ -105,15 +117,12 @@ if fd == nil {
   guard launchLock >= 0, flock(launchLock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
-if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
+if fd == nil && invocation.dataDirectory == nil && !ControlLaunch.isRunning(app: launchApp, check: { appRunning(executable: "VideoPrompter", exact: $0) }) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-  var launch = ["-g"]
-  if let custom = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"] { launch += ["-a", custom] }
-  else if let ownApp { launch += ["-a", ownApp.path] }
-  else { launch += ["-b", bundleID] }
-  // --headless: no library window, Dock tile or update prompt; `present` still shows the presenter.
-  if invocation.dataDirectory != nil { launch += ["-n", "--args", "--headless", "--data-directory", root.path] } else { launch += ["--args", "--headless"] }
-  process.arguments = launch
+  do {
+    process.arguments = try ControlLaunch.arguments(appPath: launchApp?.path, bundleID: bundleID,
+      dataDirectory: invocation.dataDirectory == nil ? nil : root.path)
+  } catch { failure(String(describing: error), code: "unsafe_launch", json: invocation.json) }
   process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
   do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch Video Prompter in the background.", json: invocation.json) }
 }
@@ -123,6 +132,9 @@ if fd == nil {
   while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.02); fd = connectSocket(path) }
 }
 if launchLock >= 0 { Darwin.close(launchLock) }
+if fd == nil, invocation.dataDirectory != nil {
+  failure("No agent app answers on \(path). Start a re-identified copy with the authorised hidden launcher first.", code: "agent_not_running", json: invocation.json)
+}
 guard let fd else { failure("Video Prompter is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
 defer { Darwin.close(fd) }
 let request: [String: Any] = ["id": UUID().uuidString, "action": invocation.action, "params": invocation.params]
@@ -139,11 +151,14 @@ let sent = data.withUnsafeBytes { bytes -> Bool in
 }
 guard sent else { failure("The app closed the control connection.", json: invocation.json) }
 var response = Data(); var buffer = [UInt8](repeating: 0, count: 8192)
-while !response.contains(10) {
+var complete = false
+while !complete {
   let count = recv(fd, &buffer, buffer.count, 0)
   if count < 0 && errno == EINTR { continue }
-  guard count > 0, response.count < 20 * 1024 * 1024 else { failure("Video Prompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
-  response.append(contentsOf: buffer.prefix(count))
+  guard count > 0, response.count + max(0, count) <= ControlProtocol.maxResponseBytes else { failure("Video Prompter closed the connection, timed out, or returned an oversized response.", json: invocation.json) }
+  let chunk = buffer.prefix(count)
+  response.append(contentsOf: chunk)
+  complete = chunk.contains(10)
 }
 guard let end = response.firstIndex(of: 10), var value = try? JSONSerialization.jsonObject(with: response.prefix(upTo: end)) as? [String: Any] else { failure("Invalid app response.", json: invocation.json) }
 value.removeValue(forKey: "id"); emit(value, json: invocation.json)

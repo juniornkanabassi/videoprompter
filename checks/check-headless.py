@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""A command against a closed Video Prompter starts it headless: no window on screen, not even for a frame, no Dock
-tile, quick to answer. An unused headless copy quits by itself. With --visible, --show also turns a copy into the
-ordinary app with its library in front, on the Agent Screen (the Prompter XL) so nothing appears on the main monitor.
-Usage: source env.sh; python3 checks/check-headless.py '/tmp/.../Video Prompter.app' [--visible]
-Runs a re-identified copy on disposable data, as check-built-app.py does. Without --visible nothing appears on screen.
+"""Check headless behaviour on a re-identified copy using the council's hidden launcher.
+Usage: source env.sh; python3 checks/check-headless.py '/tmp/.../Video Prompter.app'
+No visible mode, direct executable launch, real capture or audio playback.
 """
 import json, os, pathlib, plistlib, re, shutil, statistics, subprocess, sys, tempfile, time
+from agent_launch import launch
+
 supplied = pathlib.Path(sys.argv[1]).resolve()
-visible = '--visible' in sys.argv[2:]
+if len(sys.argv) != 2:
+    raise SystemExit('Only an app path is accepted; visible checks are disabled')
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
-root = pathlib.Path(tempfile.mkdtemp(prefix='vph-', dir=os.environ.get('TMPDIR', '/private/tmp')))
+root = pathlib.Path(tempfile.mkdtemp(prefix='vph-', dir='/private/tmp'))
 CHECK_ID = 'com.juniornkanabassi.VidPrompt.headless-check'
 app = root / 'Video Prompter.app'
 subprocess.run(['ditto', str(supplied), str(app)], check=True, timeout=120)
 subprocess.run(['/usr/libexec/PlistBuddy', '-c', 'Set :CFBundleIdentifier '+CHECK_ID, str(app / 'Contents/Info.plist')], check=True)
+info_path = app / 'Contents/Info.plist'
+info = plistlib.loads(info_path.read_bytes())
+(root / 'home').mkdir(exist_ok=True)
+info['LSEnvironment'] = {'CFFIXED_USER_HOME': str(root / 'home')}
+info_path.write_bytes(plistlib.dumps(info))
 entitlements = plistlib.loads(subprocess.run(['codesign', '-d', '--entitlements', '-', '--xml', str(supplied)], capture_output=True, check=True, timeout=60).stdout or plistlib.dumps({}))
 entitlements['com.apple.security.cs.disable-library-validation'] = True
 (root / 'check.entitlements').write_bytes(plistlib.dumps(entitlements))
@@ -73,7 +79,10 @@ print(windows.filter { $0[kCGWindowOwnerPID as String] as? Int == pid && $0[kCGW
 try:
     check(command('status')[0]['running'] is False, 'status works while stopped without launching')
     seen = watch(4)  # the launch and a little after it, sampled every 5 ms
+    launch_started = time.monotonic()
+    launch(app, data, '--headless')
     _, cold = command('script', 'list')
+    cold = (time.monotonic() - launch_started) * 1000
     state, _ = command('status')
     [pid] = pids(data)
     print('INFO cold command, launch included: %.0f ms' % cold)
@@ -96,7 +105,8 @@ try:
         if not pids(data): break
         time.sleep(0.05)
     check(not pids(data), 'SIGTERM stopped the settings writer')
-    command('script', 'list')  # Relaunch with the same disposable library and preferences.
+    launch(app, data, '--headless')
+    command('script', 'list')  # Same disposable library and preferences.
     [restarted_pid] = pids(data)
     check(command('settings', 'get')[0]['speed'] == 150, 'settings survive SIGTERM immediately after CLI success')
     check(onscreen_windows(restarted_pid) == 0, 'settings recovery remains headless')
@@ -104,34 +114,20 @@ try:
     for _ in range(100):
         if not pids(data): break
         time.sleep(0.05)
-    # An unused headless copy quits by itself; --idle-quit shortens the ten minutes for this check. Launched directly,
-    # not through LaunchServices, which is the other way a headless copy starts (the MCP server's tests do this).
+    # An unused headless copy quits by itself; only the authorised hidden launcher starts it.
     seen = watch(4)
-    idle = subprocess.Popen([str(exe), '--headless', '--idle-quit', '2', '--data-directory', str(idle_data)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    launch(app, idle_data, '--headless', '--idle-quit', '2')
     for _ in range(100):
         if (idle_data / 'control.sock').exists(): break
         time.sleep(0.1)
-    check(command('status', directory=idle_data)[0]['headless'] is True, 'a directly launched --headless copy is headless')
+    check(command('status', directory=idle_data)[0]['headless'] is True, 'a hidden --headless copy is headless')
     windows, dock = seen()
-    check(windows == 0 and not dock, 'a directly launched --headless copy never showed a window or Dock tile (saw %d, Dock %s)' % (windows, dock))
-    try: idle.wait(timeout=15)
-    except subprocess.TimeoutExpired: pass
-    check(idle.poll() is not None, 'an unused headless copy quits by itself')
-    if visible:
-        # --agent-screen puts the revealed library on the Prompter XL (else the Agent Screen), never the main monitor.
-        shown = subprocess.Popen([str(exe), '--headless', '--agent-screen', '--data-directory', str(data)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        for _ in range(100):  # status answers {running: false} until this copy's socket is up; it never launches one
-            if 'headless' in command('status')[0]: break
-            time.sleep(0.1)
-        command('script', 'open', created['id'], '--show')
-        state, _ = command('status')
-        check(state['headless'] is False, '--show turns the headless copy into the visible app')
-        check(activation_type(shown.pid) == 'Foreground', 'the revealed app has its Dock tile')
-        time.sleep(1)
-        check(onscreen_windows(shown.pid) >= 1, 'the revealed app shows its library')
-        os.kill(shown.pid, 15)
-    else:
-        print('INFO --show skipped; pass --visible to check it on the Agent Screen')
+    check(windows == 0 and not dock, 'a hidden --headless copy never showed a window or Dock tile (saw %d, Dock %s)' % (windows, dock))
+    for _ in range(150):
+        if not pids(idle_data): break
+        time.sleep(0.1)
+    check(not pids(idle_data), 'an unused headless copy quits by itself')
+
 finally:
     for directory in (data, idle_data):
         for stray in pids(directory):

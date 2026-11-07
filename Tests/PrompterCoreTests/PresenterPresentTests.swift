@@ -58,16 +58,27 @@ final class PresenterPresentTests: XCTestCase {
 
   func testPresenterArrowsMovePassagesAndLeaveEditingAndModifiersAlone() async throws {
     store.selectedID = try await script("Arrows").id
+    store.settings.mode = "Manual"; store.session.startDelay = 0
     controller.present(store: store)
     let shown = try XCTUnwrap(controller.panel)
     func arrow(_ code: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
       NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
         windowNumber: shown.windowNumber, context: nil, characters: "", charactersIgnoringModifiers: "", isARepeat: false, keyCode: code)!
     }
+    shown.makeFirstResponder(shown) // Bare arrows are shortcuts only on the reading surface.
     let first = store.session.tokenIndex
+    XCTAssertTrue(shown.handlePassageKey(arrow(124)))
+    XCTAssertTrue(store.session.isActivelyRunning)
     XCTAssertTrue(shown.handlePassageKey(arrow(124)))
     XCTAssertGreaterThan(store.session.tokenIndex, first)
     XCTAssertTrue(shown.handlePassageKey(arrow(123)))
+    XCTAssertEqual(store.session.tokenIndex, first)
+    XCTAssertTrue(shown.handlePassageKey(arrow(49)))
+    XCTAssertFalse(store.session.isActivelyRunning)
+    XCTAssertTrue(shown.handlePassageKey(arrow(49)))
+    XCTAssertTrue(store.session.isActivelyRunning)
+    XCTAssertTrue(shown.handlePassageKey(arrow(115)))
+    XCTAssertFalse(store.session.isActivelyRunning)
     XCTAssertEqual(store.session.tokenIndex, first)
     XCTAssertFalse(shown.handlePassageKey(arrow(124, modifiers: .command)))
     try XCTUnwrap(draft).begin(session: store.session)
@@ -129,7 +140,7 @@ final class PresenterPresentTests: XCTestCase {
     window.contentView = host
     func settle() async { for _ in 0..<6 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) } }
     await settle()
-    let outline = try XCTUnwrap(Self.outline(in: host), "no sidebar list")
+    let outline = try XCTUnwrap(Self.outline(in: host), "no script list")
     var clickable = 0
     for row in 0..<outline.numberOfRows {
       // What a click does: ask the list, then select.
@@ -147,7 +158,8 @@ final class PresenterPresentTests: XCTestCase {
   }
   private static func outline(in view: NSView) -> NSOutlineView? {
     if let outline = view as? NSOutlineView { return outline }
-    return view.subviews.lazy.compactMap(outline(in:)).first
+    // Folder navigation now has its own native list before the script list.
+    return view.subviews.compactMap(outline(in:)).last
   }
 
   // MARK: Ruled out: these pass on b621f66 and guard the fix.
@@ -216,7 +228,7 @@ final class PresenterPresentTests: XCTestCase {
     XCTAssertTrue(showsPresenter)
     XCTAssertEqual(store.session.activeScriptID, second.id)
     XCTAssertEqual(draft?.recordID, second.id, "the presenter still edits the first script")
-    XCTAssertEqual(panel?.title, "Video Prompter · Second")
+    XCTAssertEqual(panel?.title, "Second")
   }
 }
 

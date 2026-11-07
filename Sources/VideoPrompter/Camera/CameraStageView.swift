@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import AppKit
 
-/// The live picture with its guides, shared by the Camera window and the presenter's video
+/// The live picture with its guides, shared by the Second monitor window and the presenter's video
 /// background. Both take their frames from `SharedCameraSession`, so the device is opened once;
 /// each one has its own preview layer, which is what AVFoundation expects.
 ///
@@ -13,6 +13,11 @@ final class CameraStageView: NSView {
   private let shade = CAShapeLayer()
   /// Internal for the geometry test.
   let guideLayer = CAShapeLayer()
+  /// Dark stripes masked down to the over-bright parts of the picture.
+  private let zebraLayer = CAShapeLayer()
+  /// The false colour picture, laid exactly over the live one.
+  private let falseColourLayer = CALayer()
+  private let zebraMask = CALayer()
   private var guides = CameraGuides()
   private var mirrored = false
   private var uid: String?
@@ -32,15 +37,31 @@ final class CameraStageView: NSView {
     shade.strokeColor = nil
     guideLayer.fillColor = nil
     guideLayer.lineWidth = 1
+    zebraLayer.fillColor = nil
+    zebraLayer.strokeColor = NSColor.black.withAlphaComponent(0.8).cgColor
+    zebraLayer.lineWidth = 3
+    zebraLayer.mask = zebraMask
     layer?.addSublayer(preview)
+    layer?.addSublayer(falseColourLayer)
+    layer?.addSublayer(zebraLayer)
     layer?.addSublayer(shade)
     layer?.addSublayer(guideLayer)
     // Removed by AppKit when the view goes; the picture's shape follows the delivered frame.
     NotificationCenter.default.addObserver(
       self, selector: #selector(pictureSizeChanged), name: .cameraPictureSizeDidChange, object: nil)
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(exposureChanged), name: .cameraExposureDidChange, object: nil)
   }
   required init?(coder: NSCoder) { nil }
   @objc private func pictureSizeChanged() { needsLayout = true }
+  @objc private func exposureChanged() {
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    let frame = SharedCameraSession.shared.exposureFrame
+    zebraMask.contents = guides.zebras ? frame?.zebraMask : nil
+    falseColourLayer.contents = guides.falseColour ? frame?.falseColour : nil
+    CATransaction.commit()
+  }
 
   func apply(uid: String?, guides: CameraGuides, mirrored: Bool) {
     // Before the guard: `select` ignores a camera it already has, and retries one it could not
@@ -52,6 +73,8 @@ final class CameraStageView: NSView {
     self.guides = guides
     self.mirrored = mirrored
     updateAutoOrientation()
+    updateExposure()
+    exposureChanged()
     applyConnection()
     needsLayout = true
   }
@@ -91,7 +114,13 @@ final class CameraStageView: NSView {
     }
     // Sublayers do not inherit the window's scale: at 1x a hairline on a Retina screen blurs.
     let scale = window?.backingScaleFactor ?? 1
-    for shape in [shade, guideLayer] {
+    // The data output is never mirrored; the preview's connection is.
+    for overlay in [zebraMask, falseColourLayer] {
+      Self.place(overlay, on: picture, turnedBy: guides.rotation)
+      if mirrored { overlay.setAffineTransform(overlay.affineTransform().concatenating(CGAffineTransform(scaleX: -1, y: 1))) }
+    }
+    zebraLayer.path = guides.zebras ? CameraOverlay.zebraPath(picture: picture) : nil
+    for shape in [zebraLayer, shade, guideLayer] {
       shape.frame = bounds
       shape.contentsScale = scale
     }
@@ -129,6 +158,7 @@ final class CameraStageView: NSView {
       SharedCameraSession.shared.release()
     }
     updateAutoOrientation()
+    updateExposure()
     if on { applyConnection() }
     logRefreshes(on)
   }
@@ -157,6 +187,12 @@ final class CameraStageView: NSView {
     SharedCameraSession.shared.setAutoOrientation(guides.automaticRotation && holding, for: self) { rotation in
       Task { @MainActor in CameraModel.shared.setRotation(rotation, automatic: true) }
     }
+  }
+
+  private func updateExposure() {
+    var settings = guides.exposure
+    if !holding { settings = CameraExposure.Settings() }
+    SharedCameraSession.shared.setExposure(settings, for: self)
   }
 
   override func viewDidMoveToWindow() {

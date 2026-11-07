@@ -20,9 +20,14 @@ final class ControlServer: @unchecked Sendable {
     var buffer = Data()
     var lines: [Data] = []
     var busy = false
+    var writer: DispatchSourceWrite?
+    var reply: Data?
+    var reservedBytes = 0
+    var sent = 0
     init(_ fd: Int32) { self.fd = fd }
   }
   private var clients: [Int32: Connection] = [:]
+  private var reservedReplyBytes = 0
   init(socketURL: URL, idleTimeout: DispatchTimeInterval = .seconds(30), handler: @escaping Handler) {
     self.socketURL = socketURL; self.idleTimeout = idleTimeout; self.handler = handler
   }
@@ -92,9 +97,7 @@ final class ControlServer: @unchecked Sendable {
       guard clients.count < 8, getpeereid(peer, &uid, &gid) == 0, uid == getuid(),
         setsockopt(peer, SOL_SOCKET, SO_NOSIGPIPE, &yes, socklen_t(MemoryLayout<Int32>.size)) == 0
       else { Darwin.close(peer); continue }
-      guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) & ~O_NONBLOCK) == 0 else { Darwin.close(peer); continue }
-      var timeout = timeval(tv_sec: 1, tv_usec: 0)
-      setsockopt(peer, SOL_SOCKET, SO_SNDTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+      guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) | O_NONBLOCK) == 0 else { Darwin.close(peer); continue }
       let client = Connection(peer)
       let source = DispatchSource.makeReadSource(fileDescriptor: peer, queue: queue)
       let timer = DispatchSource.makeTimerSource(queue: queue)
@@ -103,7 +106,7 @@ final class ControlServer: @unchecked Sendable {
       source.setCancelHandler { Darwin.close(peer) }
       // An in-flight handler is not idleness; its reply re-arms the deadline.
       timer.setEventHandler { [weak self, weak client] in
-        guard let self, let client, self.clients[client.fd] === client, !client.busy else { return }
+        guard let self, let client, self.clients[client.fd] === client, (!client.busy || client.reply != nil) else { return }
         self.close(client)
       }
       arm(client); timer.resume(); source.resume()
@@ -111,13 +114,17 @@ final class ControlServer: @unchecked Sendable {
   }
   private func arm(_ client: Connection) { client.timer?.schedule(deadline: .now() + idleTimeout) }
   private func close(_ client: Connection) {
-    clients.removeValue(forKey: client.fd); client.timer?.cancel(); client.timer = nil; client.source?.cancel(); client.source = nil
+    guard clients[client.fd] === client else { return }
+    // An encoder still running off-queue releases its reservation when it returns.
+    if client.reply != nil { releaseReplyBudget(client) }
+    clients.removeValue(forKey: client.fd); client.writer?.cancel(); client.writer = nil; client.reply = nil; client.timer?.cancel(); client.timer = nil; client.source?.cancel(); client.source = nil
   }
   private func read(_ client: Connection) {
     var bytes = [UInt8](repeating: 0, count: 8192)
     let count = recv(client.fd, &bytes, bytes.count, 0)
+    if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
     guard count > 0 else { close(client); return }
-    arm(client)
+    if client.reply == nil { arm(client) }
     client.buffer.append(contentsOf: bytes.prefix(count))
     while let end = client.buffer.firstIndex(of: 10) {
       let line = client.buffer.prefix(upTo: end)
@@ -144,25 +151,47 @@ final class ControlServer: @unchecked Sendable {
     let requestID = id; let requestedAction = action; let values = params
     Task { [self] in
       let result = if let requestedAction { await handler(requestedAction, values) } else { ControlResult.error("bad_request", "Send an id, action and scalar params as newline-delimited JSON.") }
-      let reply = result.wire(id: requestID)
-      queue.async { [self] in
-        guard clients[client.fd] === client else { return }
-        let sent = reply.withUnsafeBytes { raw -> Bool in
-          let deadline = ContinuousClock.now + .seconds(5)
-          var offset = 0
-          while offset < raw.count {
-            guard ContinuousClock.now < deadline else { return false }
-            let n = send(client.fd, raw.baseAddress!.advanced(by: offset), raw.count - offset, 0)
-            if n < 0 && errno == EINTR { continue }
-            guard n > 0 else { return false }; offset += n
-          }
+      // Encode off the socket queue, reserving shared capacity before allocating escaped JSON.
+      let reply = result.wire(id: requestID) { bytes in
+        queue.sync {
+          guard clients[client.fd] === client, bytes <= ControlProtocol.maxResponseBytes - reservedReplyBytes else { return false }
+          reservedReplyBytes += bytes
+          client.reservedBytes += bytes
           return true
         }
-        guard sent else { close(client); return }
-        client.busy = false; arm(client); process(client)
+      }
+      queue.async { [self] in
+        guard clients[client.fd] === client else { releaseReplyBudget(client); return }
+        client.reply = reply
+        guard !reply.isEmpty else { close(client); return }
+        client.sent = 0
+        client.timer?.schedule(deadline: .now() + .seconds(5))
+        let writer = DispatchSource.makeWriteSource(fileDescriptor: client.fd, queue: queue)
+        writer.setEventHandler { [weak self] in self?.write(client) }
+        client.writer = writer
+        writer.resume()
       }
     }
   }
+  private func releaseReplyBudget(_ client: Connection) {
+    reservedReplyBytes -= client.reservedBytes
+    client.reservedBytes = 0
+  }
+  private func write(_ client: Connection) {
+    guard clients[client.fd] === client, let reply = client.reply else { return }
+    // Nonblocking sends and a bounded chunk keep slow peers off the shared control queue.
+    let count = reply.withUnsafeBytes { raw in
+      send(client.fd, raw.baseAddress!.advanced(by: client.sent), min(262_144, raw.count - client.sent), 0)
+    }
+    if count < 0 && (errno == EAGAIN || errno == EINTR) { return }
+    guard count > 0 else { close(client); return }
+    client.sent += count
+    guard client.sent == reply.count else { return }
+    client.writer?.cancel(); client.writer = nil; client.reply = nil
+    releaseReplyBudget(client)
+    client.busy = false; arm(client); process(client)
+  }
+
 }
 
 struct ControlResult: @unchecked Sendable {
@@ -173,8 +202,56 @@ struct ControlResult: @unchecked Sendable {
     if !candidates.isEmpty { error["candidates"] = candidates }
     return .init(body: ["ok": false, "error": error])
   }
-  func wire(id: String) -> Data {
+  func wire(id: String, maxBytes: Int = ControlProtocol.maxResponseBytes, reserving: (Int) -> Bool = { _ in true }) -> Data {
     var value = body; value["id"] = id
-    return (try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])) + Data([10])
+    // Count escaped JSON before serialisation, so an oversized string is never expanded in memory.
+    if let size = Self.jsonSize(value, budget: maxBytes - 1), size < maxBytes, reserving(size + 1) {
+      var data = try! JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .withoutEscapingSlashes])
+      data.append(10)
+      if data.count <= maxBytes { return data }
+    }
+    let error = Self.error("response_too_large", "Reply exceeds the available 128 MiB response budget. Export the script to a file or retry when other requests finish.")
+    var fallback = error.body; fallback["id"] = id
+    let failure = (try! JSONSerialization.data(withJSONObject: fallback, options: [.sortedKeys])) + Data([10])
+    return failure.count <= maxBytes && reserving(failure.count) ? failure : Data()
   }
+  private static func jsonSize(_ value: Any, budget: Int) -> Int? {
+    guard budget >= 0 else { return nil }
+    var count = 0
+    func add(_ amount: Int) -> Bool {
+      guard amount <= budget - count else { return false }
+      count += amount
+      return true
+    }
+    if let text = value as? String {
+      guard add(2) else { return nil }
+      for scalar in text.unicodeScalars {
+        let bytes: Int
+        switch scalar.value {
+        case 8, 9, 10, 12, 13, 34, 92: bytes = 2
+        case 0...31, 0x2028, 0x2029: bytes = 6
+        default: bytes = scalar.utf8.count
+        }
+        guard add(bytes) else { return nil }
+      }
+    } else if let object = value as? [String: Any] {
+      guard add(2 + max(0, object.count - 1)) else { return nil }
+      for (key, item) in object {
+        guard let keySize = jsonSize(key, budget: budget - count), add(keySize), add(1),
+          let itemSize = jsonSize(item, budget: budget - count), add(itemSize) else { return nil }
+      }
+    } else if let array = value as? [Any] {
+      guard add(2 + max(0, array.count - 1)) else { return nil }
+      for item in array {
+        guard let size = jsonSize(item, budget: budget - count), add(size) else { return nil }
+      }
+    } else if value is NSNull {
+      guard add(4) else { return nil }
+    } else if let number = value as? NSNumber,
+      let bytes = try? JSONSerialization.data(withJSONObject: [number]), add(bytes.count - 2) {
+      // Foundation handles booleans and numeric formatting identically in the final reply.
+    } else { return nil }
+    return count
+  }
+
 }

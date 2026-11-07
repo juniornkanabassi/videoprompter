@@ -998,9 +998,9 @@ final class AppStoreTests: XCTestCase {
   func testTheWelcomeScriptKeepsItsNotesAndStageDirectionsOutOfTracking() {
     let document = PrompterDocument(markdown: WelcomeScript.markdown)
     let spoken = Set(document.spokenTokens.map(\.normalised))
-    XCTAssertFalse(spoken.contains("practice"), "the opening note is a callout")
+    XCTAssertFalse(spoken.contains("popover"), "the opening note is a callout")
     XCTAssertEqual(document.blocks.flatMap(\.stageDirections).map(\.text),
-                   ["Look at the camera, not the screen.", "Smile. You made it to the end."])
+                   ["Look at the camera."])
     XCTAssertTrue(spoken.contains("teleprompter"))
   }
 

@@ -26,10 +26,10 @@ public struct ControlParam: Sendable {
     case "boolean": return ["true", "false", "1", "0"].contains(value)
     case "integer":
       guard let number = Int(value) else { return false }
-      return range.map { $0.contains(Double(number)) } ?? true
+      return range.map { InputValidation.NumberRule($0, fallback: 0).accepts(Double(number)) } ?? true
     case "number":
       guard let number = Double(value), number.isFinite else { return false }
-      return range.map { $0.contains(number) } ?? true
+      return range.map { InputValidation.NumberRule($0, fallback: 0).accepts(number) } ?? true
     default: return true
     }
   }
@@ -58,6 +58,8 @@ public struct ControlCommand: Sendable {
 public enum ControlProtocol {
   public static let bundleID = "com.juniornkanabassi.VidPrompt"
   public static let maxRequestBytes = 65_536
+  // A 20 MiB import can expand sixfold when JSON escapes control characters.
+  public static let maxResponseBytes = 128 * 1024 * 1024
   private static let onOff = ["on", "off"]
   private static let script = ControlParam("script", required: true, positional: true, help: "Script id or exact title")
   private static let requestID = ControlParam("requestId", help: "Retry key: a repeated id returns the first result instead of acting again")
@@ -88,7 +90,7 @@ public enum ControlProtocol {
     .init(action: "present", words: ["present"], summary: "Present a script without taking focus.", example: "videoprompter present 'My Script'", params: [.init("script", positional: true), .init("show", "boolean")]),
     .init(action: "presenter_close", words: ["presenter", "close"], summary: "Close the presenter and pause following.", example: "videoprompter presenter close", params: []),
     .init(action: "pause", words: ["pause"], summary: "Pause the presented script.", example: "videoprompter pause", params: []),
-    .init(action: "resume", words: ["resume"], summary: "Resume the presented script.", example: "videoprompter resume", params: []),
+    .init(action: "resume", words: ["resume"], summary: "Resume the presented script. Automatic scroll honours Start delay (3 seconds by default); state is starting with countdown seconds until running.", example: "videoprompter resume", params: []),
     .init(action: "back_to_start", words: ["back-to-start"], summary: "Reset the reading position.", example: "videoprompter back-to-start", params: []),
     .init(action: "next_passage", words: ["next-passage"], summary: "Move the reading position to the next passage.", example: "videoprompter next-passage", params: [requestID]),
     .init(action: "previous_passage", words: ["previous-passage"], summary: "Move the reading position to the previous passage.", example: "videoprompter previous-passage", params: [requestID]),
@@ -98,21 +100,21 @@ public enum ControlProtocol {
     // Settings
     .init(action: "settings_get", words: ["settings", "get"], summary: "Report every presenter setting that settings set can change.", example: "videoprompter settings get", params: []),
     .init(action: "settings_set", words: ["settings", "set"], summary: "Change presenter settings, as the Settings panel does. Give at least one.", example: "videoprompter settings set --speed 150 --text-size 60 --mirror on", params: [
-      .init("speed", "integer", range: 20...300, help: "Manual speed in words per minute"),
-      .init("textSize", "integer", range: 18...120, help: "Presenter text size in points"),
+      .init("speed", "integer", range: InputValidation.speed.range, help: "Manual speed in words per minute"),
+      .init("textSize", "integer", range: InputValidation.fontSize.range, help: "Presenter text size in points"),
       .init("font", help: "Presenter font; settings get lists the choices"),
       .init("weight", "choice", choices: ["regular", "bold"], help: "Text weight"),
       .init("alignment", "choice", choices: ["left", "centre", "center", "right"], help: "Text alignment"),
       .init("mirror", "choice", choices: onOff, help: "Mirror left to right for teleprompter glass"),
       .init("mirrorVertical", "choice", choices: onOff, help: "Mirror text top to bottom"),
       .init("rotation", "integer", choices: ["0", "180"], help: "Text rotation in degrees"),
-      .init("textWidth", "integer", range: 30...100, help: "Script column width as a percentage of the presenter"),
-      .init("textVisibility", "integer", range: 20...100, help: "Text opacity percentage"),
-      .init("backgroundDarkness", "integer", range: 0...100, help: "Backdrop opacity percentage for the current view; at most 90 over the camera"),
-      .init("readingLine", "integer", range: 10...85, help: "Reading line position as a percentage of the height"),
-      .init("readingLineVisibility", "integer", range: 0...100, help: "Reading line opacity percentage; 0 hides it"),
-      .init("lineSpacing", "integer", range: 0...50, help: "Line spacing percentage"),
-      .init("paragraphSpacing", "integer", range: 0...100, help: "Paragraph spacing percentage"),
+      .init("textWidth", "integer", range: InputValidation.textWidth.percentRange, help: "Script column width as a percentage of the presenter"),
+      .init("textVisibility", "integer", range: InputValidation.textOpacity.percentRange, help: "Text opacity percentage"),
+      .init("backgroundDarkness", "integer", range: InputValidation.backgroundOpacity.percentRange, help: "Backdrop opacity percentage for the current view; at most 90 over the camera"),
+      .init("readingLine", "integer", range: InputValidation.guideFraction.percentRange, help: "Reading line position as a percentage of the height"),
+      .init("readingLineVisibility", "integer", range: InputValidation.guideOpacity.percentRange, help: "Reading line opacity percentage; 0 hides it"),
+      .init("lineSpacing", "integer", range: InputValidation.lineSpacing.percentRange, help: "Line spacing percentage"),
+      .init("paragraphSpacing", "integer", range: InputValidation.paragraphSpacing.percentRange, help: "Paragraph spacing percentage"),
       .init("textColour", help: "Text colour as #RRGGBB"),
       .init("backgroundColour", help: "Background colour as #RRGGBB"),
       .init("stageDirections", "choice", choices: onOff, help: "Show bracketed stage directions"),
@@ -120,7 +122,7 @@ public enum ControlProtocol {
       .init("followRepeats", "choice", choices: onOff, help: "Voice follows you back when you repeat earlier words"),
       .init("language", help: "Spoken language: Mixed, Automatic, English, French or a locale id such as de-DE"),
       .init("microphone", help: "Voice microphone id from microphone list, or none"),
-      .init("microphoneVolume", "integer", range: 25...400, help: "Voice microphone gain percentage")]),
+      .init("microphoneVolume", "integer", range: InputValidation.inputGain.percentRange, help: "Voice microphone gain percentage")]),
     .init(action: "preset_list", words: ["preset", "list"], summary: "List saved settings.", example: "videoprompter preset list", params: []),
     .init(action: "preset_apply", words: ["preset", "apply"], summary: "Apply saved settings by id or exact name.", example: "videoprompter preset apply Studio", params: [.init("preset", required: true, positional: true, help: "Saved settings id or exact name")]),
     .init(action: "preset_save", words: ["preset", "save"], summary: "Save the current settings under a name, once per request id.", example: "videoprompter preset save Studio --request-id studio1", params: [.init("name", required: true, positional: true, help: "Name for these settings"), requestID]),
@@ -137,8 +139,12 @@ public enum ControlProtocol {
       .init("centreTarget", "choice", choices: onOff, help: "Centre target"),
       .init("marker", help: "Frame marker shape such as 9:16, 16:9, 4:5, 1:1, 4:3 or any W:H, or off"),
       .init("colour", help: "Guide colour as #RRGGBB"),
-      .init("visibility", "integer", range: 0...100, help: "Guide opacity percentage; 0 hides them"),
-      .init("shade", "integer", range: 0...100, help: "Darkening outside the frame marker, as a percentage"), requestID]),
+      .init("visibility", "integer", range: InputValidation.guideVisibility.percentRange, help: "Guide opacity percentage; 0 hides them"),
+      .init("shade", "integer", range: InputValidation.shade.percentRange, help: "Darkening outside the frame marker, as a percentage"),
+      .init("zebras", "choice", choices: onOff, help: "Zebra stripes over parts of the picture that are too bright"),
+      .init("zebraLevel", "integer", range: InputValidation.zebraLevel.range, help: "Zebra level in IRE"),
+      .init("zebraRange", "integer", range: InputValidation.zebraRange.range, help: "Zebra range ± IRE around the level; 0 means level and above"),
+      .init("falseColour", "choice", choices: onOff, help: "Colour the picture by brightness band"), requestID]),
     .init(action: "microphone_list", words: ["microphone", "list"], summary: "List microphones for Voice and for recording.", example: "videoprompter microphone list", params: []),
     .init(action: "record_start", words: ["record", "start"], summary: "Start recording the shown camera and microphone; returns a recording id and needs --yes.", example: "videoprompter record start --yes --request-id take1", params: [confirm, requestID]),
     .init(action: "record_stop", words: ["record", "stop"], summary: "Stop recording with its recording id or --force, and report the saved file.", example: "videoprompter record stop --recording <id>", params: [.init("recording", help: "Recording id returned by record start"), .init("force", "boolean", help: "Stop any active recording"), requestID]),
@@ -150,7 +156,7 @@ public enum ControlProtocol {
     .init(action: "ipad", words: ["ipad"], summary: "Drive Video Prompter on an iPad linked by USB-C or paired Wi-Fi, then report its scripts and presenter. With no options it only reports.", example: "videoprompter ipad --present 'My Script' --mode manual --speed 150 --run on", params: [
       .init("present", help: "Open this script on the iPad, by id or exact title from the iPad's own list"),
       .init("mode", "choice", choices: ["voice", "manual"], help: "Tracking mode"),
-      .init("speed", "integer", range: 20...300, help: "Manual speed in words per minute"),
+      .init("speed", "integer", range: InputValidation.speed.range, help: "Manual speed in words per minute"),
       .init("move", "choice", choices: ["start", "next", "previous"], help: "Back to the start, or to the next or previous passage"),
       .init("word", "integer", range: 1...10_000_000, help: "Move the reading position to this word number"),
       .init("run", "choice", choices: onOff, help: "Start or pause reading"),

@@ -3,14 +3,19 @@ import Combine
 import PrompterCore
 import SwiftUI
 
-@MainActor final class PresenterController: NSObject, NSWindowDelegate {
+@MainActor final class PresenterController: NSObject, NSWindowDelegate, ObservableObject {
   static let shared = PresenterController()
   /// Internal so a test can stand in for the panel.
   var panel: PresenterPanel?
   private var screenObserver: NSObjectProtocol?
   private weak var activeSession: SessionStore?
-  private var draft: PresenterDraft?
+  private(set) var draft: PresenterDraft?
   private let camera: CameraModel
+  private let recorder: CameraRecorder
+  @Published var asksToCloseRecording = false
+  private var recordingWindow: NSPanel?
+  private weak var presentationStore: AppStore?
+  private var keepsRecordingOnClose = false
   private var videoObserver: AnyCancellable?
   /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
   private(set) var closesAfterFullScreen = false
@@ -24,8 +29,9 @@ import SwiftUI
   /// screen, which place the panel themselves.
   private let frameDefaults: UserDefaults?
 
-  init(camera: CameraModel = .shared, frameDefaults: UserDefaults? = PresenterFrameMemory.defaultStore()) {
+  init(camera: CameraModel = .shared, recorder: CameraRecorder = .shared, frameDefaults: UserDefaults? = PresenterFrameMemory.defaultStore()) {
     self.camera = camera
+    self.recorder = recorder
     self.frameDefaults = frameDefaults
     super.init()
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
@@ -47,7 +53,10 @@ import SwiftUI
   // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
   // rather than at the main screen's corner. AppKit's own autosave forgot a second screen whose
   // visible frame it had recorded differently, and kept one frame for every data directory.
-  func windowDidMove(_ notification: Notification) { rememberFrame(notification) }
+  func windowDidMove(_ notification: Notification) {
+    if let panel = notification.object as? PresenterPanel, let screen = panel.screen { panel.updateMinimum(for: screen.visibleFrame) }
+    rememberFrame(notification)
+  }
   func windowDidResize(_ notification: Notification) { rememberFrame(notification) }
   private func rememberFrame(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
@@ -73,7 +82,7 @@ import SwiftUI
   private func finishPendingClose() {
     guard closesAfterFullScreen else { return }
     closesAfterFullScreen = false
-    close()
+    if keepsRecordingOnClose { closeWithoutRecordingPrompt() } else { close() }
   }
   func windowDidFailToExitFullScreen(_ window: NSWindow) {
     closesAfterFullScreen = false
@@ -92,8 +101,15 @@ import SwiftUI
 
   /// Pins the selected passage over the full camera picture. From the library editor this opens
   /// the presenter first; reading pauses, since the script itself is out of view.
+  var hasSelectedText: Bool { ReferenceMonitor.focusedSelection() != nil }
+
   func monitorSelection(store: AppStore, selection: ReferenceMonitor.Selection? = ReferenceMonitor.focusedSelection()) {
-    guard let selection, !isEditing else { return }
+    guard !isEditing else { return }
+    guard let selection else {
+      NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+        userInfo: [.announcement: "Select a passage first, then choose Pin Selected Text over Camera.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      return
+    }
     // The script the words belong to is presented first, so Back to script returns to it: a
     // camera-only presenter has none, and a library selection may be from another script.
     let otherScript = !selection.inPresenter && store.selected?.id != activeSession?.activeScriptID
@@ -107,7 +123,7 @@ import SwiftUI
   }
   /// The Prompter menu's Start or Pause. Nothing starts while the script is out of sight.
   func toggleReading(store: AppStore) {
-    if store.session.isActivelyRunning { store.session.pause() } else if canStartReading { store.session.play() }
+    if store.session.isActivelyRunning || store.session.isCountingDown { store.session.pause() } else if canStartReading { store.session.startReading() }
   }
   /// The script is on screen to be read: the same test that enables the bar's Start button.
   var canStartReading: Bool {
@@ -121,6 +137,7 @@ import SwiftUI
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     if let draft, draft.isEditing { draft.requestClose(); return false }
+    if recorder.isRecording || recorder.isBusy { asksToCloseRecording = true; return false }
     // The red button or Cmd-W in full screen: leave the Space first, then close.
     if isFullScreen { closeNow(); return false }
     activeSession?.pause()
@@ -140,6 +157,14 @@ import SwiftUI
     action(session)
   }
 
+  /// Cancels termination until the draft has been saved or explicitly discarded.
+  func prepareToQuit(then quit: @escaping () -> Void) -> Bool {
+    guard let draft, draft.isEditing, draft.hasEdits || draft.isSaving else { return true }
+    draft.requestClose(then: quit)
+    panel?.makeKeyAndOrderFront(nil)
+    return false
+  }
+
   var isEditing: Bool { draft?.isEditing == true }
   /// True while the presenter shows the camera with no script in it.
   private(set) var isShowingWithoutScript = false
@@ -155,6 +180,7 @@ import SwiftUI
   /// The camera alone, as a monitor for recording without a script. Presenting a script later adds
   /// it over the same picture; the View menu adds the camera to a script the other way round.
   func presentCamera(store: AppStore) {
+    presentationStore = store
     guard draft?.isEditing != true else { panel?.makeKeyAndOrderFront(nil); return }
     closesAfterFullScreen = false
     endMonitor()
@@ -174,17 +200,20 @@ import SwiftUI
     isShowingWithoutScript = true
     cameraOnlyForWantOfScript = true
     panel.onPassageKey = { _ in false }
-    panel.title = "Video Prompter · Camera"
+    panel.title = "Camera view"
     panel.settle()
     let draft = PresenterDraft()
     self.draft = draft
-    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: false))
+    let hosting = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: false, camera: camera, recorder: recorder))
+    hosting.sizingOptions = []
+    panel.contentView = hosting
     recoverVisibleFrame(panel)
     panel.makeKeyAndOrderFront(nil)
-    NSApp.activate(ignoringOtherApps: true)
+    NSApp.activateUnlessAgentScreen()
   }
 
   func present(store: AppStore, on screen: NSScreen? = nil, activate: Bool = true) {
+    presentationStore = store
     guard draft?.isEditing != true else {
       draft?.errorMessage = "Finish or cancel the open edit before presenting another script."
       if activate { panel?.makeKeyAndOrderFront(nil) } else { panel?.orderFrontRegardless() }
@@ -209,32 +238,43 @@ import SwiftUI
     activeSession = store.session
     panel.onPassageKey = { [weak self] direction in
       guard let self, !self.isEditing, self.camera.displayMode != .videoOnly else { return false }
-      self.moveReading { if direction == 123 { $0.previousPassage() } else { $0.nextPassage() } }
+      self.moveReading { session in
+        switch direction {
+        case 49: session.toggle()
+        case 115: session.restart()
+        case 123, 116: session.previousPassage()
+        default:
+          if session.isActivelyRunning { session.nextPassage() } else { session.startReading() }
+        }
+      }
       return true
     }
-    panel.title = "Video Prompter · \(script.metadata.title)"
+    panel.title = script.metadata.title
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
-      if activate && !CommandLine.arguments.contains("--agent-screen") { panel.makeKey(); NSApp.activate(ignoringOtherApps: true) }
+      if activate && !AgentMode.isOn { panel.makeKey(); NSApp.activateUnlessAgentScreen() }
       return
     }
     let draft = PresenterDraft(record: store.session.activeRecord ?? script)
     self.draft = draft
-    panel.contentView = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: true))
-    let targetScreen = screen ?? (CommandLine.arguments.contains("--agent-screen") ? NSScreen.agentScreen : nil)
+    let hosting = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: draft, hasScript: true, camera: camera, recorder: recorder))
+    hosting.sizingOptions = []
+    panel.contentView = hosting
+    panel.makeFirstResponder(panel)
+    let targetScreen = screen ?? (AgentMode.isOn ? NSScreen.agentScreen : nil)
     if let area = targetScreen?.visibleFrame, !isFullScreen {
       panel.setFrame(area.centred(NSSize(width: min(760, area.width), height: min(520, area.height))), display: true)
     }
     recoverVisibleFrame(panel)
     if !activate {
       panel.orderFrontRegardless()
-    } else if screen != nil || CommandLine.arguments.contains("--agent-screen") {
+    } else if screen != nil || AgentMode.isOn {
       panel.orderFrontRegardless()
       panel.makeKey()
     } else {
       panel.makeKeyAndOrderFront(nil)
-      NSApp.activate(ignoringOtherApps: true)
+      NSApp.activateUnlessAgentScreen()
     }
   }
   func close() {
@@ -242,9 +282,50 @@ import SwiftUI
     draft.requestClose()
   }
   func closeNow() {
+    if recorder.isRecording || recorder.isBusy { asksToCloseRecording = true; return }
+    closeWithoutRecordingPrompt()
+  }
+  func stopAndClose() {
+    Task {
+      let previousError = recorder.errorMessage
+      await recorder.stop()
+      if recorder.errorMessage == previousError { showRecordingStatus(); closeNow() }
+    }
+  }
+  func keepRecordingAndClose() {
+    keepsRecordingOnClose = true
+    showRecordingStatus()
+    closeWithoutRecordingPrompt()
+  }
+  func windowDidMiniaturize(_ notification: Notification) {
+    if recorder.isRecording || recorder.isBusy { showRecordingStatus() }
+  }
+  func preserveRecordingStatus() {
+    if recorder.isRecording || recorder.isBusy { showRecordingStatus() }
+  }
+  func observeInterfaceSettings(_ store: AppStore) { presentationStore = store }
+
+  private func showRecordingStatus() {
+    if recordingWindow == nil {
+      let window = NSPanel(contentRect: NSRect(x: 160, y: 160, width: 640, height: 400),
+        styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
+      window.title = "Camera Recording"; window.level = .floating
+      window.isReleasedWhenClosed = false; window.hidesOnDeactivate = false
+      window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+      if let store = presentationStore {
+        window.contentView = NSHostingView(rootView: ScaledRecordingStatus(store: store, recorder: recorder, camera: camera) { [weak self] in self?.recordingWindow?.orderOut(nil) })
+      } else {
+        window.contentView = NSHostingView(rootView: RecordingStatusPanel(recorder: recorder, camera: camera) { [weak self] in self?.recordingWindow?.orderOut(nil) })
+      }
+      recordingWindow = window
+    }
+    recordingWindow?.orderFrontRegardless()
+  }
+  private func closeWithoutRecordingPrompt() {
     activeSession?.pause()
     // The flags go with the panel, so a present during the full-screen exit still rebuilds it.
     if isFullScreen { closesAfterFullScreen = true; panel?.toggleFullScreen(nil); return }
+    keepsRecordingOnClose = false
     resetTransientViews()
     panel?.orderOut(nil)
     // The camera is already let go: the stage view stops holding it when `orderOut` clears the
@@ -256,7 +337,7 @@ import SwiftUI
   /// Resize the presenter to the shape of the feed as it is shown — a feed turned 90° gives a
   /// vertical window — as large as the screen it is on allows.
   static func matchedCameraFrame(picture: CGSize, rotation: CameraRotation, in visibleFrame: NSRect) -> NSRect {
-    rotation.fittedRect(aspect: picture, in: visibleFrame)
+    PresenterFrameMemory.clamp(rotation.fittedRect(aspect: picture, in: visibleFrame), into: visibleFrame)
   }
   func matchCameraSize() {
     guard let panel, isWindowedOnScreen,
@@ -275,7 +356,12 @@ import SwiftUI
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { if let panel = self?.panel { self?.recoverVisibleFrame(panel) } }
+      MainActor.assumeIsolated {
+        if let panel = self?.panel {
+          if let screen = panel.screen { panel.updateMinimum(for: screen.visibleFrame) }
+          self?.recoverVisibleFrame(panel)
+        }
+      }
     }
     return value
   }
@@ -330,7 +416,7 @@ enum PresenterFrameMemory {
   static let key = "presenterFrame"
 
   @MainActor static func defaultStore() -> UserDefaults? {
-    guard NSClassFromString("XCTestCase") == nil, !CommandLine.arguments.contains("--agent-screen") else { return nil }
+    guard NSClassFromString("XCTestCase") == nil, !AgentMode.isOn else { return nil }
     return AppStore.preferences()
   }
 
@@ -360,14 +446,20 @@ enum PresenterFrameMemory {
     guard let saved = defaults?.dictionary(forKey: key), let text = saved["offset"] as? String,
       let screen = display(for: saved, in: screens) else { return nil }
     let offset = NSRectFromString(text)
-    guard offset.width >= 100, offset.height >= 100 else { return nil }
+    guard [offset.origin.x, offset.origin.y, offset.width, offset.height].allSatisfy({ $0.isFinite }),
+      offset.width >= 100, offset.height >= 100 else { return nil }
     return clamp(offset.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY), into: screen.visibleFrame)
   }
 
+  static func minimumSize(in area: NSRect) -> NSSize {
+    NSSize(width: min(area.width, 720), height: min(area.height, 520))
+  }
+
   static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
-    let size = NSSize(width: min(frame.width, area.width), height: min(frame.height, area.height))
-    let x = min(max(frame.minX, area.minX), area.maxX - size.width)
-    let y = min(max(frame.minY, area.minY), area.maxY - size.height)
+    let minimum = minimumSize(in: area)
+    let size = NSSize(width: min(area.width, max(minimum.width, frame.width)), height: min(area.height, max(minimum.height, frame.height)))
+    let x = min(max(frame.minX - max(0, size.width - frame.width) / 2, area.minX), area.maxX - size.width)
+    let y = min(max(frame.minY - max(0, size.height - frame.height) / 2, area.minY), area.maxY - size.height)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
   }
 }
@@ -377,14 +469,32 @@ enum PresenterFrameMemory {
 /// only for a full-screen Space of its own, and every way in comes through `toggleFullScreen`:
 /// Prompter > Presenter Full Screen, View > Enter Full Screen (Ctrl-Cmd-F) and the green button.
 class PresenterPanel: NSPanel {
+  override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+    var frame = frameRect
+    if let screen = NSScreen.screens.max(by: { $0.visibleFrame.intersection(frame).area < $1.visibleFrame.intersection(frame).area }) {
+      updateMinimum(for: screen.visibleFrame)
+    }
+    frame.size.width = max(minSize.width, frame.width)
+    frame.size.height = max(minSize.height, frame.height)
+    super.setFrame(frame, display: flag)
+  }
+  func updateMinimum(for area: NSRect) { minSize = PresenterFrameMemory.minimumSize(in: area) }
   var onPassageKey: ((UInt16) -> Bool)?
-  /// Only the key presenter receives bare arrows; editing retains native cursor movement.
+  /// The key presenter owns reading commands unless a text field or script is being edited.
   func handlePassageKey(_ event: NSEvent) -> Bool {
-    guard event.type == .keyDown, [123, 124].contains(event.keyCode),
+    guard event.type == .keyDown, [123, 124, 116, 121, 115, 49].contains(event.keyCode),
       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
-      !(firstResponder is NSTextView && (firstResponder as? NSTextView)?.isEditable == true)
+      event.windowNumber == windowNumber
     else { return false }
+    if let text = firstResponder as? NSTextView, text.isEditable { return false }
+    if let field = firstResponder as? NSTextField, field.isEditable { return false }
     return onPassageKey?(event.keyCode) == true
+  }
+  override func sendEvent(_ event: NSEvent) {
+    if event.type == .keyDown || event.type == .leftMouseDown {
+      NotificationCenter.default.post(name: .init("VideoPrompter.presenterInteraction"), object: self)
+    }
+    super.sendEvent(event)
   }
   override func keyDown(with event: NSEvent) {
     if !handlePassageKey(event) { super.keyDown(with: event) }
@@ -404,7 +514,7 @@ class PresenterPanel: NSPanel {
     backgroundColor = .clear
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
-    minSize = NSSize(width: 360, height: 220)
+    minSize = PresenterFrameMemory.minimumSize(in: (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 720, height: 520))
     settle()
   }
   static func collectionBehavior(fullScreen: Bool) -> NSWindow.CollectionBehavior {
@@ -465,6 +575,7 @@ class PresenterPanel: NSPanel {
   @Published var noticeMessage: String?
   private weak var session: SessionStore?
   private var resumeAfterEdit = false
+  private var closeAction: (() -> Void)?
   private var originalMarkdown: String
   var hasEdits: Bool { markdown != originalMarkdown }
 
@@ -480,7 +591,7 @@ class PresenterPanel: NSPanel {
     originalMarkdown = record.markdown
   }
   func begin(session: SessionStore) {
-    guard let record = session.activeRecord else { return }
+    guard !isSaving, let record = session.activeRecord else { return }
     recordID = record.id
     expectedFingerprint = record.metadata.contentFingerprint
     expectedRevision = record.metadata.revision
@@ -495,8 +606,13 @@ class PresenterPanel: NSPanel {
   }
   /// Leaves editing; also how a save that went through finishes.
   func cancel(resuming: Bool = true) {
+    guard !isSaving else { return }
+    finishEditing(resuming: resuming)
+  }
+  private func finishEditing(resuming: Bool = true) {
     isEditing = false
     closeRequested = false
+    closeAction = nil
     errorMessage = nil
     if resuming { resumeTracking() } else { resumeAfterEdit = false }
   }
@@ -506,43 +622,70 @@ class PresenterPanel: NSPanel {
     resumeAfterEdit = false
     session?.play()
   }
-  func requestClose() {
+  func requestClose(then action: @escaping () -> Void = { PresenterController.shared.closeNow() }) {
     guard !isSaving else {
       errorMessage = "Wait for the save to finish before closing the presenter."
       return
     }
     discardCloses = true
+    closeAction = action
     closeRequested = true
   }
   /// Escape used to throw typed edits away without asking. Typing goes through the same
   /// confirmation the close button uses; an untouched draft still cancels straight away.
   func requestCancel() {
+    guard !isSaving else { return }
     guard hasEdits else { cancel(); return }
     discardCloses = false
+    closeAction = nil
     closeRequested = true
   }
-  func confirm(store: AppStore) async {
+  func keepEditing() {
+    closeRequested = false
+    closeAction = nil
+  }
+  func discardAndClose() {
+    guard !isSaving else { return }
+    let action = closeAction
+    cancel(resuming: !discardCloses)
+    action?()
+  }
+  func saveAndClose(store: AppStore) async {
+    let action = closeAction
+    await confirm(store: store, resuming: !discardCloses)
+    // A failed save or typing added during the save must keep the app open.
+    if !isEditing { action?() }
+  }
+  func confirm(store: AppStore, resuming: Bool = true) async {
+    guard !isSaving else { return }
+    let submitted = markdown
     isSaving = true
     defer { isSaving = false }
     do {
       try await store.savePresentedMarkdown(
-        markdown, for: recordID, expectedFingerprint: expectedFingerprint,
+        submitted, for: recordID, expectedFingerprint: expectedFingerprint,
         expectedRevision: expectedRevision)
       if let saved = store.scripts.first(where: { $0.id == recordID }) {
         expectedFingerprint = saved.metadata.contentFingerprint
         expectedRevision = saved.metadata.revision
       }
-      cancel()
+      originalMarkdown = submitted
+      if markdown == submitted { finishEditing(resuming: resuming) }
+      let title = store.scripts.first(where: { $0.id == recordID })?.metadata.title ?? "script"
+      NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+        userInfo: [.announcement: "Changes saved to \(title)", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
     } catch {
       errorMessage = "The script changed or could not be saved. Your presenter draft is still open. \(error)"
     }
   }
   func saveAsCopy(store: AppStore) async {
+    guard !isSaving else { return }
+    let submitted = markdown
     isSaving = true
     defer { isSaving = false }
     do {
-      try await store.savePresentedDraftAsCopy(markdown, for: recordID)
-      cancel()
+      try await store.savePresentedDraftAsCopy(submitted, for: recordID)
+      if markdown == submitted { finishEditing() }
       noticeMessage = "Draft saved as a separate script. The presenter remains on the original script."
     } catch {
       errorMessage = "The draft could not be saved as a separate script. \(error)"
@@ -554,393 +697,13 @@ class PresenterPanel: NSPanel {
   }
 }
 
-struct PresenterView: View {
+/// The status window observes the same accommodation even after the presenter is closed.
+private struct ScaledRecordingStatus: View {
   @ObservedObject var store: AppStore
-  let session: SessionStore
-  @StateObject private var presentation: PresenterSessionState
-  @ObservedObject var draft: PresenterDraft
-  /// False for the camera on its own; the session may still hold an earlier script, never shown.
-  var hasScript = true
-  @ObservedObject private var camera: CameraModel
-  @ObservedObject private var monitor: ReferenceMonitor
-  private let startsCamera: Bool
-
-  init(store: AppStore, session: SessionStore, draft: PresenterDraft, hasScript: Bool = true,
-       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true) {
-    self.store = store
-    self.session = session
-    self.draft = draft
-    self.hasScript = hasScript
-    self.camera = camera
-    self.monitor = monitor
-    self.startsCamera = startsCamera
-    _presentation = StateObject(wrappedValue: PresenterSessionState(session: session))
-  }
-  @State private var editorNotice: String?
-  @State private var showsCameraSettings = false
-  @State private var showsGuideSettings = false
-  /// The picker's fixed slot: a long camera name truncates instead of widening the bar.
-  static let cameraPickerWidth: CGFloat = 120
-  /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
-  private var showsScript: Bool { hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
+  @ObservedObject var recorder: CameraRecorder
+  @ObservedObject var camera: CameraModel
+  var dismiss: () -> Void
   var body: some View {
-    GeometryReader { geometry in
-      let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
-      ZStack(alignment: .top) {
-        if camera.presentsWithVideo {
-          // The live picture is the bottom layer only. The background colour above it is the
-          // script's backdrop, so colour, opacity, guide line, mirror, rotation and in-place
-          // editing all keep working exactly as they do without video.
-          CameraPreview(model: camera)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .ignoresSafeArea()
-            .task { if startsCamera { camera.start() } }
-        }
-        // Video only: the camera stage and its own guides, with no backdrop, script or reading guide.
-        if showsScript {
-        Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
-          .opacity(store.settings.backdropOpacity(withVideo: camera.presentsWithVideo))
-          .ignoresSafeArea()
-        Group {
-          if draft.isEditing {
-            PresenterEditorView(session: session, draft: draft, settings: store.settings, sideInset: sideInset) {
-              editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-            }
-          } else {
-            PresenterScriptView(session: session, settings: store.settings, sideInset: sideInset)
-          }
-        }
-        .scaleEffect(
-          x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
-        ).rotationEffect(.degrees(Double(store.settings.rotation)))
-        .clipped()
-        GuideLine(settings: store.settings).offset(
-          y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
-        }
-        if !hasScript, camera.displayMode != .videoOnly {
-          Text("No script yet. Choose one in the library and press Present to add it here.")
-            .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
-            .padding(16).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Space.md))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        if let passage = monitor.passage, !showsScript {
-          ReferenceMonitorCaption(passage: passage, fontName: store.settings.fontName) {
-            PresenterController.shared.endMonitor()
-          }
-          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-          .padding(.bottom, 8)
-          // Read through the same glass as the script.
-          .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
-          .rotationEffect(.degrees(Double(store.settings.rotation)))
-        }
-      }
-    }.background(Color.clear).onChange(of: store.settings) { _, value in
-      session.updateSettings(value)
-    }
-    .onChange(of: camera.displayMode) { _, mode in monitor.displayModeDidChange(mode) }
-    .safeAreaInset(edge: .top, spacing: 0) {
-      ZStack {
-        RoundedRectangle(cornerRadius: 2).frame(width: 24, height: 4)
-          .foregroundStyle(.primary)
-        WindowDragHandle { window in
-          guard store.settings.presenterSnappingEnabled else { return }
-          PresenterController.shared.snapAfterDrag(window)
-        }
-      }
-      .frame(width: 72, height: 24)
-      .background(.ultraThinMaterial, in: Capsule())
-      .padding(.top, 4)
-      .accessibilityLabel("Drag presenter window")
-      .accessibilityHint("Drag to move the presenter window")
-      .help("Drag to move the presenter")
-      .allowsHitTesting(!draft.isEditing)
-      .accessibilityHidden(draft.isEditing)
-      .uiZoom(store.uiZoom)
-      .fixedSize()
-      .frame(maxWidth: .infinity)
-    }
-    // Both notices and controls reserve their actual wrapped height for reading and editing.
-    .safeAreaInset(edge: .bottom, spacing: 0) {
-      VStack(spacing: 0) {
-        if hasBottomNotice {
-          bottomNotice.padding(.horizontal, Space.md).padding(.top, Space.sm)
-        }
-        WrapLayout(spacing: 8) {
-          Label(draft.isEditing ? "Editing" : session.isActivelyRunning ? (session.isManual ? "Scrolling" : "Listening") : "Paused",
-                systemImage: draft.isEditing ? "pencil" : session.isActivelyRunning ? (session.isManual ? "text.line.first.and.arrowtriangle.forward" : "mic.fill") : "pause.circle")
-            .font(.caption.weight(.semibold))
-            .frame(width: 88)
-            .foregroundStyle(Color.primary)
-            .padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
-            .background((draft.isEditing ? Color.orange : session.isActivelyRunning ? Color.accentColor : Color.secondary).opacity(0.14), in: Capsule())
-            .help(draft.isEditing ? "Editing the script. Finish with ⌘Return, or cancel." : session.isActivelyRunning ? "The script is following you" : "Press Start to begin or continue reading")
-          // Disabled, not hidden, while editing: the capsule keeps its shape and VoiceOver reads them as dimmed.
-          Group {
-            CapsuleButton(session.isActivelyRunning ? "Pause" : "Start",
-                          systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill", showsTitle: true, width: 66, help: "Start or pause following at the current position", action: session.toggle)
-              .buttonStyle(.borderedProminent)
-            CapsuleButton("Back to start", systemImage: "arrow.counterclockwise", help: "Return to the first word of the script", action: session.restart)
-          }.disabled(!showsScript || draft.isEditing)
-          // The View menu's primary action shows or hides the camera; its arrow has every view.
-          Menu {
-            Picker("What to show", selection: $camera.displayMode) {
-              ForEach(PresenterDisplayMode.allCases) { mode in
-                Label(mode.label, systemImage: mode.systemImage).tag(mode)
-              }
-            }.pickerStyle(.inline)
-            Divider()
-            Button("Monitor Selection with Camera") { PresenterController.shared.monitorSelection(store: store) }
-              .disabled(draft.isEditing)
-              .help("Drag across a passage first; it is pinned over the camera picture")
-            Button("Camera Settings…") { showsCameraSettings = true }
-              .disabled(!camera.presentsWithVideo)
-          } label: {
-            // A titled label: an icon-only one dropped the menu from the accessibility tree, and a
-            // Text image drew as a blank square in the bordered bar.
-            Label("View", systemImage: camera.displayMode.systemImage).labelStyle(.titleAndIcon)
-          } primaryAction: {
-            // One click still turns the camera on or off, as the old camera button did.
-            PresenterController.shared.toggleVideo()
-          }
-          .menuStyle(.button).menuIndicator(.visible).fixedSize().frame(width: 88)
-          .accessibilityLabel("Presenter view")
-          .accessibilityValue(camera.displayMode.label)
-          .help("Click to show or hide the camera; the arrow has every view, Camera Settings and the monitor. \(camera.displayMode.label) now")
-          .background {
-            Color.clear.popover(isPresented: $showsCameraSettings, arrowEdge: .top) {
-              CameraSettingsPanel(model: camera, zoom: store.uiZoom).frame(width: 320).uiZoom(store.uiZoom)
-            }
-          }
-          // Always in the bar at a fixed width, dimmed while the camera is off, so the bar keeps
-          // the same width with the camera on or off.
-          Group {
-            CameraPicker(model: camera, zoom: store.uiZoom).frame(width: Self.cameraPickerWidth)
-            CapsuleButton("Framing guides", systemImage: "squareshape.split.3x3",
-                          help: camera.presentsWithVideo ? "Choose composition lines and an output frame marker" : "Show the camera with View to use framing guides") {
-              showsGuideSettings = true
-            }
-            .popover(isPresented: $showsGuideSettings, arrowEdge: .top) {
-              CameraGuideSettings(model: camera).frame(width: 300).padding().uiZoom(store.uiZoom)
-            }
-          }.disabled(!camera.presentsWithVideo)
-          CapsuleButton(draft.isEditing ? "Finish editing" : "Edit script",
-                        systemImage: draft.isEditing ? "checkmark" : "pencil",
-                        shortcut: draft.isEditing ? KeyboardShortcut(.return, modifiers: .command) : nil, help: "Edit the script here; Finish editing saves your changes") {
-            if draft.isEditing { Task { await draft.confirm(store: store) } } else { draft.begin(session: session) }
-          }.disabled(draft.isSaving || !showsScript)
-          if draft.isEditing {
-            CapsuleButton("Cancel editing", systemImage: "xmark", shortcut: .cancelAction, help: "Leave editing; confirm before discarding an unsaved draft") { draft.requestCancel() }
-              .disabled(draft.isSaving)
-          } else {
-            CapsuleButton("Close presenter", systemImage: "xmark", help: "Close the presenter and pause following") { PresenterController.shared.close() }
-          }
-        }
-        .buttonStyle(.bordered).padding(8)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Space.xxl))
-        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
-      }.frame(maxWidth: .infinity, alignment: .center)
-        .uiZoom(store.uiZoom)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity)
-    }
-    .confirmationDialog("Discard this presenter draft?", isPresented: $draft.closeRequested) {
-      Button(draft.discardCloses ? "Discard Draft and Close" : "Discard Draft", role: .destructive) {
-        draft.cancel(resuming: !draft.discardCloses)
-        if draft.discardCloses { PresenterController.shared.closeNow() }
-      }
-      Button("Keep Editing", role: .cancel) {}
-    } message: {
-      Text("The draft has not been saved to the script library.")
-    }
-    .onChange(of: draft.markdown) { editorNotice = nil }
-    .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
-  }
-
-  private var bottomNotice: some View {
-    VStack(spacing: Space.sm) {
-      if draft.isEditing, draft.hasExternalChange(in: store) {
-        Text("This script changed outside Video Prompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
-          .foregroundStyle(.orange)
-      }
-      if let error = draft.errorMessage {
-        Text(error).foregroundStyle(.red)
-        Button("Save as Separate Script") { Task { await draft.saveAsCopy(store: store) } }
-          .disabled(draft.isSaving)
-      }
-      if let notice = editorNotice ?? session.anchorNotice ?? draft.noticeMessage { Text(notice) }
-    }
-    .font(.caption).multilineTextAlignment(.center)
-    .fixedSize(horizontal: false, vertical: true)
-    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: Space.md))
-    .frame(maxWidth: 560)
-  }
-  private var hasBottomNotice: Bool {
-    editorNotice != nil || session.anchorNotice != nil || draft.noticeMessage != nil
-      || draft.errorMessage != nil || (draft.isEditing && draft.hasExternalChange(in: store))
-  }
-
-}
-
-/// Editing still observes reading position, independently of the camera and presenter controls.
-struct PresenterEditorView: View {
-  @ObservedObject var session: SessionStore
-  @ObservedObject var draft: PresenterDraft
-  let settings: PrompterSettings
-  let sideInset: CGFloat
-  var onUnsupportedEdit: () -> Void
-
-  var body: some View {
-    FormattedMarkdownEditor(
-      markdown: $draft.markdown, fontName: settings.fontName, fontSize: settings.fontSize,
-      onUnsupportedEdit: onUnsupportedEdit, focusesOnAppear: true,
-      typography: presenterTypography(settings, sideInset: sideInset),
-      anchorSourceOffset: session.activeToken?.sourceRange.location,
-      guideFraction: settings.guideFraction,
-      verticalMirror: settings.verticalMirror != (settings.rotation == 180),
-      readThroughSourceOffset: session.lastConfirmedTokenIndex.flatMap { index in
-        let tokens = session.document.spokenTokens
-        return tokens.indices.contains(index) ? tokens[index].sourceRange.upperBound : nil
-      })
-  }
-  private func presenterTypography(_ settings: PrompterSettings, sideInset: CGFloat) -> EditorTypography {
-    EditorTypography(
-      textColor: (NSColor(hex: settings.textColorHex) ?? .white)
-        .withAlphaComponent(settings.textOpacity),
-      lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
-      paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
-      horizontalInset: sideInset,
-      alignment: NSTextAlignment(setting: settings.alignment))
-  }
-}
-
-/// Word changes invalidate only the text representable, not the camera and presenter controls.
-private struct PresenterScriptView: View {
-  @ObservedObject var session: SessionStore
-  let settings: PrompterSettings
-  let sideInset: CGFloat
-
-  var body: some View {
-    ScriptTextView(
-      document: session.document, tokenIndex: session.tokenIndex,
-      lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
-      isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
-      guideFraction: settings.guideFraction,
-      verticalMirror: settings.verticalMirror != (settings.rotation == 180),
-      fontName: settings.fontName,
-      fontSize: settings.fontSize, textOpacity: settings.textOpacity,
-      fontWeight: settings.fontWeight, textColorHex: settings.textColorHex,
-      lineSpacing: settings.lineSpacing, paragraphSpacing: settings.paragraphSpacing,
-      horizontalMargin: sideInset, alignment: settings.alignment,
-      showCues: settings.showCues, highlightActiveWord: settings.highlightActiveWord,
-      manualPosition: session.isManual ? { session.manualPosition() }
-        : ScriptTextView.Coordinator.reducesMotion() ? nil : { session.voicePosition() },
-      onSeek: session.seek, onUserScroll: session.seekFromUserScroll
-    )
-  }
-}
-
-/// Core actions show their titles; secondary actions keep their tooltips and VoiceOver labels.
-private struct CapsuleButton: View {
-  let title: String
-  let systemImage: String
-  var shortcut: KeyboardShortcut?
-  var showsTitle = false
-  var width: CGFloat?
-  var help: String?
-  let action: () -> Void
-  init(_ title: String, systemImage: String, shortcut: KeyboardShortcut? = nil, showsTitle: Bool = false, width: CGFloat? = nil, help: String? = nil, action: @escaping () -> Void) {
-    self.title = title; self.systemImage = systemImage; self.shortcut = shortcut; self.showsTitle = showsTitle; self.width = width; self.help = help; self.action = action
-  }
-  var body: some View {
-    Button(action: action) {
-      if showsTitle { Label(title, systemImage: systemImage).labelStyle(.titleAndIcon).frame(width: width) }
-      else { Label(title, systemImage: systemImage).labelStyle(.iconOnly) }
-    }
-      .keyboardShortcut(shortcut)
-      .accessibilityLabel(title)
-      .help(help ?? title)
-  }
-}
-
-/// The reading line across the presenter, drawn over the video too.
-struct GuideLine: View {
-  let settings: PrompterSettings
-  var body: some View {
-    Rectangle().fill(.cyan.opacity(settings.guideOpacity)).frame(height: 2).allowsHitTesting(false)
-  }
-}
-
-private struct WindowDragHandle: NSViewRepresentable {
-  let onDragEnded: (NSWindow) -> Void
-  func makeNSView(context: Context) -> NSView {
-    let view = DragView()
-    view.onDragEnded = onDragEnded
-    return view
-  }
-  func updateNSView(_ view: NSView, context: Context) {}
-  private final class DragView: NSView {
-    var onDragEnded: ((NSWindow) -> Void)?
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) {
-      guard let window else { return }
-      window.performDrag(with: event)
-      onDragEnded?(window)
-    }
-  }
-}
-
-
-extension NSColor {
-  /// "#RRGGBB", as the settings store colours.
-  convenience init?(hex: String) {
-    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-    guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
-    self.init(red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255, blue: CGFloat(number & 255) / 255, alpha: 1)
-  }
-  var hex: String {
-    let c = usingColorSpace(.deviceRGB) ?? self
-    return String(format: "#%02X%02X%02X", Int(c.redComponent * 255), Int(c.greenComponent * 255), Int(c.blueComponent * 255))
-  }
-}
-
-extension NSTextAlignment {
-  /// The settings' "Left", "Center" or "Right".
-  init(setting: String) { self = setting == "Right" ? .right : setting == "Center" ? .center : .left }
-}
-
-/// An HStack that wraps onto further centred rows when its content is wider than it is offered.
-struct WrapLayout: Layout {
-  var spacing: CGFloat = 8
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let rows = rows(for: proposal.width ?? .infinity, subviews: subviews)
-    let width = rows.map(\.width).max() ?? 0
-    let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
-    return CGSize(width: width, height: height)
-  }
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    var y = bounds.minY
-    for row in rows(for: bounds.width, subviews: subviews) {
-      var x = bounds.midX - row.width / 2
-      for index in row.indices {
-        let size = subviews[index].sizeThatFits(.unspecified)
-        subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
-        x += size.width + spacing
-      }
-      y += row.height + spacing
-    }
-  }
-  private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
-  private func rows(for maxWidth: CGFloat, subviews: Subviews) -> [Row] {
-    var rows: [Row] = [Row()]
-    for (index, subview) in subviews.enumerated() {
-      let size = subview.sizeThatFits(.unspecified)
-      let extra = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
-      if rows[rows.count - 1].width + extra > maxWidth, !rows[rows.count - 1].indices.isEmpty { rows.append(Row()) }
-      let extraNow = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
-      rows[rows.count - 1].indices.append(index)
-      rows[rows.count - 1].width += extraNow
-      rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
-    }
-    return rows
+    RecordingStatusPanel(recorder: recorder, camera: camera, zoom: store.uiZoom, dismiss: dismiss)
   }
 }

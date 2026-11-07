@@ -25,7 +25,7 @@ enum GoogleDocsError: LocalizedError {
     switch self {
     case .notALink: "That is not a Google Docs link. Copy it from the address bar or Share › Copy link."
     case .notShared:
-      "Google would not hand that document over without a sign-in. Sign in with Google in this sheet, or set the document's sharing to “Anyone with the link”."
+      "Google could not open this document. If sign-in is available, sign in with an account that can open it. Otherwise download it as Word or text and import the file. You do not need to change its sharing permissions."
     case .signInFailed(let reason): "Google sign-in did not finish: \(reason)"
     case .http(let code): "Google Drive answered with error \(code). Try again in a moment."
     }

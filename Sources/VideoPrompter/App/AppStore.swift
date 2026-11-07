@@ -1,4 +1,6 @@
+import AVFoundation
 import AppKit
+import Combine
 import PrompterCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -11,6 +13,12 @@ private enum PresenterSaveError: LocalizedError {
     case .changedDuringSave: return "A newer library edit arrived while this draft was saving."
     }
   }
+}
+
+@MainActor private final class RefreshWait {
+  private var continuation: CheckedContinuation<Void, Never>?
+  init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+  func finish() { continuation?.resume(); continuation = nil }
 }
 
 @MainActor final class AppStore: ObservableObject {
@@ -31,20 +39,42 @@ private enum PresenterSaveError: LocalizedError {
   @Published var namingNewFolder = false
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
-  @Published var settings = PrompterSettings() { didSet { persistSettings() } }
+  @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); CameraRecorder.shared.useSettings(settings) } }
+  @Published var shootSetupError: String? {
+    didSet {
+      if let shootSetupError {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [.announcement: shootSetupError, .priority: NSAccessibilityPriorityLevel.high.rawValue])
+      }
+    }
+  }
+  @Published var previousShootSetup: ShootSetup?
+  @Published var appliedShootSetupName: String?
+  var pendingShootUndos: [UUID: AnyCancellable] = [:]
+  var previousShootExposure = (clean: false, bypassed: false)
+  @Published var shootSetups: [ShootSetup] = [] {
+    didSet {
+      let repaired = ShootSetup.uniqueIdentities(shootSetups)
+      if repaired.map(\.id) != shootSetups.map(\.id) { shootSetups = repaired }
+      if let data = try? JSONEncoder().encode(shootSetups) { defaults.set(data, forKey: "shootSetups") }
+    }
+  }
   @Published var presets: [PrompterSettings] = [] { didSet { persistSettings() } }
   @Published var sourceFontName = "Lexend Deca" { didSet { persistSettings() } }
-  @Published var sourceFontSize = 17.0 { didSet { persistSettings() } }
+  @Published var sourceFontSize = 17.0 { didSet { let safe = InputValidation.editorSize.repair(sourceFontSize); if sourceFontSize != safe { sourceFontSize = safe }; persistSettings() } }
   @Published var previewFontName = "Lexend Deca" { didSet { persistSettings() } }
-  @Published var previewFontSize = 18.0 { didSet { persistSettings() } }
+  @Published var previewFontSize = 18.0 { didSet { let safe = InputValidation.editorSize.repair(previewFontSize); if previewFontSize != safe { previewFontSize = safe }; persistSettings() } }
   /// View > Zoom In, Zoom Out and Actual Size: the whole library window and the presenter's controls.
-  @Published var uiZoom = 1.0 { didSet { persistSettings() } }
+  @Published var uiZoom = 1.0 { didSet { let safe = InputValidation.zoom.repair(uiZoom); if uiZoom != safe { uiZoom = safe }; persistSettings() } }
   /// Nothing below 100%: zoomed out, a pane's AppKit views are laid out wider than their column,
   /// and AppKit then refuses clicks on the part that would overlap the next column.
-  static let uiZoomSteps = [1, 1.1, 1.25, 1.5, 1.75, 2]
-  static let presenterFontSizes = 18.0...120.0
-  static let editorFontSizes = 12.0...40.0
+  static let uiZoomSteps = InputValidation.zoom.choices
+  static let presenterFontSizes = InputValidation.fontSize.range
+  static let editorFontSizes = InputValidation.editorSize.range
+  @Published var libraryNotice: String?
   @Published var errorMessage: String?
+  @Published var linkedSyncStatus: String?
+  private var deferredExternalReads = Set<UUID>()
   /// Shown once, in the inspector, when a saved Timed, Manual or Sound mode was migrated.
   @Published private(set) var modeMigrationNotice: String?
   private static let modeMigrationKey = "modeMigrationNoticeVersion"
@@ -92,6 +122,18 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
+  private var externalRefreshTask: Task<Void, Never>?
+  private var iCloudWatcher: Task<Void, Never>?
+  private var syncInProgress = false
+  private var syncWaiters: [CheckedContinuation<Void, Never>] = []
+  func acquireLibrarySync() async {
+    if !syncInProgress { syncInProgress = true; return }
+    await withCheckedContinuation { syncWaiters.append($0) }
+  }
+  func releaseLibrarySync() {
+    if syncWaiters.isEmpty { syncInProgress = false }
+    else { syncWaiters.removeFirst().resume() }
+  }
   private var initialLoad: Task<Void, Never>?
   private var welcomeTask: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
@@ -99,7 +141,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
   /// repeating on top of the two-second poll.
   private var lastExternalRefresh = Date.distantPast
-  private let defaults: UserDefaults
+  let defaults: UserDefaults
   private let settingsPersistence: SettingsPersistence
 
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
@@ -133,31 +175,41 @@ private enum PresenterSaveError: LocalizedError {
         || saved.contains(where: { PrompterSettings.legacyModes.contains($0.mode ?? "") })
       {
         isolatedDefaults.set(true, forKey: Self.modeMigrationPendingKey)
-        modeMigrationNotice = "Following now has two modes. Timed and Manual are one Manual mode: choose a words-per-minute speed and press Start to scroll continuously. Sound mode is gone; saved settings that used it now use Voice."
+        modeMigrationNotice = "Reading now has two modes. The older Timed and Manual modes now use Automatic scroll: choose a words-per-minute speed and press Start reading. Reading presets that used Sound now use Voice follow."
       } else {
         isolatedDefaults.set(1, forKey: Self.modeMigrationKey)
       }
     }
     // Read all three first: a @Published didSet runs even here, and it saves all three.
-    let savedPresets: [PrompterSettings]? = stored("presets")
+    if let data = isolatedDefaults.data(forKey: "shootSetups") {
+      if (try? JSONDecoder().decode([ShootSetup].self, from: data)) == nil { isolatedDefaults.set(data, forKey: "shootSetupsRecoveryBackup") }
+      shootSetups = ShootSetup.uniqueIdentities(InputValidation.savedEntries(ShootSetup.self, from: data) ?? [])
+      if let repaired = try? JSONEncoder().encode(shootSetups) { isolatedDefaults.set(repaired, forKey: "shootSetups") }
+    }
+    let presetData = isolatedDefaults.data(forKey: "presets")
+    if let presetData, (try? JSONDecoder().decode([PrompterSettings].self, from: presetData)) == nil {
+      isolatedDefaults.set(presetData, forKey: "presetsRecoveryBackup")
+    }
+    let savedPresets = presetData.flatMap { InputValidation.savedEntries(PrompterSettings.self, from: $0) }
     let savedTypography: EditorTypographyPreferences? = stored("editorTypography")
     let savedSettings: PrompterSettings? = stored("settings")
     let savedSimple = isolatedDefaults.object(forKey: "simpleInterface") == nil || isolatedDefaults.bool(forKey: "simpleInterface")
     let savedZoom = isolatedDefaults.double(forKey: "uiZoom")
-    if savedZoom > 0 { uiZoom = min(max(savedZoom, Self.uiZoomSteps.first!), Self.uiZoomSteps.last!) }
+    uiZoom = InputValidation.zoom.repair(savedZoom)
     if let savedPresets { presets = savedPresets }
     if let savedTypography {
       sourceFontName = savedTypography.sourceFontName
-      sourceFontSize = min(max(savedTypography.sourceFontSize, Self.editorFontSizes.lowerBound), Self.editorFontSizes.upperBound)
+      sourceFontSize = InputValidation.editorSize.repair(savedTypography.sourceFontSize)
       previewFontName = savedTypography.previewFontName
-      previewFontSize = min(max(savedTypography.previewFontSize, Self.editorFontSizes.lowerBound), Self.editorFontSizes.upperBound)
+      previewFontSize = InputValidation.editorSize.repair(savedTypography.previewFontSize)
     }
     if let savedSettings { settings = savedSettings }
+    else { settings.audioDeviceUID = AVCaptureDevice.default(for: .audio)?.uniqueID }
     simpleInterface = savedSimple
     do {
       library = try MarkdownLibrary(rootURL: root)
       libraryAvailable = true
-    } catch { errorMessage = "The script library could not be opened safely. \(error)" }
+    } catch { errorMessage = "The script library could not be opened safely. Check that its folder is available and readable, then reopen Video Prompter. Details: \(error.localizedDescription)" }
     initialLoad = Task { await reload() }
     if offersWelcomeScript ?? !arguments.contains("--data-directory") {
       welcomeTask = Task { [weak self] in await self?.addWelcomeScriptIfNew() }
@@ -166,6 +218,11 @@ private enum PresenterSaveError: LocalizedError {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
         await self?.refreshExternalChanges()
+      }
+    }
+    iCloudWatcher = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(2))
         await self?.syncICloudScripts()
       }
     }
@@ -182,6 +239,7 @@ private enum PresenterSaveError: LocalizedError {
 
   deinit {
     externalWatcher?.cancel()
+    iCloudWatcher?.cancel()
     if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
   }
 
@@ -213,7 +271,7 @@ private enum PresenterSaveError: LocalizedError {
         if Self.isMissingFile(error) {
           unavailableScriptIDs.insert(metadata.id)
         } else {
-          errorMessage = "The script could not be loaded. \(error)"
+          errorMessage = "The script could not be loaded. Check that its file is available, then select it again. Details: \(error.localizedDescription)"
         }
       }
     }
@@ -227,14 +285,15 @@ private enum PresenterSaveError: LocalizedError {
       protectedIDs.contains(record.id) ? (scripts.first(where: { $0.id == record.id }) ?? record) : record
     }
     scripts = loaded
-    await refreshLinkStates()
-    trash = await library.listTrash()
-    folders = await library.listFolders()
+    // Publish the restored selection with the scripts, before any suspension can redraw an empty editor.
     if let selectedID, loaded.contains(where: { $0.metadata.id == selectedID }) {
       self.selectedID = selectedID
     } else {
       selectedID = loaded.first?.metadata.id
     }
+    await refreshLinkStates()
+    trash = await library.listTrash()
+    folders = await library.listFolders()
   }
   func waitForInitialLoad() async { await initialLoad?.value }
   func waitForWelcomeScript() async { await welcomeTask?.value }
@@ -256,9 +315,10 @@ private enum PresenterSaveError: LocalizedError {
       errorMessage = "The welcome script could not be added. \(error)"
     }
   }
-  /// Help > Welcome Script: selects it in the whole library, or adds a fresh copy when it has gone.
+  /// Help > Practice Script: selects it in the whole library, or adds a fresh copy when it has gone.
   /// While the first-launch add is still running it waits for that, so the script is never added twice.
   func showWelcomeScript() {
+    defaults.set(false, forKey: "readingTipHidden")
     guard let welcomeTask else { return selectWelcomeScript() }
     Task { [weak self] in
       await welcomeTask.value
@@ -277,13 +337,13 @@ private enum PresenterSaveError: LocalizedError {
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
     guard let library else { return }
-    Task { do { try await work(library) } catch { errorMessage = String(describing: error) } }
+    Task { do { try await work(library) } catch let error as PendingEditsError { errorMessage = error.description } catch { errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)" } }
   }
   func createFolder(named name: String) {
     withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
-  func renameFolder(_ id: UUID, name: String) {
-    withLibrary { [self] _ in try await renameLibraryFolder(id, name: name) }
+  func renameFolder(_ id: UUID, name: String, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.rename(id, name), name: "Rename Folder", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -294,32 +354,34 @@ private enum PresenterSaveError: LocalizedError {
   func renameLibraryFolder(_ id: UUID, name: String) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
     try await library.renameFolder(id, name: name)
-    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = name }
+    if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = InputValidation.folderName(name) }
   }
-  private var folderChangeTask: Task<Void, Never>?
-  private var folderChangeRevision = 0
+  var libraryEditTask: Task<Void, Never>?
+  var libraryEditRevision = 0
   func deleteFolder(_ id: UUID, undoManager: UndoManager? = nil) {
     guard let folder = folders.first(where: { $0.id == id }) else { return }
-    let members = Set(scripts.filter { $0.metadata.folderID == id }.map(\.id)
-      + trash.filter { $0.metadata.folderID == id }.map(\.id))
-    changeFolder(folder, members: members, deleting: true, undoManager: undoManager)
+    changeFolder(folder, deleting: true, undoManager: undoManager)
   }
   /// One queued folder change. It is also the undo target, so a failed change can remove just its own
   /// entry instead of the store's whole undo stack.
-  private final class FolderChange { var failed = false }
-  private func changeFolder(_ folder: ScriptFolder, members: Set<UUID>, deleting: Bool,
+  private final class FolderChange {
+    var failed = false
+    var members = Set<UUID>()
+    var folder: ScriptFolder?
+  }
+  private func changeFolder(_ folder: ScriptFolder, deleting: Bool,
                             undoManager: UndoManager?, inverting: FolderChange? = nil) {
     let change = FolderChange()
     // Registered now, before the disk work, so Undo is offered at once and sits in the right place
-    // on the stack; the disk changes stay ordered behind folderChangeTask.
+    // on the stack; the disk changes stay ordered behind libraryEditTask.
     undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
       // `change` is held here, not by UndoManager, so the entry keeps its target alive.
-      self?.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, inverting: change)
+      self?.changeFolder(folder, deleting: !deleting, undoManager: undoManager, inverting: change)
     }
-    undoManager?.setActionName("Delete Folder")
-    folderChangeRevision += 1
-    let previous = folderChangeTask
-    folderChangeTask = Task { [self, weak undoManager] in
+    undoManager?.setActionName("Remove Folder")
+    libraryEditRevision += 1
+    let previous = libraryEditTask
+    libraryEditTask = Task { [self, weak undoManager] in
       await previous?.value
       // Undoing a change that never reached the disk has nothing to reverse.
       if inverting?.failed == true {
@@ -328,9 +390,14 @@ private enum PresenterSaveError: LocalizedError {
         return
       }
       guard let library else { return }
+      let currentFolder = inverting?.folder ?? folders.first { $0.id == folder.id } ?? folder
+      change.folder = currentFolder
+      let members = inverting?.members ?? Set(scripts.filter { $0.metadata.folderID == folder.id }.map(\.id)
+        + trash.filter { $0.metadata.folderID == folder.id }.map(\.id))
+      change.members = members
       do {
         if deleting { try await library.deleteFolder(folder.id) }
-        else { try await library.restoreFolder(folder, scriptIDs: members) }
+        else { try await library.restoreFolder(currentFolder, scriptIDs: members) }
         folders = await library.listFolders()
         for i in scripts.indices {
           if deleting, scripts[i].metadata.folderID == folder.id { scripts[i].metadata.folderID = nil }
@@ -341,14 +408,14 @@ private enum PresenterSaveError: LocalizedError {
       } catch {
         change.failed = true
         undoManager?.removeAllActions(withTarget: change)
-        errorMessage = String(describing: error)
+        errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)"
       }
     }
   }
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
   func trashSelectionFromMenu(in window: NSWindow? = NSApp.keyWindow) {
     guard Self.canTrashSelection(in: window) else { return }
-    delete(selectedIDs)
+    delete(selectedIDs, undoManager: window?.undoManager)
   }
   static func canTrashSelection(in window: NSWindow?) -> Bool {
     guard !(window is PresenterPanel), !(window?.firstResponder is NSTextView) else { return false }
@@ -361,8 +428,8 @@ private enum PresenterSaveError: LocalizedError {
     selectedIDs.contains(id) ? selectedIDs : [id]
   }
 
-  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
-    withLibrary { [self] _ in try await moveScripts(ids, to: folderID) }
+  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.move(ids.map { ($0, folderID) }), name: "Move to Folder", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -393,10 +460,22 @@ private enum PresenterSaveError: LocalizedError {
     (preview.sourceURL.deletingPathExtension().lastPathComponent,
      ["md", "markdown"].contains(preview.sourceURL.pathExtension.lowercased()) ? preview.sourceURL : nil)
   }
-  /// Paste as New Script, in the File and Add menus.
+  /// Paste Copied Text, in the File and Add menus.
   func importClipboard() {
-    guard let markdown = NSPasteboard.general.string(forType: .string), !markdown.isEmpty else { return }
-    create(title: "Pasted Script", markdown: markdown)
+    guard let markdown = NSPasteboard.general.string(forType: .string),
+      !markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      errorMessage = "Copy some text first, then choose Paste Copied Text."
+      return
+    }
+    create(title: Self.pastedTitle(markdown), markdown: markdown)
+  }
+  static func pastedTitle(_ markdown: String) -> String {
+    let lines = markdown.components(separatedBy: .newlines)
+    if let heading = lines.first(where: { $0.range(of: #"^\s{0,3}#{1,6}\s+\S"#, options: .regularExpression) != nil }) {
+      return String(heading.replacingOccurrences(of: #"^\s*#+\s+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespaces).prefix(60))
+    }
+    let words = (lines.first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) ?? "").split(whereSeparator: { $0.isWhitespace }).prefix(6).joined(separator: " ")
+    return words.isEmpty ? "Pasted Script" : String(words.prefix(60))
   }
   struct PendingEditsError: Error, CustomStringConvertible {
     let description: String
@@ -415,14 +494,50 @@ private enum PresenterSaveError: LocalizedError {
     selectedID = item.id
     return item
   }
-  func delete(_ ids: Set<UUID>) {
-    for id in ids {
-      withLibrary { [self] _ in try await deleteScript(id) }
-    }
+  private final class ScriptDeletion {
+    var completed = Set<UUID>()
   }
-  func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
+  private var scriptDeletionTask: Task<Void, Never>?
+  /// Wait for the whole queued operation, including its final list refresh and undo receipt.
+  func waitForScriptDeletions() async { await scriptDeletionTask?.value }
+  func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
+    let links = Dictionary(uniqueKeysWithValues: ids.compactMap { id in MacGoogleDocs.links[id].map { (id, $0) } })
+    changeScriptDeletion(ids, links: links, deleting: true, undoManager: undoManager)
+  }
+  private func changeScriptDeletion(_ ids: Set<UUID>, links: [UUID: GoogleDocLinks.Link], deleting: Bool,
+                                    undoManager: UndoManager?, inverting: ScriptDeletion? = nil, actionName: String = "Move to Trash") {
+    guard !ids.isEmpty else { return }
+    let change = ScriptDeletion()
+    undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
+      self?.changeScriptDeletion(ids, links: links, deleting: !deleting, undoManager: undoManager, inverting: change, actionName: actionName)
+    }
+    undoManager?.setActionName(actionName)
+    let previous = libraryEditTask
+    libraryEditRevision += 1
+    libraryEditTask = Task { [self, weak undoManager] in
+      await previous?.value
+      let targets = inverting?.completed ?? ids
+      do {
+        for id in targets {
+          if deleting { try await deleteScript(id, waitingForLibraryEdits: false) }
+          else { try await restoreScript(id); MacGoogleDocs.links[id] = links[id] }
+          change.completed.insert(id)
+        }
+      } catch {
+        errorMessage = "The library change could not be saved. \(error.localizedDescription)"
+      }
+      if change.completed.isEmpty { undoManager?.removeAllActions(withTarget: change) }
+      if deleting, !change.completed.isEmpty {
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+          userInfo: [.announcement: "Moved \(change.completed.count) scripts to Recently Deleted", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      }
+    }
+    scriptDeletionTask = libraryEditTask
+  }
+  func deleteScript(_ id: UUID, waitingForLibraryEdits: Bool = true, afterSaving: () throws -> Void = {}) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
-    guard await flushPendingSaves() else {
+    // A queued deletion already follows earlier edits; waiting on its own queue would deadlock.
+    guard await flushPendingSaves(waitingForLibraryEdits: waitingForLibraryEdits) else {
       throw PendingEditsError(description: "Save the pending edits before moving scripts to Trash.")
     }
     try afterSaving()
@@ -436,8 +551,8 @@ private enum PresenterSaveError: LocalizedError {
     trash = await library.listTrash()
     if selectedID == id { selectedID = visible.first?.id }
   }
-  func restore(_ id: UUID) {
-    withLibrary { [self] _ in try await restoreScript(id) }
+  func restore(_ id: UUID, undoManager: UndoManager? = nil) {
+    changeScriptDeletion([id], links: [:], deleting: false, undoManager: undoManager ?? NSApp?.keyWindow?.undoManager, actionName: "Restore Script")
   }
   func restoreScript(_ id: UUID) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -446,7 +561,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   func exportMarkdown(_ script: ScriptRecord) {
     let panel = NSSavePanel()
-    panel.nameFieldStringValue = "\(script.metadata.title).md"
+    panel.nameFieldStringValue = ScriptFile(script: script).filename
     panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
@@ -487,6 +602,7 @@ private enum PresenterSaveError: LocalizedError {
         if self?.saveTaskTokens[id] == taskToken {
           self?.saveTasks[id] = nil
           self?.saveTaskTokens[id] = nil
+          Task { await self?.refreshDeferredExternalRead(id) }
         }
       }
       await previous?.value
@@ -496,20 +612,22 @@ private enum PresenterSaveError: LocalizedError {
           let expected = self.scripts.first(where: { $0.metadata.id == id })?.metadata.contentFingerprint
         else { return }
         await self.saveGate?()
-        self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id)
+        self.applySaved(try await library.save(id, markdown: value, expectedFingerprint: expected), for: id, submitted: value)
       } catch is CancellationError {} catch {
         self?.failedSaveIDs.insert(id)
         self?.hasFailedSaves = true
-        self?.errorMessage = "The edit was preserved but could not replace the file. \(error)"
+        let title = self?.scripts.first { $0.id == id }?.metadata.title ?? "Untitled Script"
+        self?.errorMessage = "The edit to “\(title)” was preserved but could not replace the file. \(error)"
       }
     }
   }
   /// A save that reached disk always brings its revision metadata, even if the user has typed
-  /// since. The pending draft is dropped only when it is exactly what was just saved.
-  private func applySaved(_ saved: ScriptRecord, for id: UUID) {
+  /// since. Drop only the submitted draft; a linked-file conflict may have replaced its text.
+  private func applySaved(_ saved: ScriptRecord, for id: UUID, submitted: String) {
     guard let index = scripts.firstIndex(where: { $0.id == id }) else { return }
     scripts[index].metadata = saved.metadata
-    guard pendingDrafts[id] == saved.markdown else { return }
+    guard pendingDrafts[id] == submitted else { return }
+    scripts[index] = saved
     pendingDrafts[id] = nil
     failedSaveIDs.remove(id)
     hasFailedSaves = !failedSaveIDs.isEmpty
@@ -568,22 +686,23 @@ private enum PresenterSaveError: LocalizedError {
   func flushSettings() async {
     await settingsPersistence.flush()
   }
-  func flushPendingSaves() async -> Bool {
+  func flushPendingSaves(waitingForLibraryEdits: Bool = true) async -> Bool {
     while true {
-      let folderRevision = folderChangeRevision
-      await folderChangeTask?.value
+      let folderRevision = libraryEditRevision
+      if waitingForLibraryEdits { await libraryEditTask?.value }
       for task in Array(saveTasks.values) { await task.value }
       if let id = presenterSaveIDs.first {
         await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
         continue
       }
       await settingsPersistence.flush()
-      if folderRevision != folderChangeRevision { continue }
+      if waitingForLibraryEdits, folderRevision != libraryEditRevision { continue }
       return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
     }
   }
   private func finishPresenterSave(_ id: UUID) {
     presenterSaveIDs.remove(id)
+    Task { await refreshDeferredExternalRead(id) }
     let waiters = presenterSaveWaiters.removeValue(forKey: id) ?? []
     for waiter in waiters { waiter.resume() }
   }
@@ -595,7 +714,7 @@ private enum PresenterSaveError: LocalizedError {
       do {
         applySaved(
           try await library.save(id, markdown: draft, expectedFingerprint: current.metadata.contentFingerprint),
-          for: id)
+          for: id, submitted: draft)
       } catch { hasFailedSaves = true; errorMessage = "The edit was preserved but could not replace the file. \(error)" }
     }
   }
@@ -635,12 +754,8 @@ private enum PresenterSaveError: LocalizedError {
     hasFailedSaves = !failedSaveIDs.isEmpty
   }
   /// Stop mirroring the external file. The script keeps the content it already has.
-  func unlink(_ id: UUID) {
-    withLibrary { [self] library in
-      let metadata = try await library.unlink(id)
-      if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
-      await refreshLinkStates()
-    }
+  func unlink(_ id: UUID, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.link(id, nil), name: "Unlink", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   func refreshLinkStates() async {
     guard let library else { return }
@@ -648,13 +763,14 @@ private enum PresenterSaveError: LocalizedError {
     if states != linkStates { linkStates = states }
   }
   /// Point a script whose file moved at its new place; `resolution` says which text survives.
-  func relink(_ id: UUID, to url: URL, resolution: RelinkResolution) async -> Bool {
+  func relink(_ id: UUID, to url: URL, resolution: RelinkResolution, undoManager: UndoManager? = nil) async -> Bool {
     guard let library else { return false }
     guard await flushPendingSaves() else {
       errorMessage = "Save the pending edits before relinking."
       return false
     }
     do {
+      let before = scripts.first(where: { $0.id == id })
       let outcome = try await library.relink(id: id, to: url, resolution: resolution)
       if let i = scripts.firstIndex(where: { $0.id == id }) {
         scripts[i] = outcome.current
@@ -663,6 +779,7 @@ private enum PresenterSaveError: LocalizedError {
       if let imported = outcome.imported { scripts.insert(imported, at: 0) }
       unavailableScriptIDs.remove(id)
       await refreshLinkStates()
+      if let before { registerLinkUndo(before, manager: undoManager ?? NSApp?.keyWindow?.undoManager) }
       return true
     } catch {
       errorMessage = "The file could not be relinked. Nothing was changed. \(error)"
@@ -686,12 +803,12 @@ private enum PresenterSaveError: LocalizedError {
     preset.id = UUID()
     preset.name =
       name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      ? "Preset \(presets.count + 1)" : name
+      ? "Reading preset \(presets.count + 1)" : name.trimmingCharacters(in: .whitespacesAndNewlines)
     presets.append(preset)
   }
   func renamePreset(_ id: UUID, name: String) {
     let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !clean.isEmpty, let index = presets.firstIndex(where: { $0.id == id }) else { errorMessage = "Preset names cannot be empty."; return }
+    guard !clean.isEmpty, let index = presets.firstIndex(where: { $0.id == id }) else { errorMessage = "Enter a name for these saved settings."; return }
     presets[index].name = clean
   }
   func duplicatePreset(_ id: UUID) {
@@ -701,19 +818,59 @@ private enum PresenterSaveError: LocalizedError {
     copy.name = "\(source.name) copy"
     presets.append(copy)
   }
-  func updatePreset(_ id: UUID) {
-    guard let index = presets.firstIndex(where: { $0.id == id }) else { return }
+  @discardableResult func updatePreset(_ id: UUID, undoManager: UndoManager? = nil) -> UUID? {
+    guard let index = presets.firstIndex(where: { $0.id == id }) else { return nil }
+    let operationID = registerPresetReplacement(presets[index], manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     var updated = settings
     updated.id = id
     updated.name = presets[index].name
     presets[index] = updated
+    return operationID
+  }
+  private static let presetReplacementUndoKey = UndoManager.UserInfoKey(rawValue: "VideoPrompter.presetReplacement")
+
+  func canUndoPresetReplacement(_ operationID: UUID?, manager: UndoManager?) -> Bool {
+    guard let operationID, let manager, manager.canUndo else { return false }
+    return manager.undoActionName == "Replace Preset"
+      && manager.undoActionUserInfoValue(forKey: Self.presetReplacementUndoKey) as? String == operationID.uuidString
+  }
+
+  @discardableResult func undoPresetReplacement(_ operationID: UUID?, manager: UndoManager?) -> Bool {
+    guard canUndoPresetReplacement(operationID, manager: manager) else { return false }
+    manager?.undo()
+    return true
+  }
+
+  @discardableResult private func registerPresetReplacement(_ previous: PrompterSettings, manager: UndoManager?) -> UUID? {
+    guard let manager, manager.isUndoRegistrationEnabled else { return nil }
+    let operationID = UUID()
+    manager.registerUndo(withTarget: self) { [weak manager] target in
+      guard let i = target.presets.firstIndex(where: { $0.id == previous.id }) else { return }
+      target.registerPresetReplacement(target.presets[i], manager: manager)
+      var restored = previous
+      restored.name = target.presets[i].name
+      target.presets[i] = restored
+    }
+    manager.setActionName("Replace Preset")
+    manager.setActionUserInfoValue(operationID.uuidString, forKey: Self.presetReplacementUndoKey)
+    return operationID
   }
   func dismissModeMigrationNotice() {
     modeMigrationNotice = nil
     defaults.set(1, forKey: Self.modeMigrationKey)
     defaults.removeObject(forKey: Self.modeMigrationPendingKey)
   }
-  func applyPreset(_ preset: PrompterSettings) {
+  func matchesPreset(_ preset: PrompterSettings) -> Bool {
+    var compared = preset
+    compared.id = settings.id; compared.name = settings.name
+    compared.audioDeviceUID = settings.audioDeviceUID
+    compared.speechLanguage = settings.speechLanguage
+    return compared == settings
+  }
+  func applyPreset(_ preset: PrompterSettings, undoManager: UndoManager? = nil) {
+    let previous = settings
+    undoManager?.registerUndo(withTarget: self) { [weak undoManager] target in target.applyPreset(previous, undoManager: undoManager) }
+    undoManager?.setActionName("Apply Reading Preset")
     var applied = preset
     applied.mode = PrompterSettings.normalisedMode(applied.mode)
     applied.name = settings.name
@@ -749,21 +906,70 @@ private enum PresenterSaveError: LocalizedError {
     return (nsError.domain == NSCocoaErrorDomain && (nsError.code == CocoaError.Code.fileNoSuchFile.rawValue || nsError.code == CocoaError.Code.fileReadNoSuchFile.rawValue))
       || (nsError.domain == NSPOSIXErrorDomain && nsError.code == ENOENT)
   }
+  func refreshLinkedSyncStatus() async {
+    guard let library else { return }
+    let waiting = await library.linkedSyncWaiting()
+    linkedSyncStatus = waiting.isEmpty ? nil : waiting.joined(separator: "\n")
+  }
+  private func refreshDeferredExternalRead(_ id: UUID) async {
+    guard deferredExternalReads.contains(id), let library, saveTasks[id] == nil,
+      pendingDrafts[id] == nil, !failedSaveIDs.contains(id), !presenterSaveIDs.contains(id),
+      let record = try? await library.read(id) else { return }
+    guard saveTasks[id] == nil, pendingDrafts[id] == nil, !failedSaveIDs.contains(id),
+      !presenterSaveIDs.contains(id) else { return }
+    deferredExternalReads.remove(id)
+    if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i] = record }
+    session.applyEditedRecord(record)
+  }
   func refreshExternalChanges() async {
+    let task: Task<Void, Never>
+    if let running = externalRefreshTask { task = running }
+    else {
+      task = Task { [weak self] in
+        guard let self else { return }
+        await self.performExternalRefresh()
+        self.externalRefreshTask = nil
+      }
+      externalRefreshTask = task
+    }
+    // A slow provider continues its reservation in the background. The sync lock stays held
+    // until it finishes, but activation and the poll do not wait for its full backoff.
+    await withCheckedContinuation { continuation in
+      let wait = RefreshWait(continuation)
+      Task { await task.value; wait.finish() }
+      Task { try? await Task.sleep(for: .seconds(1)); wait.finish() }
+    }
+  }
+  private func performExternalRefresh() async {
+    await acquireLibrarySync()
+    defer { releaseLibrarySync() }
     guard let library else { return }
     lastExternalRefresh = Date()
     do {
       if !(try await library.discoverExternalScripts()).isEmpty { await reload() }
     } catch { errorMessage = "New script files could not be added. \(error)" }
-    for metadata in await library.listScripts()
-    where (saveTasks[metadata.id] == nil || saveTasks[metadata.id]?.isCancelled == true)
-      && !failedSaveIDs.contains(metadata.id) && !presenterSaveIDs.contains(metadata.id) {
+    let candidates = await library.listScripts().filter {
+      (saveTasks[$0.id] == nil || saveTasks[$0.id]?.isCancelled == true)
+        && !failedSaveIDs.contains($0.id) && !presenterSaveIDs.contains($0.id)
+    }
+    await withTaskGroup(of: (ScriptMetadata, Result<ScriptRecord?, Error>).self) { group in
+      for metadata in candidates {
+        group.addTask {
+          do { return (metadata, .success(try await library.externalChange(for: metadata.id))) }
+          catch { return (metadata, .failure(error)) }
+        }
+      }
+      for await (metadata, result) in group {
       do {
         // An external edit, or a file that has come back.
-        var found = try await library.externalChange(for: metadata.id)
+        var found = try result.get()
         if found == nil, unavailableScriptIDs.contains(metadata.id) { found = try await library.read(metadata.id) }
-        guard let record = found, !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
-          !presenterSaveIDs.contains(metadata.id) else { continue }
+        guard let record = found else { continue }
+        guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
+          !presenterSaveIDs.contains(metadata.id) else {
+          deferredExternalReads.insert(metadata.id)
+          continue
+        }
         if let i = scripts.firstIndex(where: { $0.id == metadata.id }) {
           scripts[i] = record
         } else {
@@ -777,11 +983,16 @@ private enum PresenterSaveError: LocalizedError {
           if session.activeScriptID == metadata.id { session.pause() }
           errorMessage = "The script file is unavailable. Restore the original file, or export and import a copy."
         } else if !missing {
-          errorMessage = String(describing: error)
+          errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)"
         }
       }
     }
+    }
+    await finishExternalRefresh(library)
+  }
+  private func finishExternalRefresh(_ library: MarkdownLibrary) async {
     await refreshLinkStates()
+    await refreshLinkedSyncStatus()
     let conflicts = await library.takeLinkConflicts()
     if !conflicts.isEmpty {
       let notice =

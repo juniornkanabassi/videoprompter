@@ -17,9 +17,16 @@ final class CameraTests: XCTestCase {
   func testTheRememberedCameraWinsWhileItIsStillConnected() {
     XCTAssertEqual(CameraModel.resolve("uid-obs", in: cameras)?.uid, "uid-obs")
   }
-  func testAnUnpluggedCameraFallsBackToTheFirstOneLeft() {
-    XCTAssertEqual(CameraModel.resolve("uid-gone", in: cameras)?.uid, "uid-built-in")
+  func testAnUnpluggedCameraNeverSubstitutesAnotherDevice() {
+    XCTAssertNil(CameraModel.resolve("uid-gone", in: cameras))
     XCTAssertEqual(CameraModel.resolve(nil, in: cameras)?.uid, "uid-built-in")
+  }
+  func testFreshSetupSkipsVirtualDevicesButPreservesExplicitChoice() {
+    let virtual = CameraDevice(uid: "virtual", name: "OBS Virtual Camera", isPhysical: false)
+    let physical = CameraDevice(uid: "usb", name: "USB Capture", isPhysical: true)
+    XCTAssertEqual(CameraModel.resolve(nil, in: [virtual, physical]), physical)
+    XCTAssertNil(CameraModel.resolve(nil, in: [virtual]))
+    XCTAssertEqual(CameraModel.resolve("virtual", in: [virtual, physical]), virtual)
   }
   func testNoCamerasResolveToNothing() {
     XCTAssertNil(CameraModel.resolve("uid-obs", in: []))
@@ -122,7 +129,7 @@ final class CameraTests: XCTestCase {
     var shown = popUps()
     // The camera is chosen with `CameraPicker` (its label is covered in CameraPickerTests);
     // the rotation pop-up is the toolbar's one AppKit pop-up.
-    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Camera rotation"])
+    XCTAssertEqual(shown.map { $0.accessibilityLabel() ?? "" }, ["Rotation"])
     XCTAssertEqual(shown.last?.titleOfSelectedItem, "90°")
 
     feed.devices = cameras

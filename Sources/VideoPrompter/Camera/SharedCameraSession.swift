@@ -23,7 +23,7 @@ struct CameraHolders {
   }
 }
 
-/// One capture session for both windows. The Camera window and the presenter's video background
+/// One capture session for both windows. The Second monitor window and the presenter's video background
 /// show the same camera, and a DeckLink cannot be opened twice, so there is one session, one
 /// input, a preview layer each, and a holder count that stops the capture when neither window is
 /// showing it.
@@ -117,6 +117,11 @@ struct CameraHolders {
   private var holders = CameraHolders()
   private var auto: CameraAutoOrientation?
   private var autoWanters = Set<ObjectIdentifier>()
+  private var exposure: CameraExposure?
+  private var exposureWanters = Set<ObjectIdentifier>()
+  /// The latest zebra mask and false colour picture, nil while both are off. Stage views follow
+  /// `.cameraExposureDidChange`.
+  private(set) var exposureFrame: CameraExposure.Frame?
   var holderCount: Int { holders.count }
   /// The camera actually attached.
   private(set) var attachedUID: String?
@@ -166,7 +171,7 @@ struct CameraHolders {
     guard uid != attachedUID else { return }
     let session = self.session
     let device = uid.flatMap { AVCaptureDevice(uniqueID: $0) }
-    let input = device.flatMap { try? AVCaptureDeviceInput(device: $0) }
+    let input = CaptureAccess.mayUse(.video) ? device.flatMap { try? CaptureAccess.deviceInput($0, media: .video) } : nil
     // Remember the camera only once it is really attached: selected before access was granted,
     // the input fails, and remembering it anyway left the picture black until relaunch.
     attachedUID = input != nil && AVCaptureDevice.authorizationStatus(for: .video) == .authorized ? uid : nil
@@ -196,7 +201,7 @@ struct CameraHolders {
 
   /// Auto orientation runs only while it is switched on and something is showing the camera.
   ///
-  /// Two stage views can ask at once — the Camera window and the presenter's video background —
+  /// Two stage views can ask at once — the Second monitor window and the presenter's video background —
   /// so `owner` identifies which one is asking and the detector goes away only when neither
   /// wants it. Without that, covering one window took Auto away from the other.
   ///
@@ -220,6 +225,31 @@ struct CameraHolders {
       queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
     }
   }
+  /// Zebras and false colour, held the same way as auto orientation: one detector for every
+  /// stage view that wants it, attached on the session queue.
+  func setExposure(_ settings: CameraExposure.Settings, for owner: AnyObject) {
+    let id = ObjectIdentifier(owner)
+    if settings.isOn { exposureWanters.insert(id) } else { exposureWanters.remove(id) }
+    let session = self.session
+    let probe = self.probe
+    if settings.isOn { exposure?.update(settings) }
+    if !exposureWanters.isEmpty, exposure == nil {
+      let detector = CameraExposure(settings: settings) { frame in
+        Task { @MainActor in
+          // A late frame from a detector already detached must not bring the overlay back.
+          guard SharedCameraSession.shared.exposure != nil || frame == nil else { return }
+          SharedCameraSession.shared.exposureFrame = frame
+          NotificationCenter.default.post(name: .cameraExposureDidChange, object: nil)
+        }
+      }
+      exposure = detector
+      queue.async { probe.holdingFormat(session) { detector.attach(to: session) } }
+    } else if exposureWanters.isEmpty, let detector = exposure {
+      exposure = nil
+      queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
+    }
+  }
+
   /// For the test that covering one window must not stop the other's Auto.
   var isAutoOrienting: Bool { auto != nil }
 
@@ -387,7 +417,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
 
   /// Session queue only: start with the format held, then check it.
   func start(_ session: AVCaptureSession) {
-    if !session.isRunning { holdingFormat(session) { session.startRunning() } }
+    if !session.isRunning, CaptureAccess.mayUse(.video) { holdingFormat(session) { CaptureAccess.start(session) } }
     watch(session)
   }
 
@@ -440,9 +470,9 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     }
     sessionQueue.asyncAfter(deadline: .now() + Self.watchdog) { [self] in
       guard generation == self.generation else { return }
-      let (sawFrame, rateTimes) = shared.withLock {
-        defer { $0.measuresRate = false }
-        return ($0.frames > 0, $0.rateTimes)
+      let (sawFrame, rateTimes) = shared.withLock { state in
+        defer { state.measuresRate = false }  // a named parameter: older compilers reject $0 inside defer
+        return (state.frames > 0, state.rateTimes)
       }
       // This watch ran to its end, so its measurement is done, whatever it found.
       if measuresRate { self.measuresRate = false }

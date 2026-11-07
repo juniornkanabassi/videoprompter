@@ -35,6 +35,12 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# Local/ad-hoc builds are development copies, never another instance of the installed TCC identity.
+# install.sh deliberately refuses this identifier, so a local build cannot replace the real app.
+if (( ! DEVELOPER_ID_AVAILABLE )); then
+  REAL_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.development" "$APP/Contents/Info.plist"
+fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # Everything taken from the source tree is copied before the commit is stamped below.
 if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi

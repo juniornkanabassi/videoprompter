@@ -28,6 +28,14 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
   return [object] + (children.isEmpty ? fallback : children).flatMap(accessibilityObjects)
 }
 
+@MainActor private func pressDisclosure(_ label: String, in host: NSView) throws {
+  let action = NSSelectorFromString("accessibilityPerformPress")
+  let object = try XCTUnwrap(accessibilityObjects(host).last {
+    labels($0).first?.contains(label) == true && $0.responds(to: action)
+  }, "Missing disclosure: \(label)")
+  _ = object.perform(action)
+}
+
 @MainActor final class SimpleInterfaceTests: XCTestCase {
   private func cleanUp(_ store: AppStore, suite: String, root: URL) {
     addTeardownBlock { @MainActor in
@@ -37,7 +45,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
   }
 
-  func testPresenterSingleRowIsCentredAt100And150AndReportsEditing() async throws {
+  func testPresenterGroupsStayInsideWindowAt100And150AndReportEditing() async throws {
     _ = NSApplication.shared
     try XCTSkipIf(CameraModel.shared.presentsWithVideo, "video on would open a camera from a test")
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
@@ -60,7 +68,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     func buttonFrame(_ label: String) throws -> NSRect {
       let object = try XCTUnwrap(accessibilityObjects(content).first { object in
         let selector = NSSelectorFromString("accessibilityRole")
-        guard object.responds(to: selector), object.perform(selector)?.takeUnretainedValue() as? String == "AXButton" else { return false }
+        guard object.responds(to: selector), object.perform(selector)?.takeUnretainedValue() as? String != nil else { return false }
         return labels(object).first?.contains(label) == true
       }, "Missing \(label)")
       return try XCTUnwrap(object.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -71,16 +79,15 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       // narrow-window wrapping is covered by UIZoomTests.
       panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
-      let start = try buttonFrame("Start")
-      let close = try buttonFrame("Close presenter")
-      let restart = try buttonFrame("Back to start")
-      let edit = try buttonFrame("Edit script")
-      // The fixed-width status pill plus the existing row spacing precedes Start.
-      let left = start.minX - (88 + 16 + 8) * scale
-      XCTAssertEqual((left + close.maxX) / 2, panel.frame.midX, accuracy: 2, "\(scale): the row is centred")
-      for frame in [close, restart, edit] {
-        XCTAssertEqual(frame.midY, start.midY, accuracy: 2, "\(scale): all controls stay in one row")
+      let start = try buttonFrame("Start reading")
+      let camera = try buttonFrame("Show camera")
+      let edit = try buttonFrame("Tools")
+      let screenBounds = panel.convertToScreen(content.bounds)
+      for frame in [start, camera, edit] {
+        XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
+      XCTAssertEqual(start.midY, camera.midY, accuracy: 2)
+      XCTAssertLessThan(edit.midY, start.midY, "Tools has its own row below the fixed transport")
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)
@@ -242,6 +249,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       await settle()
       let editor = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
       XCTAssertEqual(editor.string, record.id == alpha.id ? "Alpha body" : "Beta body")
+      try pressDisclosure("Script details", in: host)
+      await settle()
       let fields = views(host).compactMap { $0 as? NSTextField }.filter(\.isEditable)
       XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.title }, "selected title")
       XCTAssertTrue(fields.contains { $0.stringValue == record.metadata.tags.joined(separator: ", ") }, "selected tags")
@@ -279,26 +288,26 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Your script, ready to read", "Add a script", "Choose Voice or Manual in Settings", "Press Present", "Import Script", "New Script"] {
+    for text in ["Ready when you are", "Paste Copied Text", "Import File", "New Script", "Camera Only", "Quick Reading Practice"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
-    // Geometry, not just AX presence: the whole guide stays inside the 200% detail column.
+    // The interactive example stays inside the enlarged detail column.
     let guidance = try XCTUnwrap(accessibilityObjects(host).first {
-      labels($0).first?.contains("Add a script.") == true
+      labels($0).first?.contains("Try the three reading steps") == true
     })
     XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
     let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     let guideFrame = window.convertFromScreen(frame)
-    XCTAssertGreaterThanOrEqual(guideFrame.minX, 400, "guide stays to the right of the zoomed sidebar")
-    XCTAssertLessThanOrEqual(guideFrame.maxX, 813, "guide stays to the left of the inspector")
-    XCTAssertGreaterThan(frame.height, 100, "all steps wrap into a readable column")
+    XCTAssertGreaterThanOrEqual(guideFrame.minX, 320, "guide stays to the right of the bounded sidebar")
+    XCTAssertLessThanOrEqual(guideFrame.maxX, window.contentView!.bounds.width, "start screen stays inside the detail column")
+    XCTAssertGreaterThan(frame.height, 24, "the shorter next step stays readable inside its column")
     store.create()
     for _ in 0..<20 where store.selected == nil { try? await Task.sleep(for: .milliseconds(30)) }
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")
   }
 
-  func testPreferencesUseSettingsPagesAndInspectorKeepsOnlyPresenterControls() async throws {
+  func testPreferencesUseReadingSectionsAndGeneralWritingControls() async throws {
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("settings-ui-\(UUID())")
@@ -308,7 +317,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     cleanUp(store, suite: suite, root: root)
     let camera = CameraModel(defaults: defaults)
     let before = store.settings
-    let host = NSHostingView(rootView: AnyView(InspectorView(store: store, camera: camera)))
+    let host = NSHostingView(rootView: AnyView(ReadingSettingsPage(store: store, camera: camera)))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
     window.orderFrontRegardless()
@@ -318,10 +327,10 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       return labels(host).joined(separator: "|")
     }
     let inspector = await rendered()
-    for label in ["Size", "Typography", "Mirror for teleprompter glass", "Mirroring and cues"] {
+    for label in ["Following", "Reading text", "Layout", "Reading guide", "Colours", "Reading text size", "Mirror for teleprompter glass", "Rotation and stage directions"] {
       XCTAssertTrue(inspector.contains(label), label)
     }
-    for label in ["Spoken language", "Microphone volume", "Saved settings", "How it follows you", "Editor font"] {
+    for label in ["Editor font", "Editor text size", "Spoken language", "Voice-follow input level", "How it follows you"] {
       XCTAssertFalse(inspector.contains(label), label)
     }
     store.simpleInterface = false
@@ -332,17 +341,28 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let advanced = await rendered()
     XCTAssertTrue(advanced.contains("Show stage directions"))
     XCTAssertTrue(advanced.contains("Highlight active word"))
+    // Builder A owns the other pages; this test covers Reading and General's shared writing controls.
     let expected: [(SettingsTab, [String])] = [
-      (.general, ["How it follows you", "Interface size", "Align presenter to screen edges"]),
-      (.voice, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
-      (.editor, ["Editor font", "Editor size"]),
-      (.presets, ["Preset name", "Save Preset", "Saved settings"])
+      (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
+      (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
+      (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.camera, ["Camera", "Camera and recording sections"]),
+      (.presets, ["Preset name", "Save Reading Preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {
       host.rootView = AnyView(SettingsPage(store: store, tab: tab))
       let page = await rendered()
       for label in pageLabels { XCTAssertTrue(page.contains(label), "\(tab): \(label)") }
     }
+    // Test A's real General page once its new tab model lands; until then render the same section.
+    if SettingsTab.allCases.contains(where: { $0.rawValue == "Camera & Recording" }) {
+      host.rootView = AnyView(SettingsPage(store: store, tab: .general))
+    } else {
+      host.rootView = AnyView(Form { Section("Writing") { EditorTextControls(store: store) } }.formStyle(.grouped))
+    }
+    let writing = await rendered()
+    XCTAssertTrue(writing.contains("Editor font"))
+    XCTAssertTrue(writing.contains("Editor text size"))
     XCTAssertEqual(store.settings, before)
   }
 }

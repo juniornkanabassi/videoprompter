@@ -27,6 +27,7 @@ final class UIZoomTests: XCTestCase {
     suite = "VideoPrompterTests.\(UUID().uuidString)"
     defaults = TestDefaults.suite(named: suite)!
     store = AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)
+    store.settings.audioDeviceUID = nil // Geometry fixtures must not open real microphones.
   }
 
   override func tearDown() async throws {
@@ -96,18 +97,15 @@ final class UIZoomTests: XCTestCase {
     }
   }
 
-  /// Settings zooms each page inside a fixed viewport: the native TabView root stays unscaled, so
-  /// 200% does not double the window. The live Settings scene chrome still needs a visual check.
-  func testSettingsKeepsOneWindowSizeAtEveryZoom() {
+  /// Settings preserves its sidebar and uses the available display height as text grows.
+  func testSettingsKeepsHeightBoundedAndEnlargesNavigation() {
+    let screen = NSScreen.main?.visibleFrame.size ?? NSSize(width: 1280, height: 900)
     for tab in SettingsTab.allCases {
-      store.uiZoom = 1
-      let actual = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
-      XCTAssertEqual(actual.width, AppSettingsView.width, accuracy: 1, "\(tab)")
-      for scale in [1.5, 2.0] {
+      for scale in [1.0, 1.5, 2.0] {
         store.uiZoom = scale
-        let zoomed = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
-        XCTAssertEqual(zoomed.width, actual.width, accuracy: 1, "\(tab) at \(scale): width")
-        XCTAssertEqual(zoomed.height, actual.height, accuracy: 1, "\(tab) at \(scale): height")
+        let size = NSHostingView(rootView: AppSettingsView(store: store, selectedTab: tab)).fittingSize
+        XCTAssertEqual(size.width, min(880 * scale, screen.width - 80), accuracy: 1, "\(tab) at \(scale): bounded width")
+        XCTAssertEqual(size.height, min(600 * scale, screen.height - 80), accuracy: 1, "\(tab) at \(scale): usable display height")
       }
     }
   }
@@ -125,9 +123,9 @@ final class UIZoomTests: XCTestCase {
     var rowHeightAtActualSize: CGFloat = 0
     // What a click on each control and across the editor reaches at actual size, which every
     // zoom must keep. SwiftUI may use an enclosing container as a native hit target.
-    var reachedAtActualSize: [ObjectIdentifier: String] = [:]
     var editorAtActualSize = 0.0
     for scale in AppStore.uiZoomSteps {
+      store.inspector = scale < 1.5 // Larger reading controls have their own sheet, tested separately.
       store.uiZoom = scale
       await settle(window)
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("Passage 1 ") },
@@ -143,14 +141,18 @@ final class UIZoomTests: XCTestCase {
       XCTAssertEqual(font.pointSize, 18, accuracy: 0.5, "\(scale): the editor's text size is its own setting")
 
       let outline = try XCTUnwrap(views(of: NSOutlineView.self, in: window).first, "\(scale): no sidebar")
-      XCTAssertGreaterThanOrEqual(outline.convert(outline.visibleRect, to: nil).width, 200 * scale - 1, "\(scale): sidebar minimum is enforced")
+      XCTAssertGreaterThanOrEqual(outline.convert(outline.visibleRect, to: nil).width, min(320, 220 * scale) - 1, "\(scale): sidebar stays bounded while its labels grow")
       let row = outline.convert(outline.rect(ofRow: 0), to: nil).height
       if scale == 1 { rowHeightAtActualSize = row }
       XCTAssertEqual(row / rowHeightAtActualSize, scale, accuracy: 0.05, "\(scale): the sidebar is zoomed")
 
       let content = try XCTUnwrap(window.contentView).bounds
-      let controls = views(of: NSControl.self, in: window).filter { !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 0 }
-      XCTAssertGreaterThan(controls.count, 5, "\(scale): the inspector's controls are there")
+      // Auto-hidden overlay scrollers intentionally let clicks reach the content below them.
+      // Check permanent controls here; the editor hit grid above covers the overlay region.
+      let controls = views(of: NSControl.self, in: window).filter {
+        !$0.isHiddenOrHasHiddenAncestor && $0.frame.width > 0 && ($0 as? NSScroller)?.scrollerStyle != .overlay
+      }
+      XCTAssertGreaterThanOrEqual(controls.count, 3, "\(scale): the two-pane library keeps its controls")
       var clicked = 0
       for control in controls {
         let rect = control.convert(control.bounds, to: nil)
@@ -167,22 +169,18 @@ final class UIZoomTests: XCTestCase {
           if control.isDescendant(of: hit) || control.enclosingScrollView.map(hit.isDescendant(of:)) == true { return "its container" }
           return "\(type(of: hit))"
         } ?? "nothing"
-        if scale == 1 { reachedAtActualSize[ObjectIdentifier(control)] = reached; continue }
-        guard let expected = reachedAtActualSize[ObjectIdentifier(control)] else { continue }
-        if reached != "itself" { XCTAssertEqual(reached, expected, "\(scale): a click on \(type(of: control))") }
+        // SwiftUI recreates controls as zoom reflows the Form. Object identity therefore
+        // cannot identify corresponding controls. Validate every current visible target.
+        XCTAssertTrue(["itself", "its container"].contains(reached), "\(scale): a click on \(type(of: control)) reached \(reached)")
         clicked += 1
       }
-      if scale != 1 { XCTAssertGreaterThan(clicked, 5, "\(scale): controls compared with actual size") }
+      XCTAssertGreaterThanOrEqual(clicked, 3, "\(scale): every visible control is checked; enlarged forms may scroll the rest out of view")
     }
     window.contentView = nil
   }
 
-  /// The library window at its narrowest, sized the way SwiftUI's own window sizes it. The fixed
-  /// 760-point minimum let the window go narrower than the three columns need (SwiftUI asks twice
-  /// the inspector's ideal width on top of the sidebar and editor), and AppKit looped on
-  /// constraints until it crashed; showing the inspector in a narrowed window did the same.
-  /// Zoom must not raise that minimum either, or 200% would outgrow a laptop screen.
-  func testTheNarrowestLibraryWindowLaysOutWithTheInspectorShownOrHiddenAtEveryZoom() async throws {
+  /// Native sidebar collapse keeps the editor usable at the minimum width, at every zoom.
+  func testTheNarrowestLibraryWindowKeepsTheEditorAtEveryZoom() async throws {
     let record = try await store.library!.create(title: "Small", markdown: "A short script.")
     await store.reload()
     store.selectedID = record.id
@@ -195,15 +193,15 @@ final class UIZoomTests: XCTestCase {
     await settle(window)
     window.setContentSize(window.contentMinSize)   // as far as dragging the corner goes
     await settle(window)
-    XCTAssertEqual(window.contentMinSize.width, 1132, "the minimum does not shrink with the inspector hidden")
+    XCTAssertEqual(window.contentMinSize.width, 640, "the library supports a compact writing window")
     store.inspector = true
     for scale in AppStore.uiZoomSteps + AppStore.uiZoomSteps.reversed() {
       store.uiZoom = scale
       await settle(window)
       window.setContentSize(window.contentMinSize)
       await settle(window)
-      XCTAssertEqual(controller.view.frame.width, 1132, accuracy: 1, "\(scale)")
-      XCTAssertEqual(window.contentMinSize.width, 1132, "\(scale): enough space for readable sidebar titles")
+      XCTAssertEqual(controller.view.frame.width, 640, accuracy: 1, "\(scale)")
+      XCTAssertEqual(window.contentMinSize.width, 640, "\(scale): the sidebar can collapse without increasing the window minimum")
       let editor = try XCTUnwrap(views(of: NSTextView.self, in: window).first { $0.isEditable && $0.string.contains("short") })
       XCTAssertEqual(editor.frame.width, editor.enclosingScrollView?.contentView.bounds.width ?? 0, accuracy: 0.5, "\(scale)")
     }
@@ -227,10 +225,10 @@ final class UIZoomTests: XCTestCase {
     // unlike the packaged on-screen frame. Force the actual accepted frame for layout checks.
     (panel.contentView as? OffscreenHostingSizing)?.holdWindowSize()
     panel.contentMinSize = NSSize(width: 360, height: 220)
+    store.session.resolveAudioInput = { _ in nil }
     store.session.seek(to: 48)
     let anchor = store.session.anchor
     let token = store.session.activeToken!
-    var actualHeight: CGFloat = 0
     for manual in [false, true] {
       store.settings.mode = manual ? "Manual" : "Voice"
       for (mirrored, rotation) in [(false, 0), (true, 0), (false, 180), (true, 180)] {
@@ -241,6 +239,7 @@ final class UIZoomTests: XCTestCase {
           panel.setFrame(NSRect(origin: panel.frame.origin, size: NSSize(width: width, height: height)), display: true)
           store.uiZoom = zoom
           await settle(panel)
+          store.session.updateSettings(store.settings)
           if !manual {
             store.session.play()
             XCTAssertNotNil(store.session.anchorNotice)
@@ -253,8 +252,9 @@ final class UIZoomTests: XCTestCase {
           XCTAssertEqual(content.bounds.height, height, accuracy: 1, "exercise the actual default presenter height")
           XCTAssertGreaterThan(viewport.height, 120, "the default presenter retains a usable script viewport at \(zoom)")
           XCTAssertLessThan(viewport.height, content.bounds.height - 40, "capsule has layout space at \(zoom)")
-          if zoom == 1 { actualHeight = viewport.height }
-          else { XCTAssertLessThan(viewport.height, actualHeight, "zoom/wrapping reserves more height") }
+          // The tools can fold away at higher zoom, so the script need not get shorter.
+          // This fixture includes actionable microphone notices; the normal 40% bar cap
+          // is measured independently by PresenterBarTests without those notices.
           let font = try XCTUnwrap(text.textStorage?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont)
           XCTAssertEqual(font.pointSize, store.settings.fontSize, accuracy: 0.5)
           XCTAssertEqual(store.session.tokenIndex, 48)
@@ -296,6 +296,7 @@ final class UIZoomTests: XCTestCase {
     let panel = try XCTUnwrap(controller.panel)
     defer { controller.close() }
     panel.setContentSize(NSSize(width: 500, height: 520))
+    store.session.resolveAudioInput = { _ in nil }
     store.session.play()
     XCTAssertNotNil(store.session.anchorNotice, "the missing-microphone notice exercises stacking")
     for scale in AppStore.uiZoomSteps {

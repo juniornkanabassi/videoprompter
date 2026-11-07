@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import PrompterCore
 
 /// A frame marker's shape. Junior shoots open gate, so the sensor frame is wider than what he
 /// delivers: the marker is the delivery aspect drawn inside the picture he actually gets.
@@ -8,9 +9,12 @@ struct CameraAspect: Codable, Equatable, Hashable, Identifiable, Sendable {
   var height: Double
   var id: String { label }
   var label: String { "\(trim(width)):\(trim(height))" }
-  var isValid: Bool { width > 0 && height > 0 }
+  // Match the public control boundary and reject non-finite or unusable ratios.
+  var isValid: Bool {
+    InputValidation.frameDimension.accepts(width) && InputValidation.frameDimension.accepts(height) && (width / height).isFinite && width / height > 0
+  }
   private func trim(_ value: Double) -> String {
-    value == value.rounded() ? String(Int(value)) : String(format: "%g", value)
+    String(format: "%g", value)
   }
   /// The largest rectangle of this shape that fits inside `rect`, centred. Nothing is cropped
   /// from the picture: the marker only draws where the delivered frame lands.
@@ -41,6 +45,51 @@ struct CameraGuides: Codable, Equatable, Sendable {
   var marker: CameraAspect?
   /// How dark everything outside the marker goes.
   var shadeOpacity = 0.5
+  /// Stripes over everything at or above `zebraLevel` IRE, or within ± `zebraRange` of it.
+  var zebras = false
+  var zebraLevel = 95 { didSet { if zebraLevel != oldValue { zebraPurpose = .custom } } }
+  var zebraRange = 0 { didSet { if zebraRange != oldValue { zebraPurpose = .custom } } }
+  var zebraPurpose = ZebraPurpose.brightAreas
+  enum ZebraPurpose: String, Codable, CaseIterable {
+    case brightAreas, faceReference, custom
+    var label: String {
+      switch self { case .brightAreas: "Bright areas"; case .faceReference: "Face reference"; case .custom: "Custom" }
+    }
+  }
+  /// Lit-cheek bands: about 40 IRE for deep brown skin up to about 70 for light skin. The preset is
+  /// 45 ± 5, the owner's own researched level for a dark complexion (6 Nov 2026).
+  static let faceLevels = 40...70, faceRanges = 2...10, faceDefault = (level: 45, range: 5)
+  var isFaceBand: Bool { Self.faceLevels.contains(zebraLevel) && Self.faceRanges.contains(zebraRange) }
+  // Never infer a face reference merely from the shape of a numerical band.
+  var validatedZebraPurpose: ZebraPurpose {
+    switch zebraPurpose {
+    case .faceReference: isFaceBand ? .faceReference : .custom
+    case .brightAreas: zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom
+    case .custom: .custom
+    }
+  }
+  mutating func useZebraPreset(_ purpose: ZebraPurpose) {
+    if purpose == .faceReference, !isFaceBand { zebraLevel = Self.faceDefault.level; zebraRange = Self.faceDefault.range }
+    if purpose == .brightAreas { zebraLevel = 95; zebraRange = 0 }
+    zebraPurpose = purpose
+  }
+  var zebraMeasurement: String {
+    zebraRange == 0 ? "Stripes mark \(zebraLevel) IRE and above in the received picture."
+      : "Stripes mark \(max(0, zebraLevel - zebraRange))–\(min(100, zebraLevel + zebraRange)) IRE in the received picture."
+  }
+  var zebraWarning: String? {
+    guard validatedZebraPurpose == .custom, zebraLevel + zebraRange >= 90 else { return nil }
+    return "This custom level is near white. Do not brighten a face to make stripes appear; important detail may be lost."
+  }
+  var zebraGuidance: String {
+    switch validatedZebraPurpose {
+    case .faceReference: "For faces, check detail on the lit cheek. Skin tones vary, so there is no single target for every face. If your camera uses a flat picture setting, follow its instructions."
+    case .brightAreas: "Check bright areas. Lower exposure on your camera if important parts of the picture lose detail."
+    case .custom: zebraWarning ?? "Custom measurement only, not a face exposure target."
+    }
+  }
+  /// The picture repainted by brightness band, for setting exposure against a grey card.
+  var falseColour = false
 
   /// Colour and opacity together, as the guide layer is stroked with.
   var strokeColor: CGColor {
@@ -49,26 +98,41 @@ struct CameraGuides: Codable, Equatable, Sendable {
   /// Everything outside the frame marker goes this much darker.
   var shadeColor: CGColor { CGColor(red: 0, green: 0, blue: 0, alpha: shadeOpacity) }
   static func color(_ hex: String, alpha: Double) -> CGColor? {
-    let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-    guard value.count == 6, let number = UInt64(value, radix: 16) else { return nil }
+    guard let value = InputValidation.hexColour(hex), let number = UInt64(value.dropFirst(), radix: 16) else { return nil }
     return CGColor(
       red: CGFloat((number >> 16) & 255) / 255, green: CGFloat((number >> 8) & 255) / 255,
       blue: CGFloat(number & 255) / 255, alpha: alpha)
+  }
+
+  mutating func sanitise() {
+    if let marker, !marker.isValid { self.marker = nil }
+    opacity = InputValidation.guideVisibility.repair(opacity)
+    shadeOpacity = InputValidation.shade.repair(shadeOpacity)
+    zebraLevel = Int(InputValidation.zebraLevel.repair(Double(zebraLevel)))
+    zebraRange = Int(InputValidation.zebraRange.repair(Double(zebraRange)))
+    colorHex = PrompterSettings.normalisedHexColour(colorHex) ?? "#3F8CFF"
   }
 
   init() {}
   /// Lenient, so a preference written by an older build keeps whatever it did set.
   init(from decoder: Decoder) throws {
     let c = try decoder.container(keyedBy: CodingKeys.self)
-    rotation = CameraRotation(rawValue: try c.decodeIfPresent(Int.self, forKey: .rotation) ?? 0) ?? .none
-    automaticRotation = try c.decodeIfPresent(Bool.self, forKey: .automaticRotation) ?? false
-    thirds = try c.decodeIfPresent(Bool.self, forKey: .thirds) ?? false
-    axes = try c.decodeIfPresent(Bool.self, forKey: .axes) ?? false
-    bullseye = try c.decodeIfPresent(Bool.self, forKey: .bullseye) ?? false
-    colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex) ?? "#3F8CFF"
-    opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 0.85
-    marker = try c.decodeIfPresent(CameraAspect.self, forKey: .marker)
-    shadeOpacity = try c.decodeIfPresent(Double.self, forKey: .shadeOpacity) ?? 0.5
+    rotation = CameraRotation(rawValue: c.preference(.rotation, default: 0)) ?? .none
+    automaticRotation = c.preference(.automaticRotation, default: false)
+    thirds = c.preference(.thirds, default: false)
+    axes = c.preference(.axes, default: false)
+    bullseye = c.preference(.bullseye, default: false)
+    colorHex = c.preference(.colorHex, default: "#3F8CFF")
+    opacity = c.preference(.opacity, default: 0.85)
+    marker = c.preference(.marker, default: Optional<CameraAspect>.none)
+    shadeOpacity = c.preference(.shadeOpacity, default: 0.5)
+    zebras = c.preference(.zebras, default: false)
+    zebraLevel = c.preference(.zebraLevel, default: 95)
+    zebraRange = c.preference(.zebraRange, default: 0)
+    zebraPurpose = c.preference(.zebraPurpose, default: Optional<ZebraPurpose>.none)
+      ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
+    falseColour = c.preference(.falseColour, default: false)
+    sanitise()
   }
 }
 
@@ -76,21 +140,34 @@ struct CameraGuides: Codable, Equatable, Sendable {
 /// repeat across identical cameras, unique IDs do not.
 struct CameraGuideStore {
   private static let key = "cameraGuides"
+  private static let pendingKey = "cameraPendingGuides"
   private let defaults: UserDefaults
   init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
   func guides(for uid: String?) -> CameraGuides {
-    guard let uid, let stored = defaults.dictionary(forKey: Self.key)?[uid] as? Data,
-      let value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
-    else { return CameraGuides() }
+    savedGuides(for: uid) ?? CameraGuides()
+  }
+  func savedGuides(for uid: String?) -> CameraGuides? {
+    let stored = uid.flatMap { defaults.dictionary(forKey: Self.key)?[$0] as? Data }
+      ?? (uid == nil ? defaults.data(forKey: Self.pendingKey) : nil)
+    guard let stored,
+      var value = try? JSONDecoder().decode(CameraGuides.self, from: stored)
+    else { return nil }
+    value.sanitise()
+    // Persist every repair, including those applied by the decoder.
+    if (try? JSONEncoder().encode(value)) != stored { set(value, for: uid) }
     return value
   }
   func set(_ guides: CameraGuides, for uid: String?) {
-    guard let uid, let data = try? JSONEncoder().encode(guides) else { return }
+    var safeGuides = guides
+    safeGuides.sanitise()
+    guard let data = try? JSONEncoder().encode(safeGuides) else { return }
+    guard let uid else { defaults.set(data, forKey: Self.pendingKey); return }
     var all = defaults.dictionary(forKey: Self.key) ?? [:]
     all[uid] = data
     defaults.set(all, forKey: Self.key)
   }
+  func clearPendingGuides() { defaults.removeObject(forKey: Self.pendingKey) }
 }
 
 /// The overlay's geometry. Two paths, both rebuilt only on layout or a settings change — the
@@ -149,6 +226,20 @@ struct CameraGuideStore {
     if axes {
       line(CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.midX, y: rect.maxY))
       line(CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY))
+    }
+    return path
+  }
+
+  /// Diagonal stripes across the whole picture, for the zebra layer to mask down to the bright
+  /// parts. Spacing in points, so they look the same at any window size.
+  static func zebraPath(picture: CGRect, spacing: CGFloat = 8) -> CGPath {
+    let path = CGMutablePath()
+    guard !picture.isEmpty else { return path }
+    var x = picture.minX - picture.height
+    while x < picture.maxX {
+      path.move(to: CGPoint(x: x, y: picture.minY))
+      path.addLine(to: CGPoint(x: x + picture.height, y: picture.maxY))
+      x += spacing
     }
     return path
   }

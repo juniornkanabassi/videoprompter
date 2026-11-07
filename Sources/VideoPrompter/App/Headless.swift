@@ -89,7 +89,7 @@ import SwiftUI
     timer?.invalidate(); timer = nil
     if let activeObserver { NotificationCenter.default.removeObserver(activeObserver) }
     activeObserver = nil
-    NSApp.setActivationPolicy(.regular)
+    NSApp.setActivationPolicy(AgentMode.isOn ? .accessory : .regular)
     Updates.shared.resume()
     // The library's views read `active` for alerts kept back while headless; have them look again.
     AppStore.shared.objectWillChange.send()
@@ -103,12 +103,12 @@ import SwiftUI
     windowHidden = false
     // Even with the presenter on screen, --show means the library comes forward.
     if let window = mainWindow { window.makeKeyAndOrderFront(nil) } else if let openLibrary { openLibrary() } else { reopenSelf() }
-    if !NSApp.isActive { NSApp.activate(ignoringOtherApps: true) }
+    if !NSApp.isActive { NSApp.activateUnlessAgentScreen() }
   }
   /// The fallback when the commands have not handed over `openLibrary`: asking LaunchServices to reopen this running
   /// copy makes SwiftUI open a library window, as a Dock click would, as long as no other window is on screen.
   private func reopenSelf() {
-    let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = true
+    let configuration = NSWorkspace.OpenConfiguration(); configuration.activates = !AgentMode.isOn
     NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration)
   }
   private func quitIfIdle() {
