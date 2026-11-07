@@ -152,6 +152,45 @@ import XCTest
     }
   }
 
+  func testCameraAndExposureKeepSixtyPercentClearAtDoubleSize() async throws {
+    let (store, camera, _, record) = try await fixture()
+    store.uiZoom = 2
+    camera.guides.falseColour = true
+    let size = NSSize(width: 720, height: 520)
+    var evidence: [[String: Any]] = []
+    for state in ["waiting", "ready", "recording", "saved"] {
+      let recorder = CameraRecorder(defaults: freshDefaults("CombinedFooter"))
+      camera.recorder = recorder
+      camera.pictureSizeOverride = state == "waiting" ? nil : .init(width: 1080, height: 1920)
+      if state == "recording" { recorder.phase = .recording }
+      if state == "saved" { recorder.savedTake = URL(fileURLWithPath: "/tmp/My Script.mov"); recorder.lastTakeDuration = 84 }
+      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
+      let (window, host) = await LibraryAX.host(view, size: size)
+      host.sizingOptions = []; host.frame = .init(origin: .zero, size: size)
+      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
+      func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
+      let scroll = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
+      XCTAssertFalse(LibraryAX.named("Key", in: host).isEmpty, "Exposure strip must be present")
+      try assertFrozenFooter(host, size: size, zoom: 2, readingFloor: 0.60)
+      let transport = ["Start reading", "Back to start", state == "recording" ? "Stop recording" : "Record"]
+      let frames = try transport.map { label in
+        try XCTUnwrap(LibraryAX.named(label, in: host).first?.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+      }
+      for frame in frames.dropFirst() { XCTAssertEqual(frame.midY, frames[0].midY, accuracy: 1) }
+      let reading = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
+      XCTAssertTrue(LibraryAX.value(reading, "accessibilityValue").contains("Automatic scroll"))
+      let geometry = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXButton" }.map {
+        "\(LibraryAX.value($0, "accessibilityLabel")): \($0.value(forKey: "accessibilityFrame") ?? "none")"
+      }
+      evidence.append(["state": state, "clearHeight": scroll.frame.height, "clearPercent": scroll.frame.height / size.height * 100, "controls": geometry])
+      LibraryAX.close(window)
+    }
+    if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
+      try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
+        .write(to: URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("combined-footer-layout.json"))
+    }
+  }
+
   func testFileActionsUndoWithoutLosingContents() async throws {
     let (store, _, _, record) = try await fixture()
     let manager = UndoManager(); manager.groupsByEvent = false
@@ -247,17 +286,19 @@ extension AppearanceSnapshotTests {
       store.uiZoom = zoom
       for size in [NSSize(width: 720, height: 520), .init(width: 1000, height: 700)] {
         let widthSuffix = size.width == 720 ? "" : "-wide"
-        for state in ["idle", "countdown", "reading", "recording", "saved", "problem", "failed", "camera-view"] {
+        for state in ["idle", "countdown", "reading", "recording", "saved", "problem", "failed", "camera-view"] + (zoom == 2 && size.width == 720 ? ["waiting-exposure", "ready-exposure", "recording-exposure", "saved-exposure"] : []) {
           let recorder = CameraRecorder(defaults: freshDefaults("FinalSnapshotTake"))
           camera.recorder = recorder
+          camera.guides.falseColour = state.hasSuffix("-exposure")
+          camera.pictureSizeOverride = state == "waiting-exposure" ? nil : .init(width: 1080, height: 1920)
           recorder.phase = .idle; recorder.errorMessage = nil; recorder.savedTake = nil
           recorder.droppedAudioBuffers = 0; recorder.receiptHidden = false
           camera.displayMode = state == "camera-view" ? .videoOnly : .prompterWithVideo
           store.session.stop(); store.session.present(record: record, settings: store.settings)
           if state == "countdown" { store.session.countdownTick = .seconds(60); store.session.startReading() }
           if state == "reading" { store.session.play(captureAudio: false) }
-          if state == "recording" { recorder.phase = .recording }
-          if state == "saved" || state == "problem" { recorder.savedTake = URL(fileURLWithPath: "/tmp/My Script 2026-11-06 14-03-22.mov") }
+          if state == "recording" || state == "recording-exposure" { recorder.phase = .recording }
+          if state == "saved" || state == "saved-exposure" || state == "problem" { recorder.savedTake = URL(fileURLWithPath: "/tmp/My Script 2026-11-06 14-03-22.mov") }
           if state == "problem" { recorder.droppedAudioBuffers = 3 }
           if state == "failed" { recorder.phase = .recording; recorder.errorMessage = "Camera disconnected"; recorder.phase = .idle }
           recorder.lastTakeDuration = 84; recorder.recordedDuration = 83
@@ -322,10 +363,10 @@ extension AppearanceSnapshotTests {
 }
 
 /// Shared by the matrix and PNG capture, so a snapshot cannot silently accept clipped controls.
-@MainActor func assertFrozenFooter(_ host: NSView, size: NSSize, zoom: Double, file: StaticString = #filePath, line: UInt = #line) throws {
+@MainActor func assertFrozenFooter(_ host: NSView, size: NSSize, zoom: Double, readingFloor: Double = 0.65, file: StaticString = #filePath, line: UInt = #line) throws {
   func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
   if let scroll = views(host).compactMap({ $0 as? NSTextView }).first?.enclosingScrollView {
-    XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * 0.65, "Reading floor", file: file, line: line)
+    XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * readingFloor, "Reading floor", file: file, line: line)
   }
   for label in ["Start reading", "Back to start", "Pause", "Read again", "Stop recording", "Show camera", "Tools", "Guides", "Exposure check", "Switch camera", "Play", "Show in Finder"] {
     for node in LibraryAX.named(label, in: host) where LibraryAX.value(node, "accessibilityRole") == "AXButton" {

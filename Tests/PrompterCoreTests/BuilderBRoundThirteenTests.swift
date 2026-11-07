@@ -57,7 +57,8 @@ import XCTest
       let transportFrame = try XCTUnwrap(record.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       let help = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
       let helpFrame = try XCTUnwrap(help.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      XCTAssertGreaterThan(helpFrame.minY, transportFrame.maxY, "Help must stay above the transport at \(zoom)")
+      // The compact strip may meet the transport edge, but their hit targets must not overlap.
+      XCTAssertGreaterThanOrEqual(helpFrame.minY, transportFrame.maxY, "Help must stay above the transport at \(zoom)")
       for (index, band) in CameraExposure.bands.enumerated() {
         let node = try XCTUnwrap(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).first)
         let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue

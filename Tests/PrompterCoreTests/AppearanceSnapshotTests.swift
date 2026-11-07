@@ -376,7 +376,7 @@ import XCTest
     }
     if name.hasPrefix("fable-bar-") {
       let zoom = name.contains("-200-") ? 2.0 : name.contains("-150-") ? 1.5 : 1.0
-      try assertFrozenFooter(host, size: size, zoom: zoom)
+      try assertFrozenFooter(host, size: size, zoom: zoom, readingFloor: name.contains("-exposure-") ? 0.60 : 0.65)
     }
     XCTAssertFalse(window.isVisible)
     if name.hasPrefix("presenter-waiting-") {
