@@ -121,7 +121,7 @@ public struct PhraseMatcher: Sendable {
     return nil
   }
   private func forwardMatch(words spoken: [String], script: [DocumentToken], current: Int) -> PhraseMatch? {
-    // Compared by key, so the inner loop stays a plain string comparison.
+    // Normalise numbers once, retaining the same year-shortening rule as local continuations.
     let target = script.map { key($0.normalised) }
     let words = spoken.map(key)
     let lo = max(0, current - backwardWindow)
@@ -132,7 +132,7 @@ public struct PhraseMatcher: Sendable {
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
       guard informativeCount > 0 else { continue }
-      for start in lo..<hi where target[start] == evidence[0] {
+      for start in lo..<hi where sameKey(evidence[0], target[start]) {
         var ti = start
         var matched = 0
         var last = start
@@ -143,7 +143,7 @@ public struct PhraseMatcher: Sendable {
         var landing: (informative: Int, intact: Bool)?
         for word in evidence {
           let before = ti
-          while ti < hi && target[ti] != word { ti += 1 }
+          while ti < hi && !sameKey(word, target[ti]) { ti += 1 }
           if ti < hi {
             let informative = word.count > 2 && !common.contains(word) ? 1 : 0
             leadingIntact = leadingIntact && ti == before
@@ -302,8 +302,10 @@ public struct PhraseMatcher: Sendable {
   /// Whether a recognised word next to the reader is this script token: the same key, or a year
   /// for its short form ("2025" for the "25" of "2024-25").
   private func same(_ word: String, _ token: String) -> Bool {
-    key(word) == key(token)
-      || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
+    sameKey(key(word), key(token))
+  }
+  private func sameKey(_ word: String, _ token: String) -> Bool {
+    word == token || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
   }
   private func contractionComponents(_ word: String) -> [String] {
     switch word {
