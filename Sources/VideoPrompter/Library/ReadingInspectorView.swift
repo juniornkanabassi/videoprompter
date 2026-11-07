@@ -37,7 +37,7 @@ struct ReadingSettingsPage: View {
       }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
-        Button("Narrow column") { store.settings.textWidth = 0.65 }
+        Button("Narrow Column") { store.settings.textWidth = 0.65 }
         ReadingChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment, zoom: store.uiZoom)
         percent("Line spacing", $store.settings.lineSpacing, 0...0.5)
         percent("Paragraph spacing", $store.settings.paragraphSpacing, 0...1)

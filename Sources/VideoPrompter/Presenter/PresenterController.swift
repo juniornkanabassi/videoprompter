@@ -785,7 +785,6 @@ struct PresenterView: View {
         .scaleEffect(
           x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
         ).rotationEffect(.degrees(Double(store.settings.rotation)))
-        .mask { VStack(spacing: 0) { Rectangle(); LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: 48) } }
         .clipped()
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
