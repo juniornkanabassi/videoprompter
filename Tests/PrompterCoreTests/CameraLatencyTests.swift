@@ -37,10 +37,14 @@ final class CameraLatencyTests: XCTestCase {
   /// After a re-pin from the card's default mode, the frames say the real rate: 25 fps here,
   /// though 29.97 was pinned. Jitter and a missed frame do not move the median.
   func testTheMeasuredRateIsTheListedDurationNearestTheFrames() {
-    var times = (0..<10).map { Double($0) * 0.04 + ($0 % 2 == 0 ? 0.0015 : -0.0015) }
+    var times: [Double] = (0..<10).map { (index: Int) -> Double in
+      let jitter: Double = index % 2 == 0 ? 0.0015 : -0.0015
+      return Double(index) * 0.04 + jitter
+    }
     times.remove(at: 5)
     XCTAssertEqual(Choice.measuredDuration(times, in: hd), time(1, 25))
-    XCTAssertEqual(Choice.measuredDuration((0..<10).map { Double($0) * 1001 / 30000 }, in: hd), ntsc30)
+    let ntscTimes: [Double] = (0..<10).map { (index: Int) -> Double in Double(index) * 1001.0 / 30000.0 }
+    XCTAssertEqual(Choice.measuredDuration(ntscTimes, in: hd), ntsc30)
     XCTAssertNil(Choice.measuredDuration([0, 0.04, 0.08], in: hd), "too few frames to tell")
     // A webcam's range: the nearer end.
     let range = Format(width: 1280, height: 720, subType: FourCharCode(kCVPixelFormatType_422YpCbCr8),
