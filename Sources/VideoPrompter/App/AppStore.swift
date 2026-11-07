@@ -519,13 +519,14 @@ private enum PresenterSaveError: LocalizedError {
       self?.changeScriptDeletion(ids, links: links, deleting: !deleting, undoManager: undoManager, inverting: change, actionName: actionName)
     }
     undoManager?.setActionName(actionName)
-    let previous = scriptDeletionTask
-    scriptDeletionTask = Task { [self, weak undoManager] in
+    let previous = libraryEditTask
+    libraryEditRevision += 1
+    libraryEditTask = Task { [self, weak undoManager] in
       await previous?.value
       let targets = inverting?.completed ?? ids
       do {
         for id in targets {
-          if deleting { try await deleteScript(id) }
+          if deleting { try await deleteScript(id, waitingForLibraryEdits: false) }
           else { try await restoreScript(id); MacGoogleDocs.links[id] = links[id] }
           change.completed.insert(id)
         }
@@ -538,10 +539,12 @@ private enum PresenterSaveError: LocalizedError {
           userInfo: [.announcement: "Moved \(change.completed.count) scripts to Recently Deleted", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
       }
     }
+    scriptDeletionTask = libraryEditTask
   }
-  func deleteScript(_ id: UUID, afterSaving: () throws -> Void = {}) async throws {
+  func deleteScript(_ id: UUID, waitingForLibraryEdits: Bool = true, afterSaving: () throws -> Void = {}) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
-    guard await flushPendingSaves() else {
+    // A queued deletion already follows earlier edits; waiting on its own queue would deadlock.
+    guard await flushPendingSaves(waitingForLibraryEdits: waitingForLibraryEdits) else {
       throw PendingEditsError(description: "Save the pending edits before moving scripts to Trash.")
     }
     try afterSaving()
@@ -690,17 +693,17 @@ private enum PresenterSaveError: LocalizedError {
   func flushSettings() async {
     await settingsPersistence.flush()
   }
-  func flushPendingSaves() async -> Bool {
+  func flushPendingSaves(waitingForLibraryEdits: Bool = true) async -> Bool {
     while true {
       let folderRevision = libraryEditRevision
-      await libraryEditTask?.value
+      if waitingForLibraryEdits { await libraryEditTask?.value }
       for task in Array(saveTasks.values) { await task.value }
       if let id = presenterSaveIDs.first {
         await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
         continue
       }
       await settingsPersistence.flush()
-      if folderRevision != libraryEditRevision { continue }
+      if waitingForLibraryEdits, folderRevision != libraryEditRevision { continue }
       return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
     }
   }
