@@ -6,6 +6,7 @@ enum LibraryEdit {
   case rename(UUID, String)
   case move([(UUID, UUID?)])
   case link(UUID, ScriptMetadata?)
+  case relink(ScriptRecord)
 }
 
 @MainActor private final class LibraryEditReceipt {
@@ -17,13 +18,23 @@ extension AppStore {
     enqueueLibraryEdit(edit, name: name, undoManager: undoManager)
   }
 
-  private func enqueueLibraryEdit(_ edit: LibraryEdit?, name: String, undoManager: UndoManager?,
-                                  reversing: LibraryEditReceipt? = nil) {
+  func registerLinkUndo(_ previous: ScriptRecord, manager: UndoManager?) {
     let receipt = LibraryEditReceipt()
+    receipt.inverse = .relink(previous)
+    registerLibraryUndo(receipt, name: "Link File", undoManager: manager)
+  }
+
+  private func registerLibraryUndo(_ receipt: LibraryEditReceipt, name: String, undoManager: UndoManager?) {
     undoManager?.registerUndo(withTarget: receipt) { [weak self, weak undoManager] _ in
       self?.enqueueLibraryEdit(nil, name: name, undoManager: undoManager, reversing: receipt)
     }
     undoManager?.setActionName(name)
+  }
+
+  private func enqueueLibraryEdit(_ edit: LibraryEdit?, name: String, undoManager: UndoManager?,
+                                  reversing: LibraryEditReceipt? = nil) {
+    let receipt = LibraryEditReceipt()
+    registerLibraryUndo(receipt, name: name, undoManager: undoManager)
     libraryEditRevision += 1
     let previous = libraryEditTask
     libraryEditTask = Task { [self, weak undoManager] in
@@ -47,6 +58,22 @@ extension AppStore {
             restored.append((id, script.metadata.folderID))
             receipt.inverse = .move(restored)
           }
+        case let .relink(previous):
+          // Capture the inverse only after earlier queued restores have finished.
+          let current = try await library.read(previous.id)
+          // Restore the library copy and link without writing either external file.
+          _ = try await library.unlink(previous.id)
+          let detached = try await library.read(previous.id)
+          _ = try await library.save(previous.id, markdown: previous.markdown,
+                                     expectedFingerprint: detached.metadata.contentFingerprint)
+          _ = try await library.restoreLink(previous.id, from: previous.metadata)
+          let restored = try await library.read(previous.id)
+          if let index = scripts.firstIndex(where: { $0.id == previous.id }) {
+            scripts[index] = restored
+            session.applyEditedRecord(restored)
+          }
+          await refreshLinkStates()
+          receipt.inverse = .relink(current)
         case let .link(id, metadata):
           guard let script = scripts.first(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
           let updated: ScriptMetadata
