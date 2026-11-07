@@ -439,10 +439,10 @@ struct PresenterView: View {
           .help("Discard the edit and keep the saved script")
       } else if hasScript && camera.displayMode != .videoOnly {
         Button(action: session.toggle) {
-          Text(countdown > 0 ? "Cancel" : session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read again" : "Start reading")
-        }.accessibilityLabel(session.isCountingDown ? "Cancel countdown" : session.isActivelyRunning ? "Pause" : session.reachedEnd ? "Read again" : "Start reading")
+          Text(countdown > 0 ? "Cancel" : session.reachedEnd ? "Read again" : session.isActivelyRunning ? "Pause" : "Start reading")
+        }.accessibilityLabel(session.isCountingDown ? "Cancel countdown" : session.reachedEnd ? "Read again" : session.isActivelyRunning ? "Pause" : "Start reading")
           .buttonStyle(PresenterButtonStyle(prominent: true))
-          .help(session.isActivelyRunning ? "Pause reading (⌥⌘S)" : "Start reading (⌥⌘S)")
+          .help(session.isActivelyRunning && !session.reachedEnd ? "Pause reading (⌥⌘S)" : "Start reading (⌥⌘S)")
         Button("Back to start", action: session.restart)
           .disabled(session.isActivelyRunning || (!awayFromStart && !session.isCountingDown))
           .help("Return to the first word without stopping the recording")

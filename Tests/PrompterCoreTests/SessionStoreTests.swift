@@ -561,18 +561,24 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.voicePosition(), 7, "paused holds")
   }
 
-  func testVoiceContinuesListeningAfterReachingLastWord() {
+  func testVoiceContinuesListeningAfterReachingLastWord() async throws {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
     let script = ScriptRecord(metadata: ScriptMetadata(title: "Repeated", fileName: "repeat.md"),
       markdown: "one two thank you more words come later thank you")
     session.present(record: script, settings: settings)
     session.seek(to: 6)
+    session.voiceEndGrace = .milliseconds(80)
     session.play(captureAudio: false)
     let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
     session.acceptSpeechCandidate(SpeechCandidate(replacementID: "last", generation: 1, locale: Locale(identifier: "en-GB"), text: "come later thank you", range: range, isFinal: true))
     XCTAssertEqual(session.tokenIndex, 9)
     XCTAssertTrue(session.isActivelyRunning, "Recognition must remain available to correct a premature match")
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertEqual(session.visibleReadingState, "End of script")
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertFalse(session.isActivelyRunning, "Recognition must stop after the grace period")
+    XCTAssertTrue(session.reachedEnd)
   }
 
   func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {

@@ -114,7 +114,9 @@ final class SessionStore: ObservableObject {
   private var manualStart: TimeInterval = 0
   /// Manual ran off the end. The next Play starts again from the beginning unless a seek came first.
   @Published private(set) var manualCompleted = false
-  var reachedEnd: Bool { manualCompleted || (!isActivelyRunning && lastConfirmedTokenIndex == document.spokenTokens.count - 1 && !document.spokenTokens.isEmpty) }
+  var reachedEnd: Bool { manualCompleted || (lastConfirmedTokenIndex == document.spokenTokens.count - 1 && !document.spokenTokens.isEmpty) }
+  private var voiceEndTask: Task<Void, Never>?
+  var voiceEndGrace: Duration = .seconds(3)
   var readingModeName: String { isManual ? "Automatic scroll" : "Voice follow" }
   var readingNextAction: String { isManual ? "Scrolls at \(Int(settings.speed)) wpm" : "Follows your voice" }
   private var speechGeneration: UInt64?
@@ -326,7 +328,10 @@ final class SessionStore: ObservableObject {
     stopTasks()
     rememberCurrent()
   }
-  func toggle() { isActivelyRunning || isCountingDown ? pause() : startReading() }
+  func toggle() {
+    if reachedEnd { pause(); play(); return }
+    isActivelyRunning || isCountingDown ? pause() : startReading()
+  }
   func restart() {
     seek(to: 0)
     pause()
@@ -358,6 +363,7 @@ final class SessionStore: ObservableObject {
     guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
     tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
     if incrementSeekRevision {
+      voiceEndTask?.cancel(); voiceEndTask = nil
       rebaseManual(to: Double(tokenIndex))
       pendingSpeechCandidate = nil
       seekRevision &+= 1
@@ -621,6 +627,17 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
+      if update.tokenIndex < document.spokenTokens.count - 1 {
+        voiceEndTask?.cancel(); voiceEndTask = nil
+      } else if update.tokenIndex > old {
+        voiceEndTask?.cancel()
+        voiceEndTask = Task { [weak self] in
+          guard let self else { return }
+          do { try await Task.sleep(for: self.voiceEndGrace) } catch { return }
+          guard !Task.isCancelled, self.reachedEnd else { return }
+          self.pause()
+        }
+      }
       rememberSoon()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
@@ -647,6 +664,7 @@ final class SessionStore: ObservableObject {
     return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
+    voiceEndTask?.cancel(); voiceEndTask = nil
     cancelCountdown()
     isPreparingVoice = false
     hasLiveRecognition = false
