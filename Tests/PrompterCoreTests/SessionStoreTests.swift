@@ -408,6 +408,37 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.tokenIndex, 0)
   }
 
+  func testToggleAtEndRestartsWithStartDelay() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.startDelay = 3
+    session.play()
+    now = 110
+    session.syncManualFrontier()
+    XCTAssertTrue(session.reachedEnd)
+    session.toggle()
+    XCTAssertEqual(session.tokenIndex, 0)
+    XCTAssertTrue(session.isCountingDown)
+    XCTAssertFalse(session.isActivelyRunning)
+    session.pause()
+  }
+
+  func testToggleCancelsCountdownAtEnd() {
+    var now = 100.0
+    let session = manualSession { now }
+    session.startDelay = 3
+    session.play()
+    now = 110
+    session.syncManualFrontier()
+    session.startReading()
+    XCTAssertTrue(session.reachedEnd)
+    XCTAssertTrue(session.isCountingDown)
+    session.toggle()
+    XCTAssertFalse(session.isCountingDown)
+    XCTAssertFalse(session.isActivelyRunning)
+    XCTAssertTrue(session.reachedEnd)
+  }
+
   func testManualReachingTheEndConfirmsTheLastWordAndStopsThenPlayRestarts() {
     var now = 100.0
     let session = manualSession { now }

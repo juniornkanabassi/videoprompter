@@ -329,8 +329,9 @@ final class SessionStore: ObservableObject {
     rememberCurrent()
   }
   func toggle() {
-    if reachedEnd { pause(); play(); return }
-    isActivelyRunning || isCountingDown ? pause() : startReading()
+    if isCountingDown { pause(); return }
+    if reachedEnd { seek(to: 0); startReading(); return }
+    isActivelyRunning ? pause() : startReading()
   }
   func restart() {
     seek(to: 0)
