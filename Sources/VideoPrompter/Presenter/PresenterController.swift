@@ -681,6 +681,7 @@ class PresenterPanel: NSPanel {
 struct PresenterView: View {
   @Environment(\.openSettings) private var openSettings
   @Environment(\.colorScheme) private var scheme
+  @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
   @Environment(\.offscreenRendering) private var offscreenRendering
   @Environment(\.presenterReduceTransparency) private var transparencyOverride
@@ -750,7 +751,7 @@ struct PresenterView: View {
       readingStage
       if camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed {
         ExposureLegend(model: camera, zoom: controlZoom)
-          .frame(maxWidth: .infinity).background(Color(white: 0.12))
+          .frame(maxWidth: .infinity).background(Surfaces.presenterPanel)
           .accessibilityIdentifier("presenter-exposure-strip")
       }
     }
@@ -961,7 +962,7 @@ struct PresenterView: View {
     }
   }
   private var secondaryOpacity: Double {
-    controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? 0.75 : 1
+    controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? Palette.quietOpacity(contrast) : 1
   }
   private var showsReceipt: Bool { !recorder.receiptHidden && !recorder.isRecording && !recorder.isBusy && (recorder.savedTake != nil || recorder.takeFailure != nil) }
   private var barContent: some View {
@@ -1013,12 +1014,27 @@ struct PresenterView: View {
     guard camera.pictureSize != nil else { return "Waiting for picture" }
     return "Ready · " + recorder.compactOutputConfirmation(camera: camera)
   }
+  private func recordingAccessibilityValue(sound: String) -> String {
+    if recorder.isRecording { return recordingStateTitle + " · " + sound }
+    if camera.isReadyToRecord && camera.pictureSize != nil {
+      return recordingStateTitle + " · " + recorder.preRecordConfirmation(camera: camera)
+    }
+    return recordingStateTitle
+  }
+  private var recordHelp: String {
+    if recorder.isRecording { return "Stop recording and save the take (⇧⌘R)" }
+    if recorder.isBusy { return "Recording is starting or saving" }
+    if camera.isReadyToRecord { return "Record a take. Reading starts separately. " + recorder.preRecordConfirmation(camera: camera) }
+    return camera.recordingBlockReason
+  }
+
   private var recordingStateControl: some View {
     TimelineView(.periodic(from: .now, by: 0.5)) { _ in
       let health = RecordingHealth.measured(lastAudibleSampleAt: recorder.inputMeter.lastAudibleSampleAt,
         clipping: recorder.inputMeter.isClipping && recorder.inputMeter.isFresh())
       let problem = recorder.isRecording && (recorder.droppedAudioBuffers > 0 || health == .silence || health == .clipping)
       let sound = problem ? "Check microphone" : health.message
+      let value = recordingAccessibilityValue(sound: sound)
       Button {
         if recorder.isRecording || recorder.isBusy { showsRecordingStatus = true }
         else if !camera.isReadyToRecord { showsCameraRecovery = true }
@@ -1043,7 +1059,7 @@ struct PresenterView: View {
       }.buttonStyle(.plain)
         .foregroundStyle(problem || (!camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording) ? Color.orange : Color.primary)
         .accessibilityLabel("Recording status")
-        .accessibilityValue(recordingStateTitle + (recorder.isRecording ? " · " + sound : ""))
+        .accessibilityValue(value)
         .accessibilityChildren {
           if recorder.isRecording { RecordingBarLevel(meter: recorder.inputMeter, compact: true) }
         }
@@ -1101,7 +1117,7 @@ struct PresenterView: View {
       Group {
         if camera.presentsWithVideo {
           PresenterRecordButton(recorder: recorder, camera: camera, compact: true, showsStatus: false, defaultLabel: hasScript && camera.displayMode != .videoOnly ? session.activeRecord?.metadata.title ?? "" : "", secondary: !hasScript || camera.displayMode == .videoOnly)
-            .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : camera.recordingBlockReason)
+            .help(recordHelp)
         } else {
           Button("Show camera") { camera.displayMode = .prompterWithVideo }.help("Show the camera beside the script (⇧⌘V)")
         }
@@ -1322,8 +1338,8 @@ struct PresenterView: View {
     VStack(spacing: Space.sm) {
       Button("Reading mode and speed") { settingsTab = .reading; showsSettings = true }.initialPopoverFocus()
       if draft.isEditing, draft.hasExternalChange(in: store) {
-        Text("This script changed outside Video Prompter. Finishing will keep this draft and show a conflict instead of overwriting it.")
-          .foregroundStyle(.orange)
+        Label("This script changed outside Video Prompter. Finishing will keep this draft and show a conflict instead of overwriting it.", systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.primary)
       }
       if let error = draft.errorMessage {
         Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.primary)
@@ -1343,7 +1359,7 @@ struct PresenterView: View {
     }
     .font(.callout).multilineTextAlignment(.leading)
     .fixedSize(horizontal: false, vertical: true)
-    .padding(Space.sm).background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12))
+    .padding(Space.sm).background(LibraryAppearance.color(.windowBackgroundColor, scheme: scheme), in: RoundedRectangle(cornerRadius: 12))
     .frame(maxWidth: 560)
   }
   private var hasBottomNotice: Bool {
@@ -1585,14 +1601,13 @@ struct PresenterPopoverSurface<Content: View>: View {
 }
 
 struct PresenterGlass: ViewModifier {
-  @Environment(\.colorSchemeContrast) private var contrast
   @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
   @Environment(\.offscreenRendering) private var offscreenRendering
   @Environment(\.presenterReduceTransparency) private var transparencyOverride
   private var reduceTransparency: Bool { transparencyOverride ?? (systemReduceTransparency || offscreenRendering) }
   let radius: CGFloat
   func body(content: Content) -> some View {
-    if reduceTransparency { content.background(Color(white: contrast == .increased ? 0.08 : 0.12), in: RoundedRectangle(cornerRadius: radius)) }
+    if reduceTransparency { content.background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: radius)) }
     else { content.glassEffect(.regular.tint(.black.opacity(0.35)), in: RoundedRectangle(cornerRadius: radius)) }
   }
 }

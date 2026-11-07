@@ -118,7 +118,8 @@ enum ScriptShortcuts {
       }
     Settings { AppSettingsView(store: store) }.windowResizability(.contentMinSize)
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store).background(CalmInitialFocus()) }
-      .defaultSize(width: 520, height: 560)
+      .defaultSize(width: 520, height: 320)
+      .windowResizability(.contentMinSize)
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)

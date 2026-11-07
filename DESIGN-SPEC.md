@@ -13,19 +13,19 @@ This is the lead-authorised final footer. It supersedes every earlier footer and
 ┌─────────────────────────────────────────────────────────────────────┐
 │ [Start reading] [Back to start]                      [● Record]     │ Transport
 │ Automatic scroll · Ready ⌄      Ready · Portrait 1080 × 1920 › Tools⌄│ State
-│ Guides ✓       Exposure check       Switch camera                  │ Context
+│ ✓ Guides       Exposure check       Switch camera                  │ Context
 └─────────────────────────────────────────────────────────────────────┘
 
 Recording: [Pause] [Back to start]             [Stop recording]
            Automatic scroll · Scrolling ⌄    ● REC 01:24 ▮▮  ›  Tools⌄
                                              Receiving sound
-           Guides ✓  Exposure check  Switch camera (disabled)
+           ✓ Guides  Exposure check  Switch camera (disabled)
 
 Receipt:   same transport and state bands
            Saved My Script … .mov · 1:24 [Play] [Show in Finder] [×]
 ```
 
-The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions and status words never truncate. Hide restores the Picture row. Last take in Tools > More opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
+The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions, receipt state and duration never truncate. Saved with problems keeps its full state label; its complete diagnosis is in Review, help and the accessible description. Hide restores the Picture row. Last take in Tools > More opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
 
 | Budget at 720 × 520 | 100% | 150% | 200% |
 |---|---:|---:|---:|
@@ -36,7 +36,7 @@ The receipt stays in one row at the minimum width, instead of the proposed secon
 | Maximum footer budget | 92 pt | 136 pt | 180 pt |
 | Reading area minimum | 428 pt | 384 pt | 340 pt |
 
-The hard gate, including the optional exposure strip, is ≥65% reading height (338 pt at 720 × 520). Start and Back to start have an 8 pt unscaled gap. Record is trailing. The state controls are unboxed, use full mode names and chevrons adjacent to their words. The recording meter shares the timer line; health is the second line. Context alone may recede to 75%. The last 48 pt of reading glyphs fade into the footer; the scroll area's height is unchanged.
+The hard gate for the footer state matrix is ≥65% reading height (338 pt at 720 × 520). Start and Back to start have an 8 pt unscaled gap. Record is trailing. The state controls are unboxed, use full mode names and chevrons adjacent to their words. The recording meter shares the timer line; health is the second line. Context alone may recede to 75%. The last 48 pt of reading glyphs fade into the footer; the scroll area's height is unchanged.
 
 | Reading state | Transport | State |
 |---|---|---|

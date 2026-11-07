@@ -19,6 +19,20 @@ import XCTest
     return (store, camera, recorder, record)
   }
 
+  func testCameraJumpBarFitsOneRowAtEverySize() async throws {
+    let (store, camera, recorder, _) = try await fixture()
+    for zoom in [1.0, 1.5, 2.0] {
+      store.uiZoom = zoom
+      let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false).uiZoom(zoom), size: .init(width: 560, height: 640))
+      defer { LibraryAX.close(window) }
+      let segments = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXRadioButton" }
+      XCTAssertEqual(segments.count, 4)
+      let rects = try segments.map { try XCTUnwrap($0.value(forKey: "accessibilityFrame") as? NSValue).rectValue }
+      for rect in rects { XCTAssertTrue(window.convertToScreen(host.bounds).insetBy(dx: -1, dy: -1).contains(rect), "Jump control clips at \(zoom): \(rect)") }
+      for rect in rects.dropFirst() { XCTAssertEqual(rect.midY, rects.first?.midY ?? 0, accuracy: 1) }
+    }
+  }
+
   func testStateTableAndTakeNaming() async throws {
     let (store, camera, recorder, record) = try await fixture()
     func view() -> PresenterView { PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder) }
@@ -63,6 +77,7 @@ import XCTest
 
   func testFooterGeometryAndUntruncatedActionsAcrossStateMatrix() async throws {
     let (store, camera, recorder, record) = try await fixture()
+    var evidence: [[String: Any]] = []
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       for size in [NSSize(width: 720, height: 520), .init(width: 1000, height: 700)] {
@@ -84,6 +99,13 @@ import XCTest
           let scroll = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
           XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * 0.65 - 1, "\(state), \(zoom), \(size)")
           try assertFrozenFooter(host, size: size, zoom: zoom)
+          // SwiftUI may forward a container identifier to a child AX node. Measure the
+          // space actually reserved below the reading viewport, including footer padding.
+          let footerHeight = size.height - scroll.frame.height
+          XCTAssertLessThanOrEqual(footerHeight, size.height * 0.35, "Footer budget: \(state), \(zoom)")
+          evidence.append(["zoom": zoom, "state": state, "width": size.width, "height": size.height,
+                           "readingHeight": scroll.frame.height, "readingFraction": scroll.frame.height / size.height,
+                           "footerHeight": footerHeight])
           if let reading = LibraryAX.named("Reading status", in: host).first,
              let recording = LibraryAX.named("Recording status", in: host).first,
              let first = reading.value(forKey: "accessibilityFrame") as? NSValue,
@@ -109,6 +131,10 @@ import XCTest
       }
     }
     recorder.phase = .idle; store.session.pause()
+    if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
+      let target = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("final-footer-layout.json")
+      try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: target)
+    }
   }
 
   func testFileActionsUndoWithoutLosingContents() async throws {
@@ -123,9 +149,14 @@ import XCTest
     manager.undo(); _ = await store.flushPendingSaves(); XCTAssertNil(store.scripts.first(where: { $0.id == record.id })?.metadata.folderID)
     try await store.deleteScript(record.id)
     manager.beginUndoGrouping(); store.restore(record.id, undoManager: manager); manager.endUndoGrouping()
-    _ = await store.flushPendingSaves(); XCTAssertEqual(manager.undoActionName, "Restore Script")
-    manager.undo(); _ = await store.flushPendingSaves(); XCTAssertTrue(store.trash.contains(where: { $0.id == record.id }))
-    manager.redo(); _ = await store.flushPendingSaves(); XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, record.markdown)
+    for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(manager.undoActionName, "Restore Script")
+    manager.undo()
+    for _ in 0..<100 where !store.trash.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertTrue(store.trash.contains(where: { $0.id == record.id }))
+    manager.redo()
+    for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, record.markdown)
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("UndoLink-\(UUID()).md")
     try record.markdown.write(to: url, atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: url) }
@@ -169,16 +200,30 @@ extension AppearanceSnapshotTests {
     let appearance = scheme == .dark ? "dark" : "light"
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
-      for state in ["idle", "recording", "receipt", "camera-view"] {
-        recorder.phase = state == "recording" ? .recording : .idle
-        recorder.savedTake = state == "receipt" ? URL(fileURLWithPath: "/tmp/My Script 2026-11-06 14-03-22.mov") : nil
-        recorder.lastTakeDuration = 84; recorder.recordedDuration = 83
-        camera.displayMode = state == "camera-view" ? .videoOnly : .prompterWithVideo
-        store.session.stop(); store.session.present(record: record, settings: store.settings)
-        let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), hasScript: state != "camera-view", camera: camera, startsCamera: false, recorder: recorder)
-        try await snapshot(view, name: "fable-bar-\(state)-\(Int(zoom * 100))-\(appearance)", size: .init(width: 720, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+      for size in [NSSize(width: 720, height: 520), .init(width: 1000, height: 700)] {
+        let widthSuffix = size.width == 720 ? "" : "-wide"
+        for state in ["idle", "countdown", "reading", "recording", "saved", "problem", "failed", "camera-view"] {
+          let recorder = CameraRecorder(defaults: freshDefaults("FinalSnapshotTake"))
+          camera.recorder = recorder
+          recorder.phase = .idle; recorder.errorMessage = nil; recorder.savedTake = nil
+          recorder.droppedAudioBuffers = 0; recorder.receiptHidden = false
+          camera.displayMode = state == "camera-view" ? .videoOnly : .prompterWithVideo
+          store.session.stop(); store.session.present(record: record, settings: store.settings)
+          if state == "countdown" { store.session.countdownTick = .seconds(60); store.session.startReading() }
+          if state == "reading" { store.session.play(captureAudio: false) }
+          if state == "recording" { recorder.phase = .recording }
+          if state == "saved" || state == "problem" { recorder.savedTake = URL(fileURLWithPath: "/tmp/My Script 2026-11-06 14-03-22.mov") }
+          if state == "problem" { recorder.droppedAudioBuffers = 3 }
+          if state == "failed" { recorder.phase = .recording; recorder.errorMessage = "Camera disconnected"; recorder.phase = .idle }
+          recorder.lastTakeDuration = 84; recorder.recordedDuration = 83
+          XCTAssertEqual(recorder.takeFailure != nil, state == "failed", "Each snapshot must start with a clean take state")
+          let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), hasScript: state != "camera-view", camera: camera, startsCamera: false, recorder: recorder)
+          let name = state == "saved" ? "receipt" : state
+          try await snapshot(view, name: "fable-bar-\(name)-\(Int(zoom * 100))\(widthSuffix)-\(appearance)", size: size, scheme: scheme, destination: URL(fileURLWithPath: output))
+        }
       }
-      recorder.phase = .idle; camera.displayMode = .prompterWithVideo
+      recorder.phase = .idle; recorder.errorMessage = nil; store.session.pause(); camera.displayMode = .prompterWithVideo
+      camera.recorder = recorder
       let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
       try await snapshot(view.outputControls, name: "fable-precheck-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output))
       try await snapshot(CameraRecoveryView(model: camera) {}, name: "fable-recovery-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
@@ -197,6 +242,11 @@ extension AppearanceSnapshotTests {
     for label in labels {
       XCTAssertTrue(section.contains(label), "Undocumented vocabulary: \(label)")
       XCTAssertTrue((presenter + camera).contains("\"\(label)\""), "Missing UI vocabulary: \(label)")
+    }
+    let exposure = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/ExposureLegend.swift"), encoding: .utf8)
+    for label in PresenterDisplayMode.allCases.map(\.label) + CameraGuides.ZebraPurpose.allCases.map(ExposureLegend.zebraTitle) + FalseColourStrip.captions + ["Check brightness · False colour", "Face reference"] {
+      XCTAssertTrue(section.contains(label), "Undocumented camera or exposure vocabulary: \(label)")
+      XCTAssertTrue((camera + exposure).contains("\"\(label)\""), "Missing camera or exposure vocabulary: \(label)")
     }
     let menu = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/App/VideoPrompterApp.swift"), encoding: .utf8)
     for name in ["ToolbarCommands()", "Zoom In", "Zoom Out", "Actual Size", "Make Text Bigger", "Make Text Smaller", "Start Reading", "Pause Reading", "Last Take", "Open Second Monitor Window"] { XCTAssertTrue(menu.contains(name), name) }

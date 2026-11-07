@@ -804,7 +804,7 @@ struct CameraRecoveryView: View {
         Button("Allow Camera Access") { model.start() }.initialPopoverFocus()
       } else { Button("Choose Camera", action: chooseCamera).initialPopoverFocus() }
     }.foregroundStyle(.white).padding(Space.md)
-      .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 12))
+      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: 12))
       .frame(maxWidth: 420).accessibilityIdentifier("camera-recovery")
   }
   private var title: String {
@@ -1045,13 +1045,21 @@ struct RecordingReceipt: View {
       let file = recorder.savedTake
       let title = file.map { "Saved " + $0.lastPathComponent } ?? "Take not saved"
       HStack(spacing: Space.sm) {
-        Text((recorder.qualityWarning == nil ? title : (file == nil ? "Take not saved · " : "Saved with problems · ") + Self.shortCause(recorder.qualityWarning!)) + (file == nil ? "" : " · " + CameraRecorder.durationText(recorder.lastTakeDuration)))
-          .font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
-          .foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange)
-          .help(file?.path ?? recorder.takeFailure ?? "")
-          .accessibilityLabel(title + (file == nil ? "" : " · " + CameraRecorder.durationText(recorder.lastTakeDuration)))
-          .accessibilityValue(file?.path ?? recorder.takeFailure ?? "")
-          .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: Space.xs) {
+          Text(file == nil ? "Take not saved" : recorder.qualityWarning == nil ? "Saved" : "Saved with problems")
+            .fixedSize()
+          if let file {
+            Text(file.lastPathComponent).lineLimit(1).truncationMode(.middle)
+            Text("· " + CameraRecorder.durationText(recorder.lastTakeDuration)).fixedSize()
+          }
+        }
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange)
+        .help([file?.path, recorder.qualityWarning].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title + (file == nil ? "" : " · " + CameraRecorder.durationText(recorder.lastTakeDuration)))
+        .accessibilityValue([file?.path, recorder.qualityWarning].compactMap { $0 }.joined(separator: " · "))
+        .frame(maxWidth: .infinity, alignment: .leading)
         HStack(spacing: Space.sm) {
           if let file {
             Button(recorder.qualityWarning == nil ? "Play" : "Review") {
@@ -1096,7 +1104,7 @@ struct RecordingReceipt: View {
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? Space.xs : Space.md).background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
+        .padding(compact ? Space.xs : Space.md).background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
     }
   }
 }

@@ -349,6 +349,7 @@ import XCTest
   }
 
   func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero) async throws {
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     // Match PresenterController: the host must not grow the window to its intrinsic minimum.
     host.sizingOptions = []
@@ -401,7 +402,7 @@ import XCTest
       host.cacheDisplay(in: host.bounds, to: bitmap)
     }
     // The exposure fixture is now a colour strip, not a reading heading.
-    if name.hasPrefix("r8-") && !name.hasPrefix("r8-exposure-key-") {
+    if (name.hasPrefix("r8-") && !name.hasPrefix("r8-exposure-key-")) || (name.hasPrefix("fable-bar-") && !name.contains("camera-view")) {
       func headingSamples() -> Int {
         stride(from: 40, to: bitmap.pixelsHigh / 2, by: 4).reduce(0) { total, y in
           total + stride(from: 50, to: bitmap.pixelsWide - 50, by: 4).filter { x in

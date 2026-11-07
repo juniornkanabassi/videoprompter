@@ -14,10 +14,7 @@ struct EditorTextControls: View {
       ReadingSlider(value: $store.previewFontSize, range: AppStore.editorFontSizes,
         title: "Editor text size", spokenValue: "\(Int(store.previewFontSize)) points")
     }
-    VStack(alignment: .leading, spacing: Space.sm) {
-      Text("Changes only the writing surface.").font(UIType.secondary)
-        .foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
-      if showsReadingLink {
+    if showsReadingLink {
         Button {
           AppSettingsView.requestTab(.reading)
           openSettings()
@@ -26,7 +23,6 @@ struct EditorTextControls: View {
             .frame(minHeight: 24).contentShape(Rectangle())
         }.buttonStyle(.plain)
           .help("Open Reading text size in Settings > Reading")
-      }
     }
   }
 }
@@ -34,7 +30,11 @@ struct EditorTextControls: View {
 struct EditorTextPopover: View {
   @ObservedObject var store: AppStore
   var body: some View {
-    Form { Section("Writing") { EditorTextControls(store: store, showsReadingLink: true) } }
+    Form {
+      Section { EditorTextControls(store: store, showsReadingLink: true) }
+      header: { Text("Writing") }
+      footer: { Text("Changes only the writing surface.").font(.callout).foregroundStyle(.primary) }
+    }
       .formStyle(.grouped).uiZoom(store.uiZoom)
       .frame(width: min(560, 320 * store.uiZoom), height: min(540, 280 * store.uiZoom))
   }

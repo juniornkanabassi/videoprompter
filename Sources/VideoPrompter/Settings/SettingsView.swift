@@ -104,7 +104,9 @@ struct SettingsPage: View {
             ForEach(AppStore.uiZoomSteps, id: \.self) { Text("\(Int($0 * 100))%").tag($0) }
           }
         }
-        Section("Writing") { EditorTextControls(store: store) }
+        Section { EditorTextControls(store: store) }
+        header: { Text("Writing") }
+        footer: { Text("Changes only the writing surface.").font(.callout).foregroundStyle(.primary) }
         IPadSettingsSection(store: store)
         Section("Windows") {
           Toggle("Align presenter to screen edges", isOn: $store.settings.presenterSnappingEnabled)
@@ -364,7 +366,7 @@ private struct LoudestSoundReadout: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       if meter.isClipping {
         Label("Too loud. Lower Microphone volume.", systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.red).help("Lower Microphone volume if the input is distorted")
+          .foregroundStyle(.primary).help("Lower Microphone volume if the input is distorted")
       }
       Text(meter.peakDBFS.isFinite ? "Sound detected · " + String(format: "%.1f dBFS", meter.peakDBFS) : "No sound yet")
         .monospacedDigit().fixedSize(horizontal: false, vertical: true)
@@ -513,7 +515,7 @@ struct CameraRecordingPage: View {
           Text("Recording").tag("Recording")
           Text("Guides").tag("Framing guides")
           Text("Exposure").tag("Exposure")
-        }.pickerStyle(.segmented).padding(.horizontal, Space.md)
+        }.pickerStyle(.segmented).labelsHidden().controlSize(.small).padding(.horizontal, Space.md)
           .onChange(of: section) { _, value in proxy.scrollTo(value, anchor: .top) }
 
         Form {

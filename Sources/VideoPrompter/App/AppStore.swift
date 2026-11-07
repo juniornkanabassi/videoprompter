@@ -259,14 +259,15 @@ private enum PresenterSaveError: LocalizedError {
       protectedIDs.contains(record.id) ? (scripts.first(where: { $0.id == record.id }) ?? record) : record
     }
     scripts = loaded
-    await refreshLinkStates()
-    trash = await library.listTrash()
-    folders = await library.listFolders()
+    // Publish the restored selection with the scripts, before any suspension can redraw an empty editor.
     if let selectedID, loaded.contains(where: { $0.metadata.id == selectedID }) {
       self.selectedID = selectedID
     } else {
       selectedID = loaded.first?.metadata.id
     }
+    await refreshLinkStates()
+    trash = await library.listTrash()
+    folders = await library.listFolders()
   }
   func waitForInitialLoad() async { await initialLoad?.value }
   func waitForWelcomeScript() async { await welcomeTask?.value }
@@ -316,7 +317,7 @@ private enum PresenterSaveError: LocalizedError {
     withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
   func renameFolder(_ id: UUID, name: String, undoManager: UndoManager? = nil) {
-    performLibraryEdit(.rename(id, name), name: "Rename Folder", undoManager: undoManager)
+    performLibraryEdit(.rename(id, name), name: "Rename Folder", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -426,7 +427,7 @@ private enum PresenterSaveError: LocalizedError {
   }
 
   func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?, undoManager: UndoManager? = nil) {
-    performLibraryEdit(.move(ids.map { ($0, folderID) }), name: "Move to Folder", undoManager: undoManager)
+    performLibraryEdit(.move(ids.map { ($0, folderID) }), name: "Move to Folder", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -544,7 +545,7 @@ private enum PresenterSaveError: LocalizedError {
     if selectedID == id { selectedID = visible.first?.id }
   }
   func restore(_ id: UUID, undoManager: UndoManager? = nil) {
-    changeScriptDeletion([id], links: [:], deleting: false, undoManager: undoManager, actionName: "Restore Script")
+    changeScriptDeletion([id], links: [:], deleting: false, undoManager: undoManager ?? NSApp?.keyWindow?.undoManager, actionName: "Restore Script")
   }
   func restoreScript(_ id: UUID) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -747,7 +748,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   /// Stop mirroring the external file. The script keeps the content it already has.
   func unlink(_ id: UUID, undoManager: UndoManager? = nil) {
-    performLibraryEdit(.link(id, nil), name: "Unlink", undoManager: undoManager)
+    performLibraryEdit(.link(id, nil), name: "Unlink", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
   private func restoreLinkMetadata(_ id: UUID, metadata: ScriptMetadata) async throws {
     guard let library else { return }
