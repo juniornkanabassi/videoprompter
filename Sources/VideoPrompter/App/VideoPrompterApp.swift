@@ -60,30 +60,29 @@ enum ScriptShortcuts {
         // Grouped to stay within the commands builder's ten items.
         Group {
           SidebarCommands()
-          InspectorCommands()
+          ToolbarCommands()
           PrivacyCommands()
           CommandGroup(after: .help) { Button("Getting Started Guide") { store.showWelcomeScript() } }
         }
         Group {
-          ICloudCommands(store: store)
           IPadCameraCommands(sender: .shared)
         }
         CommandGroup(replacing: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
-          Button("Increase Interface Size for All Scripts") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
+          Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
             .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
-          Button("Decrease Interface Size for All Scripts") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)
+          Button("Zoom Out") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)
             .disabled(store.uiZoom <= AppStore.uiZoomSteps.first!)
-          Button("Reset Interface Size for All Scripts") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
+          Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
             .disabled(store.uiZoom == 1)
           Divider()
-          Button("Make Text Bigger for All Scripts") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
-          Button("Make Text Smaller for All Scripts") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
+          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
+          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
           Divider()
           PresenterVideoItems()
           ExposureMenuItems()
           Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
-            .keyboardShortcut("f", modifiers: [.command, .control])
+            .keyboardShortcut("f", modifiers: [.shift, .control, .command])
         }
         CommandMenu("Format") {
           FormattingMenuItems()
@@ -95,11 +94,10 @@ enum ScriptShortcuts {
             .disabled(store.selected == nil)
           Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Choose a camera, check framing or record. Second monitor window is an optional second view.")
+            .help("Choose a camera, check framing or record. Second Monitor is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
-          Button("Start or Pause") { PresenterController.shared.toggleReading(store: store) }
-            .keyboardShortcut("s", modifiers: [.command, .option])
+          ReadingMenuItem(store: store, session: store.session)
           Button("Back to Start") { PresenterController.shared.moveReading { $0.restart() } }
             .keyboardShortcut("r", modifiers: [.command, .option])
           Button("Previous Passage") { PresenterController.shared.moveReading { $0.previousPassage() } }
@@ -119,13 +117,14 @@ enum ScriptShortcuts {
         CameraCommands()
         UpdateCommands()
       }
-    Settings { AppSettingsView(store: store) }
-    Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store) }
-      .defaultSize(width: 520, height: 560)
+    Settings { AppSettingsView(store: store) }.windowResizability(.contentMinSize)
+    Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store).background(CalmInitialFocus()) }
+      .defaultSize(width: 520, height: 320)
+      .windowResizability(.contentMinSize)
     Window("iPad Remote", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
       .defaultSize(width: 420, height: 380)
       .defaultLaunchBehavior(.suppressed)
-    Window("Second monitor window", id: "camera") {
+    Window("Second Monitor", id: "camera") {
       CameraView(zoom: store.uiZoom)
         .background(MainWindowConfigurator(size: NSSize(width: 760, height: 480)))
         .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
@@ -172,16 +171,16 @@ struct PresenterVideoItems: View {
     Toggle("Script Only", isOn: choice(.prompterOnly))
     Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
-    Toggle("Camera view", isOn: choice(.videoOnly))
+    Toggle("Camera View", isOn: choice(.videoOnly))
   }
 }
 
 struct ExposureMenuItems: View {
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
-    Toggle("Clean presenter view", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
-    Toggle(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
-    Toggle("Check brightness · False colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
+    Toggle("Clean Presenter View", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
+    Toggle(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose).capitalized, isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
+    Toggle("Check Brightness · False Colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
   }
 }
 
@@ -239,7 +238,7 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
-      Button("Open Second monitor window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
+      Button("Open Second Monitor Window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }
 }
@@ -262,6 +261,17 @@ private struct CameraCommands: Commands {
       do { try server.start() } catch { NSLog("Control server unavailable: %@", error.localizedDescription) }
     }
   }
+  func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+    let menu = NSMenu()
+    for (title, action) in [("Present", #selector(dockPresent)), ("Camera Only", #selector(dockCamera)), ("New Script", #selector(dockNewScript))] {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+      item.target = self; menu.addItem(item)
+    }
+    return menu
+  }
+  @objc private func dockPresent() { if let store { presenter.presentFromLibrary(store: store) } }
+  @objc private func dockCamera() { if let store { presenter.presentCamera(store: store) } }
+  @objc private func dockNewScript() { Headless.shared.openLibrary?(); store?.create() }
   func applicationWillTerminate(_ notification: Notification) { controlServer?.stop() }
   /// A Dock click, Spotlight or Finder launch while a headless copy runs: show the library instead of nothing.
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -412,15 +422,27 @@ struct MainWindowConfigurator: NSViewRepresentable {
   }
 }
 
+struct ReadingMenuItem: View {
+  let store: AppStore
+  @ObservedObject var session: SessionStore
+  var body: some View {
+    Button(session.isActivelyRunning || session.isCountingDown ? "Pause Reading" : "Start Reading") {
+      PresenterController.shared.toggleReading(store: store)
+    }.keyboardShortcut("s", modifiers: [.command, .option])
+  }
+}
+
 struct RecordingMenuItems: View {
   @ObservedObject private var recorder = CameraRecorder.shared
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
     Button(recorder.isRecording ? "Stop Recording" : "Record") {
-      Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera) } }
+      Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera, defaultLabel: PresenterController.shared.isShowingWithoutScript || camera.displayMode == .videoOnly ? "" : AppStore.shared.session.activeRecord?.metadata.title ?? "") } }
     }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy || (!recorder.isRecording && !camera.isReadyToRecord))
       .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStartRunningNotification)) { _ in camera.objectWillChange.send() }
       .onReceive(NotificationCenter.default.publisher(for: AVCaptureSession.didStopRunningNotification)) { _ in camera.objectWillChange.send() }
     Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
+    Button("Last Take") { if let file = recorder.lastFile { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
+      .disabled(recorder.lastFile == nil)
   }
 }

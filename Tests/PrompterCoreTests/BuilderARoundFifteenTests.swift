@@ -73,7 +73,7 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
-      let recovery = try XCTUnwrap(LibraryAX.named("Allow camera in System Settings", in: host).first)
+      let recovery = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
       let frame = try XCTUnwrap(recovery.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "Recovery at \(zoom): \(frame)")
       XCTAssertFalse(LibraryAX.named("Reading status", in: host).isEmpty)
@@ -98,7 +98,7 @@ import XCTest
     XCTAssertTrue(store.renameShootSetup(id, to: "Desk"))
     XCTAssertEqual(store.shootSetups.first?.name, "Desk")
     let (setupWindow, setupHost) = await LibraryAX.host(Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }.formStyle(.grouped), size: .init(width: 600, height: 700))
-    XCTAssertFalse(LibraryAX.named("Save shoot setup", in: setupHost).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Save Shoot Setup", in: setupHost).isEmpty)
     XCTAssertFalse(LibraryAX.named("Actions for Desk", in: setupHost).isEmpty)
     LibraryAX.close(setupWindow)
     store.deleteShootSetup(id)

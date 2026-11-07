@@ -51,7 +51,7 @@ import XCTest
           CameraPickerList(model: camera, zoom: zoom, startsPreview: false, showsRecovery: false, devicesOverride: devices, close: {})
         }.uiZoom(zoom), size: .init(width: 1100, height: 1100))
         defer { LibraryAX.close(window) }
-        let name = auth == .notDetermined ? "Allow Camera Access" : "Allow camera in System Settings"
+        let name = auth == .notDetermined ? "Allow Camera Access" : "Allow Camera in System Settings"
         XCTAssertEqual(LibraryAX.named(name, in: host).filter { LibraryAX.value($0, "accessibilityRole") == "AXButton" }.count, 1)
         XCTAssertTrue(LibraryAX.named(CameraPickerList.recovery(for: auth).message, in: host).isEmpty)
         XCTAssertFalse(LibraryAX.named(devices[0].name, in: host).isEmpty)

@@ -81,8 +81,8 @@ import XCTest
     recorder.phase = .idle
     let (window, host) = await LibraryAX.host(RecordingReceipt(recorder: recorder, camera: camera, compact: true))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Take not saved · Camera disconnected", in: host).isEmpty)
-    XCTAssertFalse(LibraryAX.named("Try recording again", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Take not saved", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Review", in: host).isEmpty)
   }
 
   func testOwnedVocabularyUsesOneNamePerTask() throws {

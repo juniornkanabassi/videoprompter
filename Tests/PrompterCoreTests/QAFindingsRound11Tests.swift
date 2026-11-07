@@ -72,12 +72,12 @@ import XCTest
       draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
     let (window, host) = await LibraryAX.host(presenter)
     defer { LibraryAX.close(window) }
-    let before = try XCTUnwrap(LibraryAX.named("Output check", in: host).first)
+    let before = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
     XCTAssertTrue(LibraryAX.value(before, "accessibilityValue").contains("1920 × 1080"))
     shared.pictureSize = CGSize(width: 3840, height: 2160)
     for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
     XCTAssertEqual(recorder.compactOutputConfirmation(camera: camera), "Landscape · 3840 × 2160")
-    let after = try XCTUnwrap(LibraryAX.named("Output check", in: host).first)
+    let after = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
     let value = LibraryAX.value(after, "accessibilityValue")
     print("QA11_OUTPUT_CHECK actual=\(value)")
     XCTAssertTrue(value.contains("3840 × 2160"),
@@ -86,7 +86,7 @@ import XCTest
     // A different observed camera setting refreshes it: the missing dependency is pictureSize.
     camera.mirrored.toggle()
     for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-    let refreshed = try XCTUnwrap(LibraryAX.named("Output check", in: host).first)
+    let refreshed = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
     XCTAssertTrue(LibraryAX.value(refreshed, "accessibilityValue").contains("3840 × 2160"))
   }
 }

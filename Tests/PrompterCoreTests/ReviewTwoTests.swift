@@ -164,7 +164,7 @@ import PrompterCore
     }
   }
 
-  func testToolsFadeAfterThreeSecondsAndReturnOnPanelInteraction() async throws {
+  func testStateBandToolsRemainVisibleThroughIdleAndInteraction() async throws {
     let (store, defaults, record) = try await fixture()
     let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: defaults), startsCamera: false, recorder: CameraRecorder(defaults: defaults)).environment(\.offscreenRendering, true))
     let panel = PresenterPanel(captureVisible: false)
@@ -190,7 +190,7 @@ import PrompterCore
     let visibleTools = try pixels("Tools")
     let visibleTransport = try pixels("Pause")
     try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertNotEqual(try pixels("Tools"), visibleTools)
+    XCTAssertEqual(try pixels("Tools"), visibleTools)
     XCTAssertEqual(try pixels("Pause"), visibleTransport, "Transport never fades")
     let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
       windowNumber: panel.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
@@ -201,7 +201,7 @@ import PrompterCore
     XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible && !previousWindows.contains(ObjectIdentifier($0)) }.isEmpty,
       "Revealing the tools cannot open any window or popover")
     try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertNotEqual(try pixels("Tools"), visibleTools, "The idle timer rearms")
+    XCTAssertEqual(try pixels("Tools"), visibleTools, "The state band never fades")
     store.session.pause()
     try await settle(host)
     XCTAssertEqual(try pixels("Tools"), visibleTools, "Pausing restores full contrast")

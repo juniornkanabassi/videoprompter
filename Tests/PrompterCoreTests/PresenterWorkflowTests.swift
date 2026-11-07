@@ -120,12 +120,12 @@ import XCTest
     controller.panel = panel
     recorder.phase = .recording
     controller.keepRecordingAndClose()
-    let status = NSApp.windows.filter { $0.title == "Camera recording" }
+    let status = NSApp.windows.filter { $0.title == "Camera Recording" }
     XCTAssertEqual(status.count, 1)
     XCTAssertNotNil(status.first?.contentView)
     XCTAssertEqual(recorder.phase, .recording)
     controller.windowDidMiniaturize(Notification(name: NSWindow.didMiniaturizeNotification, object: panel))
-    XCTAssertEqual(NSApp.windows.filter { $0.title == "Camera recording" }.count, 1, "Minimising reuses the recording surface")
+    XCTAssertEqual(NSApp.windows.filter { $0.title == "Camera Recording" }.count, 1, "Minimising reuses the recording surface")
     XCTAssertEqual(status.first?.alphaValue, 0, "The test guard keeps every window invisible")
     recorder.phase = .idle
     status.forEach { $0.close() }

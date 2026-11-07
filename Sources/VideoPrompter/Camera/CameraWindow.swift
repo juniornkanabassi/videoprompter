@@ -48,24 +48,24 @@ struct CameraView: View {
       CameraChoiceItems(model: model, rotation: model.rotationChoice, recording: recorder.isRecording || recorder.isBusy)
       ToolbarItemGroup { ExposureToggle(model: model, kind: .zebras, presenter: false); ExposureToggle(model: model, kind: .falseColour, presenter: false) }
       ToolbarItem {
-        Button("Framing guides") { showsGuideSettings = true }
+        Button("Framing Guides", systemImage: "grid") { showsGuideSettings = true }
+          .help("Choose which framing lines to show")
           .restoringPopoverFocus(isPresented: $showsGuideSettings, identifier: "monitor-guides")
           .popover(isPresented: $showsGuideSettings) {
             CameraGuideSettings(model: model).frame(width: 340, height: 480).uiZoom(zoom).popoverEntryFocus()
           }
       }
       ToolbarItem {
-        Button("Exposure settings", systemImage: "sun.max") { showsExposureSettings = true }
+        Button("Exposure Settings", systemImage: "sun.max") { showsExposureSettings = true }.help("Choose zebras, false colour and their levels")
       }
       ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model, zoom: zoom) }
       ToolbarItem {
         Menu {
-          Text("Second-display camera view. Shares camera and recording setup with the presenter.")
           Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
           Button("Camera & Recording Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
           Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Second monitor window above other windows")
         } label: { Label("Options", systemImage: "ellipsis.circle") }
-          .accessibilityLabel("Options").help("Camera mirroring, framing guides and window position")
+          .accessibilityLabel("Options").help("Mirror the preview, open camera settings or keep the window on top")
 
       }
     }
@@ -144,28 +144,19 @@ struct CameraGuideSettings: View {
 
 /// Every camera choice in one place: the presenter's View menu and the Settings panel both open
 /// this, so the camera, its turn, mirroring and the guides are never split across three screens.
-struct CameraSettingsPanel: View {
-  @ObservedObject var model: CameraModel
-  var zoom = 1.0
-  var body: some View {
-    Form { CameraSettingsSections(model: model, zoom: zoom); CameraGuideSections(model: model); CameraExposureSections(model: model) }.formStyle(.grouped)
-  }
-}
-
 struct CameraSettingsSections: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
   var body: some View {
-    Section("Device") {
+    Section {
       LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
         .disabled(model.recordingLocked).help("Stop recording to change this")
       Picker("Camera and saved-video rotation", selection: model.rotationChoice) {
         ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
       }.disabled(model.recordingLocked).help("Stop recording to change this")
-      Text("Rotation changes both the camera preview and the saved take.").font(.callout)
       if model.guides.automaticRotation { Text("Detected angle: \(model.guides.rotation.label)").font(.callout) }
       Toggle("Mirror camera preview", isOn: $model.mirrored)
-    }
+    } header: { Text("Device") } footer: { Text("Rotation changes both the camera preview and the saved take.").font(.callout) }
   }
 }
 
@@ -299,6 +290,7 @@ struct PresenterRecordButton: View {
   @ObservedObject var camera: CameraModel
   var compact = false
   var showsStatus = true
+  var defaultLabel = ""
   var secondary = false
   var body: some View {
     Group {
@@ -324,10 +316,10 @@ struct PresenterRecordButton: View {
       } else if recorder.phase == .saving {
         Text("Saving…").font(.callout)
       } else {
-        Button { Task { await recorder.start(camera: camera) } } label: {
+        Button { Task { await recorder.start(camera: camera, defaultLabel: defaultLabel) } } label: {
           Label { Text("Record").fixedSize(horizontal: false, vertical: true) } icon: { Image(systemName: "record.circle").foregroundStyle(.red) }
         }.accessibilityLabel("Record")
-          .buttonStyle(PresenterButtonStyle(prominent: !secondary)).disabled(!camera.isReadyToRecord)
+          .buttonStyle(PresenterButtonStyle()).disabled(!camera.isReadyToRecord)
           .help(camera.isReadyToRecord ? "Record a take. Reading starts separately." : camera.recordingBlockReason)
           .accessibilityHint(camera.isReadyToRecord ? "Reading starts separately" : camera.recordingBlockReason)
       }
@@ -357,17 +349,17 @@ struct RecordingRecoveryActions: View {
   var body: some View {
       switch recorder.recovery {
       case .cameraPrivacy:
-        Button("Allow camera access") { openPrivacy("Camera") }
+        Button("Allow Camera Access") { openPrivacy("Camera") }
       case .microphonePrivacy:
-        Button("Allow microphone access") { openPrivacy("Microphone") }
+        Button("Allow Microphone Access") { openPrivacy("Microphone") }
       case .camera, .microphone:
         Button("Choose \(recorder.recovery == .camera ? "camera" : "microphone")") { configure() }
       case .format:
-        Button("Change recording format") { configure() }
+        Button("Change Recording Format") { configure() }
       case .storage:
         Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
       case .retry:
-        Button("Try recording again") { Task { await recorder.start(camera: camera) } }
+        Button("Try Recording Again") { Task { await recorder.start(camera: camera, defaultLabel: recorder.takeDefaultLabel) } }
       }
   }
   private func openPrivacy(_ pane: String) {
@@ -390,7 +382,7 @@ struct RecordingMicrophoneSection: View {
           Text(recorder.microphoneName).fixedSize(horizontal: false, vertical: true)
         }.accessibilityLabel("Recording microphone").accessibilityValue(recorder.microphoneName).help(recorder.microphoneName).disabled(recorder.isRecording || recorder.isBusy)
 
-        Button(recorder.isTestingInput ? "Stop test" : "Test recording microphone") {
+        Button(recorder.isTestingInput ? "Stop Test" : "Test Recording Microphone") {
           if recorder.isTestingInput { recorder.stopInputTest() } else { Task { await recorder.startInputTest() } }
         }.disabled(recorder.isRecording || recorder.isBusy)
         if recorder.isTestingInput || recorder.isRecording { RecordingInputLevel(meter: recorder.inputMeter) }
@@ -400,27 +392,16 @@ struct RecordingMicrophoneSection: View {
   }
 }
 
-struct RecordingSettingsPanel: View {
-  var includesMicrophone = true
-  @ObservedObject var recorder: CameraRecorder
-  @ObservedObject var camera: CameraModel
-  var zoom = 1.0
-  var body: some View {
-    Form {
-      CameraSettingsSections(model: camera, zoom: zoom)
-      RecordingSettingsSections(recorder: recorder, camera: camera, zoom: zoom)
-      RecordingFolderSection(recorder: recorder)
-    }.formStyle(.grouped)
-  }
-}
-
 struct RecordingSettingsSections: View {
+  var defaultLabel = ""
   @ObservedObject var recorder: CameraRecorder
   @ObservedObject var camera: CameraModel
   var zoom = 1.0
   var body: some View {
-    Section("Recording setup") {
-      Text(recorder.outputSummary(camera: camera)).font(.callout)
+    Section {
+      LabeledContent("Picture", value: recorder.compactOutputConfirmation(camera: camera))
+      LabeledContent("Rotation", value: camera.guides.rotation.label)
+      LabeledContent("Format", value: recorder.recordingFormatName)
       if zoom >= 1.5 {
         VStack(alignment: .leading, spacing: Space.xs) {
           Text("Recording format")
@@ -437,7 +418,10 @@ struct RecordingSettingsSections: View {
         }
       }
       Toggle("Mirror saved video", isOn: $recorder.mirrorSavedVideo)
-      TextField("Take name", text: $recorder.takeLabel)
+      TextField("Take name", text: $recorder.takeLabel, prompt: Text("Take"))
+
+    } header: { Text("Recording setup") } footer: {
+      Text("Leave empty to use the script title. Next file: " + CameraRecorder.fileURL(in: CameraRecorder.recordingsFolder(), label: recorder.takeLabel, defaultLabel: defaultLabel).lastPathComponent).font(.callout)
     }.disabled(recorder.settingsLocked).help("Stop recording to change this")
   }
 }
@@ -495,14 +479,14 @@ struct CameraRecoveryView: View {
       Text(message).font(.callout).multilineTextAlignment(.center)
         .fixedSize(horizontal: false, vertical: true)
       if model.authorization == .denied || model.authorization == .restricted {
-        Button("Allow camera in System Settings") {
+        Button("Allow Camera in System Settings") {
           NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
         }.initialPopoverFocus()
       } else if model.authorization == .notDetermined {
         Button("Allow Camera Access") { model.start() }.initialPopoverFocus()
-      } else { Button("Choose camera", action: chooseCamera).initialPopoverFocus() }
+      } else { Button("Choose Camera", action: chooseCamera).initialPopoverFocus() }
     }.foregroundStyle(.white).padding(Space.md)
-      .background(.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 12))
+      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: 12))
       .frame(maxWidth: 420).accessibilityIdentifier("camera-recovery")
   }
   private var title: String {
@@ -562,10 +546,13 @@ struct ExposureToggle: View {
   var presenter = true
   private var binding: Binding<Bool> { model.exposureBinding(kind == .zebras ? \.zebras : \.falseColour, presenter: presenter) }
   private var on: Bool { binding.wrappedValue }
-  private var title: String { kind == .zebras ? ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose) : "Check brightness · False colour" }
+  private var title: String {
+    let title = kind == .zebras ? ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose) : "Check brightness · False colour"
+    return presenter ? title : title.capitalized
+  }
   var body: some View {
     Button { binding.wrappedValue.toggle() } label: {
-      Text(title).fixedSize(horizontal: false, vertical: true)
+      Label(title, systemImage: kind == .zebras ? "circle.lefthalf.striped.horizontal" : (on ? "paintpalette.fill" : "paintpalette")).fixedSize(horizontal: false, vertical: true)
     }.help(kind == .zebras ? ExposureGuidance.zebraLookFor(model.guides) : ExposureGuidance.colourPurpose)
       .tint(on ? Color.accentColor : nil).accessibilityLabel(title).accessibilityValue(on ? "On" : "Off")
   }
@@ -737,30 +724,36 @@ struct RecordingReceipt: View {
   }
   var body: some View {
     if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
-      HStack(spacing: Space.xs) {
-        if let cause = recorder.qualityWarning {
-          VStack(alignment: .leading, spacing: 0) {
-            if recorder.savedTake == nil { Text("Take not saved").fontWeight(.semibold) }
-            Text(Self.shortCause(Self.problemSummary(frames: recorder.droppedFrames, audio: recorder.droppedAudioBuffers, failure: recorder.takeFailure)).replacingOccurrences(of: "Picture and sound", with: "Picture + sound")).fixedSize(horizontal: false, vertical: true)
-          }.font(.callout).foregroundStyle(.orange).help(cause)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel((recorder.savedTake == nil ? "Take not saved · " : "Saved with problems · ") + Self.shortCause(cause))
-            .accessibilityValue(cause)
-          if recorder.savedTake == nil {
-            RecordingRecoveryActions(recorder: recorder, camera: camera) {
-              if let configure { configure() } else { recoverySettings = true }
-            }.fixedSize().popover(isPresented: $recoverySettings) {
-              PresenterSettingsPopover(store: AppStore.shared, initialTab: recorder.recovery == .microphone ? .microphone : .camera, initialCameraSection: recorder.recovery == .format ? "Recording" : "Camera")
-            }
+      let file = recorder.savedTake
+      let title = file.map { "Saved " + $0.lastPathComponent } ?? "Take not saved"
+      HStack(spacing: Space.sm) {
+        HStack(spacing: Space.xs) {
+          Text(file == nil ? "Take not saved" : recorder.qualityWarning == nil ? "Saved" : "Saved with problems")
+            .fixedSize()
+          if let file {
+            Text(file.lastPathComponent).lineLimit(1).truncationMode(.middle)
+            Text("· " + CameraRecorder.durationText(recorder.lastTakeDuration)).fixedSize()
           }
         }
-        if recorder.savedTake != nil {
-          Button(recorder.qualityWarning == nil ? "Show saved take…" : "Review") { showsDetails = true }
-            .fixedSize().accessibilityLabel(recorder.qualityWarning == nil ? "Show saved take…" : "Review problem…").accessibilityValue(recorder.savedTake?.lastPathComponent ?? "")
-          if let file = recorder.savedTake {
-            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.fixedSize()
+        .font(.callout.weight(.semibold))
+        .foregroundStyle(recorder.qualityWarning == nil ? Color.primary : Color.orange)
+        .help([file?.path, recorder.qualityWarning].compactMap { $0 }.joined(separator: " · "))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title + (file == nil ? "" : " · " + CameraRecorder.durationText(recorder.lastTakeDuration)))
+        .accessibilityValue([file?.path, recorder.qualityWarning].compactMap { $0 }.joined(separator: " · "))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: Space.sm) {
+          if let file {
+            Button(recorder.qualityWarning == nil ? "Play" : "Review") {
+              if recorder.qualityWarning == nil { NSWorkspace.shared.open(file) } else { showsDetails = true }
+            }.help("Play or review the saved take").accessibilityValue(file.lastPathComponent)
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }.help(file.path)
+          } else {
+            Button("Review") { showsDetails = true }.help("Review why the take was not saved")
           }
-        }
+          Button("Hide", systemImage: "xmark") { recorder.receiptHidden = true }
+            .labelStyle(.iconOnly).accessibilityLabel("Hide receipt").help("Hide receipt and show picture controls")
+        }.font(.callout).fixedSize().buttonStyle(.plain).frame(minHeight: 24)
       }
       .restoringPopoverFocus(isPresented: $showsDetails, identifier: "recording-receipt")
       .popover(isPresented: $showsDetails) {
@@ -778,13 +771,13 @@ struct RecordingReceipt: View {
           WrapLayout(spacing: Space.sm) {
             Button("Play") { NSWorkspace.shared.open(file) }.initialPopoverFocus()
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
-            if recorder.qualityWarning != nil { Button("Try recording again") { Task { await recorder.start(camera: camera) } } }
-            Button("Hide") { recorder.savedTake = nil }
+            if recorder.qualityWarning != nil { Button("Try Recording Again") { Task { await recorder.start(camera: camera, defaultLabel: recorder.takeDefaultLabel) } } }
+            Button("Hide") { recorder.receiptHidden = true }
           }
         } else if let failure = recorder.takeFailure {
           Label(failure, systemImage: "exclamationmark.triangle.fill").font(.callout).fixedSize(horizontal: false, vertical: true).accessibilityAddTraits(.isStaticText).initialPopoverFocus()
           if let file = recorder.incompleteTake {
-            Button("Show incomplete take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+            Button("Show Incomplete Take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) }
           }
           RecordingRecoveryActions(recorder: recorder, camera: camera) {
             if let configure { configure() } else { recoverySettings = true }
@@ -793,7 +786,7 @@ struct RecordingReceipt: View {
           }
         }
       }.frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? Space.xs : Space.md).background(Color(white: 0.12), in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
+        .padding(compact ? Space.xs : Space.md).background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
     }
   }
 }

@@ -2,7 +2,8 @@ import AppKit
 import PrompterCore
 import SwiftUI
 
-struct ScriptTextView: NSViewRepresentable {
+struct ScriptTextView: View {
+  typealias Context = ScriptTextCanvas.Context
   let document: PrompterDocument
   let tokenIndex: Int
   var lastConfirmedTokenIndex: Int?
@@ -35,6 +36,10 @@ struct ScriptTextView: NSViewRepresentable {
   }
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
+  }
+  var body: some View {
+    ScriptTextCanvas(configuration: self)
+      .mask { ReadingViewportMask(flipped: verticalMirror) }
   }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -738,3 +743,30 @@ final class TrackingTextView: NSTextView {
   }
 }
 
+/// Keep the AppKit adapter separate so SwiftUI composites the fade in offscreen renders too.
+struct ScriptTextCanvas: NSViewRepresentable {
+  let configuration: ScriptTextView
+  func makeCoordinator() -> ScriptTextView.Coordinator { configuration.makeCoordinator() }
+  func makeNSView(context: Context) -> NSScrollView { configuration.makeNSView(context: context) }
+  func updateNSView(_ view: NSScrollView, context: Context) { configuration.updateNSView(view, context: context) }
+  static func dismantleNSView(_ view: NSScrollView, coordinator: ScriptTextView.Coordinator) {
+    ScriptTextView.dismantleNSView(view, coordinator: coordinator)
+  }
+}
+
+/// Match the outer mirror/rotation so the fade stays at the visible bottom of the reading area.
+struct ReadingViewportMask: View {
+  static let fadeHeight: CGFloat = 48
+  let flipped: Bool
+  var body: some View {
+    VStack(spacing: 0) {
+      if flipped { fade }
+      Color.black
+      if !flipped { fade }
+    }
+  }
+  private var fade: some View {
+    LinearGradient(colors: flipped ? [.clear, .black] : [.black, .clear], startPoint: .top, endPoint: .bottom)
+      .frame(height: Self.fadeHeight)
+  }
+}

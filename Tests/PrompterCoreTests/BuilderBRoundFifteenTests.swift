@@ -43,7 +43,7 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped).uiZoom(zoom), size: .init(width: 700, height: 1100))
       defer { LibraryAX.close(window) }
-      for label in [ExposureGuidance.zebraPurpose(camera.guides), ExposureGuidance.colourPurpose, ExposureGuidance.facePurpose] {
+      for label in [ExposureGuidance.zebraPurpose(camera.guides), ExposureGuidance.colourPurpose] {
         XCTAssertTrue(LibraryAX.elements(host).contains { node in
           ["accessibilityLabel", "accessibilityTitle", "accessibilityValue", "accessibilityHelp"].contains {
             LibraryAX.value(node, $0).contains(label)

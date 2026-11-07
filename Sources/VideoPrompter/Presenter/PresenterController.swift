@@ -197,7 +197,7 @@ import SwiftUI
     isShowingWithoutScript = true
     cameraOnlyForWantOfScript = true
     panel.onPassageKey = { _ in false }
-    panel.title = "Video Prompter · Camera view in presenter"
+    panel.title = "Camera view"
     panel.settle()
     let draft = PresenterDraft()
     self.draft = draft
@@ -235,10 +235,18 @@ import SwiftUI
     activeSession = store.session
     panel.onPassageKey = { [weak self] direction in
       guard let self, !self.isEditing, self.camera.displayMode != .videoOnly else { return false }
-      self.moveReading { if direction == 123 { $0.previousPassage() } else { $0.nextPassage() } }
+      self.moveReading { session in
+        switch direction {
+        case 49: session.toggle()
+        case 115: session.restart()
+        case 123, 116: session.previousPassage()
+        default:
+          if session.isActivelyRunning { session.nextPassage() } else { session.startReading() }
+        }
+      }
       return true
     }
-    panel.title = "Video Prompter · \(script.metadata.title)"
+    panel.title = script.metadata.title
     panel.settle()
     if isShowing {
       panel.orderFrontRegardless()
@@ -298,7 +306,7 @@ import SwiftUI
     if recordingWindow == nil {
       let window = NSPanel(contentRect: NSRect(x: 160, y: 160, width: 640, height: 400),
         styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
-      window.title = "Camera recording"; window.level = .floating
+      window.title = "Camera Recording"; window.level = .floating
       window.isReleasedWhenClosed = false; window.hidesOnDeactivate = false
       window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
       if let store = presentationStore {
@@ -457,7 +465,7 @@ class PresenterPanel: NSPanel {
   var onPassageKey: ((UInt16) -> Bool)?
   /// Bare arrows belong to the reading surface; every focused control keeps native key handling.
   func handlePassageKey(_ event: NSEvent) -> Bool {
-    guard event.type == .keyDown, [123, 124].contains(event.keyCode),
+    guard event.type == .keyDown, [123, 124, 116, 121, 115, 49].contains(event.keyCode),
       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
       firstResponder === self
     else { return false }

@@ -40,6 +40,7 @@ final class SessionStore: ObservableObject {
   var countdownTick: Duration = .seconds(1)
   var isCountingDown: Bool { countdownRemaining > 0 }
   func startReading() {
+    hasStartedReading = true
     guard !isCountingDown, !isActivelyRunning, activeRecord != nil, !document.spokenTokens.isEmpty else { return }
     guard isManual, startDelay > 0 else { play(); return }
     countdownRemaining = startDelay
@@ -70,12 +71,13 @@ final class SessionStore: ObservableObject {
     return "Listening"
   }
   /// Short, explicit state for the persistent presenter label at every interface size.
+  private(set) var hasStartedReading = false
   var visibleReadingState: String {
     if isCountingDown { return "Starts in \(countdownRemaining)" }
-    if reachedEnd { return "Finished" }
+    if reachedEnd { return "End of script" }
     if isPreparingVoice { return "Preparing" }
-    if readingStatus == "Needs microphone" { return "Needs microphone" }
-    if !isActivelyRunning { return "Paused" }
+    if hasStartedReading && readingStatus == "Needs microphone" { return "Needs microphone" }
+    if !isActivelyRunning { return hasStartedReading ? "Paused" : "Ready" }
     if isManual { return "Scrolling" }
     if case .uncertain = state, hasLiveRecognition { return "Matching words" }
     return hasLiveRecognition ? "Following" : "Listening"
@@ -189,6 +191,7 @@ final class SessionStore: ObservableObject {
       }
       self.settings = settings
       activeRecord = record
+      hasStartedReading = false
       document = PrompterDocument(markdown: record.markdown)
       let saved = savedAnchors[record.metadata.id]
       let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown) }
@@ -316,6 +319,7 @@ final class SessionStore: ObservableObject {
     if captureAudio && settings.mode == "Voice" { startAudioMode() }
   }
   func pause() {
+    hasStartedReading = true
     freezeManual()
     glide.hold()
     state = activeRecord == nil ? .stopped : .paused

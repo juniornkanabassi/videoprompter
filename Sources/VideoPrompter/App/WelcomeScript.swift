@@ -32,11 +32,13 @@ enum WelcomeScript {
 
     In the Exposure section of **Tools**, the zebra check marks bright areas and **Check brightness · False colour** helps compare brightness. **More exposure settings…** explains what to look for and how to adjust your camera. The direct **Exposure check** switches the aids off and on without changing your saved choices. On first use it enables brightness colours. **Guides** switches framing guides off and on, and **Switch camera** opens the camera list.
 
+    To retake a line, press Pause, click the word, then Start reading. The recording keeps going.
+
     **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays.
 
-    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second monitor window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** under Tools, then **More**, lets you save, apply, rename and delete complete setups. After Apply, **Restore previous setup** returns to your previous choices.
+    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second Monitor Window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** under Tools, then **More**, lets you save, apply, rename and delete complete setups. After Apply, **Restore Previous Setup** returns to your previous choices.
 
-    **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Show saved take…** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
+    **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Play** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
 
     ## Your own scripts
 

@@ -160,7 +160,7 @@ import XCTest
     for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
     let error = try XCTUnwrap(store.shootSetupError)
     XCTAssertFalse(LibraryAX.named(error, in: host).isEmpty, "The actual error text must be visible without opening another popover")
-    let dismiss = try XCTUnwrap(LibraryAX.named("Dismiss shoot setup message", in: host).first)
+    let dismiss = try XCTUnwrap(LibraryAX.named("Hide", in: host).first)
     XCTAssertTrue(LibraryAX.bool(dismiss, "accessibilityPerformPress"))
     XCTAssertNil(store.shootSetupError)
   }

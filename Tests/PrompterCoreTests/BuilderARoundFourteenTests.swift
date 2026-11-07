@@ -34,7 +34,7 @@ import XCTest
         XCTAssertEqual(frames[0].midY, frames[1].midY, accuracy: 1)
         XCTAssertEqual(frames[1].midY, frames[2].midY, accuracy: 1)
         XCTAssertFalse(LibraryAX.named("Tools", in: host).isEmpty)
-        if phase == .idle { XCTAssertFalse(LibraryAX.named("Output check", in: host).isEmpty) }
+        if phase == .idle { XCTAssertFalse(LibraryAX.named("Recording status", in: host).isEmpty) }
       }
     }
     recorder.phase = .idle
@@ -123,7 +123,7 @@ import XCTest
     camera.cleanView = true
     let (window, host) = await LibraryAX.host(CameraExposureSettings(model: camera, presenter: false))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Zebra reference", in: host).isEmpty)
+    XCTAssertTrue(LibraryAX.named("Zebra reference", in: host).isEmpty, "Reference presets are one level down in Custom levels")
     XCTAssertTrue(LibraryAX.named("Zebras show", in: host).isEmpty)
     XCTAssertTrue(LibraryAX.named("Show exposure aids", in: host).isEmpty, "Presenter Clean view must not hide monitor aids")
     XCTAssertEqual(LibraryAX.named("Custom levels", in: host).filter { LibraryAX.value($0, "accessibilityIdentifier") == "exposure-custom-levels" }.count, 1)

@@ -23,7 +23,7 @@ import XCTest
   }
 
   func testReferenceMonitorKeepsChosenReadingSize() {
-    let caption = ReferenceMonitorCaption(passage: String(repeating: "Bonjour, welcome back. ", count: 100),
+    let caption = PresenterReferenceCue(passage: String(repeating: "Bonjour, welcome back. ", count: 100),
       fontName: "Helvetica Neue", readingSize: 72, end: {})
     XCTAssertEqual(caption.readingSize, 72)
     XCTAssertGreaterThan(caption.passage.count, 1000)

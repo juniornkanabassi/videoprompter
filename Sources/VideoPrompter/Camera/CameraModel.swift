@@ -190,7 +190,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   }
   var recordingReadyOverride: Bool?
   @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
-  var pictureSize: CGSize? { SharedCameraSession.shared.pictureSize }
+  var pictureSizeOverride: CGSize?
+  var pictureSize: CGSize? { pictureSizeOverride ?? SharedCameraSession.shared.pictureSize }
   private let defaults: UserDefaults
   private let guideStore: CameraGuideStore
   private var loadingGuides = false

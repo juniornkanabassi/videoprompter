@@ -14,12 +14,13 @@ import XCTest
     let second = try await store.createScript(title: "Next script", markdown: "Another script.")
     let camera = CameraModel(defaults: defaults)
     for zoom in [1.0, 1.5, 2.0] {
+      defaults.set(false, forKey: "readingTipHidden")
       store.selectedID = first.id
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1440, height: 1000))
       defer { LibraryAX.close(window) }
       XCTAssertFalse(LibraryAX.named(ReadingFirstUseTip.explanation, in: host).isEmpty)
-      let dismiss = try XCTUnwrap(LibraryAX.named("Got it, hide reading tip", in: host).first)
+      let dismiss = try XCTUnwrap(LibraryAX.named("Got it", in: host).first)
       let frame = try XCTUnwrap(dismiss.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "Tip must be readable before Present at \(zoom)")
       XCTAssertTrue(LibraryAX.bool(dismiss, "accessibilityPerformPress"))

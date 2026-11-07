@@ -442,17 +442,3 @@ extension AppStore {
     }
   }
 }
-
-/// File › Keep Scripts in iCloud Drive for iPad.
-struct ICloudCommands: Commands {
-  @ObservedObject var store: AppStore
-  var body: some Commands {
-    CommandGroup(after: .importExport) {
-      Toggle("Keep Scripts in iCloud Drive for iPad", isOn: Binding(
-        get: { store.keepsScriptsInICloud },
-        set: { store.keepsScriptsInICloud = $0 }))
-        .disabled(!ICloudScripts.isAvailable)
-        .help("Copies every script to iCloud Drive › Video Prompter and keeps it in step with Video Prompter on iPad")
-    }
-  }
-}

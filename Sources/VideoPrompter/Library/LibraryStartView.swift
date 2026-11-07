@@ -10,8 +10,8 @@ struct LibraryStartView: View {
   var guide: () -> Void = {}
 
   @ViewBuilder private var otherScriptActions: some View {
-    Button("Import a File…") { importing = true }
-    Button("Write a Script") { store.create() }
+    Button("Import File…") { importing = true }
+    Button("New Script") { store.create() }
   }
 
   var body: some View {
@@ -22,7 +22,7 @@ struct LibraryStartView: View {
         }
         VStack(alignment: .leading, spacing: Space.sm) {
           Button { store.importClipboard() } label: {
-            Label("Paste Copied Text", systemImage: "doc.on.clipboard")
+            Text("Paste Copied Text")
           }.buttonStyle(.borderedProminent)
           Text("Copy your script, then paste it here.")
             .font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -32,7 +32,7 @@ struct LibraryStartView: View {
           ReadingWorkflowExample()
         }
         VStack(alignment: .leading, spacing: Space.md) {
-          Button(action: camera) { Label("Camera Only", systemImage: "video") }
+          Button(action: camera) { Text("Camera Only") }
           Text("Check your framing or record without a script.")
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -95,7 +95,7 @@ struct ReadingWorkflowExample: View {
         }.padding(Space.sm)
           .frame(maxWidth: .infinity, alignment: .leading)
           .foregroundStyle(step == .add ? Color.primary : .white)
-          .background(step == .add ? Color(nsColor: .textBackgroundColor) : Color(white: 0.12))
+          .background(step == .add ? Color(nsColor: .textBackgroundColor) : Surfaces.presenterPanel)
       }
       Text("Reading does not record a video.").font(.callout)
     }.foregroundStyle(.primary)
@@ -104,20 +104,20 @@ struct ReadingWorkflowExample: View {
   }
 }
 
-/// Session-only guidance also reaches people who paste straight into a new script.
+/// Persistent first-use guidance also reaches people who paste straight into a new script.
 struct ReadingFirstUseTip: View {
   let dismiss: () -> Void
   static let explanation = "Present, then Start reading. Recording is separate."
   var body: some View {
     HStack(spacing: Space.sm) {
       ViewThatFits(in: .horizontal) {
-        Text(Self.explanation).fixedSize()
-        Text("Present to read. Record to film.").fixedSize()
+        Text(Self.explanation).fixedSize(horizontal: false, vertical: true)
+        Text("Present to read. Record to film.").fixedSize(horizontal: false, vertical: true)
       }.lineLimit(1)
       Spacer(minLength: 0)
-      Button(action: dismiss) { Image(systemName: "xmark") }
+      Button("Got it", action: dismiss)
         .buttonStyle(.plain).frame(minWidth: 24, minHeight: 24)
-        .accessibilityLabel("Got it, hide reading tip")
+        .accessibilityLabel("Got it")
         .help("Hide reading tip")
     }.font(.callout).foregroundStyle(.primary.opacity(0.75))
       .accessibilityElement(children: .contain)
