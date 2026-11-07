@@ -3,6 +3,16 @@ import PrompterCore
 import XCTest
 
 final class ControlCLITests: XCTestCase {
+  func testTargetExecutableUsesBundlePlist() throws {
+    let app = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).app")
+    let contents = app.appendingPathComponent("Contents")
+    try FileManager.default.createDirectory(at: contents.appendingPathComponent("MacOS"), withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: app) }
+    let plist = try PropertyListSerialization.data(fromPropertyList: ["CFBundleExecutable": "OtherName"], format: .xml, options: 0)
+    try plist.write(to: contents.appendingPathComponent("Info.plist"))
+    XCTAssertEqual(ControlLaunch.executablePath(app: app), contents.appendingPathComponent("MacOS/OtherName").resolvingSymlinksInPath().path)
+  }
+
   func testCommandParsingHelpAndManifestShareTheTable() throws {
     // A valid value for any parameter, so every command parses from the table alone.
     func sample(_ p: ControlParam) -> String {

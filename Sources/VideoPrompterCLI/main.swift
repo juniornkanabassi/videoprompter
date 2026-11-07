@@ -117,7 +117,7 @@ if fd == nil {
   guard launchLock >= 0, flock(launchLock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
-if fd == nil && invocation.dataDirectory == nil && !appRunning(executable: "VideoPrompter", exact: launchApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path }) {
+if fd == nil && invocation.dataDirectory == nil && !appRunning(executable: "VideoPrompter", exact: launchApp.flatMap { ControlLaunch.executablePath(app: $0) }) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   do {
     process.arguments = try ControlLaunch.arguments(appPath: launchApp?.path, bundleID: bundleID,
