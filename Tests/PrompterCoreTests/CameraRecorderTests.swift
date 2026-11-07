@@ -3,6 +3,26 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class CameraRecorderTests: XCTestCase {
+  func testNewPreparationFailureRevealsPreviouslyHiddenReceipt() async {
+    let defaults = freshDefaults("NewTakeReceipt")
+    let recorder = CameraRecorder(defaults: defaults)
+    let camera = CameraModel(defaults: defaults)
+    camera.selectedUID = "missing-camera-for-receipt-test"
+    recorder.savedTake = URL(fileURLWithPath: "/tmp/previous-take.mov")
+    recorder.receiptHidden = true
+
+    await recorder.start(camera: camera)
+
+    XCTAssertEqual(recorder.phase, .idle)
+    XCTAssertNil(recorder.savedTake)
+    XCTAssertNotNil(recorder.takeFailure)
+    XCTAssertEqual(recorder.recovery, .camera)
+    XCTAssertFalse(recorder.receiptHidden, "Hiding an old take must not hide a new failure")
+    recorder.errorMessage = nil
+    XCTAssertNotNil(recorder.takeFailure, "Dismissing the alert must preserve the new receipt")
+    XCTAssertFalse(recorder.receiptHidden)
+  }
+
   func testUnknownRecordingFailuresGiveAnActionWithoutWriterInternals() {
     let message = CameraRecorder.recoveryMessage(for: NSError(domain: "MovieWriter", code: 20,
       userInfo: [NSLocalizedDescriptionKey: "writer failed with internal status -11800"]))
