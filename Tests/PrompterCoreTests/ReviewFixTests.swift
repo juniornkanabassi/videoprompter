@@ -102,7 +102,8 @@ private final class ReviewSlowWriter: @unchecked Sendable {
         XCTAssertTrue(copies.contains(original), path)
         XCTAssertTrue(copies.contains(Data(edit.utf8)), path)
         let statuses = await library.linkedSyncWaiting()
-        XCTAssertTrue(statuses.joined().contains("unsupported encoding"))
+        if path == "relink" { XCTAssertTrue(statuses.isEmpty) }
+        else { XCTAssertTrue(statuses.joined().contains("unsupported encoding")) }
       }
     }
   }
