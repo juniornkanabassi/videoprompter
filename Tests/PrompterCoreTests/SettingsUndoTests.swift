@@ -85,12 +85,12 @@ import XCTest
     let manager = UndoManager()
     manager.groupsByEvent = true
     store.deleteFolder(folder.id, undoManager: manager)
-    for _ in 0..<100 where store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.libraryEditTask?.value
     try await store.moveScripts([moved.id], to: other.id)
     for _ in 0..<2 {
       XCTAssertTrue(manager.canUndo)
       manager.undo()
-      for _ in 0..<100 where !store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+      await store.libraryEditTask?.value
       XCTAssertEqual(store.folders.first(where: { $0.id == folder.id })?.name, folder.name)
       XCTAssertEqual(store.folders.map(\.id), originalFolderOrder, "Undo preserves alphabetical folder order")
       XCTAssertEqual(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID, folder.id)
@@ -98,12 +98,12 @@ import XCTest
       XCTAssertEqual(store.trash.first(where: { $0.id == trashed.id })?.metadata.folderID, folder.id)
       XCTAssertTrue(manager.canRedo)
       manager.redo()
-      for _ in 0..<100 where store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+      await store.libraryEditTask?.value
       XCTAssertNil(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID)
     }
     // Rapid commands remain ordered on disk as well as in memory.
     manager.undo(); manager.redo(); manager.undo()
-    for _ in 0..<100 where !store.folders.contains(where: { $0.id == folder.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.libraryEditTask?.value
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed, "quit waits for the complete Undo/Redo folder queue")
     let reopened = try MarkdownLibrary(rootURL: root)
