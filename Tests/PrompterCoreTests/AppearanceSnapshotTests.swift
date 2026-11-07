@@ -160,8 +160,8 @@ import XCTest
       try await snapshot(LibraryView(store: store, camera: camera), name: "library-\(mode)", size: .init(width: 1200, height: 800), scheme: scheme, destination: destination)
       store.inspector = true
       try await snapshot(LibraryView(store: store, camera: camera), name: "library-inspector-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
-      try await snapshot(InspectorView(store: store, camera: camera), name: "presenter-inspector-\(mode)", size: .init(width: 360, height: 900), scheme: scheme, destination: destination)
-      try await snapshot(ReferenceMonitorCaption(passage: String(repeating: "Welcome back. Bonjour à toutes et à tous. ", count: 30), fontName: "Helvetica Neue", readingSize: 48, end: {}), name: "reference-monitor-\(mode)", size: .init(width: 1000, height: 400), scheme: scheme, destination: destination)
+      try await snapshot(ReadingSettingsPage(store: store, camera: camera), name: "presenter-inspector-\(mode)", size: .init(width: 360, height: 900), scheme: scheme, destination: destination)
+      try await snapshot(PresenterReferenceCue(passage: String(repeating: "Welcome back. Bonjour à toutes et à tous. ", count: 30), fontName: "Helvetica Neue", readingSize: 48, end: {}), name: "reference-monitor-\(mode)", size: .init(width: 1000, height: 400), scheme: scheme, destination: destination)
       for tab in SettingsTab.allCases {
         try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "settings-\(tab.rawValue)-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
       }
@@ -232,7 +232,7 @@ import XCTest
       camera.guides.zebras = true; camera.guides.falseColour = true
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-active-\(mode)", size: .init(width: 480, height: 900), scheme: scheme, destination: destination)
       camera.guides.zebras = false; camera.guides.falseColour = false
-      try await snapshot(RecordingSettingsPanel(recorder: recorder, camera: camera), name: "recording-settings-\(mode)", size: .init(width: 500, height: 850), scheme: scheme, destination: destination)
+      try await snapshot(Form { CameraSettingsSections(model: camera); RecordingSettingsSections(recorder: recorder, camera: camera); RecordingFolderSection(recorder: recorder) }.formStyle(.grouped), name: "recording-settings-\(mode)", size: .init(width: 500, height: 850), scheme: scheme, destination: destination)
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-tools-\(mode)", size: .init(width: 480, height: 640), scheme: scheme, destination: destination)
       store.settings.mode = "Manual"
       store.session.updateSettings(store.settings)
@@ -282,7 +282,7 @@ import XCTest
       }
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
-        try await snapshot(ReadingSettingsSheet(store: store, camera: camera), name: "reading-settings-wide-\(Int(zoom * 100))-\(mode)", size: .init(width: min(880, 440 * zoom), height: 720), scheme: scheme, destination: destination)
+        try await snapshot(ReadingSettingsPage(store: store, camera: camera).uiZoom(zoom), name: "reading-settings-wide-\(Int(zoom * 100))-\(mode)", size: .init(width: min(880, 440 * zoom), height: 720), scheme: scheme, destination: destination)
         let devices = (1...12).map { CameraDevice(uid: "fixture-\($0)", name: "Camera \($0) with a long descriptive studio name") }
         camera.selectedUID = "fixture-10"
         camera.authorization = .authorized
@@ -372,6 +372,10 @@ import XCTest
       let scroll = try XCTUnwrap(list.enclosingScrollView)
       XCTAssertGreaterThanOrEqual(scroll.accessibilityFrame().height, host.bounds.height * 0.5,
         "Wrapped script titles retain at least half the sidebar viewport")
+    }
+    if name.hasPrefix("fable-bar-") {
+      let zoom = name.contains("-200-") ? 2.0 : name.contains("-150-") ? 1.5 : 1.0
+      try assertFrozenFooter(host, size: size, zoom: zoom)
     }
     XCTAssertFalse(window.isVisible)
     if name.hasPrefix("presenter-waiting-") {

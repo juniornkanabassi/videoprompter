@@ -95,6 +95,12 @@ struct ExposureSettingsContent: View {
   var body: some View {
     Section("Exposure") {
       ExposureToolToggles(model: model, presenter: presenter)
+      Text(ExposureGuidance.zebraAction(model.guides)).fontWeight(.semibold)
+      Text(ExposureGuidance.zebraLookFor(model.guides))
+      if model.exposureBypassed || (presenter && model.cleanView) {
+        Button("Show exposure aids") { if presenter { model.cleanView = false }; model.exposureBypassed = false }
+      }
+      DisclosureGroup("Custom levels", isExpanded: $showsCustom) {
       Picker("Zebra reference", selection: Binding(
         get: { model.guides.validatedZebraPurpose },
         set: { model.guides.useZebraPreset($0) }
@@ -111,12 +117,6 @@ struct ExposureSettingsContent: View {
           Text("Custom levels").tag(CameraGuides.ZebraPurpose.custom)
         }
       }.pickerStyle(.radioGroup).fixedSize(horizontal: false, vertical: true)
-      Text(ExposureGuidance.zebraAction(model.guides)).fontWeight(.semibold)
-      Text(ExposureGuidance.zebraLookFor(model.guides))
-      if model.exposureBypassed || (presenter && model.cleanView) {
-        Button("Show exposure aids") { if presenter { model.cleanView = false }; model.exposureBypassed = false }
-      }
-      DisclosureGroup("Custom levels", isExpanded: $showsCustom) {
         Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
         Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
         Text("Custom levels measure brightness; they are not a face target.")

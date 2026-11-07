@@ -152,12 +152,12 @@ import XCTest
     defer { LibraryAX.close(window) }
     for (size, expected) in [
       (CGSize(width: 2160, height: 3840), "Portrait · 2160 × 3840"),
-      (nil, "Orientation unknown · resolution unknown"),
+      (nil, "Waiting for picture"),
       (CGSize(width: 1920, height: 1080), "Landscape · 1920 × 1080"),
     ] as [(CGSize?, String)] {
       shared.pictureSize = size
       for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      let output = try XCTUnwrap(LibraryAX.named("Output check", in: host).first)
+      let output = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
       XCTAssertTrue(LibraryAX.value(output, "accessibilityValue").contains(expected))
     }
   }

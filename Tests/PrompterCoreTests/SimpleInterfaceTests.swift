@@ -317,7 +317,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     cleanUp(store, suite: suite, root: root)
     let camera = CameraModel(defaults: defaults)
     let before = store.settings
-    let host = NSHostingView(rootView: AnyView(InspectorView(store: store, camera: camera)))
+    let host = NSHostingView(rootView: AnyView(ReadingSettingsPage(store: store, camera: camera)))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
     window.orderFrontRegardless()

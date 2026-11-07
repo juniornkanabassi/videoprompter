@@ -749,7 +749,7 @@ import Speech
       return .error("camera_not_showing", "Show the camera first: open the Second monitor window, or present with videoprompter camera set on.")
     }
     recorder.useSettings(store.settings)
-    await recorder.start(camera: camera)
+    await recorder.start(camera: camera, defaultLabel: presenter.isShowingWithoutScript ? "" : store.session.activeRecord?.metadata.title ?? "")
     guard recorder.isCapturing else { return .error("recording_failed", recorder.errorMessage ?? "Recording could not start.") }
     var value = recordingState
     value["folder"] = CameraRecorder.recordingsFolder().path

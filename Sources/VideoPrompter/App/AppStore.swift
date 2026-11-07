@@ -314,8 +314,11 @@ private enum PresenterSaveError: LocalizedError {
   func createFolder(named name: String) {
     withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
-  func renameFolder(_ id: UUID, name: String) {
-    withLibrary { [self] _ in try await renameLibraryFolder(id, name: name) }
+  func renameFolder(_ id: UUID, name: String, undoManager: UndoManager? = nil) {
+    guard let old = folders.first(where: { $0.id == id })?.name else { return }
+    queuedUndo("Rename Folder", manager: undoManager ?? NSApp?.keyWindow?.undoManager,
+      change: { try await self.renameLibraryFolder(id, name: name) },
+      reverse: { try await self.renameLibraryFolder(id, name: old) })
   }
   @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -348,7 +351,7 @@ private enum PresenterSaveError: LocalizedError {
       // `change` is held here, not by UndoManager, so the entry keeps its target alive.
       self?.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, inverting: change)
     }
-    undoManager?.setActionName("Delete Folder")
+    undoManager?.setActionName("Remove Folder")
     folderChangeRevision += 1
     let previous = folderChangeTask
     folderChangeTask = Task { [self, weak undoManager] in
@@ -377,6 +380,30 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
   }
+  private final class QueuedChange { var failed = false }
+  private func queuedUndo(_ name: String, manager: UndoManager?,
+                          change: @escaping @MainActor () async throws -> Void,
+                          reverse: @escaping @MainActor () async throws -> Void,
+                          previousChange: QueuedChange? = nil) {
+    let ticket = QueuedChange()
+    manager?.registerUndo(withTarget: ticket) { [weak self, weak manager] _ in
+      self?.queuedUndo(name, manager: manager, change: reverse, reverse: change, previousChange: ticket)
+    }
+    manager?.setActionName(name)
+    let previous = folderChangeTask
+    folderChangeRevision += 1
+    folderChangeTask = Task { [weak manager] in
+      await previous?.value
+      do {
+        guard previousChange?.failed != true else { throw CocoaError(.userCancelled) }
+        try await change()
+      } catch {
+        ticket.failed = true
+        manager?.removeAllActions(withTarget: ticket)
+        self.errorMessage = "Unable to save this change. \(error.localizedDescription)"
+      }
+    }
+  }
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
   func trashSelectionFromMenu(in window: NSWindow? = NSApp.keyWindow) {
     guard Self.canTrashSelection(in: window) else { return }
@@ -393,8 +420,12 @@ private enum PresenterSaveError: LocalizedError {
     selectedIDs.contains(id) ? selectedIDs : [id]
   }
 
-  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
-    withLibrary { [self] _ in try await moveScripts(ids, to: folderID) }
+  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?, undoManager: UndoManager? = nil) {
+    let originals = scripts.filter { ids.contains($0.id) }
+    queuedUndo("Move to Folder", manager: undoManager ?? NSApp?.keyWindow?.undoManager,
+      change: { try await self.moveScripts(ids, to: folderID) }, reverse: {
+        for script in originals { try await self.moveScripts([script.id], to: script.metadata.folderID) }
+      })
   }
   func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -511,8 +542,12 @@ private enum PresenterSaveError: LocalizedError {
     trash = await library.listTrash()
     if selectedID == id { selectedID = visible.first?.id }
   }
-  func restore(_ id: UUID) {
-    withLibrary { [self] _ in try await restoreScript(id) }
+  func restore(_ id: UUID, undoManager: UndoManager? = nil) {
+    queuedUndo("Restore Script", manager: undoManager ?? NSApp?.keyWindow?.undoManager,
+      change: { try await self.restoreScript(id) }, reverse: {
+        guard let library = self.library else { return }
+        try await library.delete(id); await self.reload()
+      })
   }
   func restoreScript(_ id: UUID) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -713,12 +748,21 @@ private enum PresenterSaveError: LocalizedError {
     hasFailedSaves = !failedSaveIDs.isEmpty
   }
   /// Stop mirroring the external file. The script keeps the content it already has.
-  func unlink(_ id: UUID) {
-    withLibrary { [self] library in
-      let metadata = try await library.unlink(id)
-      if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
-      await refreshLinkStates()
-    }
+  func unlink(_ id: UUID, undoManager: UndoManager? = nil) {
+    guard let metadata = scripts.first(where: { $0.id == id })?.metadata, metadata.linkedPath != nil else { return }
+    queuedUndo("Unlink", manager: undoManager ?? NSApp?.keyWindow?.undoManager,
+      change: {
+        guard let library = self.library else { return }
+        let updated = try await library.unlink(id)
+        if let i = self.scripts.firstIndex(where: { $0.id == id }) { self.scripts[i].metadata = updated }
+        await self.refreshLinkStates()
+      }, reverse: { try await self.restoreLinkMetadata(id, metadata: metadata) })
+  }
+  private func restoreLinkMetadata(_ id: UUID, metadata: ScriptMetadata) async throws {
+    guard let library else { return }
+    let updated = try await library.restoreLinkMetadata(id, from: metadata)
+    if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = updated }
+    await refreshLinkStates()
   }
   func refreshLinkStates() async {
     guard let library else { return }
@@ -726,13 +770,14 @@ private enum PresenterSaveError: LocalizedError {
     if states != linkStates { linkStates = states }
   }
   /// Point a script whose file moved at its new place; `resolution` says which text survives.
-  func relink(_ id: UUID, to url: URL, resolution: RelinkResolution) async -> Bool {
+  func relink(_ id: UUID, to url: URL, resolution: RelinkResolution, undoManager: UndoManager? = nil) async -> Bool {
     guard let library else { return false }
     guard await flushPendingSaves() else {
       errorMessage = "Save the pending edits before relinking."
       return false
     }
     do {
+      let before = scripts.first(where: { $0.id == id })
       let outcome = try await library.relink(id: id, to: url, resolution: resolution)
       if let i = scripts.firstIndex(where: { $0.id == id }) {
         scripts[i] = outcome.current
@@ -741,11 +786,31 @@ private enum PresenterSaveError: LocalizedError {
       if let imported = outcome.imported { scripts.insert(imported, at: 0) }
       unavailableScriptIDs.remove(id)
       await refreshLinkStates()
+      if let before { registerLinkUndo(before, manager: undoManager ?? NSApp?.keyWindow?.undoManager) }
       return true
     } catch {
       errorMessage = "The file could not be relinked. Nothing was changed. \(error)"
       return false
     }
+  }
+  private func registerLinkUndo(_ previous: ScriptRecord, manager: UndoManager?) {
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      guard let current = target.scripts.first(where: { $0.id == previous.id }) else { return }
+      target.registerLinkUndo(current, manager: manager)
+      target.queuedUndo("Link File", manager: nil, change: {
+        guard let library = target.library else { return }
+        // Undo changes only the library copy and its link. It never overwrites an external file.
+        _ = try await library.unlink(previous.id)
+        let detached = try await library.read(previous.id)
+        _ = try await library.save(previous.id, markdown: previous.markdown, expectedFingerprint: detached.metadata.contentFingerprint)
+        try await target.restoreLinkMetadata(previous.id, metadata: previous.metadata)
+        if let i = target.scripts.firstIndex(where: { $0.id == previous.id }) {
+          let restored = try await library.read(previous.id)
+          target.scripts[i] = restored; target.session.applyEditedRecord(restored)
+        }
+      }, reverse: {})
+    }
+    manager?.setActionName("Link File")
   }
   func rename(_ value: String, for id: UUID) {
     withLibrary { [self] _ in try await updateScriptMetadata(id, title: value) }
@@ -779,12 +844,21 @@ private enum PresenterSaveError: LocalizedError {
     copy.name = "\(source.name) copy"
     presets.append(copy)
   }
-  func updatePreset(_ id: UUID) {
+  func updatePreset(_ id: UUID, undoManager: UndoManager? = nil) {
     guard let index = presets.firstIndex(where: { $0.id == id }) else { return }
+    registerPresetReplacement(presets[index], manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     var updated = settings
     updated.id = id
     updated.name = presets[index].name
     presets[index] = updated
+  }
+  private func registerPresetReplacement(_ previous: PrompterSettings, manager: UndoManager?) {
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      guard let i = target.presets.firstIndex(where: { $0.id == previous.id }) else { return }
+      target.registerPresetReplacement(target.presets[i], manager: manager)
+      target.presets[i] = previous
+    }
+    manager?.setActionName("Replace Preset")
   }
   func dismissModeMigrationNotice() {
     modeMigrationNotice = nil

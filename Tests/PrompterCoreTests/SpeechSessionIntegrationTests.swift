@@ -235,7 +235,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       store.selectedID = record.id
       store.settings.mode = "Voice"
       PresenterController.shared.present(store: store, on: screen)
-      guard let panel = NSApp.windows.first(where: { $0.title == "Video Prompter · Rendered replay" }) as? NSPanel else {
+      guard let panel = NSApp.windows.first(where: { $0.title == "Rendered replay" }) as? NSPanel else {
         return XCTFail("Rendered replay presenter panel was not created.")
       }
       panel.sharingType = .readOnly
