@@ -8,8 +8,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class ReviewLaunchInstall(unittest.TestCase):
     def test_running_check_targets_launched_copy(self):
         source = (ROOT / 'Sources/VideoPrompterCLI/main.swift').read_text()
-        line = next(line for line in source.splitlines() if '&& !appRunning(' in line)
-        self.assertIn('ControlLaunch.executablePath', line)
+        line = next(line for line in source.splitlines() if '&& !ControlLaunch.isRunning(' in line)
+        self.assertIn('app: launchApp', line)
+        self.assertIn('appRunning(executable:', line)
 
     def test_failed_backup_removal_reports_failure(self):
         script = (ROOT / 'install.sh').read_text()
