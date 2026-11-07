@@ -470,9 +470,9 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     }
     sessionQueue.asyncAfter(deadline: .now() + Self.watchdog) { [self] in
       guard generation == self.generation else { return }
-      let (sawFrame, rateTimes) = shared.withLock {
-        defer { $0.measuresRate = false }
-        return ($0.frames > 0, $0.rateTimes)
+      let (sawFrame, rateTimes) = shared.withLock { state in
+        defer { state.measuresRate = false }  // a named parameter: older compilers reject $0 inside defer
+        return (state.frames > 0, state.rateTimes)
       }
       // This watch ran to its end, so its measurement is done, whatever it found.
       if measuresRate { self.measuresRate = false }
