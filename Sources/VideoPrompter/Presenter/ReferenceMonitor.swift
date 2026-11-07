@@ -114,7 +114,7 @@ struct ReferenceMonitorCaption: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityLabel("Monitored passage")
         .accessibilityValue(passage)
-      }.frame(maxHeight: expanded ? 240 : min(150, readingSize * 2.5))
+      }.frame(maxHeight: expanded ? 240 : min(152, readingSize * 2.5)) // grid: ok The preview scales to two and a half lines of reading text.
       Button(expanded ? "Collapse passage" : "Expand passage · scroll for more") { expanded.toggle() }
         .buttonStyle(.plain).font(.callout).foregroundStyle(.white).uiZoom(zoom)
     }

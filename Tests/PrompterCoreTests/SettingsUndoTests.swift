@@ -10,10 +10,10 @@ import XCTest
     XCTAssertEqual(ScriptShortcuts.newScript.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.library.modifiers, [.command, .shift])
     XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .control])
-    XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent("."))
-    XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, [.command, .shift])
-    XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent(","))
-    XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, [.command, .shift])
+    XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent(">"))
+    XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, .command)
+    XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent("<"))
+    XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, .command)
     let shortcuts = [ScriptShortcuts.newScript, ScriptShortcuts.library, ScriptShortcuts.camera,
                      ScriptShortcuts.importFile, ScriptShortcuts.italic,
                      ScriptShortcuts.biggerText, ScriptShortcuts.smallerText]

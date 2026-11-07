@@ -16,8 +16,8 @@ enum ScriptShortcuts {
   static let library = KeyboardShortcut("l", modifiers: [.command, .shift])
   // Shift-Command-C belongs to the standard Show Colors command.
   static let camera = KeyboardShortcut("c", modifiers: [.command, .control])
-  static let biggerText = KeyboardShortcut(".", modifiers: [.command, .shift])
-  static let smallerText = KeyboardShortcut(",", modifiers: [.command, .shift])
+  static let biggerText = KeyboardShortcut(">", modifiers: .command)
+  static let smallerText = KeyboardShortcut("<", modifiers: .command)
 }
 
 

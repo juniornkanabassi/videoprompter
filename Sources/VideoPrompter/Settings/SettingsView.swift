@@ -476,7 +476,7 @@ struct InputLevelMeter: View {
         }
       }
     }
-    .frame(height: showsScale ? 30 : 12)
+    .frame(height: showsScale ? 32 : 12)
     .accessibilityHidden(true)
     .overlay { AccessibleInputLevel(peakDBFS: peakDBFS, isClipping: isClipping).allowsHitTesting(false) }
     // `ingest` ignores silence.
@@ -579,7 +579,7 @@ struct ReadingAppearancePreview: View {
         .fixedSize()
         .rotationEffect(.degrees(Double(settings.rotation)))
         .padding(Space.md)
-        .frame(maxWidth: .infinity, minHeight: max(140, settings.fontSize * 3))
+        .frame(maxWidth: .infinity, minHeight: max(140, settings.fontSize * 3)) // grid: ok Minimum preview height scales with the chosen reading text size.
         .background(Color(nsColor: NSColor(hex: settings.backgroundColorHex) ?? .black)
           .opacity(settings.backdropOpacity(withVideo: overVideo)), in: Rectangle())
         .background(.gray)

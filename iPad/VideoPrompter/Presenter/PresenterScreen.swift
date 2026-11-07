@@ -96,7 +96,7 @@ struct PresenterScreen: View {
           .font(.callout)
           .padding(.horizontal, 16).padding(.vertical, 8)
           .background(.ultraThinMaterial, in: Capsule())
-          .padding(.bottom, controlsVisible ? 110 : 30)
+          .padding(.bottom, controlsVisible ? 112 : 32)
       }
       .allowsHitTesting(false)
     }

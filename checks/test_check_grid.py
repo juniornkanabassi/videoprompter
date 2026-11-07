@@ -23,6 +23,15 @@ class GridTests(unittest.TestCase):
         self.assertEqual(violations(text), [])
         self.assertEqual(violations('RoundedRectangle(cornerRadius: 14)\nSpacer(minLength: 3)'), [(1, '14'), (2, '3')])
 
+    def test_nested_expressions_and_interpolated_strings(self):
+        self.assertEqual(violations('.padding(.bottom, visible ? 110 : 30)'), [(1, '110'), (1, '30')])
+        self.assertEqual(violations('.frame(width: min(150, size * 2), idealHeight: 13)'), [(1, '13'), (1, '150')])
+        self.assertEqual(violations('HStack(spacing: visible ? 7 : 8) {}'), [(1, '7')])
+        self.assertEqual(violations('Text("\\(a ? "x" : "y") items").padding(7)'), [(1, '7')])
+        self.assertEqual(violations('.padding([.horizontal, .top], 7)'), [(1, '7')])
+        self.assertEqual(violations('.padding(has("\\(name)") ? 7 : 8)'), [(1, '7')])
+        self.assertEqual(violations('let packet = Packet.frame(width: 9)', view_calls=False), [])
+
     def test_new_views_are_discovered_in_both_targets(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

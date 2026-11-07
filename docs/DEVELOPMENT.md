@@ -26,7 +26,9 @@ Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and
 `test.sh` also runs the grid checker over every Mac and iPad Swift source file and
 captures the light/dark snapshot suite in separate, invisible XCTest processes.
 Set `VIDEOPROMPTER_SNAPSHOTS` to keep the images in a chosen evidence folder;
-otherwise the script prints its temporary output folder. A failed grid or snapshot
+otherwise the script prints a temporary output folder and removes it on exit.
+An explicit XCTest filter runs only those tests; the normal unfiltered command
+always includes both snapshot passes, reusing the test bundle. A failed grid or snapshot
 check fails the normal test command. The standalone `checks/check-snapshots.sh`
 remains available. Off-grid layout literals need an inline `// grid: ok <reason>`.
 
