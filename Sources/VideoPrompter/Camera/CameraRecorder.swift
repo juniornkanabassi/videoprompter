@@ -141,7 +141,15 @@ import PrompterCore
     storedFloatAudio = defaults.bool(forKey: "recordingFloatAudio")
     storedMicrophoneUID = defaults.string(forKey: "recordingMicrophoneUID")
     storedMirrorSavedVideo = defaults.bool(forKey: "mirrorSavedVideo")
-    if let path = defaults.string(forKey: "lastRecording"), FileManager.default.fileExists(atPath: path) { lastFile = URL(fileURLWithPath: path) }
+    if let path = defaults.string(forKey: "lastRecording"), FileManager.default.fileExists(atPath: path) {
+      let file = URL(fileURLWithPath: path)
+      lastFile = file
+      Task { [weak self] in
+        guard let duration = try? await AVURLAsset(url: file).load(.duration).seconds,
+          duration.isFinite, duration >= 0, let self, self.lastFile == file else { return }
+        self.lastTakeDuration = duration
+      }
+    }
   }
   static func recordingsFolder(arguments: [String] = CommandLine.arguments,
                                movies: URL = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]) -> URL {

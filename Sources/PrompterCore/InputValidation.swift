@@ -80,8 +80,8 @@ public enum InputValidation {
     let controls = CharacterSet.controlCharacters.subtracting(CharacterSet(charactersIn: "\u{200C}\u{200D}"))
     let forbidden = CharacterSet(charactersIn: "/\\:?%*|\"<>").union(controls)
     let cleaned = value.precomposedStringWithCanonicalMapping.components(separatedBy: forbidden)
-      .joined(separator: separator).trimmingCharacters(in: .whitespacesAndNewlines)
-    let source = cleaned.isEmpty || cleaned == "." || cleaned == ".." ? fallback : cleaned
+      .joined(separator: separator).trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
+    let source = cleaned.isEmpty ? fallback : cleaned
     var result = ""
     // 240 leaves headroom for atomic-write temporary names and filesystem bookkeeping.
     let bytes = max(0, 240 - suffix.utf8.count), units = max(0, 240 - suffix.utf16.count)

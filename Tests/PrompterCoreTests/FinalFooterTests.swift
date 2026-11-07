@@ -149,13 +149,13 @@ import XCTest
     manager.undo(); _ = await store.flushPendingSaves(); XCTAssertNil(store.scripts.first(where: { $0.id == record.id })?.metadata.folderID)
     try await store.deleteScript(record.id)
     manager.beginUndoGrouping(); store.restore(record.id, undoManager: manager); manager.endUndoGrouping()
-    for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.waitForScriptDeletions()
     XCTAssertEqual(manager.undoActionName, "Restore Script")
     manager.undo()
-    for _ in 0..<100 where !store.trash.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.waitForScriptDeletions()
     XCTAssertTrue(store.trash.contains(where: { $0.id == record.id }))
     manager.redo()
-    for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    await store.waitForScriptDeletions()
     XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.markdown, record.markdown)
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("UndoLink-\(UUID()).md")
     try record.markdown.write(to: url, atomically: true, encoding: .utf8)
@@ -171,6 +171,36 @@ import XCTest
     _ = await store.flushPendingSaves(); XCTAssertEqual(manager.undoActionName, "Unlink")
     manager.undo(); _ = await store.flushPendingSaves(); XCTAssertEqual(store.scripts.first(where: { $0.id == record.id })?.metadata.linkedPath, url.path)
     XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), record.markdown)
+  }
+
+  func testRestoreUndoRedoWaitsForCompletionInsteadOfStaleLists() async throws {
+    let (store, _, _, record) = try await fixture()
+    try await store.deleteScript(record.id)
+    let manager = UndoManager(); manager.groupsByEvent = false
+    manager.beginUndoGrouping(); store.restore(record.id, undoManager: manager); manager.endUndoGrouping()
+    await store.waitForScriptDeletions()
+
+    let deletionEntered = expectation(description: "Undo paused before deletion")
+    var release: CheckedContinuation<Void, Never>?
+    store.deleteGate = {
+      await withCheckedContinuation { release = $0; deletionEntered.fulfill() }
+    }
+    manager.undo()
+    await fulfillment(of: [deletionEntered], timeout: 2)
+    // This was the old redo wait predicate: it is already true while Undo is blocked.
+    XCTAssertTrue(store.scripts.contains { $0.id == record.id })
+    manager.redo()
+    var finished = false
+    let completion = Task { await store.waitForScriptDeletions(); finished = true }
+    await Task.yield()
+    XCTAssertFalse(finished)
+    store.deleteGate = nil
+    release?.resume()
+    await completion.value
+    XCTAssertTrue(store.scripts.contains { $0.id == record.id })
+    XCTAssertFalse(store.trash.contains { $0.id == record.id })
+    XCTAssertEqual(manager.undoActionName, "Restore Script")
+    XCTAssertNil(store.errorMessage)
   }
 
   func testPresetAndShootSetupUndo() async throws {

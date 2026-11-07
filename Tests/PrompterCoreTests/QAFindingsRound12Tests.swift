@@ -33,6 +33,66 @@ import XCTest
     XCTAssertTrue(persisted.contains { $0.id == later.id }, "The unrelated setup must survive on disk too")
   }
 
+  func testShootSetupUndoRedoPreservesRenamesOrderAndLaterEdits() async throws {
+    let (store, camera, recorder) = try await fixture()
+    for name in ["First", "Deleted", "Last"] {
+      XCTAssertTrue(store.saveShootSetup(named: name, camera: camera, recorder: recorder))
+    }
+    let deleted = store.shootSetups[1]
+    let last = store.shootSetups[2]
+    let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
+    let manager = UndoManager(); manager.groupsByEvent = false
+    manager.beginUndoGrouping(); store.deleteShootSetup(deleted.id, undoManager: manager); manager.endUndoGrouping()
+    XCTAssertTrue(store.renameShootSetup(last.id, to: "Renamed"))
+    XCTAssertTrue(store.saveShootSetup(named: "Later", camera: camera, recorder: recorder))
+    for _ in 0..<3 {
+      manager.undo()
+      XCTAssertEqual(store.shootSetups.map(\.name), ["First", "Deleted", "Renamed", "Later"])
+      XCTAssertEqual(try encoder.encode(store.shootSetups[1]), try encoder.encode(deleted))
+      manager.redo()
+      XCTAssertEqual(store.shootSetups.map(\.name), ["First", "Renamed", "Later"])
+    }
+    manager.undo()
+    XCTAssertTrue(store.renameShootSetup(deleted.id, to: "Edited after undo"))
+    manager.redo(); manager.undo()
+    XCTAssertEqual(store.shootSetups[1].name, "Edited after undo", "Redo must snapshot the current entry, not an obsolete version")
+    let persisted = try JSONDecoder().decode([ShootSetup].self, from: XCTUnwrap(store.defaults.data(forKey: "shootSetups")))
+    XCTAssertEqual(try encoder.encode(persisted), try encoder.encode(store.shootSetups))
+  }
+
+  func testClickerRecoversAfterFieldEditingWithoutStealingTextKeys() throws {
+    let panel = PresenterPanel(captureVisible: false)
+    defer { panel.close() }
+    let field = NSTextField(string: "Take label")
+    let button = NSButton(title: "Tools", target: nil, action: nil)
+    let content = NSView(); content.addSubview(field); content.addSubview(button)
+    panel.contentView = content
+    var handled: [UInt16] = []
+    panel.onPassageKey = { handled.append($0); return true }
+    XCTAssertTrue(panel.makeFirstResponder(field))
+    let editor = try XCTUnwrap(panel.firstResponder as? NSTextView)
+    XCTAssertTrue(editor.isEditable)
+    for code: UInt16 in [49, 115, 116, 121, 123, 124] {
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+        modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+        characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: code))
+      XCTAssertFalse(panel.handlePassageKey(event))
+    }
+    XCTAssertTrue(handled.isEmpty)
+    XCTAssertEqual(field.stringValue, "Take label")
+    panel.endEditing(for: field)
+    // A dismissed popover can return focus to its opener instead of the panel itself.
+    XCTAssertTrue(panel.makeFirstResponder(button))
+    for code: UInt16 in [49, 115, 116, 121, 123, 124] {
+      let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
+        modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil,
+        characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: code))
+      XCTAssertTrue(panel.handlePassageKey(event))
+    }
+    XCTAssertEqual(handled, [49, 115, 116, 121, 123, 124])
+    XCTAssertEqual(field.stringValue, "Take label")
+  }
+
   func testClickerWorksWhenSelectableReadingTextHasFocus() throws {
     _ = NSApplication.shared
     let panel = PresenterPanel(captureVisible: false)
@@ -99,6 +159,29 @@ import XCTest
       "Truncating a long grapheme must fall back to a visible name, not export the hidden file .md")
     XCTAssertFalse(file.deletingPathExtension().lastPathComponent.isEmpty)
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), record.markdown)
+  }
+
+  func testExportAndTakeNamesStayVisibleForExtremeTitles() async throws {
+    let (store, _, _) = try await fixture()
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("qa12-names-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: folder) }
+    for title in [".hidden", "...", " . . ", "/:\\\u{0}", String(repeating: "👨‍👩‍👧‍👦", count: 150),
+                  "a" + String(repeating: "\u{0301}", count: 150)] {
+      let record = try await store.createScript(title: title, markdown: "Keep this content.")
+      let transfer = ScriptFile(script: record)
+      let exported = try transfer.export(in: folder)
+      let take = CameraRecorder.fileURL(in: folder, label: title)
+      let defaultTake = CameraRecorder.fileURL(in: folder, defaultLabel: title)
+      XCTAssertEqual(exported.lastPathComponent, transfer.filename, "Save panel and drag must suggest the same safe name")
+      for file in [exported, take, defaultTake] {
+        XCTAssertFalse(file.lastPathComponent.hasPrefix("."), title)
+        XCTAssertFalse(file.deletingPathExtension().lastPathComponent.isEmpty)
+        XCTAssertLessThanOrEqual(file.lastPathComponent.decomposedStringWithCanonicalMapping.utf8.count, 240)
+        XCTAssertLessThanOrEqual(file.lastPathComponent.decomposedStringWithCanonicalMapping.utf16.count, 240)
+        if file != exported { try Data("take".utf8).write(to: file) }
+      }
+      XCTAssertEqual(try String(contentsOf: exported, encoding: .utf8), record.markdown)
+    }
   }
 
   private func sample(_ frame: Int) throws -> CMSampleBuffer {

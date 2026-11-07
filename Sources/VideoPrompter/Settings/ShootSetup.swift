@@ -82,15 +82,21 @@ extension AppStore {
   }
 
   func deleteShootSetup(_ id: UUID, undoManager: UndoManager? = nil) {
-    registerShootListUndo(undoManager ?? NSApp?.keyWindow?.undoManager)
-    if let index = shootSetups.firstIndex(where: { $0.id == id }) { shootSetups.remove(at: index) }
+    guard let index = shootSetups.firstIndex(where: { $0.id == id }) else { return }
+    let setup = shootSetups.remove(at: index)
+    let manager = undoManager ?? NSApp?.keyWindow?.undoManager
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      target.restoreShootSetup(setup, at: index, manager: manager)
+    }
+    manager?.setActionName("Delete Shoot Setup")
     shootSetupError = nil
   }
 
-  private func registerShootListUndo(_ manager: UndoManager?) {
-    let previous = shootSetups
+  private func restoreShootSetup(_ setup: ShootSetup, at index: Int, manager: UndoManager?) {
+    guard !shootSetups.contains(where: { $0.id == setup.id }) else { return }
+    shootSetups.insert(setup, at: min(index, shootSetups.count))
     manager?.registerUndo(withTarget: self) { [weak manager] target in
-      target.registerShootListUndo(manager); target.shootSetups = previous
+      target.deleteShootSetup(setup.id, undoManager: manager)
     }
     manager?.setActionName("Delete Shoot Setup")
   }
@@ -254,7 +260,7 @@ struct PresenterHelp: View {
         Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
         Text("Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings.")
         Text("Keyboard and clicker").font(.headline)
-        Text("Space starts or pauses reading. Page Down or Right starts reading when paused, or moves to the next passage while reading. Page Up or Left moves to the previous passage. Home returns to the first word. These keys work only when the reading surface has focus.")
+        Text("Space starts or pauses reading. Page Down or Right starts reading when paused, or moves to the next passage while reading. Page Up or Left moves to the previous passage. Home returns to the first word. These keys work when the presenter is active and you are not editing text.")
         Text("To retake a line, press Pause, click the word, then Start reading. The recording keeps going. Shift-Command-R starts or stops recording. Escape closes the popover, exits Clean view or cancels editing.")
         Button("Done") { dismiss() }.initialPopoverFocus()
       }.font(.callout).padding(Space.md)

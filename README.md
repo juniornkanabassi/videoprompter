@@ -171,7 +171,7 @@ Presenter picture checks are directly available whenever a camera is shown: **Gu
 
 The presenter uses three bands: transport, reading and recording state, then picture controls or the last-take receipt. Click the recording state to check the output, recover a camera or inspect recording health. Take names default to the presented script title. The receipt includes duration, Play, Show in Finder and Hide; Tools > More > Last take keeps the previous result reachable during a new recording. Prompter > Last Take reveals the most recent saved file.
 
-Space starts or pauses reading. Page Down or Right starts from pause or advances a passage while reading. Page Up or Left moves back. Home returns to the beginning. These keys act only when the reading surface has focus. Shift-Command-R records; reading keys never stop a take.
+Space starts or pauses reading. Page Down or Right starts from pause or advances a passage while reading. Page Up or Left moves back. Home returns to the beginning. These keys work when the presenter is active and you are not editing text. Shift-Command-R records; reading keys never stop a take.
 
 Settings > General now holds iPad sharing. Camera & Recording uses a one-row section picker. Both capture pages report camera, microphone and speech permissions and link to System Settings. Replacing presets and deleting shoot setups use Edit > Undo. The frozen layout and vocabulary are in [DESIGN-SPEC.md](DESIGN-SPEC.md).
 
