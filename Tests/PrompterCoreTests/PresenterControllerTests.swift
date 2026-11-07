@@ -1468,7 +1468,7 @@ final class PresenterControllerTests: XCTestCase {
     let screen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
     let feed = CGSize(width: 3840, height: 2160)
     let turned = PresenterController.matchedCameraFrame(picture: feed, rotation: .quarter, in: screen)
-    XCTAssertEqual(turned.width, 720, accuracy: 0.001) // Minimum width keeps reading controls usable.
+    XCTAssertEqual(turned.width, 607.5, accuracy: 0.001) // Preserve the portrait camera aspect.
     XCTAssertEqual(turned.height, 1080, accuracy: 0.001)
     XCTAssertEqual(turned.midX, 960, accuracy: 0.001)
     XCTAssertEqual(turned.midY, 540, accuracy: 0.001)
