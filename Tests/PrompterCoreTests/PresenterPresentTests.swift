@@ -58,6 +58,7 @@ final class PresenterPresentTests: XCTestCase {
 
   func testPresenterArrowsMovePassagesAndLeaveEditingAndModifiersAlone() async throws {
     store.selectedID = try await script("Arrows").id
+    store.settings.mode = "Manual"; store.session.startDelay = 0
     controller.present(store: store)
     let shown = try XCTUnwrap(controller.panel)
     func arrow(_ code: UInt16, modifiers: NSEvent.ModifierFlags = []) -> NSEvent {
@@ -67,8 +68,17 @@ final class PresenterPresentTests: XCTestCase {
     shown.makeFirstResponder(shown) // Bare arrows are shortcuts only on the reading surface.
     let first = store.session.tokenIndex
     XCTAssertTrue(shown.handlePassageKey(arrow(124)))
+    XCTAssertTrue(store.session.isActivelyRunning)
+    XCTAssertTrue(shown.handlePassageKey(arrow(124)))
     XCTAssertGreaterThan(store.session.tokenIndex, first)
     XCTAssertTrue(shown.handlePassageKey(arrow(123)))
+    XCTAssertEqual(store.session.tokenIndex, first)
+    XCTAssertTrue(shown.handlePassageKey(arrow(49)))
+    XCTAssertFalse(store.session.isActivelyRunning)
+    XCTAssertTrue(shown.handlePassageKey(arrow(49)))
+    XCTAssertTrue(store.session.isActivelyRunning)
+    XCTAssertTrue(shown.handlePassageKey(arrow(115)))
+    XCTAssertFalse(store.session.isActivelyRunning)
     XCTAssertEqual(store.session.tokenIndex, first)
     XCTAssertFalse(shown.handlePassageKey(arrow(124, modifiers: .command)))
     try XCTUnwrap(draft).begin(session: store.session)
@@ -218,7 +228,7 @@ final class PresenterPresentTests: XCTestCase {
     XCTAssertTrue(showsPresenter)
     XCTAssertEqual(store.session.activeScriptID, second.id)
     XCTAssertEqual(draft?.recordID, second.id, "the presenter still edits the first script")
-    XCTAssertEqual(panel?.title, "Video Prompter · Second")
+    XCTAssertEqual(panel?.title, "Second")
   }
 }
 

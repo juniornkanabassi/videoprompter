@@ -20,3 +20,21 @@ enum UIType {
   static let caption = Font.caption
   static let heading = Font.headline
 }
+
+/// Opaque presenter chrome stays dark over every possible camera picture.
+enum Surfaces {
+  static let presenterPanel = Color(nsColor: NSColor(name: nil) { appearance in
+    let increased = appearance.bestMatch(from: [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua, .aqua, .darkAqua])
+    return NSColor(white: increased == .accessibilityHighContrastAqua || increased == .accessibilityHighContrastDarkAqua ? 0.08 : 0.12, alpha: 1)
+  })
+  static let scrim = Color.black.opacity(0.9)
+}
+
+enum Palette {
+  static func onDarkQuiet(_ contrast: ColorSchemeContrast) -> Color {
+    .white.opacity(contrast == .increased ? 1 : 0.8)
+  }
+  static func quietOpacity(_ contrast: ColorSchemeContrast) -> Double {
+    contrast == .increased ? 1 : 0.75
+  }
+}

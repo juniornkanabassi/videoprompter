@@ -23,7 +23,7 @@ struct GoogleDocsSheet: View {
   var body: some View {
     Form {
       Section {
-        TextField("Google Docs link", text: $link)
+        TextField("Link", text: $link, prompt: Text("https://docs.google.com/document/…"))
           .autocorrectionDisabled()
           #if os(iOS)
           .textInputAutocapitalization(.never)
@@ -101,7 +101,7 @@ struct GoogleDocsSheet: View {
       }
 
       if let problem {
-        Section("Import failed") {
+        Section("Unable to Import") {
           Text(problem)
           Button("Try Again") { importLink() }.disabled(GoogleDocs.documentID(from: link) == nil || importing != nil)
           Text("You can also download the document as Word or text and choose Add > Import File.")
@@ -114,13 +114,13 @@ struct GoogleDocsSheet: View {
     #else
     .formStyle(.grouped)
     .uiZoom(zoom)
-    .frame(minWidth: 480, minHeight: 420)
+    .frame(minWidth: 480, minHeight: 240)
     #endif
     .toolbar { Button("Done") { dismiss() } }
     .task(id: google.isSignedIn) { if google.isSignedIn { await load() } }
     .onChange(of: problem) { _, value in
       #if os(macOS)
-      if let value { LibraryAnnouncement.post("Import failed. " + value) }
+      if let value { LibraryAnnouncement.post("Unable to import. " + value) }
       #endif
     }
     .onChange(of: search) {

@@ -528,6 +528,17 @@ public actor MarkdownLibrary {
     try persist(restoring: old)
     return index.scripts[position]
   }
+  /// Restore only the link on Undo, without replacing newer script text or touching the original.
+  public func restoreLink(_ id: UUID, from metadata: ScriptMetadata) throws -> ScriptMetadata {
+    let position = try position(of: id)
+    let old = index
+    index.scripts[position].linkedPath = metadata.linkedPath
+    index.scripts[position].linkedBookmark = metadata.linkedBookmark
+    index.scripts[position].linkedFingerprint = metadata.linkedFingerprint
+    lastLinkSync[id] = nil
+    try persist(restoring: old)
+    return index.scripts[position]
+  }
   /// Conflict files written since the last call, for the caller to show once.
   public func takeLinkConflicts() -> [String] {
     defer { linkConflicts.removeAll() }

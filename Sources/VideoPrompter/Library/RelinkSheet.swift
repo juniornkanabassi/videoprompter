@@ -56,7 +56,7 @@ struct RelinkSheet: View {
         Button(completed ? "Done" : "Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).help(completed ? "Close this confirmation" : "Close without linking a file")
       }
     }.padding(Space.xxl)
-    }.frame(minWidth: 520, idealWidth: 640, minHeight: 320, idealHeight: 600)
+    }.frame(minWidth: 520, idealWidth: 640, minHeight: 240, idealHeight: 320)
   }
 
   private var picker: some View {

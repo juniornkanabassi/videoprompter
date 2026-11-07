@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import PrompterCore
 
 /// Separate from reading presets: a named setup explicitly includes capture choices.
@@ -80,12 +81,37 @@ extension AppStore {
     return true
   }
 
-  func deleteShootSetup(_ id: UUID) {
+  func deleteShootSetup(_ id: UUID, undoManager: UndoManager? = nil) {
+    registerShootListUndo(undoManager ?? NSApp?.keyWindow?.undoManager)
     if let index = shootSetups.firstIndex(where: { $0.id == id }) { shootSetups.remove(at: index) }
     shootSetupError = nil
   }
 
-  @discardableResult func applyShootSetup(_ setup: ShootSetup, camera: CameraModel, recorder: CameraRecorder, microphones: [AudioInputDevice] = AudioCapture.inputDevices()) -> Bool {
+  private func registerShootListUndo(_ manager: UndoManager?) {
+    let previous = shootSetups
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      target.registerShootListUndo(manager); target.shootSetups = previous
+    }
+    manager?.setActionName("Delete Shoot Setup")
+  }
+  private func registerShootStateUndo(_ name: String, camera: CameraModel, recorder: CameraRecorder, manager: UndoManager?) {
+    let previous = currentShootSetup(named: "Previous setup", camera: camera, recorder: recorder)
+    let exposure = (camera.cleanView, camera.exposureBypassed)
+    let priorRestorePoint = previousShootSetup
+    let priorExposure = previousShootExposure
+    let priorName = appliedShootSetupName
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      guard !recorder.settingsLocked, !target.session.isActivelyRunning else { return }
+      target.registerShootStateUndo(name, camera: camera, recorder: recorder, manager: manager)
+      target.setShootSetup(previous, camera: camera, recorder: recorder)
+      camera.cleanView = exposure.0; camera.exposureBypassed = exposure.1
+      target.previousShootSetup = priorRestorePoint
+      target.previousShootExposure = priorExposure
+      target.appliedShootSetupName = priorName
+    }
+    manager?.setActionName(name)
+  }
+  @discardableResult func applyShootSetup(_ setup: ShootSetup, camera: CameraModel, recorder: CameraRecorder, microphones: [AudioInputDevice] = AudioCapture.inputDevices(), undoManager: UndoManager? = nil) -> Bool {
     shootSetupError = nil
     func reject(_ message: String) -> Bool {
       shootSetupError = message
@@ -103,6 +129,7 @@ extension AppStore {
     guard required.allSatisfy({ uid in microphones.contains { $0.uid == uid } }) else {
       return reject("A microphone for \(setup.name) is unavailable. Connect it before applying this setup.")
     }
+    registerShootStateUndo("Apply Shoot Setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     previousShootSetup = currentShootSetup(named: "Previous setup", camera: camera, recorder: recorder)
     previousShootExposure = (camera.cleanView, camera.exposureBypassed)
     setShootSetup(setup, camera: camera, recorder: recorder)
@@ -118,8 +145,9 @@ extension AppStore {
       floatAudio: recorder.floatAudio)
   }
 
-  @discardableResult func restorePreviousShootSetup(camera: CameraModel, recorder: CameraRecorder) -> Bool {
+  @discardableResult func restorePreviousShootSetup(camera: CameraModel, recorder: CameraRecorder, undoManager: UndoManager? = nil) -> Bool {
     guard !recorder.settingsLocked, !session.isActivelyRunning, let previousShootSetup else { return false }
+    registerShootStateUndo("Restore Previous Setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     // Restore the actual prior choices even if a device has since disconnected.
     setShootSetup(previousShootSetup, camera: camera, recorder: recorder)
     camera.cleanView = previousShootExposure.clean
@@ -154,6 +182,7 @@ struct ShootSetupSection: View {
   @ObservedObject var store: AppStore
   @ObservedObject var camera: CameraModel
   @ObservedObject var recorder: CameraRecorder
+  @Environment(\.undoManager) private var undoManager
   @State private var name = ""
   var body: some View {
     Section("Saved shoot setups") {
@@ -163,13 +192,14 @@ struct ShootSetupSection: View {
         Text("Applied \(applied)").font(.callout)
       }
       if store.previousShootSetup != nil {
-        Button("Restore previous setup") { store.restorePreviousShootSetup(camera: camera, recorder: recorder) }
+        Button("Restore Previous Setup") { store.restorePreviousShootSetup(camera: camera, recorder: recorder, undoManager: undoManager) }
           .disabled(locked)
       }
       TextField("Setup name", text: $name).initialPopoverFocus()
-      Button("Save shoot setup") {
+      Button("Save Shoot Setup") {
         if store.saveShootSetup(named: name, camera: camera, recorder: recorder) { name = "" }
       }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || locked)
+      if store.shootSetups.isEmpty { Text("No saved setups yet. Save one to switch camera, framing and microphone in one step.").font(.callout) }
       ForEach(store.shootSetups) { setup in
         ShootSetupRow(store: store, camera: camera, recorder: recorder, setup: setup, locked: locked)
       }
@@ -189,29 +219,26 @@ private struct ShootSetupRow: View {
   let setup: ShootSetup
   let locked: Bool
   @State private var renaming = false
-  @State private var deleting = false
+  @Environment(\.undoManager) private var undoManager
   @State private var name = ""
 
   var body: some View {
     HStack {
       Text(setup.name).fixedSize(horizontal: false, vertical: true)
       Spacer()
-      Button("Apply") { store.applyShootSetup(setup, camera: camera, recorder: recorder) }
+      Button("Apply") { store.applyShootSetup(setup, camera: camera, recorder: recorder, undoManager: undoManager) }
         .accessibilityLabel("Apply \(setup.name)").disabled(locked)
       Menu("Actions") {
         Button("Rename…") { name = setup.name; renaming = true }
-        Button("Delete…", role: .destructive) { deleting = true }
+        Button("Delete", role: .destructive) { store.deleteShootSetup(setup.id, undoManager: undoManager) }
       }.accessibilityLabel("Actions for \(setup.name)")
     }
-    .alert("Rename shoot setup", isPresented: $renaming) {
+    .alert("Rename Shoot Setup", isPresented: $renaming) {
       TextField("Setup name", text: $name)
       Button("Save") { store.renameShootSetup(setup.id, to: name) }
       Button("Cancel", role: .cancel) {}
     }
-    .alert("Delete \(setup.name)?", isPresented: $deleting) {
-      Button("Delete", role: .destructive) { store.deleteShootSetup(setup.id) }
-      Button("Cancel", role: .cancel) {}
-    } message: { Text("This removes the saved setup. Your current camera and reading settings stay unchanged.") }
+
   }
 }
 
@@ -226,6 +253,9 @@ struct PresenterHelp: View {
         Text("Tools contains Text, Camera, Exposure and Microphone. Camera view shows the picture without a script. Script and camera puts your words over it.")
         Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
         Text("Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings.")
+        Text("Keyboard and clicker").font(.headline)
+        Text("Space starts or pauses reading. Page Down or Right starts reading when paused, or moves to the next passage while reading. Page Up or Left moves to the previous passage. Home returns to the first word. These keys work only when the reading surface has focus.")
+        Text("To retake a line, press Pause, click the word, then Start reading. The recording keeps going. Shift-Command-R starts or stops recording. Escape closes the popover, exits Clean view or cancels editing.")
         Button("Done") { dismiss() }.initialPopoverFocus()
       }.font(.callout).padding(Space.md)
     }.frame(width: 400, height: 400)

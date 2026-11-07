@@ -288,7 +288,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Ready when you are", "Paste Copied Text", "Import a File", "Write a Script", "Camera Only", "Quick Reading Practice"] {
+    for text in ["Ready when you are", "Paste Copied Text", "Import File", "New Script", "Camera Only", "Quick Reading Practice"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
@@ -317,7 +317,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     cleanUp(store, suite: suite, root: root)
     let camera = CameraModel(defaults: defaults)
     let before = store.settings
-    let host = NSHostingView(rootView: AnyView(InspectorView(store: store, camera: camera)))
+    let host = NSHostingView(rootView: AnyView(ReadingSettingsPage(store: store, camera: camera)))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 560, height: 1800), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
     window.orderFrontRegardless()

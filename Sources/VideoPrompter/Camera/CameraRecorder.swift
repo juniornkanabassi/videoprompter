@@ -38,10 +38,12 @@ import PrompterCore
   private var inputTest: RecordingAudioTest?
   private var inputTestStop: Task<Void, Never>?
   private var testGeneration = UUID()
-  @Published private(set) var recordedDuration: TimeInterval = 0
+  @Published var recordedDuration: TimeInterval = 0
   @Published private(set) var startedAt: Date?
   private(set) var recordingID: UUID?
   @Published private(set) var lastFile: URL?
+  @Published var lastTakeDuration: TimeInterval = 0
+  @Published var receiptHidden = false
   /// Receipt belongs to the latest attempt, never to an older successful take.
   @Published var savedTake: URL?
   @Published private(set) var takeFailure: String?
@@ -76,6 +78,7 @@ import PrompterCore
       defaults.set(newValue, forKey: "recordingFloatAudio")
     }
   }
+  private(set) var takeDefaultLabel = ""
   @Published private var storedTakeLabel = ""
   var takeLabel: String {
     get { storedTakeLabel }
@@ -145,13 +148,14 @@ import PrompterCore
     if let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count { return URL(fileURLWithPath: arguments[i + 1]).appendingPathComponent("Recordings") }
     return ControlProtocol.migrateLegacyFolder(in: movies)
   }
-  static func fileURL(in folder: URL, date: Date = Date(), label: String = "") -> URL {
+  static func fileURL(in folder: URL, date: Date = Date(), label: String = "", defaultLabel: String = "") -> URL {
     let formatter = DateFormatter(); formatter.locale = Locale(identifier: "en_US_POSIX"); formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
     let stamp = " " + formatter.string(from: date)
-    var url = folder.appendingPathComponent(InputValidation.filename(label, fallback: "Video Prompter", suffix: stamp + ".mov", separator: " "))
+    let resolvedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? defaultLabel : label
+    var url = folder.appendingPathComponent(InputValidation.filename(resolvedLabel, fallback: "Video Prompter", suffix: stamp + ".mov", separator: " "))
     var number = 2
     while FileManager.default.fileExists(atPath: url.path) {
-      url = folder.appendingPathComponent(InputValidation.filename(label, fallback: "Video Prompter", suffix: stamp + " \(number).mov", separator: " "))
+      url = folder.appendingPathComponent(InputValidation.filename(resolvedLabel, fallback: "Video Prompter", suffix: stamp + " \(number).mov", separator: " "))
       number += 1
     }
     return url
@@ -162,6 +166,10 @@ import PrompterCore
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       if !NSWorkspace.shared.open(folder) { errorMessage = "Could not open the recordings folder. In Finder, choose Go > Go to Folder and enter \(folder.path)." }
     } catch { errorMessage = "The recordings folder is unavailable. Check free space and folder permissions, then try again." }
+  }
+  static func durationText(_ duration: TimeInterval) -> String {
+    let seconds = max(0, Int(duration.isFinite ? duration : 0))
+    return String(format: "%d:%02d", seconds / 60, seconds % 60)
   }
   static func hasRecordingSpace(_ bytes: Int64) -> Bool { bytes >= 2_000_000_000 }
   static func microphones() -> [AVCaptureDevice] {
@@ -175,9 +183,10 @@ import PrompterCore
   static func framesTimedOut(attachedAt: Date, lastFrameAt: Date?, now: Date) -> Bool {
     now.timeIntervalSince(lastFrameAt ?? attachedAt) > 5
   }
-  func start(camera: CameraModel) async {
+  func start(camera: CameraModel, defaultLabel: String = "") async {
     guard !isBusy, !isRecording else { return }
     stopInputTest()
+    takeDefaultLabel = defaultLabel
     phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil; incompleteTake = nil
     recordingID = UUID()
     let takeID = recordingID
@@ -208,7 +217,7 @@ import PrompterCore
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
       audioChannels = spec.channels
-      let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, onFrame: { [weak self] duration in
+      let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel, defaultLabel: defaultLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, onFrame: { [weak self] duration in
         Task { @MainActor in
           guard let self, self.recordingID == takeID, self.isCapturing else { return }
           if self.startedAt == nil { self.startedAt = Date(); self.phase = .recording }
@@ -314,17 +323,17 @@ import PrompterCore
       }
       do {
         let result = try await sink.finish()
-        lastFile = result.0; savedTake = result.0
+        lastFile = result.0; savedTake = result.0; lastTakeDuration = recordedDuration; receiptHidden = false
         defaults.set(result.0.path, forKey: "lastRecording")
         droppedFrames = result.1
         droppedAudioBuffers = result.2
-        announce("Saved \(result.0.lastPathComponent)" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
+        announce("Saved \(result.0.lastPathComponent), \(Int(lastTakeDuration) / 60) minutes \(Int(lastTakeDuration) % 60) seconds" + (result.1 > 0 ? ". \(result.1) video frames were dropped." : ""))
       } catch {
         recovery = Self.recovery(for: error)
         incompleteTake = FileManager.default.fileExists(atPath: sink.fileURL.path) ? sink.fileURL : nil
         errorMessage = "No completed take was saved. " + Self.recoveryMessage(for: error)
       }
-      if let errorMessage { takeFailure = errorMessage }
+      if let errorMessage { takeFailure = errorMessage; receiptHidden = false }
 
       shared.release(); self.sink = nil; startedAt = nil; recordingID = nil; phase = .idle
       announce("Recording stopped")

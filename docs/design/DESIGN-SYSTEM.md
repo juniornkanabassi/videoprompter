@@ -61,6 +61,9 @@ One name per concept. UI text, help text, accessibility labels, menus, the Welco
 
 ## 8. Visual rules
 
+Shared chrome colours live in `UI/DesignTokens.swift`: `Surfaces.presenterPanel` (0.12 white, 0.08 with Increase Contrast), `Surfaces.scrim` (90% black), and `Palette.onDarkQuiet` (80% white, 100% with Increase Contrast). `Palette.quietOpacity` raises quiet primary labels to full contrast.
+
+
 ### 8.1 Materials
 - Presenter bar: one `GlassEffectContainer` with `.glassEffect(.regular.tint(.black.opacity(0.35)), in: RoundedRectangle(cornerRadius: 20))`. Under Reduce Transparency, a solid `Color(white: 0.12)` fill. `.regularMaterial` is removed from the presenter.
 - Bar buttons: `.buttonStyle(.glass)`. Start reading uses `.glassProminent` with the accent tint. Record uses `.glass` with a red record symbol; while recording, the Stop button is `.glassProminent` tinted red.

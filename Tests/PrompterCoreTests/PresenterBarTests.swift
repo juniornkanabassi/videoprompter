@@ -245,7 +245,7 @@ import XCTest
           XCTAssertFalse(has("Resolution pending camera", in: host))
         }
         if state.hasPrefix("warning") {
-          let saved = try button("Review problem…", in: host)
+          let saved = try button("Review", in: host)
           XCTAssertTrue((label(saved, "accessibilityValue") ?? "").contains("Opening take 03.mov"))
           XCTAssertTrue(window.convertToScreen(host.bounds).contains(try frame(saved)))
           _ = try button("Show in Finder", in: host)

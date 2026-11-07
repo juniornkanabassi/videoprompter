@@ -55,7 +55,7 @@ import XCTest
     let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped))
     defer { LibraryAX.close(window) }
     XCTAssertEqual(camera.guides, original)
-    for label in [ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check brightness · False colour", "Zebra reference", "Custom levels"] {
+    for label in [ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check brightness · False colour", "Custom levels"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
     XCTAssertTrue(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)
@@ -67,6 +67,7 @@ import XCTest
     try await Task.sleep(for: .milliseconds(80))
     XCTAssertFalse(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)
     XCTAssertEqual(camera.guides, original)
+    XCTAssertFalse(LibraryAX.named("Zebra reference", in: host).isEmpty, "Reference presets remain available one level down")
   }
 
   func testTeachingRoutesHaveSeparatePurposesAndGuideOpensWithoutARecording() async throws {

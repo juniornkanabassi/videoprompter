@@ -15,7 +15,7 @@ struct FolderNameSheet: View {
       Text(title).font(.headline).accessibilityAddTraits(.isHeader)
       VStack(alignment: .leading, spacing: Space.sm) {
         Text("Folder name").font(.callout)
-        TextField("Folder name", text: $name)
+        TextField("Client videos", text: $name)
           .textFieldStyle(.roundedBorder)
           .accessibilityLabel("Folder name")
           .help("Enter a name for this folder")
