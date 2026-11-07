@@ -59,7 +59,6 @@ fi
 # Moving it to the Bin made AppCleaner offer to remove the app's real settings after every update.
 if [[ -e "$BACKUP" ]] && ! /bin/rm -rf "$BACKUP"; then
   print -u2 "Installed Video Prompter $ACTUAL_VERSION, but the previous app could not be fully removed. Remnants may remain at $BACKUP."
-  exit 1
 fi
 # Retire the pre-2.0 command link, only if it is a symlink.
 [[ ! -L "$BIN_DIR/vidprompt" ]] || /bin/rm -f "$BIN_DIR/vidprompt"

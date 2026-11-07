@@ -14,7 +14,7 @@ class ReviewLaunchInstall(unittest.TestCase):
     def test_failed_backup_removal_reports_failure(self):
         script = (ROOT / 'install.sh').read_text()
         block = script[script.index('if [[ -e "$BACKUP" ]] && ! /bin/rm -rf "$BACKUP"; then'):]
-        block = block[:block.index('\nfi') + 3]
+        block = block[:block.index('\nfi') + 3] + '\nprint "Installed Video Prompter $ACTUAL_VERSION"\nprint "# ~/.codex/config.toml"'
         with tempfile.TemporaryDirectory(dir='/private/tmp') as folder:
             backup = pathlib.Path(folder) / 'old.app'
             backup.mkdir()
@@ -23,7 +23,10 @@ class ReviewLaunchInstall(unittest.TestCase):
             subprocess.run(['/usr/bin/chflags', 'uchg', str(locked)], check=True)
             try:
                 result = subprocess.run(['/bin/zsh', '-c', block], env={'BACKUP': str(backup), 'ACTUAL_VERSION': 'test'}, capture_output=True, text=True)
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 0)
+                self.assertIn("Installed Video Prompter", result.stdout)
+                self.assertIn("config.toml", result.stdout)
+                self.assertIn("could not be fully removed", result.stderr)
                 self.assertNotIn('It is kept at', result.stderr)
             finally:
                 subprocess.run(['/usr/bin/chflags', 'nouchg', str(locked)], check=False)
