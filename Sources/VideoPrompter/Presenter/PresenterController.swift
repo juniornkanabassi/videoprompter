@@ -967,6 +967,8 @@ struct PresenterView: View {
     controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? Palette.quietOpacity(contrast) : 1
   }
   private var showsReceipt: Bool { !recorder.receiptHidden && !recorder.isRecording && !recorder.isBusy && (recorder.savedTake != nil || recorder.takeFailure != nil) }
+  /// A clean saved take keeps the Picture row and opens its receipt from a compact opener; problems stay prominent.
+  private var showsCompactReceipt: Bool { showsReceipt && camera.presentsWithVideo && recorder.savedTake != nil && recorder.qualityWarning == nil }
   private var barContent: some View {
     VStack(spacing: 0) {
       transport
@@ -975,19 +977,20 @@ struct PresenterView: View {
           Button { showsReadingControls.toggle() } label: {
             HStack(spacing: Space.xs) {
               if hasBottomNotice { Image(systemName: "exclamationmark.triangle.fill") }
-              Text(hasBottomNotice ? "Check reading" : visibleReadingStatus)
-                .fixedSize(horizontal: false, vertical: true)
+              readingStatusLabel
               Image(systemName: "chevron.down").imageScale(.small)
             }.frame(minHeight: 24).contentShape(Rectangle())
           }.buttonStyle(.plain).foregroundStyle(hasBottomNotice ? Color.orange : Color.primary).accessibilityLabel(hasBottomNotice ? "Check reading…" : "Reading status")
             .accessibilityValue(readingStatusTitle).help("Change reading mode and speed")
             .restoringPopoverFocus(isPresented: $showsReadingControls, identifier: "presenter-reading-status")
+            // Sized after the output check but before the spacer, so it only wraps when it must.
+            .layoutPriority(0.5)
         }
-        if !hasScript || camera.displayMode == .videoOnly { Text("Camera view") }
+        if !hasScript || camera.displayMode == .videoOnly { Text("Camera view").fontWeight(.semibold) }
         Spacer(minLength: Space.sm)
         if camera.presentsWithVideo || recorder.isRecording || recorder.isBusy { recordingStateControl }
         moreMenu
-      }.font(.body.weight(.semibold))
+      }.font(.body)
         .accessibilityIdentifier("presenter-state-band")
       Group {
         if camera.cleanView {
@@ -999,7 +1002,7 @@ struct PresenterView: View {
               .help(error).accessibilityValue(error)
             Button("Hide") { store.shootSetupError = nil }.help("Hide shoot setup message")
           }
-        } else if showsReceipt { receipt }
+        } else if showsReceipt && !showsCompactReceipt { receipt }
         else if camera.presentsWithVideo { pictureRow }
       }.opacity(secondaryOpacity)
         .accessibilityIdentifier("presenter-context-band")
@@ -1015,6 +1018,12 @@ struct PresenterView: View {
     if !camera.isReadyToRecord { return "Camera unavailable" }
     guard camera.pictureSize != nil else { return "Waiting for picture" }
     return "Ready · " + recorder.compactOutputConfirmation(camera: camera)
+  }
+  /// The state word is semibold; the output detail is regular so it reads as secondary.
+  private var recordingStateText: Text {
+    let title = recordingStateTitle
+    guard title.hasPrefix("Ready · ") else { return Text(title).fontWeight(.semibold) }
+    return Text("Ready").fontWeight(.semibold) + Text(String(title.dropFirst(5)))
   }
   private func recordingAccessibilityValue(sound: String) -> String {
     if recorder.isRecording { return recordingStateTitle + " · " + sound }
@@ -1049,7 +1058,7 @@ struct PresenterView: View {
           VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.xs) {
               if recorder.isRecording { Image(systemName: "record.circle.fill").foregroundStyle(.red) }
-              Text(recordingStateTitle).monospacedDigit().fixedSize(horizontal: false, vertical: true)
+              recordingStateText.monospacedDigit().fixedSize(horizontal: false, vertical: true)
               if recorder.isRecording { RecordingBarLevel(meter: recorder.inputMeter, compact: true).frame(width: 12) }
             }
             if recorder.isRecording {
@@ -1059,6 +1068,8 @@ struct PresenterView: View {
           Image(systemName: "chevron.right").imageScale(.small)
         }.frame(minHeight: 24).contentShape(Rectangle())
       }.buttonStyle(.plain)
+        // The output check is sized first so it only wraps when the band truly cannot hold it.
+        .layoutPriority(1)
         .foregroundStyle(problem || (!camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording) ? Color.orange : Color.primary)
         .accessibilityLabel("Recording status")
         .accessibilityValue(value)
@@ -1128,11 +1139,28 @@ struct PresenterView: View {
       .accessibilityIdentifier("presenter-transport")
   }
 
+  private var visibleReadingStatusParts: (mode: String, state: String?) {
+    if camera.cleanView { return ("Clean view", nil) }
+    if draft.isEditing { return ("Editing", "not saved yet") }
+    return (store.settings.mode == "Manual" ? "Automatic scroll" : "Voice follow", session.visibleReadingState)
+  }
   private var visibleReadingStatus: String {
-    if camera.cleanView { return "Clean view" }
-    if draft.isEditing { return "Editing · not saved yet" }
-    let mode = store.settings.mode == "Manual" ? "Automatic scroll" : "Voice follow"
-    return mode + " · " + session.visibleReadingState
+    let parts = visibleReadingStatusParts
+    return parts.mode + (parts.state.map { " · " + $0 } ?? "")
+  }
+  /// The mode is semibold and the changing state regular, so the two read as different jobs.
+  /// When the band is short of width the state drops to a second line whole, never mid-phrase.
+  @ViewBuilder private var readingStatusLabel: some View {
+    if hasBottomNotice { Text("Check reading").fontWeight(.semibold) } else {
+      let parts = visibleReadingStatusParts
+      ViewThatFits(in: .horizontal) {
+        (Text(parts.mode).fontWeight(.semibold) + Text(parts.state.map { " · " + $0 } ?? "")).fixedSize()
+        VStack(alignment: .leading, spacing: 0) {
+          Text(parts.mode).fontWeight(.semibold)
+          if let state = parts.state { Text(state) }
+        }.fixedSize()
+      }
+    }
   }
 
   var outputControls: some View {
@@ -1222,7 +1250,7 @@ struct PresenterView: View {
   private var moreMenu: some View {
     Button { openedFromPicture = false; showsTools.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text("Tools")
+        Text("Tools").fontWeight(.semibold)
         Image(systemName: "chevron.down").imageScale(.small)
       }.fixedSize().frame(minHeight: 24).contentShape(Rectangle())
     }.buttonStyle(.plain).accessibilityLabel("Tools")
@@ -1250,16 +1278,36 @@ struct PresenterView: View {
         .tint(camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView ? .accentColor : nil)
         .contextMenu { Button("Exposure settings…") { selectedToolSection = "Exposure"; showsTools = true } }
         .onLongPressGesture { selectedToolSection = "Exposure"; showsTools = true }
-      Button { openedFromPicture = true; overflowTool = "Camera" } label: { Text("Switch camera").frame(minHeight: 24).contentShape(Rectangle()) }
+      Button { openedFromPicture = true; overflowTool = "Camera" } label: { Text("Switch camera").frame(minHeight: 24).contentShape(Rectangle()) }.layoutPriority(1)
         .disabled(camera.recordingLocked)
         .accessibilityValue(camera.devices.first(where: { $0.uid == camera.selectedUID })?.name ?? "No camera")
         .help(camera.recordingLocked ? "Stop recording to change camera" : "Choose a camera")
         .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && overflowTool == "Camera" }, set: { if !$0 { overflowTool = nil } }), identifier: "picture-camera")
       Spacer(minLength: 0)
+      if showsCompactReceipt, let file = recorder.savedTake {
+        let duration = CameraRecorder.durationText(recorder.lastTakeDuration)
+        Button { openedFromPicture = true; showsLastTake = true } label: {
+          // Priority lets the duration show whenever the row has room; the picture checks never shrink.
+          ViewThatFits(in: .horizontal) {
+            receiptOpenerLabel("Saved " + duration)
+            receiptOpenerLabel("Saved")
+          }.layoutPriority(1)
+        }.accessibilityLabel("Last take").accessibilityValue("Saved \(file.lastPathComponent) · \(duration)")
+          .help("Saved \(file.path). Play, show in Finder or hide the receipt.")
+          .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && showsLastTake }, set: { if !$0 { showsLastTake = false } }), identifier: "picture-last-take")
+      }
     }.font(.callout).buttonStyle(.plain).frame(minHeight: 24)
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .contain).accessibilityLabel("Picture")
       .accessibilityIdentifier("presenter-picture-row")
+  }
+
+  private func receiptOpenerLabel(_ title: String) -> some View {
+    HStack(spacing: Space.xs) {
+      Image(systemName: "checkmark.circle.fill")
+      Text(title).monospacedDigit()
+      Image(systemName: "chevron.right").imageScale(.small)
+    }.fixedSize().frame(minHeight: 24).contentShape(Rectangle())
   }
 
   private var toolSection: String {
@@ -1278,17 +1326,17 @@ struct PresenterView: View {
         Text("Microphone").tag("Microphone")
       }.pickerStyle(.menu)
       toolContents(toolSection)
+      // Each remaining job is named directly; a generic More menu hid the pre-record check.
       Section {
-        Menu("More") {
-          Button("Shoot setups…") { showsTools = false; openPresenterSettings(.shootSetups) }
-          Button("Presenter help…") { showsTools = false; showsHelp = true }
-          Button("Recording settings…") { showsTools = false; overflowTool = "Output" }
-          Button("Last take") { showsTools = false; showsLastTake = true }
-            .disabled(recorder.savedTake == nil && recorder.takeFailure == nil && recorder.lastFile == nil)
-        }.menuIndicator(.visible)
+        Button("Before recording check…") { showsTools = false; overflowTool = "Output" }
+          .help("Check picture, microphone, format, take name and folder before you record")
+        Button("Shoot setups…") { showsTools = false; openPresenterSettings(.shootSetups) }
+        Button("Presenter help…") { showsTools = false; showsHelp = true }
+        Button("Last take") { showsTools = false; openedFromPicture = false; showsLastTake = true }
+          .disabled(recorder.savedTake == nil && recorder.takeFailure == nil && recorder.lastFile == nil)
       }
-    }.formStyle(.grouped).frame(width: min(520, 640 / controlZoom), height: popoverHeight / controlZoom)
-      .uiZoom(controlZoom)
+    }.formStyle(.grouped).frame(width: min(520, 640 / controlZoom)).fixedSize(horizontal: false, vertical: true)
+      .modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom)).uiZoom(controlZoom)
   }
 
   @ViewBuilder func toolContents(_ section: String) -> some View {

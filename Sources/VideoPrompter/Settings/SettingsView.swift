@@ -87,6 +87,12 @@ struct SettingsPage: View {
   @State private var renamePreset: PrompterSettings?
   @State private var renameValue = ""
   @State private var appliedPreset: PrompterSettings?
+  @State private var replacedPreset: PrompterSettings?
+  /// An exact existing name means the button replaces that preset, and must say so.
+  static func presetToReplace(_ name: String, in presets: [PrompterSettings]) -> PrompterSettings? {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : presets.first { $0.name == trimmed }
+  }
 
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
@@ -116,14 +122,22 @@ struct SettingsPage: View {
       case .shootSetups:
         ShootSetupSection(store: store, camera: .shared, recorder: .shared)
       case .presets:
+        let existing = Self.presetToReplace(presetName, in: store.presets)
         Section("Save current reading settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
-          Button("Save Reading Preset") {
-            if let existing = store.presets.first(where: { $0.name == presetName.trimmingCharacters(in: .whitespacesAndNewlines) }) { store.updatePreset(existing.id, undoManager: undoManager); presetName = "" }
-            else { store.savePreset(named: presetName); presetName = "" }
+          Button(existing.map { "Replace “\($0.name)”" } ?? "Save Reading Preset") {
+            if let existing { store.updatePreset(existing.id, undoManager: undoManager) } else { store.savePreset(named: presetName) }
+            replacedPreset = existing; presetName = ""
           }.disabled(presetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .help("Save the current presenter settings for reuse")
+            .help(existing == nil ? "Save the current presenter settings for reuse" : "Change this saved look to the current settings")
+          if let existing { Text("“\(existing.name)” already exists. Its saved look will change to the current settings.").font(.callout) }
+          if let replacedPreset {
+            HStack(spacing: Space.sm) {
+              Text("Replaced “\(replacedPreset.name)”")
+              Button("Undo") { undoManager?.undo(); self.replacedPreset = nil }
+            }.font(.callout)
+          }
         }
         Section {
           if store.presets.isEmpty { Text("Your reading presets appear here.").font(.callout).foregroundStyle(.primary) }

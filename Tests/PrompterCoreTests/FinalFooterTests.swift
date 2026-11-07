@@ -81,10 +81,11 @@ import XCTest
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       for size in [NSSize(width: 720, height: 520), .init(width: 1000, height: 700)] {
-        for state in ["idle", "countdown", "reading", "recording", "saved", "problem", "failed"] {
+        for state in ["idle", "waiting", "countdown", "reading", "recording", "saved", "problem", "failed"] {
           let recorder = CameraRecorder(defaults: freshDefaults("MatrixTake")); camera.recorder = recorder
           store.session.pause(); recorder.phase = .idle; recorder.errorMessage = nil
           recorder.savedTake = nil; recorder.droppedAudioBuffers = 0
+          camera.pictureSizeOverride = state == "waiting" ? nil : .init(width: 1080, height: 1920)
           if state == "reading" { store.session.play(captureAudio: false) }
           if state == "countdown" { store.session.countdownTick = .seconds(60); store.session.startReading() }
           if state == "recording" { recorder.phase = .recording }
@@ -112,6 +113,13 @@ import XCTest
              let second = recording.value(forKey: "accessibilityFrame") as? NSValue {
             XCTAssertEqual(first.rectValue.midY, second.rectValue.midY, accuracy: 1)
             XCTAssertEqual(LibraryAX.value(recording, "accessibilityRole"), "AXButton")
+            // Round 19: the state band is one line up to 150%; at 200% in the minimum window it may
+            // use two lines (mode above state, or the output check wrapped), never three.
+            let oneLine = 24 * zoom + 1, twoLines = 40 * zoom + 1
+            // The long countdown fixture ("Starts in 60") is also allowed a second line at 150%.
+            let tight = size.width == 720 && (zoom == 2 || (zoom == 1.5 && state == "countdown"))
+            XCTAssertLessThanOrEqual(first.rectValue.height, tight ? twoLines : oneLine, "Reading status wrapped: \(state), \(zoom), \(size)")
+            XCTAssertLessThanOrEqual(second.rectValue.height, tight || state == "recording" ? twoLines : oneLine, "Recording status wrapped: \(state), \(zoom), \(size)")
           }
           let nodes = LibraryAX.elements(host)
           for node in nodes where LibraryAX.value(node, "accessibilityRole") == "AXButton" {
@@ -120,8 +128,15 @@ import XCTest
             XCTAssertTrue(window.convertToScreen(host.bounds).insetBy(dx: -1, dy: -1).contains(rect), "Clipped action \(name) \(state) \(zoom)")
           }
           if state == "saved" {
-            XCTAssertTrue(LibraryAX.named("Guides", in: host).isEmpty)
-            for name in ["Play", "Show in Finder", "Hide receipt"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
+            // Round 19: a clean take keeps the quick picture checks; its receipt opens from Last take.
+            for name in ["Guides", "Exposure check", "Switch camera", "Last take"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
+            let opener = try XCTUnwrap(LibraryAX.named("Last take", in: host).first)
+            XCTAssertEqual(LibraryAX.value(opener, "accessibilityValue"), "Saved My Script 2026-11-06 14-03-22.mov · 1:24")
+            XCTAssertTrue(LibraryAX.named("Hide receipt", in: host).isEmpty)
+          }
+          if state == "problem" || state == "failed" {
+            XCTAssertTrue(LibraryAX.named("Guides", in: host).isEmpty, "A take problem stays prominent until hidden")
+            for name in ["Review", "Hide receipt"] + (state == "problem" ? ["Show in Finder"] : []) { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
             let hide = try XCTUnwrap(LibraryAX.named("Hide receipt", in: host).first)
             XCTAssertTrue(LibraryAX.bool(hide, "accessibilityPerformPress")); XCTAssertTrue(recorder.receiptHidden)
             recorder.receiptHidden = false

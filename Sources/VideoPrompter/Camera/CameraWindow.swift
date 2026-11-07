@@ -740,7 +740,7 @@ struct RecordingSettingsSections: View {
 
     } header: { Text("Recording setup") } footer: {
       Text("Leave empty to use the script title. Next file: " + CameraRecorder.fileURL(in: CameraRecorder.recordingsFolder(), label: recorder.takeLabel, defaultLabel: defaultLabel).lastPathComponent).font(.callout)
-    }.disabled(recorder.settingsLocked).help("Stop recording to change this")
+    }.disabled(recorder.settingsLocked).help(recorder.settingsLocked ? "Stop recording to change this" : "")
   }
 }
 struct RecordingFolderSection: View {

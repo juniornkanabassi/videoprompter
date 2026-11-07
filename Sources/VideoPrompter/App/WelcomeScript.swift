@@ -36,7 +36,7 @@ enum WelcomeScript {
 
     **Clean presenter view** hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays.
 
-    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second Monitor Window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** under Tools, then **More**, lets you save, apply, rename and delete complete setups. After Apply, **Restore Previous Setup** returns to your previous choices.
+    **More camera settings…** opens Camera & Recording. Its Camera section offers **Open Second Monitor Window** for a separate window showing the same camera and recording. Shoot setups in Settings, or **Shoot setups…** under Tools, lets you save, apply, rename and delete complete setups. After Apply, **Restore Previous Setup** returns to your previous choices.
 
     **Record** and **Start reading** are separate actions. Choose **Stop recording** when finished, then **Play** to review it, or **Show in Finder** to find the file. A saved take with problems has a review action. The library's **Recordings** button opens your takes.
 

@@ -21,11 +21,15 @@ Recording: [Pause] [Back to start]             [Stop recording]
                                              Receiving sound
            ✓ Guides  Exposure check  Switch camera (disabled)
 
-Receipt:   same transport and state bands
-           Saved My Script … .mov · 1:24 [Play] [Show in Finder] [×]
+Saved:     same transport and state bands
+           ✓ Guides       Exposure check       Switch camera        ✓ Saved 1:24 ›
+           (Last take opens the receipt: file, Play, Show in Finder, Hide)
+
+Problem:   same transport and state bands
+           Saved with problems My Script … .mov · 1:24 [Review] [Show in Finder] [×]
 ```
 
-The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions, receipt state and duration never truncate. Saved with problems keeps its full state label; its complete diagnosis is in Review, help and the accessible description. Hide restores the Picture row. Last take in Tools > More opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
+A clean saved take keeps the Picture row (round 19) and adds a Last take opener at its trailing edge: a checkmark, Saved and the duration. The duration is dropped first when the row is short of width; the three picture checks never shrink. The opener's popover holds the full receipt. Saved with problems and a failed take keep the full receipt row in place of the Picture row until Hide, so the warning stays prominent. The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions, receipt state and duration never truncate. Saved with problems keeps its full state label; its complete diagnosis is in Review, help and the accessible description. Hide restores the Picture row. Last take in Tools opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
 
 | Budget at 720 × 520 | 100% | 150% | 200% |
 |---|---:|---:|---:|
@@ -37,6 +41,8 @@ The receipt stays in one row at the minimum width, instead of the proposed secon
 | Reading area minimum | 428 pt | 384 pt | 340 pt |
 
 The hard gate for the footer state matrix is ≥65% reading height (338 pt at 720 × 520). Start and Back to start have an 8 pt unscaled gap. Record is trailing. The state controls are unboxed, use full mode names and chevrons adjacent to their words. The recording meter shares the timer line; health is the second line. Context alone may recede to 75%. The last 48 pt of reading glyphs fade into the footer; the scroll area's height is unchanged.
+
+State band weight and wrapping (round 19 defect fix, lead authorised): the mode name, the recording state word and Tools are semibold; the changing reading state and the output detail (Portrait 1080 × 1920) are regular. The output check is sized first, then the reading status, then the spacer, so neither wraps unless the band truly cannot hold it. Up to 150% the band is one line in every camera state; at 200% in the minimum window it may use two lines (the mode above its state as whole words, or the output check wrapped), never three. `FinalFooterTests` measures both status controls against these line limits.
 
 | Reading state | Transport | State |
 |---|---|---|
@@ -57,7 +63,7 @@ The hard gate for the footer state matrix is ≥65% reading height (338 pt at 72
 | REC mm:ss · Receiving sound / Waiting for sound | Recording health |
 | REC mm:ss · Check microphone (warning symbol) | Recording health, fault visible |
 
-Space toggles reading. Page Down / Right starts from pause, otherwise moves forward a passage. Page Up / Left moves back a passage. Home returns to the first word and pauses reading. These bare keys are handled only while the presenter panel itself is first responder. Escape closes a popover, exits Clean view, then cancels editing. Shift-Command-R remains the recording shortcut; no bare key records. Retaking from a word never stops the recording.
+Space toggles reading. Page Down / Right starts from pause, otherwise moves forward a passage. Page Up / Left moves back a passage. Home returns to the first word and pauses reading. These bare keys are handled whenever the presenter is the key window and no text field or script editor has focus (QA round 12); they never type into a text field, and a popover keeps its own keys. Escape closes a popover, exits Clean view, then cancels editing. Shift-Command-R remains the recording shortcut; no bare key records. Retaking from a word never stops the recording.
 
 Empty take names use the presented script title, with Video Prompter as the camera-view fallback. User-entered take names win. The pre-record check owns picture, frame rate, microphone, format, mirroring, rotation, folder and take-name detail; it never requests permissions.
 
@@ -117,10 +123,10 @@ Current placement, superseding the older arrangements below (round 13 Builder A)
 | Back to start | Beside Start whenever applicable; transport wraps whole controls in place |
 | State and countdown | Primary reading mode, pace and state control opens mode/speed; recording state aligns beside it; draft state is Editing · not saved yet |
 | Camera monitoring | Picture row whenever camera is shown: Guides on/off, Exposure check on/off, Switch camera. Detailed choices stay in the selected Tools section. |
-| Secondary adjustments | Tools has a named section picker at every size: Text, Camera, Exposure, Microphone. More holds Shoot setups, Presenter help and Recording settings. |
+| Secondary adjustments | Tools has a named section picker at every size: Text, Camera, Exposure, Microphone. Below the section, Before recording check…, Shoot setups…, Presenter help… and Last take are listed by name (round 19 retired the generic More menu). |
 | Narrow Script only | Text, Camera and Microphone remain in the same wrapping tools region |
-| Take receipt | Replaces the compact tools row and retains full receipt/Finder labels |
-| Camera prerequisites and destination | Recovery replaces unknown output metadata; a received picture is required for the output summary; Show recording folder in Finder is in More |
+| Take receipt | A clean take keeps the Picture row with a Last take opener; a take with problems replaces the row with the full receipt until Hide |
+| Camera prerequisites and destination | Recovery replaces unknown output metadata; a received picture is required for the output summary; Show Recordings Folder is in Before recording check… |
 
 
 The presenter always uses dark appearance for its own chrome (`.environment(\.colorScheme, .dark)` on the control bar and notices), whatever the system setting. It is a stage, like QuickTime full screen. The script colours remain the user's.
@@ -708,3 +714,16 @@ Three independent reports (first-time user, creator workflow and accessibility) 
 Round 17 integration: merged Builder B f8d1d3d. The shared Reading page owns its scope sentence; no duplicate was added by Builder A. The Picture row uses visible checkmarks plus accessible On/Off or bypass values. It replaces the old separate Restore exposure aids notice. Reading status remains a 24-point minimum target, and the ready/paused 720 × 520 presenter preserves 65% for reading at 200%. Camera view places its title at the leading side and the secondary Record action at the trailing side.
 
 Round 17 recording/receipt refinement: recording health and its live meter sit beside REC on the status row, with the recording microphone named in help and the health detail. A take receipt temporarily replaces the Picture row, as allowed by the existing receipt rule; Tools stays available on the status row. This retains the full 65% reading budget at all six Interface sizes in the existing idle, countdown, reading, waiting, recording and three warning fixtures.
+
+## Round 19 Builder refinement (7 November 2026, lead authorised)
+
+| Finding | Placement and behaviour |
+|---|---|
+| Quick picture controls during a receipt (creator) | A clean saved take keeps Guides, Exposure check and Switch camera and adds a Last take opener (checkmark, Saved, duration) at the row's trailing edge; its popover is the full receipt. Saved with problems and failed takes keep the full receipt row until Hide. The transport is not displaced. |
+| Save Reading Preset silently replacing (UX) | When the entered name matches an existing preset the button reads Replace “Name”, a line says the saved look will change, and after activation Replaced “Name” shows with an Undo button. A new name keeps Save Reading Preset. |
+| Idle controls say Stop recording (first-time user) | The recording setup section carries "Stop recording to change this" only while `settingsLocked` is true. |
+| Generic More menu (first-time user) | Tools lists Before recording check…, Shoot setups…, Presenter help… and Last take directly under the selected section. |
+| Lower chrome weight and height at 150/200% (visual) | State band weights and wrapping as described under the frozen footer. The three-band order, the 65% floor and the vocabulary are unchanged. |
+| Tall Tools popover for small sections (visual) | The Tools surface sizes to its content and keeps the bounded scrolling viewport for enlarged content. |
+
+Verified by `RoundNineteenTests`, the updated `FinalFooterTests` state matrix (with a Waiting for picture state) and the `fable-bar-*` / `fable-tools-*` fixtures.

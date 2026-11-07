@@ -84,7 +84,7 @@ import XCTest
       XCTAssertGreaterThanOrEqual(viewport.frame.height, 520 * 0.65, "Reading height at \(zoom)")
       LibraryAX.close(window)
       let (toolWindow, toolHost) = await LibraryAX.host(view.toolsSurface, size: .init(width: 640, height: 700))
-      for label in ["Tools section", "More"] {
+      for label in ["Tools section", "Before recording check…", "Presenter help…", "Last take"] {
         XCTAssertFalse(LibraryAX.named(label, in: toolHost).isEmpty, label)
       }
       LibraryAX.close(toolWindow)
