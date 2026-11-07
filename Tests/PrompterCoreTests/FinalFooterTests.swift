@@ -63,7 +63,7 @@ import XCTest
     let panel = PresenterPanel(captureVisible: false)
     defer { panel.close() }
     panel.setFrame(NSRect(x: 0, y: 0, width: 400, height: 300), display: false)
-    XCTAssertEqual(panel.frame.size, NSSize(width: 400, height: 300))
+    XCTAssertEqual(panel.frame.size, PresenterFrameMemory.minimumSize(in: try XCTUnwrap(panel.screen).visibleFrame))
 
   }
 

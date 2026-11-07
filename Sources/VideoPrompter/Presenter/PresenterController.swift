@@ -53,7 +53,10 @@ import SwiftUI
   // Reopen where it was last left, on whichever screen that was (a prompter display, usually),
   // rather than at the main screen's corner. AppKit's own autosave forgot a second screen whose
   // visible frame it had recorded differently, and kept one frame for every data directory.
-  func windowDidMove(_ notification: Notification) { rememberFrame(notification) }
+  func windowDidMove(_ notification: Notification) {
+    if let panel = notification.object as? PresenterPanel, let screen = panel.screen { panel.updateMinimum(for: screen.visibleFrame) }
+    rememberFrame(notification)
+  }
   func windowDidResize(_ notification: Notification) { rememberFrame(notification) }
   private func rememberFrame(_ notification: Notification) {
     guard let window = notification.object as? NSWindow, window.isVisible, !window.isMiniaturized,
@@ -353,7 +356,12 @@ import SwiftUI
     screenObserver = NotificationCenter.default.addObserver(
       forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
     ) { [weak self] _ in
-      MainActor.assumeIsolated { if let panel = self?.panel { self?.recoverVisibleFrame(panel) } }
+      MainActor.assumeIsolated {
+        if let panel = self?.panel {
+          if let screen = panel.screen { panel.updateMinimum(for: screen.visibleFrame) }
+          self?.recoverVisibleFrame(panel)
+        }
+      }
     }
     return value
   }
@@ -443,8 +451,13 @@ enum PresenterFrameMemory {
     return clamp(offset.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY), into: screen.visibleFrame)
   }
 
+  static func minimumSize(in area: NSRect) -> NSSize {
+    NSSize(width: min(area.width, 720), height: min(area.height, 520))
+  }
+
   static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
-    let size = NSSize(width: min(area.width, max(360, frame.width)), height: min(area.height, max(220, frame.height)))
+    let minimum = minimumSize(in: area)
+    let size = NSSize(width: min(area.width, max(minimum.width, frame.width)), height: min(area.height, max(minimum.height, frame.height)))
     let x = min(max(frame.minX - max(0, size.width - frame.width) / 2, area.minX), area.maxX - size.width)
     let y = min(max(frame.minY - max(0, size.height - frame.height) / 2, area.minY), area.maxY - size.height)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
@@ -458,10 +471,14 @@ enum PresenterFrameMemory {
 class PresenterPanel: NSPanel {
   override func setFrame(_ frameRect: NSRect, display flag: Bool) {
     var frame = frameRect
-    frame.size.width = max(360, frame.width)
-    frame.size.height = max(220, frame.height)
+    if let screen = NSScreen.screens.max(by: { $0.visibleFrame.intersection(frame).area < $1.visibleFrame.intersection(frame).area }) {
+      updateMinimum(for: screen.visibleFrame)
+    }
+    frame.size.width = max(minSize.width, frame.width)
+    frame.size.height = max(minSize.height, frame.height)
     super.setFrame(frame, display: flag)
   }
+  func updateMinimum(for area: NSRect) { minSize = PresenterFrameMemory.minimumSize(in: area) }
   var onPassageKey: ((UInt16) -> Bool)?
   /// The key presenter owns reading commands unless a text field or script is being edited.
   func handlePassageKey(_ event: NSEvent) -> Bool {
@@ -498,7 +515,7 @@ class PresenterPanel: NSPanel {
     backgroundColor = .clear
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
-    minSize = NSSize(width: 360, height: 220)
+    minSize = PresenterFrameMemory.minimumSize(in: (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 720, height: 520))
     settle()
   }
   static func collectionBehavior(fullScreen: Bool) -> NSWindow.CollectionBehavior {

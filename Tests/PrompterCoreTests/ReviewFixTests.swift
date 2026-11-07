@@ -301,16 +301,16 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     let screen = PresenterFrameMemory.Screen(id: 1, name: "Small", frame: NSRect(x: 0, y: 0, width: 800, height: 600), visibleFrame: NSRect(x: 0, y: 0, width: 800, height: 600))
     PresenterFrameMemory.save(NSRect(x: 50, y: 50, width: 200, height: 150), on: screen, to: defaults)
     let restored = try XCTUnwrap(PresenterFrameMemory.restored(from: defaults, screens: [screen]))
-    XCTAssertEqual(restored.size, NSSize(width: 360, height: 220))
+    XCTAssertEqual(restored.size, NSSize(width: 720, height: 520))
     for rotation in CameraRotation.allCases {
       let matched = PresenterController.matchedCameraFrame(picture: CGSize(width: 16, height: 9), rotation: rotation, in: screen.visibleFrame)
-      XCTAssertGreaterThanOrEqual(matched.width, 360)
-      XCTAssertGreaterThanOrEqual(matched.height, 220)
+      XCTAssertGreaterThanOrEqual(matched.width, 720)
+      XCTAssertGreaterThanOrEqual(matched.height, 520)
     }
     let panel = PresenterPanel(captureVisible: false)
     defer { panel.close() }
     panel.setFrame(NSRect(x: 0, y: 0, width: 100, height: 100), display: false)
-    XCTAssertEqual(panel.frame.size, NSSize(width: 360, height: 220))
+    XCTAssertEqual(panel.frame.size, PresenterFrameMemory.minimumSize(in: try XCTUnwrap(panel.screen).visibleFrame))
     let (store, preferences, _) = try await fixture()
     let record = try await store.createScript(title: "Reading floor", markdown: String(repeating: "Read these words. ", count: 200))
     store.settings.mode = "Manual"
@@ -322,8 +322,9 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     panel.contentView = host
     defer { panel.contentView = nil }
     func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
-    // The 65% reading-area target applies at the designed 720 × 520 size.
-    for frame in [NSRect(x: 0, y: 0, width: 720, height: 520)] {
+    // Check restored and camera-fitted frames as well as the designed minimum.
+    let matchedFrames = CameraRotation.allCases.map { PresenterController.matchedCameraFrame(picture: CGSize(width: 16, height: 9), rotation: $0, in: screen.visibleFrame) }
+    for frame in [NSRect(x: 0, y: 0, width: 720, height: 520), restored] + matchedFrames {
       panel.setFrame(frame, display: false)
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
