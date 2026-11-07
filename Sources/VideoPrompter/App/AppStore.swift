@@ -1008,7 +1008,6 @@ private enum PresenterSaveError: LocalizedError {
           catch { return (metadata, .failure(error)) }
         }
       }
-      await finishExternalRefresh(library)
       for await (metadata, result) in group {
       do {
         // An external edit, or a file that has come back.
