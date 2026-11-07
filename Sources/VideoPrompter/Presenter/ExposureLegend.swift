@@ -166,8 +166,9 @@ struct ExposureLegend: View {
           HStack(spacing: Space.xs) {
             Text("Key")
             Image(systemName: "chevron.down").imageScale(.small)
-          }.fixedSize()
+          }.fixedSize().frame(minHeight: 24).contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
         .accessibilityLabel("Key")
         .accessibilityHint("Shows camera actions, colour meanings and brightness levels")
         .restoringPopoverFocus(isPresented: $showsHelp, identifier: "exposure-key")
@@ -175,7 +176,7 @@ struct ExposureLegend: View {
           ExposureKeyPanel(model: model, zoom: zoom).popoverEntryFocus()
         }
       }.font(.callout).foregroundStyle(.primary)
-        .padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
+        .padding(.horizontal, Space.sm)
         .background(Surfaces.presenterPanel, in: .rect(cornerRadius: 12))
         .environment(\.colorScheme, .dark)
         .uiZoom(zoom)

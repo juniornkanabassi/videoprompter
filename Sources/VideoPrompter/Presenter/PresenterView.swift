@@ -328,7 +328,7 @@ struct PresenterView: View {
         else if camera.presentsWithVideo { pictureRow }
       }.opacity(secondaryOpacity)
         .accessibilityIdentifier("presenter-context-band")
-    }.padding(.horizontal, Space.sm).padding(.bottom, Space.xs).frame(maxWidth: .infinity)
+    }.padding(.horizontal, Space.sm).frame(maxWidth: .infinity)
       .modifier(PresenterGlass(radius: 20))
       .buttonStyle(PresenterButtonStyle()).font(.body).symbolRenderingMode(.hierarchical)
       .accessibilityIdentifier("presenter-control-bar")
@@ -341,11 +341,10 @@ struct PresenterView: View {
     guard camera.pictureSize != nil else { return "Waiting for picture" }
     return "Ready · " + recorder.compactOutputConfirmation(camera: camera)
   }
-  /// The state word is semibold; the output detail is regular so it reads as secondary.
+  /// Neutral camera status recedes; active recording and recovery retain emphasis.
   private var recordingStateText: Text {
-    let title = recordingStateTitle
-    guard title.hasPrefix("Ready · ") else { return Text(title).fontWeight(.semibold) }
-    return Text("Ready").fontWeight(.semibold) + Text(String(title.dropFirst(5)))
+    Text(recordingStateTitle)
+      .fontWeight(recorder.isRecording || recorder.isBusy || !camera.isReadyToRecord ? .semibold : .regular)
   }
   private func recordingAccessibilityValue(sound: String) -> String {
     if recorder.isRecording { return recordingStateTitle + " · " + sound }
@@ -390,9 +389,10 @@ struct PresenterView: View {
           Image(systemName: "chevron.right").imageScale(.small)
         }.frame(minHeight: 24).contentShape(Rectangle())
       }.buttonStyle(.plain)
+        .font(recorder.isRecording || recorder.isBusy || !camera.isReadyToRecord ? .body : .callout)
         // The output check is sized first so it only wraps when the band truly cannot hold it.
         .layoutPriority(1)
-        .foregroundStyle(problem || (!camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording) ? Color.orange : Color.primary)
+        .foregroundStyle(problem || (!camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording) ? Color.orange : (recorder.isRecording || recorder.isBusy ? Color.primary : Palette.onDarkQuiet(contrast)))
         .accessibilityLabel("Recording status")
         .accessibilityValue(value)
         .accessibilityChildren {
@@ -572,7 +572,7 @@ struct PresenterView: View {
   private var moreMenu: some View {
     Button { openedFromPicture = false; showsTools.toggle() } label: {
       HStack(spacing: Space.xs) {
-        Text("Tools").fontWeight(.semibold)
+        Text("Tools").font(.callout)
         Image(systemName: "chevron.down").imageScale(.small)
       }.fixedSize().frame(minHeight: 24).contentShape(Rectangle())
     }.buttonStyle(.plain).accessibilityLabel("Tools")
@@ -618,7 +618,7 @@ struct PresenterView: View {
           .help("Saved \(file.path). Play, show in Finder or hide the receipt.")
           .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && showsLastTake }, set: { if !$0 { showsLastTake = false } }), identifier: "picture-last-take")
       }
-    }.font(.callout).buttonStyle(.plain).frame(minHeight: 24)
+    }.font(.callout).foregroundStyle(Palette.onDarkQuiet(contrast)).buttonStyle(.plain).frame(minHeight: 24)
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .contain).accessibilityLabel("Picture")
       .accessibilityIdentifier("presenter-picture-row")

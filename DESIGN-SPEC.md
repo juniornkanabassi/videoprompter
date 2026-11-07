@@ -36,13 +36,15 @@ A clean saved take keeps the Picture row (round 19) and adds a Last take opener 
 | Transport target height | 24 pt | 36 pt | 48 pt |
 | State, maximum two text lines | 32 pt | 48 pt | 64 pt |
 | Context target height | 24 pt | 36 pt | 48 pt |
-| Remaining padding allowance | 12 pt | 16 pt | 20 pt |
-| Maximum footer budget | 92 pt | 136 pt | 180 pt |
-| Reading area minimum | 428 pt | 384 pt | 340 pt |
+| Remaining padding allowance | 0 pt | 0 pt | 0 pt |
+| Maximum footer budget | 80 pt | 120 pt | 160 pt |
+| Reading area minimum without exposure | 440 pt | 400 pt | 360 pt |
+| Exposure strip target height | 24 pt | 36 pt | 48 pt |
+| Clear upper area with exposure | 416 pt | 364 pt | 312 pt |
 
-The hard gate for the footer state matrix is ≥65% reading height (338 pt at 720 × 520). Start and Back to start have an 8 pt unscaled gap. Record is trailing. The state controls are unboxed, use full mode names and chevrons adjacent to their words. The recording meter shares the timer line; health is the second line. Context alone may recede to 75%. The last 48 pt of reading glyphs fade into the footer; the scroll area's height is unchanged.
+The hard gate for the footer state matrix without exposure is ≥65% reading height (338 pt at 720 × 520). With the exposure strip enabled, the clear area above the strip and footer must remain ≥60% (312 pt), including waiting/ready camera, active recording and saved-take states at 200%. The strip retains a fully scaled 24 pt Key target without extra vertical padding; the footer has no bottom padding. Start and Back to start have an 8 pt unscaled gap. Record is trailing. The state controls are unboxed, use full mode names and chevrons adjacent to their words. The recording meter shares the timer line; health is the second line. Neutral camera status and secondary picture actions use the contrast-aware quiet foreground. Context alone may recede to 75%. The last 48 pt of reading glyphs fade into the footer; the scroll area's height is unchanged.
 
-State band weight and wrapping (round 19 defect fix, lead authorised): the mode name, the recording state word and Tools are semibold; the changing reading state and the output detail (Portrait 1080 × 1920) are regular. The output check is sized first, then the reading status, then the spacer, so neither wraps unless the band truly cannot hold it. Up to 150% the band is one line in every camera state; at 200% in the minimum window it may use two lines (the mode above its state as whole words, or the output check wrapped), never three. `FinalFooterTests` measures both status controls against these line limits.
+State band weight and wrapping (round 19 defect fix, lead authorised): the mode name and active recording or recovery state are semibold; neutral camera status and Tools are regular callout text; the changing reading state and the output detail (Portrait 1080 × 1920) are regular. The output check is sized first, then the reading status, then the spacer, so neither wraps unless the band truly cannot hold it. Up to 150% the band is one line in every camera state; at 200% in the minimum window it may use two lines (the mode above its state as whole words, or the output check wrapped), never three. `FinalFooterTests` measures both status controls against these line limits.
 
 | Reading state | Transport | State |
 |---|---|---|
