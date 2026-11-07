@@ -31,7 +31,8 @@ import XCTest
     store.settings.backgroundColorHex = "#000000"
     store.settings.textOpacity = 1
     store.settings.showCues = true
-    store.settings.highlightActiveWord = true
+    // Isolate backdrop recovery from the appearance-dependent system highlight colour.
+    store.settings.highlightActiveWord = false
     for video in [false, true] {
       let recovery = ReadingRecovery(current: store.settings, overVideo: video)
       var expected = store.settings
@@ -41,6 +42,38 @@ import XCTest
       XCTAssertTrue(recovery.explanation.contains("changes only"))
       XCTAssertGreaterThanOrEqual(ReadingContrast.worstCase(textHex: "#FFFFFF", textOpacity: 0.42,
         backgroundHex: "#000000", darkness: recovery.settings.backdropOpacity(withVideo: video)), 3)
+    }
+  }
+
+  func testRecoveryPreservesHighlightAndExplainsItsRequiredBackdrop() throws {
+    let (store, _) = fixture()
+    store.settings.fontSize = 44
+    store.settings.textColorHex = "#FFFFFF"
+    store.settings.backgroundColorHex = "#000000"
+    store.settings.textOpacity = 1
+    store.settings.showCues = true
+    store.settings.highlightActiveWord = true
+    for appearance in [NSAppearance.Name.aqua, .darkAqua] {
+      try XCTUnwrap(NSAppearance(named: appearance)).performAsCurrentDrawingAppearance {
+        // At 42% opacity some system yellows cannot reach 3:1, even over black.
+        let highlightCanPass = ReadingContrast.worstCase(textHex: NSColor.systemYellow.hex,
+          textOpacity: 0.42, backgroundHex: "#000000", darkness: 1) >= 3
+        for video in [false, true] {
+          let recovery = ReadingRecovery(current: store.settings, overVideo: video)
+          var expected = store.settings
+          expected.setBackdropOpacity(recovery.settings.backdropOpacity(withVideo: video), withVideo: video)
+          XCTAssertEqual(recovery.settings, expected, "Preserve reading aids in either recovery path")
+          if highlightCanPass {
+            XCTAssertTrue(recovery.explanation.contains("changes only"))
+            XCTAssertGreaterThanOrEqual(ReadingContrast.worstCase(textHex: NSColor.systemYellow.hex,
+              textOpacity: 0.42, backgroundHex: "#000000",
+              darkness: recovery.settings.backdropOpacity(withVideo: video)), 3)
+          } else {
+            XCTAssertEqual(recovery.settings.backdropOpacity(withVideo: video), 1)
+            XCTAssertTrue(recovery.explanation.contains("keeps stage directions and word highlighting"))
+          }
+        }
+      }
     }
   }
 
@@ -81,6 +114,8 @@ import XCTest
   }
 
   func testActualFolderHeadingPixelsPassInBothAppearances() async throws {
+    try XCTSkipIf(ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true",
+      "GitHub's headless macOS VM returns blank SwiftUI cacheDisplay pixels.")
     let (store, camera) = fixture()
     for scheme in [ColorScheme.light, .dark] {
       for zoom in [1.0, 2.0] {

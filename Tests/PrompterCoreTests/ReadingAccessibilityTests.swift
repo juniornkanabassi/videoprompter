@@ -50,7 +50,10 @@ extension ReadingAccessibilityTests {
         defer { LibraryAX.close(optionWindow) }
         let selectedOption = try XCTUnwrap(LibraryAX.named(expected, in: optionHost).first)
         XCTAssertTrue(LibraryAX.bool(selectedOption, "isAccessibilitySelected"))
-        if let popup = control as? NSPopUpButtonCell {
+        // The enlarged SwiftUI Menu can also use NSPopUpButtonCell, but it is not
+        // our native selection control and need not have a selectedItem.
+        if zoom < 1.5 {
+          let popup = try XCTUnwrap(control as? NSPopUpButtonCell)
           XCTAssertEqual(popup.selectedItem?.title, expected)
           XCTAssertEqual(popup.selectedItem?.state, .on)
         }
