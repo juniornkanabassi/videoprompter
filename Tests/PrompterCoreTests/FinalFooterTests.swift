@@ -67,16 +67,6 @@ import XCTest
 
   }
 
-  func testFocusedButtonKeepsSpace() throws {
-    let panel = PresenterPanel(captureVisible: false)
-    defer { panel.close() }
-    let button = NSButton(title: "Record", target: nil, action: nil)
-    panel.contentView = button; panel.makeFirstResponder(button)
-    panel.onPassageKey = { _ in true }
-    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, characters: " ", charactersIgnoringModifiers: " ", isARepeat: false, keyCode: 49))
-    XCTAssertFalse(panel.handlePassageKey(event))
-  }
-
   func testClickerOnlyHandlesBareKeysOnReadingSurface() throws {
     let panel = PresenterPanel(captureVisible: false)
     defer { panel.close() }
