@@ -116,6 +116,7 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
+  private var iCloudWatcher: Task<Void, Never>?
   private var initialLoad: Task<Void, Never>?
   private var welcomeTask: Task<Void, Never>?
   // nonisolated so `deinit` can take the observer back out again.
@@ -200,6 +201,11 @@ private enum PresenterSaveError: LocalizedError {
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(2))
         await self?.refreshExternalChanges()
+      }
+    }
+    iCloudWatcher = Task { [weak self] in
+      while !Task.isCancelled {
+        try? await Task.sleep(for: .seconds(2))
         await self?.syncICloudScripts()
       }
     }
@@ -216,6 +222,7 @@ private enum PresenterSaveError: LocalizedError {
 
   deinit {
     externalWatcher?.cancel()
+    iCloudWatcher?.cancel()
     if let activationObserver { NotificationCenter.default.removeObserver(activationObserver) }
   }
 
@@ -949,12 +956,21 @@ private enum PresenterSaveError: LocalizedError {
     do {
       if !(try await library.discoverExternalScripts()).isEmpty { await reload() }
     } catch { errorMessage = "New script files could not be added. \(error)" }
-    for metadata in await library.listScripts()
-    where (saveTasks[metadata.id] == nil || saveTasks[metadata.id]?.isCancelled == true)
-      && !failedSaveIDs.contains(metadata.id) && !presenterSaveIDs.contains(metadata.id) {
+    let candidates = await library.listScripts().filter {
+      (saveTasks[$0.id] == nil || saveTasks[$0.id]?.isCancelled == true)
+        && !failedSaveIDs.contains($0.id) && !presenterSaveIDs.contains($0.id)
+    }
+    await withTaskGroup(of: (ScriptMetadata, Result<ScriptRecord?, Error>).self) { group in
+      for metadata in candidates {
+        group.addTask {
+          do { return (metadata, .success(try await library.externalChange(for: metadata.id))) }
+          catch { return (metadata, .failure(error)) }
+        }
+      }
+      for await (metadata, result) in group {
       do {
         // An external edit, or a file that has come back.
-        var found = try await library.externalChange(for: metadata.id)
+        var found = try result.get()
         if found == nil, unavailableScriptIDs.contains(metadata.id) { found = try await library.read(metadata.id) }
         guard let record = found else { continue }
         guard !failedSaveIDs.contains(metadata.id), saveTasks[metadata.id] == nil,
@@ -978,6 +994,7 @@ private enum PresenterSaveError: LocalizedError {
           errorMessage = "The library change could not be saved. Check free space and access to the script folder, then try again. Details: \(error.localizedDescription)"
         }
       }
+    }
     }
     await refreshLinkStates()
     await refreshLinkedSyncStatus()

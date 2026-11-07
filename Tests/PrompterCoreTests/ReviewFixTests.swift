@@ -122,6 +122,26 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     XCTAssertEqual(saved, durable)
   }
 
+  func testSlowLinkedPollDoesNotBlockOtherScripts() async throws {
+    let (store, _, root) = try await fixture()
+    let library = try XCTUnwrap(store.library)
+    let first = root.appendingPathComponent("first.md"), second = root.appendingPathComponent("second.md")
+    try Data("original".utf8).write(to: first); try Data("original".utf8).write(to: second)
+    let one = try await store.createScript(title: "First", markdown: "original", linkTo: first)
+    let two = try await store.createScript(title: "Second", markdown: "original", linkTo: second)
+    try Data("first external".utf8).write(to: first); try Data("second external".utf8).write(to: second)
+    let gate = ReviewAccessGate()
+    await library.setLinkedAccessHook { await gate.hold($0) }
+    let poll = Task { await store.refreshExternalChanges() }
+    for _ in 0..<100 where !(await gate.entered(false)) { try await Task.sleep(for: .milliseconds(5)) }
+    try await Task.sleep(for: .milliseconds(300))
+    let otherUpdated = store.scripts.contains { ($0.id == one.id && $0.markdown == "first external") || ($0.id == two.id && $0.markdown == "second external") }
+    await gate.release(false)
+    await poll.value
+    await library.setLinkedAccessHook(nil)
+    XCTAssertTrue(otherUpdated, "A slow linked file must not hold up another script")
+  }
+
   func testBlockedLinkDoesNotDelayRepeatedSaves() async throws {
     let (store, _, root) = try await fixture()
     let library = try XCTUnwrap(store.library)
