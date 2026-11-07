@@ -17,6 +17,7 @@ final class MovieWriter: @unchecked Sendable {
   private let audio: AVAssetWriterInput?
   private var started = false
   private var firstTime = CMTime.invalid
+  private var lastVideoTime = CMTime.invalid
   private(set) var droppedFrames = 0
   private(set) var droppedAudioBuffers = 0
   var audioReadyOverride: Bool?
@@ -60,6 +61,7 @@ final class MovieWriter: @unchecked Sendable {
         droppedFrames += 1
         return false
       }
+      lastVideoTime = CMSampleBufferGetPresentationTimeStamp(buffer)
       writtenFrames += 1
       return true
     } else { droppedFrames += 1; return false }
@@ -80,11 +82,12 @@ final class MovieWriter: @unchecked Sendable {
     video.markAsFinished(); audio?.markAsFinished()
     await writer.finishWriting()
     guard writer.status == .completed else { throw writer.error ?? CocoaError(.fileWriteUnknown) }
-    try await Self.verify(writer.outputURL, expectedFrames: writtenFrames, expectsAudio: audio != nil)
+    try await Self.verify(writer.outputURL, expectedFrames: writtenFrames, expectsAudio: audio != nil,
+      minimumDuration: max(0, CMTimeSubtract(lastVideoTime, firstTime).seconds))
     return writer.outputURL
   }
   /// Check tracks and a bounded sample without scanning or buffering the entire take.
-  static func verify(_ url: URL, expectedFrames: Int, expectsAudio: Bool) async throws {
+  static func verify(_ url: URL, expectedFrames: Int, expectsAudio: Bool, minimumDuration: Double = 0) async throws {
     let asset = AVURLAsset(url: url)
     let duration = try await asset.load(.duration).seconds
     guard try await asset.load(.isPlayable), expectedFrames > 0, duration.isFinite, duration > 0 else {
@@ -93,8 +96,17 @@ final class MovieWriter: @unchecked Sendable {
     let videoTracks = try await asset.loadTracks(withMediaType: .video)
     let audioTracks = try await asset.loadTracks(withMediaType: .audio)
     guard let video = videoTracks.first, !expectsAudio || !audioTracks.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-    for track in [video] + (expectsAudio ? Array(audioTracks.prefix(1)) : []) {
+    let videoRange = try await video.load(.timeRange)
+    guard videoRange.duration.seconds.isFinite, videoRange.duration.seconds + 0.1 >= minimumDuration else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    // Seek to a few points, reading only one compressed sample at each. This bounds memory
+    // and work by the sample count, including for long takes with dropped frames.
+    for (track, fraction) in [0.0, 0.33, 0.66, 0.9].map({ (video, $0) }) + (expectsAudio ? [(audioTracks[0], 0.0)] : []) {
       let reader = try AVAssetReader(asset: asset)
+      let range = try await track.load(.timeRange)
+      let offset = CMTimeMultiplyByFloat64(range.duration, multiplier: fraction)
+      reader.timeRange = CMTimeRange(start: CMTimeAdd(range.start, offset), duration: CMTimeSubtract(range.duration, offset))
       let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
       guard reader.canAdd(output) else { throw CocoaError(.fileReadCorruptFile) }
       reader.add(output)

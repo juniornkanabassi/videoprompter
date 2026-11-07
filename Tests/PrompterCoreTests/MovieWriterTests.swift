@@ -151,6 +151,20 @@ final class MovieWriterTests: XCTestCase {
     try await MovieWriter.verify(file, expectedFrames: 2, expectsAudio: false)
   }
 
+  func testVerificationRejectsTakeShorterThanWrittenTimeline() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("short.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    _ = try await writer.finish()
+    do {
+      try await MovieWriter.verify(file, expectedFrames: 1, expectsAudio: false, minimumDuration: 10)
+      XCTFail("A take missing most of its timeline must fail")
+    } catch {}
+  }
+
   func testSavedVerificationRejectsMissingAudioAndCorruptMedia() async throws {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
