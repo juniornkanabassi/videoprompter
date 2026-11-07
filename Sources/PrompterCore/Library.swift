@@ -495,14 +495,14 @@ public actor MarkdownLibrary {
   private func checkedRelinkText(_ url: URL) async throws -> String {
     try await withLinkedAccess(url, writing: false) { try MarkdownText.read($0) }
   }
-  private func withLinkedAccess<T>(_ url: URL, writing: Bool, _ body: (URL) throws -> T) async throws -> T {
+  private func withLinkedAccess<T>(_ url: URL, writing: Bool, timeoutLimit: TimeInterval? = nil, _ body: (URL) throws -> T) async throws -> T {
     if !coordinatesExternalChanges {
       return try Self.withLinkAccess(url) { target in try validateLinkTarget(target); return try body(target) }
     }
     try Self.withLinkAccess(url) { try validateLinkTarget($0) }
     await linkedAccessHook?(writing)
     let timeoutKey = url.path + (writing ? ":write" : ":read")
-    let timeout = linkTimeouts[timeoutKey] ?? 1
+    let timeout = min(linkTimeouts[timeoutKey] ?? 1, timeoutLimit ?? 30)
     let access: LinkedFileAccess
     do {
       access = try await LinkedFileAccess.acquire(url, writing: writing, timeout: timeout)
@@ -612,7 +612,7 @@ public actor MarkdownLibrary {
   private func pushToLinkedFile(_ id: UUID) async {
     guard let metadata = index.scripts.first(where: { $0.id == id }), let link = resolveLink(metadata) else { return }
     do {
-      try await withLinkedAccess(link, writing: true) { target in
+      try await withLinkedAccess(link, writing: true, timeoutLimit: 0.4) { target in
         guard let position = index.scripts.firstIndex(where: { $0.id == id }),
           resolveLink(index.scripts[position]) == link else { return }
         let metadata = index.scripts[position]

@@ -122,6 +122,22 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     XCTAssertEqual(saved, durable)
   }
 
+  func testBlockedLinkDoesNotDelayRepeatedSaves() async throws {
+    let (store, _, root) = try await fixture()
+    let library = try XCTUnwrap(store.library)
+    let file = root.appendingPathComponent("blocked.md")
+    try Data("original".utf8).write(to: file)
+    var record = try await library.createLinked(title: "Blocked", markdown: "original", to: file)
+    let editor = ReviewHeldEditor(file)
+    NSFileCoordinator.addFilePresenter(editor)
+    defer { editor.release.signal(); NSFileCoordinator.removeFilePresenter(editor) }
+    for i in 0..<3 {
+      let start = Date()
+      record = try await library.save(record.id, markdown: "edit \(i)", expectedFingerprint: record.metadata.contentFingerprint)
+      XCTAssertLessThan(Date().timeIntervalSince(start), 0.9)
+    }
+  }
+
   func testWaitingIsInlineAndCannotReplaceOrClearRealError() async throws {
     let (store, defaults, root) = try await fixture()
     let library = try XCTUnwrap(store.library)
