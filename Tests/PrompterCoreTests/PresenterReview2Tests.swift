@@ -7,9 +7,11 @@ import XCTest
   func testHostedSwiftUIButtonKeepsSpace() throws {
     let panel = PresenterPanel(captureVisible: false)
     defer { panel.close() }
-    let host = NSHostingView(rootView: Button("Record") {})
+    let host = NSHostingView(rootView: Button("Record") {}.focusable())
     panel.contentView = host
-    panel.makeFirstResponder(host)
+    panel.makeKeyAndOrderFront(nil)
+    host.layoutSubtreeIfNeeded()
+    panel.makeFirstResponder(panel)
     panel.selectNextKeyView(nil)
     XCTAssertFalse(panel.firstResponder === panel)
     panel.onPassageKey = { _ in true }
