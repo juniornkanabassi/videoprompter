@@ -15,6 +15,12 @@ private enum PresenterSaveError: LocalizedError {
   }
 }
 
+@MainActor private final class RefreshWait {
+  private var continuation: CheckedContinuation<Void, Never>?
+  init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+  func finish() { continuation?.resume(); continuation = nil }
+}
+
 @MainActor final class AppStore: ObservableObject {
   /// The app's one store. Shared so the control server can start without a library window: a headless launch has none.
   static let shared = AppStore()
@@ -116,6 +122,7 @@ private enum PresenterSaveError: LocalizedError {
   private var failedSaveIDs = Set<UUID>()
   private var pendingDrafts: [UUID: String] = [:]
   private var externalWatcher: Task<Void, Never>?
+  private var externalRefreshTask: Task<Void, Never>?
   private var iCloudWatcher: Task<Void, Never>?
   private var syncInProgress = false
   private var syncWaiters: [CheckedContinuation<Void, Never>] = []
@@ -964,6 +971,25 @@ private enum PresenterSaveError: LocalizedError {
     session.applyEditedRecord(record)
   }
   func refreshExternalChanges() async {
+    let task: Task<Void, Never>
+    if let running = externalRefreshTask { task = running }
+    else {
+      task = Task { [weak self] in
+        guard let self else { return }
+        await self.performExternalRefresh()
+        self.externalRefreshTask = nil
+      }
+      externalRefreshTask = task
+    }
+    // A slow provider continues its reservation in the background. The sync lock stays held
+    // until it finishes, but activation and the poll do not wait for its full backoff.
+    await withCheckedContinuation { continuation in
+      let wait = RefreshWait(continuation)
+      Task { await task.value; wait.finish() }
+      Task { try? await Task.sleep(for: .seconds(1)); wait.finish() }
+    }
+  }
+  private func performExternalRefresh() async {
     await acquireLibrarySync()
     defer { releaseLibrarySync() }
     guard let library else { return }
@@ -982,6 +1008,7 @@ private enum PresenterSaveError: LocalizedError {
           catch { return (metadata, .failure(error)) }
         }
       }
+      await finishExternalRefresh(library)
       for await (metadata, result) in group {
       do {
         // An external edit, or a file that has come back.
@@ -1011,6 +1038,9 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
     }
+    await finishExternalRefresh(library)
+  }
+  private func finishExternalRefresh(_ library: MarkdownLibrary) async {
     await refreshLinkStates()
     await refreshLinkedSyncStatus()
     let conflicts = await library.takeLinkConflicts()
