@@ -12,7 +12,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_snapshot_runner.py"
 BIN="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)"
 # The newer build system names the bundle after the test target; the older one (GitHub runners) after the package.
 BUNDLE="$BIN/PrompterCoreTests.xctest"
-[[ -d "$BUNDLE" ]] || BUNDLE="$BIN/VideoPrompterPackageTests.xctest"
+[[ -d "$BUNDLE" || ! -d "$BIN/VideoPrompterPackageTests.xctest" ]] || BUNDLE="$BIN/VideoPrompterPackageTests.xctest"
 # The wrapper removes the defaults suites the tests recorded once xctest has exited.
 # A normal run includes snapshots; an explicit XCTest filter stays a focused run.
 if (( $# == 0 )); then
