@@ -60,6 +60,69 @@ import XCTest
     XCTAssertEqual(store.settings.fontSize, 120, "Undo Delete must not unexpectedly switch the active setup")
   }
 
+  func testBlockedSetupRetryPreservesRedoEntriesOnBothSides() async throws {
+    let (store, camera, recorder, _) = await fixture()
+    let manager = UndoManager(); manager.groupsByEvent = false
+    let originalSize = store.settings.fontSize
+    var setup = ShootSetup(name: "Large text"); setup.reading.fontSize = 120
+    group(manager) { XCTAssertTrue(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: [], undoManager: manager)) }
+    store.savePreset(named: "Studio")
+    let preset = store.presets[0]
+    store.settings.fontSize = 80
+    group(manager) { store.updatePreset(preset.id, undoManager: manager) }
+    store.settings.fontSize = 120
+    manager.undo()
+    recorder.phase = .recording
+    manager.undo()
+    recorder.phase = .idle
+    XCTAssertEqual(manager.undoActionName, "Apply Shoot Setup")
+    XCTAssertEqual(manager.redoActionName, "Replace Preset")
+    manager.undo()
+    XCTAssertEqual(store.settings.fontSize, originalSize)
+    recorder.phase = .recording
+    manager.redo()
+    recorder.phase = .idle
+    XCTAssertEqual(manager.redoActionName, "Apply Shoot Setup")
+    manager.redo()
+    XCTAssertEqual(store.settings.fontSize, 120)
+    XCTAssertEqual(manager.redoActionName, "Replace Preset")
+    manager.redo()
+    XCTAssertEqual(store.presets[0].fontSize, 80)
+    XCTAssertTrue(store.pendingShootUndos.isEmpty)
+  }
+
+  func testRapidUnlinkDeleteUndoRedoPreservesTextAndLink() async throws {
+    let (store, _, _, root) = await fixture()
+    let external = root.appendingPathComponent("external.md")
+    try "Original words".write(to: external, atomically: true, encoding: .utf8)
+    let script = try await store.createScript(title: "Linked", markdown: "Original words", linkTo: external)
+    let manager = UndoManager(); manager.groupsByEvent = false
+    store.updateMarkdown("Edited words", for: script.id)
+    group(manager) { store.unlink(script.id, undoManager: manager) }
+    group(manager) { store.delete([script.id], undoManager: manager) }
+    manager.undo()
+    manager.undo()
+    _ = await store.flushPendingSaves()
+    XCTAssertNil(store.errorMessage)
+    XCTAssertEqual(store.scripts.first?.metadata.linkedPath, external.path)
+    XCTAssertEqual(store.scripts.first?.markdown, "Edited words")
+    let library = try XCTUnwrap(store.library)
+    let restored = try await library.read(script.id)
+    XCTAssertEqual(restored.markdown, "Edited words")
+    XCTAssertEqual(restored.metadata.linkedPath, external.path)
+    manager.redo()
+    manager.redo()
+    _ = await store.flushPendingSaves()
+    XCTAssertTrue(store.scripts.isEmpty)
+    XCTAssertEqual(store.trash.first?.id, script.id)
+    manager.undo()
+    manager.undo()
+    _ = await store.flushPendingSaves()
+    XCTAssertEqual(store.scripts.first?.metadata.linkedPath, external.path)
+    XCTAssertEqual(store.scripts.first?.markdown, "Edited words")
+    XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), "Original words")
+  }
+
   func testRapidUndoDeleteThenUnlinkRestoresOriginalLink() async throws {
     let (store, _, _, root) = await fixture()
     let external = root.appendingPathComponent("external.md")

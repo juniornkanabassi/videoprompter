@@ -129,9 +129,16 @@ extension AppStore {
     manager?.registerUndo(withTarget: self) { [weak manager] target in
       guard let manager else { return }
       guard !recorder.settingsLocked, !target.session.isActivelyRunning else {
-        // Keep the original operation until both locks clear; never capture the blocked state.
+        // Put a retry on the opposite stack now, while UndoManager owns this group.
         let id = UUID()
+        let key = UndoManager.UserInfoKey(rawValue: "VideoPrompter.blockedShootUndo")
         let wasUndoing = manager.isUndoing
+        manager.registerUndo(withTarget: target) { [weak manager] target in
+          target.pendingShootUndos[id] = nil
+          target.registerShootUndo(name, camera: camera, recorder: recorder, manager: manager, action: action)
+        }
+        manager.setActionName(name)
+        manager.setActionUserInfoValue(id.uuidString, forKey: key)
         target.pendingShootUndos[id] = recorder.$phase.combineLatest(target.session.$state)
           .filter { phase, state in
             phase == .idle && (state == .stopped || state == .paused)
@@ -139,17 +146,17 @@ extension AppStore {
           .prefix(1).sink { [weak target, weak manager] _ in
             guard let target, let manager else { return }
             target.pendingShootUndos[id] = nil
-            manager.beginUndoGrouping()
+            // Only return an untouched topmost retry. Never insert above newer edits
+            // or clear unrelated redo entries when capture unlocks.
             if wasUndoing {
-              target.registerShootUndo(name, camera: camera, recorder: recorder, manager: manager, action: action)
+              guard manager.canRedo,
+                manager.redoActionUserInfoValue(forKey: key) as? String == id.uuidString else { return }
+              manager.redo()
             } else {
-              // Move the retry onto Redo without changing any settings.
-              manager.registerUndo(withTarget: target) { [weak manager] target in
-                target.registerShootUndo(name, camera: camera, recorder: recorder, manager: manager, action: action)
-              }
+              guard manager.canUndo,
+                manager.undoActionUserInfoValue(forKey: key) as? String == id.uuidString else { return }
+              manager.undo()
             }
-            manager.endUndoGrouping()
-            if !wasUndoing { manager.undo() }
           }
         return
       }
