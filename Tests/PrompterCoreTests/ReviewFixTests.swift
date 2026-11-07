@@ -95,12 +95,15 @@ private final class ReviewSlowWriter: @unchecked Sendable {
           _ = try await library.unlink(record.id)
           let local = try await library.create(title: "Local", markdown: edit)
           do { _ = try await library.relink(id: local.id, to: file, resolution: .keepLibrary); XCTFail("Unsafe relink must fail") }
-          catch { /* Both copies must already be durable below. */ }
+          catch { /* Nothing was changed. */ }
         }
         XCTAssertEqual(try Data(contentsOf: file), original, path)
         let copies = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("library/Conflicts"), includingPropertiesForKeys: nil).map { try Data(contentsOf: $0) }
-        XCTAssertTrue(copies.contains(original), path)
-        XCTAssertTrue(copies.contains(Data(edit.utf8)), path)
+        if path == "relink" { XCTAssertTrue(copies.isEmpty, path) }
+        else {
+          XCTAssertTrue(copies.contains(original), path)
+          XCTAssertTrue(copies.contains(Data(edit.utf8)), path)
+        }
         let statuses = await library.linkedSyncWaiting()
         if path == "relink" { XCTAssertTrue(statuses.isEmpty) }
         else { XCTAssertTrue(statuses.joined().contains("unsupported encoding")) }

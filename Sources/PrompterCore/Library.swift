@@ -422,7 +422,12 @@ public actor MarkdownLibrary {
       guard let bookmark = Self.bookmark(for: url)
       else { throw PrompterCoreError.unsafePath(url.path) }
       let old = index
-      let previousUnsupported = unsupportedLinks[id], previousPreserved = preservedEncodings[id]
+      if resolution == .keepLibrary {
+        let original = try Data(contentsOf: target)
+        guard MarkdownText.encode(external, like: original) == original else {
+          throw CocoaError(.fileWriteInapplicableStringEncoding)
+        }
+      }
       lastLinkSync[id] = nil
       lastExternalRead[id] = nil
       waitingForLinks[id] = nil
@@ -432,11 +437,6 @@ public actor MarkdownLibrary {
       case .keepLibrary:
         let original = try Data(contentsOf: target)
         do {
-          guard try canWriteLinked(original, disk: external, local: local, metadata: metadata) else {
-            unsupportedLinks[id] = previousUnsupported
-            preservedEncodings[id] = previousPreserved
-            throw CocoaError(.fileWriteInapplicableStringEncoding)
-          }
           _ = try writeConflict(external, for: metadata, label: "file")
           try MarkdownText.encode(local, like: original).write(to: target)
           index.scripts[position].linkedPath = url.path
