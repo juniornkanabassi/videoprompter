@@ -106,6 +106,16 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(afterDelete.tokenIndex, 0)
   }
 
+  func testSystemDefaultMicrophoneReportsRunning() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"; settings.audioDeviceUID = nil
+    session.present(record: record(), settings: settings)
+    session.play(captureAudio: false)
+    XCTAssertEqual(session.readingStatus, "Waiting for your voice")
+    XCTAssertEqual(session.visibleReadingState, "Listening")
+    session.pause()
+  }
+
   func testVoiceNeverClaimsListeningBeforeRecognitionArrives() {
     let session = SessionStore()
     var settings = PrompterSettings()

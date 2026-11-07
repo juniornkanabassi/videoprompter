@@ -63,7 +63,7 @@ final class SessionStore: ObservableObject {
     if isCountingDown { return "Starting in \(countdownRemaining)…" }
     if reachedEnd { return "End of script" }
     if isPreparingVoice { return "Preparing" }
-    if settings.mode == "Voice", settings.audioDeviceUID == nil || (!isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true) { return "Needs microphone" }
+    if settings.mode == "Voice", !isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true { return "Needs microphone" }
     guard isActivelyRunning else { return "Paused" }
     if isManual { return "Scrolling" }
     if !hasLiveRecognition { return "Waiting for your voice" }
