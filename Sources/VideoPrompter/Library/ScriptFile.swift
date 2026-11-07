@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 /// A fresh file per transfer keeps exports with matching titles independent.
 struct ScriptFile: Transferable {
   let script: ScriptRecord
+  var filename: String { InputValidation.filename(script.metadata.title, fallback: "Untitled Script", suffix: ".md") }
 
   static var transferRepresentation: some TransferRepresentation {
     FileRepresentation(exportedContentType: .init(filenameExtension: "md")!) { item in
@@ -16,11 +17,7 @@ struct ScriptFile: Transferable {
   func export(in directory: URL = FileManager.default.temporaryDirectory) throws -> URL {
     let folder = directory.appendingPathComponent(UUID().uuidString, isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let name = script.metadata.title.components(separatedBy: CharacterSet(charactersIn: "/:\\").union(.controlCharacters))
-      .joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-    var filename = name.isEmpty ? "Untitled Script" : name
-    while filename.utf8.count > 240 { filename.removeLast() }
-    let url = folder.appendingPathComponent(filename + ".md")
+    let url = folder.appendingPathComponent(filename)
     try script.markdown.write(to: url, atomically: true, encoding: .utf8)
     return url
   }

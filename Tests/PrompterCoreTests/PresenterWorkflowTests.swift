@@ -5,7 +5,7 @@ import XCTest
 @testable import VideoPrompter
 
 @MainActor final class PresenterWorkflowTests: XCTestCase {
-  func testBareArrowsBelongToFocusedTextAndSliders() throws {
+  func testPresenterKeysWorkAcrossNoneditingResponders() throws {
     _ = NSApplication.shared
     let panel = PresenterPanel(captureVisible: false)
     defer { panel.close() }
@@ -17,15 +17,18 @@ import XCTest
     text.isEditable = false; text.isSelectable = true; text.string = "Choose these words"
     panel.contentView = text
     XCTAssertTrue(panel.makeFirstResponder(text))
-    XCTAssertFalse(panel.handlePassageKey(right))
+    XCTAssertTrue(panel.handlePassageKey(right))
+    text.isEditable = true
+    XCTAssertFalse(panel.handlePassageKey(right), "An actual text editor keeps native arrow keys")
+    text.isEditable = false
     let slider = NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil)
     panel.contentView = slider
     XCTAssertTrue(panel.makeFirstResponder(slider))
-    XCTAssertFalse(panel.handlePassageKey(right))
-    XCTAssertEqual(passages, 0)
+    XCTAssertTrue(panel.handlePassageKey(right))
+    XCTAssertEqual(passages, 2)
     XCTAssertTrue(panel.makeFirstResponder(panel))
     XCTAssertTrue(panel.handlePassageKey(right))
-    XCTAssertEqual(passages, 1)
+    XCTAssertEqual(passages, 3)
   }
 
   func testRecordingAudioReportsEachChannelAndExpiresOldSamples() {

@@ -463,12 +463,14 @@ class PresenterPanel: NSPanel {
     super.setFrame(frame, display: flag)
   }
   var onPassageKey: ((UInt16) -> Bool)?
-  /// Bare arrows belong to the reading surface; every focused control keeps native key handling.
+  /// The key presenter owns reading commands unless a text field or script is being edited.
   func handlePassageKey(_ event: NSEvent) -> Bool {
     guard event.type == .keyDown, [123, 124, 116, 121, 115, 49].contains(event.keyCode),
       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
-      firstResponder === self
+      event.windowNumber == windowNumber
     else { return false }
+    if let text = firstResponder as? NSTextView, text.isEditable { return false }
+    if let field = firstResponder as? NSTextField, field.isEditable { return false }
     return onPassageKey?(event.keyCode) == true
   }
   override func sendEvent(_ event: NSEvent) {

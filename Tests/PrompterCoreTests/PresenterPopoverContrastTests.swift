@@ -66,7 +66,9 @@ extension AppearanceSnapshotTests {
       let name = scheme == .dark ? "dark" : "light"
       if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != name { continue }
       for reduced in [false, true] {
+        // The surface sizes to its content (round 19); top alignment keeps the sampled rectangles in place.
         let view = PresenterPopoverSurface(scheme: scheme) { presenter.toolsSurface }
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
           .environment(\.colorScheme, .dark)
           .environment(\.presenterReduceTransparency, reduced)
         try await snapshot(view, name: "fable-tools-\(name)-\(reduced ? "reduced" : "transparent")", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))

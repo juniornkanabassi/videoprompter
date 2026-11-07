@@ -496,6 +496,8 @@ private enum PresenterSaveError: LocalizedError {
     var completed = Set<UUID>()
   }
   private var scriptDeletionTask: Task<Void, Never>?
+  /// Wait for the whole queued operation, including its final list refresh and undo receipt.
+  func waitForScriptDeletions() async { await scriptDeletionTask?.value }
   func delete(_ ids: Set<UUID>, undoManager: UndoManager? = nil) {
     let links = Dictionary(uniqueKeysWithValues: ids.compactMap { id in MacGoogleDocs.links[id].map { (id, $0) } })
     changeScriptDeletion(ids, links: links, deleting: true, undoManager: undoManager)
@@ -554,7 +556,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   func exportMarkdown(_ script: ScriptRecord) {
     let panel = NSSavePanel()
-    panel.nameFieldStringValue = "\(script.metadata.title).md"
+    panel.nameFieldStringValue = ScriptFile(script: script).filename
     panel.allowedContentTypes = [UTType(filenameExtension: "md")!]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     do { try script.markdown.write(to: url, atomically: true, encoding: .utf8) }
