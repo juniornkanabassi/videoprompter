@@ -388,30 +388,6 @@ private enum PresenterSaveError: LocalizedError {
       }
     }
   }
-  private final class QueuedChange { var failed = false }
-  private func queuedUndo(_ name: String, manager: UndoManager?,
-                          change: @escaping @MainActor () async throws -> Void,
-                          reverse: @escaping @MainActor () async throws -> Void,
-                          previousChange: QueuedChange? = nil) {
-    let ticket = QueuedChange()
-    manager?.registerUndo(withTarget: ticket) { [weak self, weak manager] _ in
-      self?.queuedUndo(name, manager: manager, change: reverse, reverse: change, previousChange: ticket)
-    }
-    manager?.setActionName(name)
-    let previous = libraryEditTask
-    libraryEditRevision += 1
-    libraryEditTask = Task { [weak manager] in
-      await previous?.value
-      do {
-        guard previousChange?.failed != true else { throw CocoaError(.userCancelled) }
-        try await change()
-      } catch {
-        ticket.failed = true
-        manager?.removeAllActions(withTarget: ticket)
-        self.errorMessage = "Unable to save this change. \(error.localizedDescription)"
-      }
-    }
-  }
   /// Menu/shortcut deletion yields to native typing in the script, title and tags.
   func trashSelectionFromMenu(in window: NSWindow? = NSApp.keyWindow) {
     guard Self.canTrashSelection(in: window) else { return }
@@ -757,12 +733,6 @@ private enum PresenterSaveError: LocalizedError {
   func unlink(_ id: UUID, undoManager: UndoManager? = nil) {
     performLibraryEdit(.link(id, nil), name: "Unlink", undoManager: undoManager ?? NSApp?.keyWindow?.undoManager)
   }
-  private func restoreLinkMetadata(_ id: UUID, metadata: ScriptMetadata) async throws {
-    guard let library else { return }
-    let updated = try await library.restoreLink(id, from: metadata)
-    if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = updated }
-    await refreshLinkStates()
-  }
   func refreshLinkStates() async {
     guard let library else { return }
     let states = await library.linkStates()
@@ -791,25 +761,6 @@ private enum PresenterSaveError: LocalizedError {
       errorMessage = "The file could not be relinked. Nothing was changed. \(error)"
       return false
     }
-  }
-  private func registerLinkUndo(_ previous: ScriptRecord, manager: UndoManager?) {
-    manager?.registerUndo(withTarget: self) { [weak manager] target in
-      guard let current = target.scripts.first(where: { $0.id == previous.id }) else { return }
-      target.registerLinkUndo(current, manager: manager)
-      target.queuedUndo("Link File", manager: nil, change: {
-        guard let library = target.library else { return }
-        // Undo changes only the library copy and its link. It never overwrites an external file.
-        _ = try await library.unlink(previous.id)
-        let detached = try await library.read(previous.id)
-        _ = try await library.save(previous.id, markdown: previous.markdown, expectedFingerprint: detached.metadata.contentFingerprint)
-        try await target.restoreLinkMetadata(previous.id, metadata: previous.metadata)
-        if let i = target.scripts.firstIndex(where: { $0.id == previous.id }) {
-          let restored = try await library.read(previous.id)
-          target.scripts[i] = restored; target.session.applyEditedRecord(restored)
-        }
-      }, reverse: {})
-    }
-    manager?.setActionName("Link File")
   }
   func rename(_ value: String, for id: UUID) {
     withLibrary { [self] _ in try await updateScriptMetadata(id, title: value) }
