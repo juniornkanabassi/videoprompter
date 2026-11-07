@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import Speech
 import AppKit
 import CoreText
@@ -88,6 +89,7 @@ struct SettingsPage: View {
   @State private var renameValue = ""
   @State private var appliedPreset: PrompterSettings?
   @State private var replacedPreset: PrompterSettings?
+  @State private var replacementUndoID: UUID?
   /// An exact existing name means the button replaces that preset, and must say so.
   static func presetToReplace(_ name: String, in presets: [PrompterSettings]) -> PrompterSettings? {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -127,16 +129,14 @@ struct SettingsPage: View {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
           Button(existing.map { "Replace “\($0.name)”" } ?? "Save Reading Preset") {
-            if let existing { store.updatePreset(existing.id, undoManager: undoManager) } else { store.savePreset(named: presetName) }
+            if let existing { replacementUndoID = store.updatePreset(existing.id, undoManager: undoManager) } else { store.savePreset(named: presetName) }
             replacedPreset = existing; presetName = ""
           }.disabled(presetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .help(existing == nil ? "Save the current presenter settings for reuse" : "Change this saved look to the current settings")
           if let existing { Text("“\(existing.name)” already exists. Its saved look will change to the current settings.").font(.callout) }
           if let replacedPreset {
-            HStack(spacing: Space.sm) {
-              Text("Replaced “\(replacedPreset.name)”")
-              Button("Undo") { undoManager?.undo(); self.replacedPreset = nil }
-            }.font(.callout)
+            PresetReplacementReceipt(store: store, preset: replacedPreset, operationID: replacementUndoID,
+              manager: undoManager) { self.replacedPreset = nil }
           }
         }
         Section {
@@ -182,6 +182,35 @@ struct SettingsPage: View {
       }
 
   }
+}
+
+/// The receipt must never undo an unrelated action that has since reached the top of the stack.
+struct PresetReplacementReceipt: View {
+  @ObservedObject var store: AppStore
+  let preset: PrompterSettings
+  let operationID: UUID?
+  let manager: UndoManager?
+  var onUndo: () -> Void = {}
+  @State private var canUndo = false
+
+  var body: some View {
+    HStack(spacing: Space.sm) {
+      Text("Replaced “\(preset.name)”")
+      if canUndo {
+        Button("Undo") {
+          if store.undoPresetReplacement(operationID, manager: manager) { onUndo() }
+          refresh()
+        }
+      }
+    }.font(.callout)
+      .onAppear { refresh() }
+      .onChange(of: store.presets) { refresh() }
+      .onReceive(Publishers.MergeMany([
+        Notification.Name.NSUndoManagerDidCloseUndoGroup, .NSUndoManagerDidUndoChange, .NSUndoManagerDidRedoChange
+      ].map { NotificationCenter.default.publisher(for: $0, object: manager) })) { _ in refresh() }
+  }
+
+  private func refresh() { canUndo = store.canUndoPresetReplacement(operationID, manager: manager) }
 }
 
 typealias VoiceSettingsPage = MicrophonePage

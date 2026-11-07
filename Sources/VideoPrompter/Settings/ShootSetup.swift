@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 import PrompterCore
 
 /// Separate from reading presets: a named setup explicitly includes capture choices.
@@ -94,6 +95,13 @@ extension AppStore {
 
   private func restoreShootSetup(_ setup: ShootSetup, at index: Int, manager: UndoManager?) {
     guard !shootSetups.contains(where: { $0.id == setup.id }) else { return }
+    var setup = setup
+    let originalName = setup.name
+    var suffix = 2
+    while shootSetups.contains(where: { $0.name.compare(setup.name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) {
+      setup.name = "\(originalName) (\(suffix))"
+      suffix += 1
+    }
     shootSetups.insert(setup, at: min(index, shootSetups.count))
     manager?.registerUndo(withTarget: self) { [weak manager] target in
       target.deleteShootSetup(setup.id, undoManager: manager)
@@ -106,14 +114,46 @@ extension AppStore {
     let priorRestorePoint = previousShootSetup
     let priorExposure = previousShootExposure
     let priorName = appliedShootSetupName
-    manager?.registerUndo(withTarget: self) { [weak manager] target in
-      guard !recorder.settingsLocked, !target.session.isActivelyRunning else { return }
+    registerShootUndo(name, camera: camera, recorder: recorder, manager: manager) { [weak manager] target in
       target.registerShootStateUndo(name, camera: camera, recorder: recorder, manager: manager)
       target.setShootSetup(previous, camera: camera, recorder: recorder)
       camera.cleanView = exposure.0; camera.exposureBypassed = exposure.1
       target.previousShootSetup = priorRestorePoint
       target.previousShootExposure = priorExposure
       target.appliedShootSetupName = priorName
+    }
+    manager?.setActionName(name)
+  }
+  private func registerShootUndo(_ name: String, camera: CameraModel, recorder: CameraRecorder,
+                                 manager: UndoManager?, action: @escaping (AppStore) -> Void) {
+    manager?.registerUndo(withTarget: self) { [weak manager] target in
+      guard let manager else { return }
+      guard !recorder.settingsLocked, !target.session.isActivelyRunning else {
+        // Keep the original operation until both locks clear; never capture the blocked state.
+        let id = UUID()
+        let wasUndoing = manager.isUndoing
+        target.pendingShootUndos[id] = recorder.$phase.combineLatest(target.session.$state)
+          .filter { phase, state in
+            phase == .idle && (state == .stopped || state == .paused)
+          }
+          .prefix(1).sink { [weak target, weak manager] _ in
+            guard let target, let manager else { return }
+            target.pendingShootUndos[id] = nil
+            manager.beginUndoGrouping()
+            if wasUndoing {
+              target.registerShootUndo(name, camera: camera, recorder: recorder, manager: manager, action: action)
+            } else {
+              // Move the retry onto Redo without changing any settings.
+              manager.registerUndo(withTarget: target) { [weak manager] target in
+                target.registerShootUndo(name, camera: camera, recorder: recorder, manager: manager, action: action)
+              }
+            }
+            manager.endUndoGrouping()
+            if !wasUndoing { manager.undo() }
+          }
+        return
+      }
+      action(target)
     }
     manager?.setActionName(name)
   }

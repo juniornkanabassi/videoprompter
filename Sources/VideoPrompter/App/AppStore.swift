@@ -1,5 +1,6 @@
 import AVFoundation
 import AppKit
+import Combine
 import PrompterCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -43,6 +44,7 @@ private enum PresenterSaveError: LocalizedError {
   }
   @Published var previousShootSetup: ShootSetup?
   @Published var appliedShootSetupName: String?
+  var pendingShootUndos: [UUID: AnyCancellable] = [:]
   var previousShootExposure = (clean: false, bypassed: false)
   @Published var shootSetups: [ShootSetup] = [] {
     didSet {
@@ -838,21 +840,42 @@ private enum PresenterSaveError: LocalizedError {
     copy.name = "\(source.name) copy"
     presets.append(copy)
   }
-  func updatePreset(_ id: UUID, undoManager: UndoManager? = nil) {
-    guard let index = presets.firstIndex(where: { $0.id == id }) else { return }
-    registerPresetReplacement(presets[index], manager: undoManager ?? NSApp?.keyWindow?.undoManager)
+  @discardableResult func updatePreset(_ id: UUID, undoManager: UndoManager? = nil) -> UUID? {
+    guard let index = presets.firstIndex(where: { $0.id == id }) else { return nil }
+    let operationID = registerPresetReplacement(presets[index], manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     var updated = settings
     updated.id = id
     updated.name = presets[index].name
     presets[index] = updated
+    return operationID
   }
-  private func registerPresetReplacement(_ previous: PrompterSettings, manager: UndoManager?) {
-    manager?.registerUndo(withTarget: self) { [weak manager] target in
+  private static let presetReplacementUndoKey = UndoManager.UserInfoKey(rawValue: "VideoPrompter.presetReplacement")
+
+  func canUndoPresetReplacement(_ operationID: UUID?, manager: UndoManager?) -> Bool {
+    guard let operationID, let manager, manager.canUndo else { return false }
+    return manager.undoActionName == "Replace Preset"
+      && manager.undoActionUserInfoValue(forKey: Self.presetReplacementUndoKey) as? String == operationID.uuidString
+  }
+
+  @discardableResult func undoPresetReplacement(_ operationID: UUID?, manager: UndoManager?) -> Bool {
+    guard canUndoPresetReplacement(operationID, manager: manager) else { return false }
+    manager?.undo()
+    return true
+  }
+
+  @discardableResult private func registerPresetReplacement(_ previous: PrompterSettings, manager: UndoManager?) -> UUID? {
+    guard let manager, manager.isUndoRegistrationEnabled else { return nil }
+    let operationID = UUID()
+    manager.registerUndo(withTarget: self) { [weak manager] target in
       guard let i = target.presets.firstIndex(where: { $0.id == previous.id }) else { return }
       target.registerPresetReplacement(target.presets[i], manager: manager)
-      target.presets[i] = previous
+      var restored = previous
+      restored.name = target.presets[i].name
+      target.presets[i] = restored
     }
-    manager?.setActionName("Replace Preset")
+    manager.setActionName("Replace Preset")
+    manager.setActionUserInfoValue(operationID.uuidString, forKey: Self.presetReplacementUndoKey)
+    return operationID
   }
   func dismissModeMigrationNotice() {
     modeMigrationNotice = nil
