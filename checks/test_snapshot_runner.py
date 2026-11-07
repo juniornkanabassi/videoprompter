@@ -64,7 +64,7 @@ class SnapshotRunnerTests(unittest.TestCase):
                 swift = root / 'swift'
                 swift.write_text('#!/bin/zsh\nprint -r -- "$FAKE_BUNDLE"\n')
                 swift.chmod(0o700)
-                for name in ['test_capture_safety.py', 'test_check_grid.py', 'test_snapshot_runner.py', 'check-grid.py']:
+                for name in ['test_capture_safety.py', 'test_review_launch_install.py', 'test_check_grid.py', 'test_snapshot_runner.py', 'check-grid.py']:
                     (root / 'checks' / name).write_text('')
                 (root / 'checks/run-xctest.sh').write_text('print "tests:$VIDEOPROMPTER_SNAPSHOTS" >> "$TRACK"\n')
                 (root / 'checks/check-snapshots.sh').write_text('print "snapshots:$1" >> "$TRACK"\n')
