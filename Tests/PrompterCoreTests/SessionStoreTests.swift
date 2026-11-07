@@ -106,6 +106,59 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(afterDelete.tokenIndex, 0)
   }
 
+  func testSystemDefaultMicrophoneShowsRunningAndPausedVoiceStates() {
+    let session = SessionStore(defaults: freshDefaults("SystemDefaultVoice"))
+    session.resolveAudioInput = { uid in
+      AudioCapture.resolveInput(uid, devices: [
+        AudioInputDevice(id: 42, uid: "default-microphone", name: "Default microphone")
+      ], defaultID: 42)
+    }
+    var settings = PrompterSettings()
+    settings.mode = "Voice"
+    settings.audioDeviceUID = nil
+    session.present(record: ScriptRecord(
+      metadata: ScriptMetadata(title: "Default microphone", fileName: "default.md"),
+      markdown: "One two three four five six"), settings: settings)
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+    XCTAssertEqual(session.visibleReadingState, "Paused")
+
+    session.play(captureAudio: false)
+    XCTAssertTrue(session.isActivelyRunning)
+    XCTAssertEqual(session.readingStatus, "Waiting for your voice")
+    XCTAssertEqual(session.visibleReadingState, "Listening")
+    session.acceptSpeechCandidate(SpeechCandidate(
+      replacementID: "default-input", generation: 1, locale: Locale(identifier: "en-GB"), text: "One two three",
+      range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
+    XCTAssertTrue(session.hasLiveRecognition)
+    XCTAssertEqual(session.visibleReadingState, "Following")
+    session.pause()
+    XCTAssertEqual(session.readingStatus, "Paused")
+    XCTAssertEqual(session.visibleReadingState, "Paused")
+  }
+
+  func testAbsentSystemDefaultMicrophoneShowsRecoveryAndKeepsPosition() {
+    let session = SessionStore(defaults: freshDefaults("AbsentDefaultVoice"))
+    var requestedDefault = false
+    session.resolveAudioInput = { uid in
+      requestedDefault = uid == nil
+      return AudioCapture.resolveInput(uid, devices: [], defaultID: 0)
+    }
+    var settings = PrompterSettings()
+    settings.mode = "Voice"
+    settings.audioDeviceUID = nil
+    session.present(record: record(), settings: settings)
+    session.seek(to: 1)
+    let anchor = session.anchor
+    session.startReading()
+    XCTAssertTrue(requestedDefault)
+    XCTAssertEqual(session.state, .paused)
+    XCTAssertEqual(session.anchor, anchor)
+    XCTAssertEqual(session.readingStatus, "Needs microphone")
+    XCTAssertEqual(session.visibleReadingState, "Needs microphone")
+    XCTAssertNotNil(session.anchorNotice)
+  }
+
   func testVoiceNeverClaimsListeningBeforeRecognitionArrives() {
     let session = SessionStore()
     var settings = PrompterSettings()

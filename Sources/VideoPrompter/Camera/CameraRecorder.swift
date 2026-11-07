@@ -196,6 +196,7 @@ import PrompterCore
     stopInputTest()
     takeDefaultLabel = defaultLabel
     phase = .preparing; cancelStart = false; errorMessage = nil; savedTake = nil; takeFailure = nil; incompleteTake = nil
+    receiptHidden = false
     recordingID = UUID()
     let takeID = recordingID
     recordedDuration = 0; droppedFrames = 0; droppedAudioBuffers = 0; inputMeter.reset(); lastFrameAt = nil
