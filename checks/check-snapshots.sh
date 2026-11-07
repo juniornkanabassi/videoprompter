@@ -5,7 +5,8 @@ ROOT="${0:A:h:h}"
 if [[ -z "${VIDEOPROMPTER_SNAPSHOTS:-}" ]]; then
   temporary_snapshots="$(mktemp -d "${TMPDIR:-/tmp}/VideoPrompter-snapshots.XXXXXX")"
   export VIDEOPROMPTER_SNAPSHOTS="$temporary_snapshots"
-  trap 'rm -rf -- "$temporary_snapshots"' EXIT
+  # test.sh passes the bundle and only wants the pass/fail; a direct run keeps the images to look at.
+  if (( $# )); then trap 'rm -rf -- "$temporary_snapshots"' EXIT; fi
 fi
 print "Snapshot output: $VIDEOPROMPTER_SNAPSHOTS"
 source "$ROOT/env.sh"

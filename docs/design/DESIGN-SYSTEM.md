@@ -157,7 +157,7 @@ This section supersedes the earlier editor-header and icon wording above.
 Quiet metadata still needs readable contrast. Use 75% of the resolved primary
 label colour rather than the low-contrast system secondary label on plain editor
 backgrounds. Keep explanations in primary callout text. Reading-size button work
-in PresenterController.swift belongs to Builder A; its required labels are
+in PresenterView.swift belongs to Builder A; its required labels are
 Smaller text and Larger text with the current point value and disabled limits.
 
 ## Round 9 Builder B refinement

@@ -302,7 +302,7 @@ struct PresenterRecordButton: View {
           .font(.callout).fixedSize(horizontal: false, vertical: true) }
       } else if recorder.isRecording {
         Button { Task { await recorder.stop() } } label: {
-          if compact { Text("Stop recording").fixedSize() }
+          if compact { Text("Stop recording").fixedSize(horizontal: false, vertical: true) }
           else { Label("Stop recording", systemImage: "stop.circle.fill") }
         }.accessibilityLabel("Stop recording")
           .buttonStyle(PresenterButtonStyle(prominent: true)).tint(.red)

@@ -5,11 +5,9 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-# Preserve the existing council fixed-width text guard, including the extracted presenter view.
-FIXED_TEXT_FILES = {'Library/RelinkSheet.swift', 'Library/LibraryView.swift', 'Camera/CameraPicker.swift', 'Camera/CameraStageView.swift', 'Presenter/ReferenceMonitor.swift', 'Library/LibraryStartView.swift', 'Presenter/ExposureLegend.swift', 'Presenter/PresenterController.swift', 'Presenter/PresenterView.swift', 'Settings/ShootSetup.swift', 'Settings/SettingsView.swift'}
 NUMBER = re.compile(r'(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])')
-CALL = re.compile(r'\.(?:padding|frame|defaultSize)\s*\(')
-SPACING = re.compile(r'\b(?:spacing|cornerRadius|minLength)\s*:\s*')
+CALL = re.compile(r'\.(?:padding|frame|defaultSize|cornerRadius)\s*\(')
+SPACING = re.compile(r'\b(?:spacing|horizontalSpacing|verticalSpacing|cornerRadius|minLength)\s*:\s*')
 EXCEPTION = re.compile(r'//\s*grid: ok\s+\S.*')
 
 
@@ -119,7 +117,7 @@ def source_files(root):
 
 def violations(text, view_calls=True):
     code = code_only(text)
-    lines = text.splitlines()
+    lines = text.split('\n')  # the same line count as code.count('\n'), whatever Unicode breaks a string holds
     ranges = [(m.end(), expression_end(code, m.end(), True)) for m in CALL.finditer(code)] if view_calls else []
     ranges += [(m.end(), expression_end(code, m.end())) for m in SPACING.finditer(code)]
     errors = set()
@@ -136,8 +134,7 @@ def main():
     paths = source_files(ROOT)
     errors = [f'{path.relative_to(ROOT)}:{line}: off-grid value {value} (use the grid or // grid: ok <reason>)'
               for path in paths for line, value in violations(path.read_text(), 'import SwiftUI' in path.read_text())]
-    for relative in sorted(FIXED_TEXT_FILES):
-        path = ROOT / 'Sources/VideoPrompter' / relative
+    for path in paths:
         for line in fixed_text_errors(path.read_text()):
             errors.append(f'{path.relative_to(ROOT)}:{line}: multiword Text must wrap instead of fixing its width')
     if errors:

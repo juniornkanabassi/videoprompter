@@ -76,9 +76,9 @@ public final class AudioCapture: @unchecked Sendable {
     return port.map { AudioInputDevice(uid: $0.uid, name: $0.portName) }
   }
 
-  /// The port with that uid, otherwise the default. Shared SessionStore code resolves inputs through this.
+  /// The chosen port, or nil when it has gone, so a missing microphone fails safely as on the Mac.
   public static func resolvedInput(_ uid: String?) -> AudioInputDevice? {
-    uid.flatMap { selected in inputDevices().first { $0.uid == selected } } ?? defaultDevice()
+    uid.map { selected in inputDevices().first { $0.uid == selected } } ?? defaultDevice()
   }
 
   public static func inputDeviceObserver(

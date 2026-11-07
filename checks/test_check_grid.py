@@ -27,6 +27,8 @@ class GridTests(unittest.TestCase):
         self.assertEqual(violations('.padding(.bottom, visible ? 110 : 30)'), [(1, '110'), (1, '30')])
         self.assertEqual(violations('.frame(width: min(150, size * 2), idealHeight: 13)'), [(1, '13'), (1, '150')])
         self.assertEqual(violations('HStack(spacing: visible ? 7 : 8) {}'), [(1, '7')])
+        self.assertEqual(violations('Grid(horizontalSpacing: 5, verticalSpacing: 8) {}'), [(1, '5')])
+        self.assertEqual(violations('.cornerRadius(5)'), [(1, '5')])
         self.assertEqual(violations('Text("\\(a ? "x" : "y") items").padding(7)'), [(1, '7')])
         self.assertEqual(violations('.padding([.horizontal, .top], 7)'), [(1, '7')])
         self.assertEqual(violations('.padding(has("\\(name)") ? 7 : 8)'), [(1, '7')])

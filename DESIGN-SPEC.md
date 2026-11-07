@@ -107,7 +107,7 @@ Not added in this round: a combined "Record and start reading" action and a coun
 - **Move to Folder menu:** the destination currently called "All Scripts" becomes **No Folder**. "All Scripts" stays as the scope name.
 - **Deleting a script:** Move to Trash registers one Undo action for the whole selection ("Undo Move to Trash") and posts the announcement "Moved 3 scripts to Recently Deleted". No confirmation dialog.
 
-### 2.2 Presenter (`Presenter/PresenterController.swift`, struct `PresenterView`)
+### 2.2 Presenter (`Presenter/PresenterView.swift`, struct `PresenterView`; its controller in `Presenter/PresenterController.swift`)
 
 Current placement, superseding the older arrangements below (round 13 Builder A):
 
@@ -164,7 +164,7 @@ The tools row may wrap to a second line in the full layout only between groups (
 
 ### 2.3 Second monitor window (`Camera/CameraWindow.swift`, `CameraView`)
 
-This is the secondary camera surface, for a second display. It is named **Second monitor window** (window title and Window menu item "Open Second monitor window", shortcut ⇧⌘C unchanged).
+This is the secondary camera surface, for a second display. It is named **Second monitor window** (window title and Window menu item "Open Second monitor window", shortcut ⌃⌘C, since ⇧⌘C is the system Show Colors chord).
 
 Toolbar, in order: **Camera** picker, **Rotation** pop-up, **Zebras**, **False colour**, **Exposure…**, **Record** / **Stop recording** with REC timer, **Options** menu (Mirror Camera Preview, Framing Guides…, Always on Top). The "Set up recording" popover inside `RecordingControls` is removed; recording choices live on the Camera & Recording page, reachable from Options ▸ Camera & Recording Settings….
 
@@ -351,7 +351,7 @@ Both builders work from this spec. Ownership is disjoint; the only cross-boundar
 
 ### 10.1 Builder A: presenter, app, camera, settings, control
 
-**Owns:** `Presenter/PresenterController.swift`, `App/**`, `Camera/**` except `Camera/CameraPicker.swift`, `Settings/**`, `Control/**`. Also `Audio/**`, `Speech/**` and `Sources/PrompterCore/**` if a change there is unavoidable. Tests: `Tests/PrompterCoreTests/AppearanceSnapshotTests.swift`, `PresenterBarTests.swift`, `PresenterControllerTests.swift`, `PresenterWorkflowTests.swift`, `PresenterPresentTests.swift`, `SettingsUndoTests.swift`, `SettingsPersistenceTests.swift`, `UIZoomTests.swift`, `SimpleInterfaceTests.swift`, `RecordingRoundThreeTests.swift`, `CameraRecorderTests.swift`, `MovieWriterTests.swift`, `CameraTests.swift`, `CameraExposureTests.swift`, `AppStoreTests.swift`, `ControlTests.swift`, `ControlCLITests.swift`, and new test files it creates.
+**Owns:** `Presenter/PresenterController.swift`, `Presenter/PresenterView.swift`, `App/**`, `Camera/**` except `Camera/CameraPicker.swift`, `Settings/**`, `Control/**`. Also `Audio/**`, `Speech/**` and `Sources/PrompterCore/**` if a change there is unavoidable. Tests: `Tests/PrompterCoreTests/AppearanceSnapshotTests.swift`, `PresenterBarTests.swift`, `PresenterControllerTests.swift`, `PresenterWorkflowTests.swift`, `PresenterPresentTests.swift`, `SettingsUndoTests.swift`, `SettingsPersistenceTests.swift`, `UIZoomTests.swift`, `SimpleInterfaceTests.swift`, `RecordingRoundThreeTests.swift`, `CameraRecorderTests.swift`, `MovieWriterTests.swift`, `CameraTests.swift`, `CameraExposureTests.swift`, `AppStoreTests.swift`, `ControlTests.swift`, `ControlCLITests.swift`, and new test files it creates.
 
 **Work:**
 1. Presenter bar rebuilt to section 2.2: transport row, health line, tools row (full and compact via `ViewThatFits`), More menu, dark chrome, glass (8.1), 40% cap with only row 2 scrolling (5).
@@ -389,7 +389,7 @@ Both builders work from this spec. Ownership is disjoint; the only cross-boundar
 
 ### 10.2 Builder B: library, import, script surfaces, picker, design docs
 
-**Owns:** `Library/**`, `Import/**`, `Presenter/**` except `PresenterController.swift` (so `ScriptTextView.swift`, `ReferenceMonitor.swift`, `PresenterSessionState.swift`), `Camera/CameraPicker.swift`, `Resources/**`, `UI/DesignTokens.swift`, `docs/design/**`. Tests: `LibraryTests.swift`, `LibraryRoundTwoTests.swift`, `LibraryRoundThreeTests.swift`, `LibraryAppearanceTests.swift`, `LibraryEditorSaveTests.swift`, `CameraPickerTests.swift`, `ReadingAccessibilityTests.swift`, `ReferenceMonitorTests.swift`, `FormattedMarkdownEditorTests.swift`, `TypographyTests.swift`, `GoogleDocsTests.swift`, and new files, including `AppearanceSnapshotTests+Library.swift` (an extension of `AppearanceSnapshotTests` so `checks/check-snapshots.sh` runs it).
+**Owns:** `Library/**`, `Import/**`, `Presenter/**` except `PresenterController.swift` and `PresenterView.swift` (so `ScriptTextView.swift`, `ReferenceMonitor.swift`, `PresenterSessionState.swift`), `Camera/CameraPicker.swift`, `Resources/**`, `UI/DesignTokens.swift`, `docs/design/**`. Tests: `LibraryTests.swift`, `LibraryRoundTwoTests.swift`, `LibraryRoundThreeTests.swift`, `LibraryAppearanceTests.swift`, `LibraryEditorSaveTests.swift`, `CameraPickerTests.swift`, `ReadingAccessibilityTests.swift`, `ReferenceMonitorTests.swift`, `FormattedMarkdownEditorTests.swift`, `TypographyTests.swift`, `GoogleDocsTests.swift`, and new files, including `AppearanceSnapshotTests+Library.swift` (an extension of `AppearanceSnapshotTests` so `checks/check-snapshots.sh` runs it).
 
 **Work:**
 1. Library window to section 2.1: remove the inspector and the 200% reading sheet; toolbar order with **Recordings**; editor header with one title, one metadata line and the **Text size** popover; start page fixes; No Folder; pass `undoManager` to `store.delete`.
