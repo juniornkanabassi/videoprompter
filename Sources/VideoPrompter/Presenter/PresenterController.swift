@@ -444,7 +444,7 @@ enum PresenterFrameMemory {
   }
 
   static func clamp(_ frame: NSRect, into area: NSRect) -> NSRect {
-    let size = NSSize(width: max(720, min(frame.width, area.width)), height: max(520, min(frame.height, area.height)))
+    let size = NSSize(width: min(area.width, max(360, frame.width)), height: min(area.height, max(220, frame.height)))
     let x = min(max(frame.minX - max(0, size.width - frame.width) / 2, area.minX), area.maxX - size.width)
     let y = min(max(frame.minY - max(0, size.height - frame.height) / 2, area.minY), area.maxY - size.height)
     return NSRect(origin: NSPoint(x: x, y: y), size: size)
@@ -458,8 +458,8 @@ enum PresenterFrameMemory {
 class PresenterPanel: NSPanel {
   override func setFrame(_ frameRect: NSRect, display flag: Bool) {
     var frame = frameRect
-    frame.size.width = max(720, frame.width)
-    frame.size.height = max(520, frame.height)
+    frame.size.width = max(360, frame.width)
+    frame.size.height = max(220, frame.height)
     super.setFrame(frame, display: flag)
   }
   var onPassageKey: ((UInt16) -> Bool)?
@@ -497,7 +497,7 @@ class PresenterPanel: NSPanel {
     backgroundColor = .clear
     titleVisibility = .hidden
     titlebarAppearsTransparent = true
-    minSize = NSSize(width: 720, height: 520)
+    minSize = NSSize(width: 360, height: 220)
     settle()
   }
   static func collectionBehavior(fullScreen: Bool) -> NSWindow.CollectionBehavior {
