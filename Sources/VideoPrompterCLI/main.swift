@@ -73,7 +73,10 @@ _ = _NSGetExecutablePath(&executablePath, &executablePathSize)
 let executable = URL(fileURLWithPath: String(cString: executablePath)).resolvingSymlinksInPath()
 let contents = executable.deletingLastPathComponent().deletingLastPathComponent()
 let ownApp: URL? = contents.lastPathComponent == "Contents" && executable.deletingLastPathComponent().lastPathComponent == "Helpers" ? contents.deletingLastPathComponent() : nil
-let info = ownApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
+let launchApp = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"].map {
+  URL(fileURLWithPath: $0).resolvingSymlinksInPath()
+} ?? ownApp
+let info = launchApp.flatMap { NSDictionary(contentsOf: $0.appendingPathComponent("Contents/Info.plist")) }
 let bundleID = info?["CFBundleIdentifier"] as? String ?? ControlProtocol.bundleID
 let version = info?["CFBundleShortVersionString"] as? String ?? "dev"
 if invocation.action == "help" { print(ControlCLI.help()); exit(0) }
@@ -114,15 +117,12 @@ if fd == nil {
   guard launchLock >= 0, flock(launchLock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
-if fd == nil && !(invocation.dataDirectory == nil && appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path })) {
+if fd == nil && invocation.dataDirectory == nil && !appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path }) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-  var launch = ["-g"]
-  if let custom = ProcessInfo.processInfo.environment["VIDEOPROMPTER_APP"] { launch += ["-a", custom] }
-  else if let ownApp { launch += ["-a", ownApp.path] }
-  else { launch += ["-b", bundleID] }
-  // --headless: no library window, Dock tile or update prompt; `present` still shows the presenter.
-  if invocation.dataDirectory != nil { launch += ["-n", "--args", "--headless", "--data-directory", root.path] } else { launch += ["--args", "--headless"] }
-  process.arguments = launch
+  do {
+    process.arguments = try ControlLaunch.arguments(appPath: launchApp?.path, bundleID: bundleID,
+      dataDirectory: invocation.dataDirectory == nil ? nil : root.path)
+  } catch { failure(String(describing: error), code: "unsafe_launch", json: invocation.json) }
   process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
   do { try process.run(); process.waitUntilExit() } catch { failure("Could not launch Video Prompter in the background.", json: invocation.json) }
 }
@@ -132,6 +132,9 @@ if fd == nil {
   while fd == nil && Date() < deadline { Thread.sleep(forTimeInterval: 0.02); fd = connectSocket(path) }
 }
 if launchLock >= 0 { Darwin.close(launchLock) }
+if fd == nil, invocation.dataDirectory != nil {
+  failure("No agent app answers on \(path). Start a re-identified copy with the authorised hidden launcher first.", code: "agent_not_running", json: invocation.json)
+}
 guard let fd else { failure("Video Prompter is running but does not answer on \(path); it may be older than 1.0.0. Quit it and try again.", json: invocation.json) }
 defer { Darwin.close(fd) }
 let request: [String: Any] = ["id": UUID().uuidString, "action": invocation.action, "params": invocation.params]

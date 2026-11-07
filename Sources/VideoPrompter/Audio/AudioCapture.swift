@@ -21,7 +21,7 @@ public enum AudioCaptureError: Error, Equatable, Sendable {
 public final class AudioCapture: @unchecked Sendable {
   public let selectedDevice: AudioInputDevice
   public let outputFormat: AVAudioFormat
-  private let engine = AVAudioEngine()
+  private var engine: AVAudioEngine?
   private let processingQueue = DispatchQueue(
     label: "VideoPrompter.audio.processing", qos: .userInitiated)
   private let stateLock = NSLock()
@@ -102,12 +102,15 @@ public final class AudioCapture: @unchecked Sendable {
     onBuffer: @escaping (AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void,
     onStop: @escaping (AudioCaptureError?) -> Void
   ) throws {
-    guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
+    guard CaptureAccess.mayUse(.audio) else {
       throw AudioCaptureError.permissionDenied
     }
     guard Self.inputDevices().contains(where: { $0.uid == selectedDevice.uid }) else {
       throw AudioCaptureError.deviceUnavailable
     }
+    // Construct the engine only after permission and device checks; teardown never creates input.
+    let engine = self.engine ?? AVAudioEngine()
+    self.engine = engine
     let node = engine.inputNode
     var id = selectedDevice.id
     guard let unit = node.audioUnit,
@@ -148,7 +151,7 @@ public final class AudioCapture: @unchecked Sendable {
         self.stop(reason: .deviceLost)
         return
       }
-      if !self.engine.isRunning {
+      if self.engine?.isRunning != true {
         self.stop(reason: .engineFailure("Audio engine stopped after configuration change"))
       }
     }
@@ -161,8 +164,8 @@ public final class AudioCapture: @unchecked Sendable {
       return value
     }
     guard shouldStop else { return }
-    engine.stop()
-    engine.inputNode.removeTap(onBus: 0)
+    engine?.stop()
+    engine?.inputNode.removeTap(onBus: 0)
     if let observer { NotificationCenter.default.removeObserver(observer) }
     observer = nil
     processingQueue.async { [weak self] in

@@ -4,6 +4,7 @@
 set -euo pipefail
 ROOT="${0:A:h}"
 source "$ROOT/env.sh"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_capture_safety.py"
 "$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" >&2
 BUNDLE="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"
 # The wrapper removes the defaults suites the tests recorded once xctest has exited.

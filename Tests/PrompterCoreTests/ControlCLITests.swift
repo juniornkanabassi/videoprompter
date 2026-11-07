@@ -171,3 +171,20 @@ final class ControlCLITests: XCTestCase {
     }
   }
 }
+
+extension ControlCLITests {
+  func testDisposableLaunchCannotFallBackToRealApp() throws {
+    for path in [String?.none, "/Applications/JuniorOS Apps/Video Prompter.app", "/tmp/Video Prompter.app"] {
+      XCTAssertThrowsError(try ControlLaunch.arguments(appPath: path, bundleID: ControlProtocol.bundleID, dataDirectory: "/tmp/data"))
+    }
+    XCTAssertThrowsError(try ControlLaunch.arguments(appPath: nil, bundleID: "check", dataDirectory: "/tmp/data"))
+    XCTAssertThrowsError(try ControlLaunch.arguments(appPath: "/tmp/copy.app", bundleID: "check", dataDirectory: "/tmp/data"))
+    let copy = try ControlLaunch.arguments(appPath: "/tmp/copy.app", bundleID: "check", dataDirectory: nil)
+    XCTAssertTrue(copy.contains("--agent-screen"))
+    XCTAssertTrue(copy.contains("--headless"))
+    XCTAssertFalse(copy.contains("-n"))
+    let real = try ControlLaunch.arguments(appPath: "/Applications/JuniorOS Apps/Video Prompter.app", bundleID: ControlProtocol.bundleID, dataDirectory: nil)
+    XCTAssertTrue(real.contains("--headless"))
+    XCTAssertFalse(real.contains("--agent-screen"))
+  }
+}

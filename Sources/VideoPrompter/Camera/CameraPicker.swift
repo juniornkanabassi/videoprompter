@@ -477,7 +477,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
   /// `fallBack` moves to `.high`, which runs Cam B at 1920x1080.
   private func open(_ uid: String, _ layer: AVCaptureVideoPreviewLayer, _ mirrored: Bool) {
     guard !isStopped, CaptureAccess.mayUse(.video), let device = AVCaptureDevice(uniqueID: uid),
-      let input = try? AVCaptureDeviceInput(device: device)
+      let input = try? CaptureAccess.deviceInput(device, media: .video)
     else { return }
     original = (device, device.activeFormat)
     let output = AVCaptureVideoDataOutput()
@@ -489,7 +489,7 @@ nonisolated final class CameraPreviewSession: NSObject, CameraPreviewFeed,
     if session.canAddOutput(output) { session.addOutput(output) }
     session.commitConfiguration()
     CameraPreviewConnection.connect(layer, to: session, mirrored: mirrored)
-    if CaptureAccess.mayUse(.video) { session.startRunning() }
+    if CaptureAccess.mayUse(.video) { CaptureAccess.start(session) }
     applied = device.activeFormat
   }
 
