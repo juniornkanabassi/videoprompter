@@ -8,6 +8,7 @@ import XCTest
 @MainActor final class TestOffscreenTests: XCTestCase {
   func testEveryWindowATestShowsStaysInvisibleAndClickThrough() {
     TestOffscreenInstalled()
+    XCTAssertEqual(TestOffscreenCaptureGuardsInstalled(), 1)
     let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 300, height: 200), styleMask: [.titled], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
     defer { window.close() }
@@ -25,7 +26,7 @@ import XCTest
 }
 
 /// Tests never trigger macOS camera or microphone prompts: each test binary is a new app identity to macOS.
-final class CaptureAccessTests: XCTestCase {
+@MainActor final class CaptureAccessTests: XCTestCase {
   func testTestsNeverAskForCameraOrMicrophone() async throws {
     XCTAssertTrue(CaptureAccess.isAgentOrTest)
     let undecided = [AVMediaType.video, .audio].filter { AVCaptureDevice.authorizationStatus(for: $0) != .authorized }
@@ -41,12 +42,54 @@ final class CaptureAccessTests: XCTestCase {
 final class AgentModeTests: XCTestCase {
   func testOnlyTheRealBundleRunsVisibleOutsideTests() {
     XCTAssertEqual(AgentMode.realBundleID, "com.juniornkanabassi.VidPrompt")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.realBundleID, bundlePath: "/tmp/Video Prompter.app", underTest: false))
     XCTAssertFalse(AgentMode.isOn, "tests keep their own window and focus guards")
     let real = AgentMode.realBundleID
-    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, underTest: false), "the installed app runs normally")
-    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, underTest: false))
-    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", underTest: false), "a re-identified copy is hidden")
-    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, underTest: false), "a bare debug build is hidden")
-    XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, underTest: true))
+    for path in ["/Applications/Video Prompter.app", NSHomeDirectory() + "/Applications/Video Prompter.app"] {
+      XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, bundlePath: path, underTest: false), "normal drag installations must still work")
+    }
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, bundlePath: "/Applications/JuniorOS Apps/Video Prompter.app", underTest: false), "the installed app runs normally")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, bundlePath: "/Applications/JuniorOS Apps/Video Prompter.app", underTest: false))
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", bundlePath: "/tmp/Video Prompter.app", underTest: false), "a re-identified copy is hidden")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, bundlePath: "/tmp/VideoPrompter", underTest: false), "a bare debug build is hidden")
+    XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, bundlePath: "/tmp/VideoPrompter", underTest: true))
+  }
+}
+
+extension CaptureAccessTests {
+  func testEveryAuthorizationStateWithoutTouchingHardware() async {
+    for status in [AVAuthorizationStatus.notDetermined, .restricted, .denied, .authorized] {
+      XCTAssertEqual(CaptureAccess.mayUse(status: status), status == .authorized)
+      for mayPrompt in [false, true] {
+        var calls = 0
+        let granted = await CaptureAccess.request(status: status, mayPrompt: mayPrompt) {
+          calls += 1
+          return true
+        }
+        let shouldAsk = status == .notDetermined && mayPrompt
+        XCTAssertEqual(calls, shouldAsk ? 1 : 0)
+        XCTAssertEqual(granted, status == .authorized || shouldAsk)
+      }
+    }
+  }
+}
+
+extension CaptureAccessTests {
+  func testHeadlessAndAgentProcessesNeverPromptEvenWithRealBundleID() {
+    for agent in [false, true] {
+      for headless in [false, true] {
+        XCTAssertEqual(CaptureAccess.mayPrompt(isAgentOrTest: agent, headless: headless), !agent && !headless)
+      }
+    }
+  }
+
+  func testUnusedAndUnavailableAudioCaptureDoesNotOpenInput() throws {
+    let capture = AudioCapture(device: AudioInputDevice(id: 0, uid: "missing-test-device", name: "Missing"),
+      outputFormat: try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)))
+    capture.stop()
+    XCTAssertThrowsError(try capture.start(onBuffer: { _, _, _, _, _ in XCTFail("No input should run") }, onStop: { _ in })) { error in
+      XCTAssertTrue(error as? AudioCaptureError == .permissionDenied || error as? AudioCaptureError == .deviceUnavailable)
+    }
+    capture.stop()
   }
 }

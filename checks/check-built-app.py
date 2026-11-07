@@ -4,6 +4,8 @@ Usage: source env.sh; python3 checks/check-built-app.py '/tmp/.../Video Prompter
 No show, mouse, key, recording, installation or real-data operations.
 """
 import argparse, json, os, pathlib, plistlib, shutil, socket, stat, subprocess, sys, tempfile, time
+from agent_launch import launch
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('app', type=pathlib.Path)
 parser.add_argument('--data-directory', type=pathlib.Path)
@@ -11,7 +13,7 @@ args = parser.parse_args()
 supplied = args.app.resolve()
 script_dir = pathlib.Path(__file__).resolve().parent
 swift = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift'
-root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir=os.environ.get('TMPDIR', '/private/tmp')))
+root = pathlib.Path(tempfile.mkdtemp(prefix='vpv-', dir='/private/tmp'))
 (root / 'home').mkdir()
 # The shipped bundle must be validly signed. The check then runs a copy with its own bundle identifier, because
 # AppKit window and split-view autosave write to the standard defaults domain, which would otherwise be the real app's.
@@ -24,6 +26,11 @@ subprocess.run(['/usr/libexec/PlistBuddy', '-c', 'Set :CFBundleIdentifier '+CHEC
 subprocess.run(['codesign', '--force', '--deep', '--sign', '-', '--preserve-metadata=entitlements,flags', str(app)], check=True, timeout=120)
 # An ad hoc signature has no Team ID, so hardened runtime would refuse the embedded Sparkle.framework: the copy alone
 # turns library validation off, on top of the shipped entitlements.
+info_path = app / 'Contents/Info.plist'
+info = plistlib.loads(info_path.read_bytes())
+(root / 'home').mkdir(exist_ok=True)
+info['LSEnvironment'] = {'CFFIXED_USER_HOME': str(root / 'home')}
+info_path.write_bytes(plistlib.dumps(info))
 entitlements = plistlib.loads(subprocess.run(['codesign', '-d', '--entitlements', '-', '--xml', str(supplied)], capture_output=True, check=True, timeout=60).stdout or plistlib.dumps({}))
 entitlements['com.apple.security.cs.disable-library-validation'] = True
 (root / 'check.entitlements').write_bytes(plistlib.dumps(entitlements))
@@ -77,7 +84,7 @@ try:
     data.mkdir()
     stale = socket.socket(socket.AF_UNIX); stale.bind(str(data / 'control.sock')); stale.close()
     # Ignore shared macOS scene restoration for this disposable instance.
-    subprocess.run(['open', '-g', '-n', '-a', str(app), '--env', 'CFFIXED_USER_HOME='+str(root / 'home'), '--args', '--data-directory', str(data), '-ApplePersistenceIgnoreState', 'YES', '-NSQuitAlwaysKeepsWindows', 'NO', '--agent-screen'], check=True, timeout=10)
+    launch(app, data)
     time.sleep(3)
     processes = subprocess.check_output(['ps', '-axo', 'pid=,command='], text=True)
     matches = [int(line.split(None, 1)[0]) for line in processes.splitlines() if str(app / 'Contents/MacOS/VideoPrompter') in line and str(data) in line]
@@ -85,6 +92,8 @@ try:
     pid = matches[0]
     empty_gui = gui(pid)
     (root / 'empty-gui.json').write_text(json.dumps(empty_gui, indent=2))
+    assert empty_gui['trusted'], 'Accessibility access is unavailable; do not request it from an agent check'
+    assert empty_gui['windows'], 'Hidden app exposes no accessibility windows; do not reveal it to complete this check'
     empty_text = json.dumps(empty_gui['windows'])
     for label in ['Your script, ready to read', 'Add a script', 'Choose Voice or Manual in Settings', 'Press Present', 'Import Script', 'New Script', 'Mirroring and cues']:
         assert label in empty_text, (label, empty_text)
