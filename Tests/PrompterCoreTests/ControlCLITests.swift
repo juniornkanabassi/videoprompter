@@ -13,6 +13,13 @@ final class ControlCLITests: XCTestCase {
     XCTAssertEqual(ControlLaunch.executablePath(app: app), contents.appendingPathComponent("MacOS/OtherName").resolvingSymlinksInPath().path)
   }
 
+  func testUnresolvableTargetDoesNotMatchAnotherRunningCopy() {
+    let app = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).app")
+    var checked = false
+    XCTAssertFalse(ControlLaunch.isRunning(app: app) { _ in checked = true; return true })
+    XCTAssertFalse(checked)
+  }
+
   func testCommandParsingHelpAndManifestShareTheTable() throws {
     // A valid value for any parameter, so every command parses from the table alone.
     func sample(_ p: ControlParam) -> String {

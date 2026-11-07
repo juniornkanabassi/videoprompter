@@ -10,6 +10,12 @@ public enum ControlLaunch {
     return contents.appendingPathComponent("MacOS").appendingPathComponent(name).resolvingSymlinksInPath().path
   }
 
+  public static func isRunning(app: URL?, check: (String?) -> Bool) -> Bool {
+    guard let app else { return check(nil) }
+    guard let path = executablePath(app: app) else { return false }
+    return check(path)
+  }
+
   public static func arguments(appPath: String?, bundleID: String, dataDirectory: String?) throws -> [String] {
     if dataDirectory != nil {
       throw ControlCLI.UsageError(description: "Start a re-identified agent copy with the authorised hidden launcher before using --data-directory.")
