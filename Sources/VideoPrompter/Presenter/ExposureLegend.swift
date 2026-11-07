@@ -176,7 +176,7 @@ struct ExposureLegend: View {
         }
       }.font(.callout).foregroundStyle(.primary)
         .padding(.horizontal, Space.sm).padding(.vertical, Space.xs)
-        .background(Color(white: 0.12), in: .rect(cornerRadius: 12))
+        .background(Surfaces.presenterPanel, in: .rect(cornerRadius: 12))
         .environment(\.colorScheme, .dark)
         .uiZoom(zoom)
         .fixedSize(horizontal: false, vertical: true)
@@ -189,6 +189,7 @@ struct ExposureLegend: View {
 
 /// Discrete measured bands, with quiet ticks and captions away from the colour.
 struct FalseColourStrip: View {
+  @Environment(\.colorSchemeContrast) private var contrast
   static let captions = ["Very dark", "Mid-tones", "Bright", "Near white"]
   static let bandGroups = [0..<2, 2..<4, 4..<5, 5..<6]
   var showsLabels = true
@@ -205,7 +206,7 @@ struct FalseColourStrip: View {
                 .accessibilityLabel("\(FalseColourKey.labels[bandIndex]). \(band.name)")
             }
           }
-          Rectangle().fill(.white.opacity(0.6)).frame(width: 1, height: Space.xs)
+          Rectangle().fill(Palette.onDarkQuiet(contrast)).frame(width: 1, height: Space.xs)
             .accessibilityHidden(true)
           if showsLabels {
             Text(Self.captions[index]).font(.callout).foregroundStyle(.white)
@@ -229,7 +230,7 @@ struct ExposureKeyPanel: View {
   var body: some View {
     ScrollView { ExposureKeyHelp(model: model).padding(Space.md) }
       .frame(width: 320, height: 300)
-      .background(Color(white: 0.12))
+      .background(Surfaces.presenterPanel)
       .environment(\.colorScheme, .dark)
       .uiZoom(zoom)
   }
@@ -264,6 +265,7 @@ struct ExposureKeyHelp: View {
 
 /// Use the renderer's ranges, so the detailed key cannot drift from its colours.
 struct FalseColourKey: View {
+  @Environment(\.colorSchemeContrast) private var contrast
   static let labels = ["Almost black", "Very dark", "Mid-tones", "Brighter mid-tones", "Bright", "Near white"]
   static func rangeLabel(_ range: ClosedRange<Double>) -> String {
     "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
@@ -278,7 +280,7 @@ struct FalseColourKey: View {
           Text(Self.labels[index])
           Spacer(minLength: Space.xs)
           Text(Self.rangeLabel(band.range)).monospacedDigit()
-            .foregroundStyle(Color.primary.opacity(0.75))
+            .foregroundStyle(Color.primary.opacity(Palette.quietOpacity(contrast)))
         }.accessibilityElement(children: .ignore)
           .accessibilityLabel("\(Self.labels[index]). \(band.name)")
           .accessibilityValue(Self.rangeLabel(band.range))

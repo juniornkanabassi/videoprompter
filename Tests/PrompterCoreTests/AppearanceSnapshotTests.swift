@@ -161,7 +161,6 @@ import XCTest
       store.inspector = true
       try await snapshot(LibraryView(store: store, camera: camera), name: "library-inspector-\(mode)", size: .init(width: 1440, height: 900), scheme: scheme, destination: destination)
       try await snapshot(InspectorView(store: store, camera: camera), name: "presenter-inspector-\(mode)", size: .init(width: 360, height: 900), scheme: scheme, destination: destination)
-      try await snapshot(ReferenceMonitorCaption(passage: String(repeating: "Welcome back. Bonjour à toutes et à tous. ", count: 30), fontName: "Helvetica Neue", readingSize: 48, end: {}), name: "reference-monitor-\(mode)", size: .init(width: 1000, height: 400), scheme: scheme, destination: destination)
       for tab in SettingsTab.allCases {
         try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "settings-\(tab.rawValue)-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
       }
@@ -282,7 +281,7 @@ import XCTest
       }
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
-        try await snapshot(ReadingSettingsSheet(store: store, camera: camera), name: "reading-settings-wide-\(Int(zoom * 100))-\(mode)", size: .init(width: min(880, 440 * zoom), height: 720), scheme: scheme, destination: destination)
+        try await snapshot(ReadingSettingsPage(store: store, camera: camera).uiZoom(store.uiZoom), name: "reading-settings-wide-\(Int(zoom * 100))-\(mode)", size: .init(width: min(880, 440 * zoom), height: 720), scheme: scheme, destination: destination)
         let devices = (1...12).map { CameraDevice(uid: "fixture-\($0)", name: "Camera \($0) with a long descriptive studio name") }
         camera.selectedUID = "fixture-10"
         camera.authorization = .authorized

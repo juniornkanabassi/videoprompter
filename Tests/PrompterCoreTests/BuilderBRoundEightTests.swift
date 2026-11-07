@@ -24,12 +24,12 @@ import XCTest
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1000, height: 800))
       defer { LibraryAX.close(window) }
       XCTAssertFalse(LibraryAX.named("Linked", in: host).isEmpty)
-      XCTAssertTrue(LibraryAX.named("Unlink file", in: host).isEmpty)
+      XCTAssertTrue(LibraryAX.named("Unlink", in: host).isEmpty)
       let details = try XCTUnwrap(LibraryAX.named("Script details", in: host).first)
       XCTAssertEqual(LibraryAX.value(details, "accessibilityValue"), "Collapsed")
       XCTAssertTrue(LibraryAX.bool(details, "accessibilityPerformPress"))
       try await Task.sleep(for: .milliseconds(60))
-      XCTAssertFalse(LibraryAX.named("Unlink file", in: host).isEmpty)
+      XCTAssertFalse(LibraryAX.named("Unlink", in: host).isEmpty)
       XCTAssertEqual(store.selected?.markdown, record.markdown)
     }
   }

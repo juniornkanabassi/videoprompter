@@ -121,7 +121,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
   /// repeating on top of the two-second poll.
   private var lastExternalRefresh = Date.distantPast
-  private let defaults: UserDefaults
+  let defaults: UserDefaults
   private let settingsPersistence: SettingsPersistence
 
   static func preferences(arguments: [String] = CommandLine.arguments) -> UserDefaults {
@@ -291,6 +291,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Help > Practice Script: selects it in the whole library, or adds a fresh copy when it has gone.
   /// While the first-launch add is still running it waits for that, so the script is never added twice.
   func showWelcomeScript() {
+    defaults.set(false, forKey: "readingTipHidden")
     guard let welcomeTask else { return selectWelcomeScript() }
     Task { [weak self] in
       await welcomeTask.value
@@ -314,8 +315,8 @@ private enum PresenterSaveError: LocalizedError {
   func createFolder(named name: String) {
     withLibrary { [self] _ in _ = try await createLibraryFolder(named: name) }
   }
-  func renameFolder(_ id: UUID, name: String) {
-    withLibrary { [self] _ in try await renameLibraryFolder(id, name: name) }
+  func renameFolder(_ id: UUID, name: String, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.rename(id, name), name: "Rename Folder", undoManager: undoManager)
   }
   @discardableResult func createLibraryFolder(named name: String) async throws -> ScriptFolder {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -328,30 +329,32 @@ private enum PresenterSaveError: LocalizedError {
     try await library.renameFolder(id, name: name)
     if let i = folders.firstIndex(where: { $0.id == id }) { folders[i].name = InputValidation.folderName(name) }
   }
-  private var folderChangeTask: Task<Void, Never>?
-  private var folderChangeRevision = 0
+  var libraryEditTask: Task<Void, Never>?
+  var libraryEditRevision = 0
   func deleteFolder(_ id: UUID, undoManager: UndoManager? = nil) {
     guard let folder = folders.first(where: { $0.id == id }) else { return }
-    let members = Set(scripts.filter { $0.metadata.folderID == id }.map(\.id)
-      + trash.filter { $0.metadata.folderID == id }.map(\.id))
-    changeFolder(folder, members: members, deleting: true, undoManager: undoManager)
+    changeFolder(folder, deleting: true, undoManager: undoManager)
   }
   /// One queued folder change. It is also the undo target, so a failed change can remove just its own
   /// entry instead of the store's whole undo stack.
-  private final class FolderChange { var failed = false }
-  private func changeFolder(_ folder: ScriptFolder, members: Set<UUID>, deleting: Bool,
+  private final class FolderChange {
+    var failed = false
+    var members = Set<UUID>()
+    var folder: ScriptFolder?
+  }
+  private func changeFolder(_ folder: ScriptFolder, deleting: Bool,
                             undoManager: UndoManager?, inverting: FolderChange? = nil) {
     let change = FolderChange()
     // Registered now, before the disk work, so Undo is offered at once and sits in the right place
-    // on the stack; the disk changes stay ordered behind folderChangeTask.
+    // on the stack; the disk changes stay ordered behind libraryEditTask.
     undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
       // `change` is held here, not by UndoManager, so the entry keeps its target alive.
-      self?.changeFolder(folder, members: members, deleting: !deleting, undoManager: undoManager, inverting: change)
+      self?.changeFolder(folder, deleting: !deleting, undoManager: undoManager, inverting: change)
     }
-    undoManager?.setActionName("Delete Folder")
-    folderChangeRevision += 1
-    let previous = folderChangeTask
-    folderChangeTask = Task { [self, weak undoManager] in
+    undoManager?.setActionName("Remove Folder")
+    libraryEditRevision += 1
+    let previous = libraryEditTask
+    libraryEditTask = Task { [self, weak undoManager] in
       await previous?.value
       // Undoing a change that never reached the disk has nothing to reverse.
       if inverting?.failed == true {
@@ -360,9 +363,14 @@ private enum PresenterSaveError: LocalizedError {
         return
       }
       guard let library else { return }
+      let currentFolder = inverting?.folder ?? folders.first { $0.id == folder.id } ?? folder
+      change.folder = currentFolder
+      let members = inverting?.members ?? Set(scripts.filter { $0.metadata.folderID == folder.id }.map(\.id)
+        + trash.filter { $0.metadata.folderID == folder.id }.map(\.id))
+      change.members = members
       do {
         if deleting { try await library.deleteFolder(folder.id) }
-        else { try await library.restoreFolder(folder, scriptIDs: members) }
+        else { try await library.restoreFolder(currentFolder, scriptIDs: members) }
         folders = await library.listFolders()
         for i in scripts.indices {
           if deleting, scripts[i].metadata.folderID == folder.id { scripts[i].metadata.folderID = nil }
@@ -393,8 +401,8 @@ private enum PresenterSaveError: LocalizedError {
     selectedIDs.contains(id) ? selectedIDs : [id]
   }
 
-  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?) {
-    withLibrary { [self] _ in try await moveScripts(ids, to: folderID) }
+  func moveSelectedScripts(_ ids: Set<UUID>, to folderID: UUID?, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.move(ids.map { ($0, folderID) }), name: "Move to Folder", undoManager: undoManager)
   }
   func moveScripts(_ ids: Set<UUID>, to folderID: UUID?) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -468,13 +476,13 @@ private enum PresenterSaveError: LocalizedError {
     changeScriptDeletion(ids, links: links, deleting: true, undoManager: undoManager)
   }
   private func changeScriptDeletion(_ ids: Set<UUID>, links: [UUID: GoogleDocLinks.Link], deleting: Bool,
-                                    undoManager: UndoManager?, inverting: ScriptDeletion? = nil) {
+                                    undoManager: UndoManager?, inverting: ScriptDeletion? = nil, actionName: String = "Move to Trash") {
     guard !ids.isEmpty else { return }
     let change = ScriptDeletion()
     undoManager?.registerUndo(withTarget: change) { [weak self, weak undoManager] _ in
-      self?.changeScriptDeletion(ids, links: links, deleting: !deleting, undoManager: undoManager, inverting: change)
+      self?.changeScriptDeletion(ids, links: links, deleting: !deleting, undoManager: undoManager, inverting: change, actionName: actionName)
     }
-    undoManager?.setActionName("Move to Trash")
+    undoManager?.setActionName(actionName)
     let previous = scriptDeletionTask
     scriptDeletionTask = Task { [self, weak undoManager] in
       await previous?.value
@@ -511,8 +519,8 @@ private enum PresenterSaveError: LocalizedError {
     trash = await library.listTrash()
     if selectedID == id { selectedID = visible.first?.id }
   }
-  func restore(_ id: UUID) {
-    withLibrary { [self] _ in try await restoreScript(id) }
+  func restore(_ id: UUID, undoManager: UndoManager? = nil) {
+    changeScriptDeletion([id], links: [:], deleting: false, undoManager: undoManager, actionName: "Restore Script")
   }
   func restoreScript(_ id: UUID) async throws {
     guard let library else { throw CocoaError(.fileNoSuchFile) }
@@ -576,7 +584,8 @@ private enum PresenterSaveError: LocalizedError {
       } catch is CancellationError {} catch {
         self?.failedSaveIDs.insert(id)
         self?.hasFailedSaves = true
-        self?.errorMessage = "The edit was preserved but could not replace the file. \(error)"
+        let title = self?.scripts.first { $0.id == id }?.metadata.title ?? "Untitled Script"
+        self?.errorMessage = "The edit to “\(title)” was preserved but could not replace the file. \(error)"
       }
     }
   }
@@ -647,15 +656,15 @@ private enum PresenterSaveError: LocalizedError {
   }
   func flushPendingSaves() async -> Bool {
     while true {
-      let folderRevision = folderChangeRevision
-      await folderChangeTask?.value
+      let folderRevision = libraryEditRevision
+      await libraryEditTask?.value
       for task in Array(saveTasks.values) { await task.value }
       if let id = presenterSaveIDs.first {
         await withCheckedContinuation { presenterSaveWaiters[id, default: []].append($0) }
         continue
       }
       await settingsPersistence.flush()
-      if folderRevision != folderChangeRevision { continue }
+      if folderRevision != libraryEditRevision { continue }
       return failedSaveIDs.isEmpty && saveTasks.isEmpty && pendingDrafts.isEmpty
     }
   }
@@ -713,12 +722,8 @@ private enum PresenterSaveError: LocalizedError {
     hasFailedSaves = !failedSaveIDs.isEmpty
   }
   /// Stop mirroring the external file. The script keeps the content it already has.
-  func unlink(_ id: UUID) {
-    withLibrary { [self] library in
-      let metadata = try await library.unlink(id)
-      if let i = scripts.firstIndex(where: { $0.id == id }) { scripts[i].metadata = metadata }
-      await refreshLinkStates()
-    }
+  func unlink(_ id: UUID, undoManager: UndoManager? = nil) {
+    performLibraryEdit(.link(id, nil), name: "Unlink", undoManager: undoManager)
   }
   func refreshLinkStates() async {
     guard let library else { return }

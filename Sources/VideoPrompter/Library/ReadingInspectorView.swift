@@ -31,13 +31,13 @@ struct ReadingSettingsPage: View {
         slider("Reading text size", value: $store.settings.fontSize, range: AppStore.presenterFontSizes, readout: "\(Int(store.settings.fontSize)) pt", spoken: "\(Int(store.settings.fontSize)) points")
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
-        Button("Present") { PresenterController.shared.presentFromLibrary(store: store) }
+        Button("Show in Presenter") { PresenterController.shared.presentFromLibrary(store: store) }
           .help("See your reading appearance settings in the presenter")
           .disabled(store.selected == nil)
       }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
-        Button("Narrow column") { store.settings.textWidth = 0.65 }
+        Button("Narrow Column") { store.settings.textWidth = 0.65 }
         ReadingChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment, zoom: store.uiZoom)
         percent("Line spacing", $store.settings.lineSpacing, 0...0.5)
         percent("Paragraph spacing", $store.settings.paragraphSpacing, 0...1)
@@ -146,15 +146,5 @@ struct ReadingChoiceOption: View {
   let isSelected: Bool
   var body: some View {
     Text(name).accessibilityAddTraits(isSelected ? .isSelected : [])
-  }
-}
-
-/// Only retained for older snapshot callers; the library no longer presents a reading sheet.
-struct ReadingSettingsSheet: View {
-  @ObservedObject var store: AppStore
-  let camera: CameraModel
-  var body: some View {
-    ReadingSettingsPage(store: store, camera: camera).uiZoom(store.uiZoom)
-      .frame(width: min(880, 440 * store.uiZoom), height: 720)
   }
 }

@@ -7,16 +7,26 @@ struct LibraryView: View {
   @Environment(\.openWindow) private var openWindow
   @Environment(\.undoManager) private var undoManager
   private let camera: CameraModel
-  init(store: AppStore, camera: CameraModel = .shared) { self.store = store; self.camera = camera }
+  init(store: AppStore, camera: CameraModel = .shared) {
+    self.store = store; self.camera = camera
+    _readingTipHidden = AppStorage(wrappedValue: false, "readingTipHidden", store: store.defaults)
+  }
   @State private var selection = Set<UUID>()
   @State private var showsDeleted = false
   @State private var showsPractice = false
-  @State private var showsReadingTip = true
+  @AppStorage("readingTipHidden") private var readingTipHidden = false
+  @SceneStorage("library.selectedScript") private var savedScriptID = ""
+  @SceneStorage("library.scope") private var savedScope = "all"
+  @SceneStorage("library.sidebar") private var savedSidebar = "all"
+  @SceneStorage("library.foldersExpanded") private var savedFoldersExpanded = true
   @State private var showsFolders = true
+  @State private var restoredScene = false
   @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
   @State private var importing = false
   @State private var importPreview: ImportPreview?
+  @State private var loadingImport = false
+  @State private var pendingImports: [URL] = []
   @State private var importError: String?
   @State private var newFolderName = ""
   @State private var renamingFolder: ScriptFolder?
@@ -78,7 +88,7 @@ struct LibraryView: View {
             ForEach(store.trash) { entry in
               VStack(alignment: .leading, spacing: Space.sm) {
                 Text(entry.metadata.title).fixedSize(horizontal: false, vertical: true)
-                Button("Restore Script") { store.restore(entry.id) }.buttonStyle(.link)
+                Button("Restore Script") { store.restore(entry.id, undoManager: undoManager) }.buttonStyle(.link)
               }.selectionDisabled()
             }
           } else {
@@ -86,10 +96,18 @@ struct LibraryView: View {
               ScriptRow(script: script, link: store.linkStates[script.id], selected: selection.contains(script.id))
                 .listRowSeparator(.hidden)
                 .contextMenu { scriptActions(script) }
+                .draggable(ScriptFile(script: script))
                 .simultaneousGesture(TapGesture().onEnded { showsPractice = true })
             }
           }
         }.listStyle(.inset).accessibilityLabel("Scripts")
+        .dropDestination(for: URL.self) { urls, _ in
+          let supported = urls.filter { ["md", "txt", "docx", "rtf", "pdf"].contains($0.pathExtension.lowercased()) }
+          guard !supported.isEmpty, importPreview == nil, !loadingImport else { return false }
+          pendingImports = Array(supported.dropFirst())
+          previewImport(supported[0])
+          return true
+        }
         .onKeyPress(characters: CharacterSet(charactersIn: "\u{7f}"), phases: .down) { press in
           guard !showsDeleted, press.modifiers == .command, !selection.isEmpty,
             AppStore.canTrashSelection(in: NSApp.keyWindow) else { return .ignored }
@@ -102,19 +120,33 @@ struct LibraryView: View {
         Button("New Folder…") { store.namingNewFolder = true }
           .disabled(!store.libraryAvailable)
       }
-      .onAppear { selection = showsStart ? [] : store.selectedID.map { [$0] } ?? [] }
+      .task {
+        await store.waitForInitialLoad()
+        if !restoredScene {
+          restoreScene()
+          restoredScene = true
+          selection = showsStart ? [] : store.selectedID.map { [$0] } ?? []
+        }
+      }
       .onChange(of: selection) { _, value in
         store.selectedIDs = value
         if let id = value.first { showsPractice = true; store.selectedID = id }
       }
       .onChange(of: store.selectedID) { _, id in
         if id != nil { showsDeleted = false }
+        if restoredScene { savedScriptID = id?.uuidString ?? "" }
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
       .uiZoom(store.uiZoom)
       .navigationSplitViewColumnWidth(min: min(320, 220 * store.uiZoom), ideal: min(360, 260 * store.uiZoom), max: 400)
     } detail: {
       VStack(spacing: 0) {
+        if let notice = store.modeMigrationNotice {
+          HStack {
+            Text(notice).fixedSize(horizontal: false, vertical: true)
+            Button("Got it") { store.dismissModeMigrationNotice() }
+          }.font(.callout).padding(Space.margin)
+        }
         if let notice = store.libraryNotice {
           Text(notice).font(UIType.secondary).foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -132,22 +164,29 @@ struct LibraryView: View {
           },
             camera: { PresenterController.shared.presentCamera(store: store) },
             guide: { showsPractice = true })
+        } else if !store.search.isEmpty && store.visible.isEmpty {
+          ContentUnavailableView.search(text: store.search)
         } else if let script = store.selected {
-          EditorView(store: store, script: script, showsReadingTip: $showsReadingTip).id(script.metadata.id)
+          EditorView(store: store, script: script, showsReadingTip: Binding(get: { !readingTipHidden }, set: { readingTipHidden = !$0 })).id(script.metadata.id)
         } else {
           if !store.libraryAvailable {
             ContentUnavailableView("Library unavailable", systemImage: "exclamationmark.triangle",
               description: Text("The library could not be opened. See the error message for recovery steps."))
           } else {
-            ContentUnavailableView(store.visible.isEmpty ? "No matching scripts" : "Select a script", systemImage: "doc.text",
+            if !store.search.isEmpty {
+            ContentUnavailableView.search(text: store.search)
+          } else {
+          ContentUnavailableView(store.visible.isEmpty ? "No matching scripts" : "Select a script", systemImage: "doc.text",
               description: Text(store.visible.isEmpty ? "Try another search or choose All Scripts." : "Choose a script on the left, then press Present."))
+          }
           }
         }
         }
       }.uiZoom(store.uiZoom)
     }
     .navigationSplitViewStyle(.balanced)
-    .navigationTitle(showsStart ? "Get started" : showsDeleted ? "Recently Deleted" : "Scripts")
+    .navigationTitle(showsStart ? "Get Started" : showsDeleted ? "Recently Deleted" : "Scripts")
+    .navigationSubtitle(store.search.isEmpty ? "" : "\(store.visible.count) scripts")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup(placement: .navigation) {
@@ -162,14 +201,14 @@ struct LibraryView: View {
           Button("New Folder…") { store.namingNewFolder = true }
         } label: { Label("Add", systemImage: "plus") }
           .labelStyle(.titleAndIcon).menuIndicator(.visible).accessibilityLabel("Add script or folder")
-          .help("Add a script or folder").disabled(!store.libraryAvailable)
+          .help("Add a script or folder (⌘N)").disabled(!store.libraryAvailable)
       }
       ToolbarItemGroup(placement: .primaryAction) {
         LibraryPresenterActions(store: store, showsDeleted: showsDeleted)
       }
     }
     .alert(
-      "Could not finish that action",
+      store.hasFailedSaves ? "Unable to Save" : "Unable to Complete Action",
       isPresented: Binding(
         // A headless copy keeps the error (commands report it) and shows it once the library comes up.
         get: { store.errorMessage != nil && !Headless.shared.active }, set: { if !$0 { store.errorMessage = nil } })
@@ -177,28 +216,23 @@ struct LibraryView: View {
       if store.hasFailedSaves {
         Button("Retry Save") { Task { await store.retryFailedSaves() } }.help("Try saving the pending edits again")
         Button("Keep Both") { Task { await store.keepBothFailedSaves() } }.help("Save both versions so neither edit is lost")
+      } else {
+        Button("Close") { store.errorMessage = nil }
       }
-      Button("OK") { store.errorMessage = nil }
     } message: {
       Text(store.errorMessage ?? "Unknown error")
     }
-    .alert("Following Options Changed", isPresented: Binding(
-      get: { store.modeMigrationNotice != nil && store.errorMessage == nil && !Headless.shared.active },
-      set: { if !$0 { store.dismissModeMigrationNotice() } })
-    ) { Button("OK") { store.dismissModeMigrationNotice() } }
-      message: { Text(store.modeMigrationNotice ?? "") }
     .onReceive(NotificationCenter.default.publisher(for: .videoPrompterImport)) { _ in importing = true }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md")!, .rtf, .pdf, UTType(filenameExtension: "docx")!]) { result in
       guard case .success(let url) = result else {
         if case .failure(let error) = result, (error as? CocoaError)?.code != .userCancelled { importError = error.localizedDescription }
         return
       }
-      Task {
-        do { importPreview = try await DocumentImporter().preview(url: url) }
-        catch { importError = error.localizedDescription }
-      }
+      previewImport(url)
     }
-    .sheet(isPresented: Binding(get: { importPreview != nil }, set: { if !$0 { importPreview = nil } })) {
+    .sheet(isPresented: Binding(get: { importPreview != nil }, set: { if !$0 { importPreview = nil } }), onDismiss: {
+      if !pendingImports.isEmpty { previewImport(pendingImports.removeFirst()) }
+    }) {
       if let value = importPreview {
       VStack(alignment: .leading, spacing: Space.md) {
         Text("Import \(value.sourceURL.lastPathComponent)").font(.headline)
@@ -213,7 +247,7 @@ struct LibraryView: View {
         ForEach(value.warnings, id: \.self) { Text($0).foregroundStyle(.primary) }
         HStack {
           Spacer()
-          Button("Cancel", role: .cancel) { importPreview = nil }
+          Button("Cancel", role: .cancel) { pendingImports = []; importPreview = nil }
             .keyboardShortcut(.cancelAction).help("Close this preview without importing")
           Button("Import") {
             // A Markdown original stays linked, so edits made in MarkEdit or Obsidian
@@ -229,8 +263,9 @@ struct LibraryView: View {
         .frame(minWidth: min(648 * store.uiZoom, 900), minHeight: min(448 * store.uiZoom, 700))
       }
     }
-    .alert("Import failed", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
-      Button("OK") { importError = nil }
+    .alert("Unable to Import", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
+      Button("Choose Another File…") { importError = nil; importing = true }
+      Button("Cancel", role: .cancel) { importError = nil }
     } message: { Text(importError ?? "The document could not be imported.") }
     .sheet(isPresented: Binding(get: { store.relinkingID != nil }, set: { if !$0 { store.relinkingID = nil } })) {
       if let script = store.scripts.first(where: { $0.id == store.relinkingID }) {
@@ -247,15 +282,44 @@ struct LibraryView: View {
     .sheet(isPresented: Binding(get: { renamingFolder != nil }, set: { if !$0 { renamingFolder = nil } })) {
       FolderNameSheet(title: "Rename Folder", name: $renamedFolderName, action: "Save", zoom: store.uiZoom,
         cancel: { renamingFolder = nil }, save: {
-          if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName) }
+          if let folder = renamingFolder { store.renameFolder(folder.id, name: renamedFolderName, undoManager: undoManager) }
           renamingFolder = nil
         })
     }
     .onChange(of: geometry.size.width < 560 * store.uiZoom, initial: true) { _, compact in
-      columnVisibility = compact ? .detailOnly : .all
+      if compact { columnVisibility = .detailOnly }
     }
+    }
+    .onChange(of: showsFolders) { _, expanded in savedFoldersExpanded = expanded }
+    .onChange(of: columnVisibility) { _, value in
+      if restoredScene { savedSidebar = value == .detailOnly ? "detail" : "all" }
+    }
+    .onChange(of: store.selectedFolderID) { _, id in
+      if restoredScene && !showsDeleted { savedScope = id?.uuidString ?? "all" }
+    }
+    .onChange(of: showsDeleted) { _, deleted in
+      if restoredScene { savedScope = deleted ? "deleted" : store.selectedFolderID?.uuidString ?? "all" }
     }
     .frame(minWidth: 640, minHeight: 500)
+  }
+
+  private func previewImport(_ url: URL) {
+    loadingImport = true
+    Task {
+      defer { loadingImport = false }
+      do { importPreview = try await DocumentImporter().preview(url: url) }
+      catch { pendingImports = []; importError = error.localizedDescription }
+    }
+  }
+
+  private func restoreScene() {
+    showsFolders = savedFoldersExpanded
+    let state = LibrarySceneSelection(scriptID: savedScriptID, scope: savedScope)
+    if !savedScriptID.isEmpty || savedScope != "all" { state.restore(in: store) }
+    showsDeleted = savedScope == "deleted"
+    if showsDeleted { store.selectedID = nil }
+    if !savedScriptID.isEmpty, store.selected != nil { showsPractice = true }
+    columnVisibility = savedSidebar == "detail" ? .detailOnly : .all
   }
 
   private var scriptScopeTitle: String {
@@ -313,16 +377,17 @@ struct LibraryView: View {
     Button("Present") { store.selectedID = id; PresenterController.shared.present(store: store) }
     Button("Duplicate") { store.selectedID = id; store.duplicate() }.keyboardShortcut("d")
     Menu("Move to Folder") {
-      Button("No Folder") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil) }
+      Button("No Folder") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil, undoManager: undoManager) }
       ForEach(store.folders) { folder in
-        Button(folder.name) { store.moveSelectedScripts(store.contextSelection(for: id), to: folder.id) }
+        Button(folder.name) { store.moveSelectedScripts(store.contextSelection(for: id), to: folder.id, undoManager: undoManager) }
       }
     }
+    ShareLink("Share Markdown…", item: ScriptFile(script: script), preview: SharePreview(script.metadata.title))
     Button("Export Markdown…") { store.exportMarkdown(script) }
     Button("Show in Finder") { store.revealInFinder(id) }.disabled(broken)
     if !linked { Button("Link File…") { store.relinkingID = id } }
     if linked {
-      Button("Unlink") { store.unlink(id) }
+      Button("Unlink") { store.unlink(id, undoManager: undoManager) }
       if broken { Button("Find Linked File…") { store.relinkingID = id } }
     }
     Divider()
@@ -392,6 +457,7 @@ private struct EditorView: View {
   @State private var editNotice: String?
   @Environment(\.colorScheme) private var colorScheme
   @StateObject private var saver = LibraryEditorSave()
+  @Environment(\.undoManager) private var undoManager
 
   init(store: AppStore, script: ScriptRecord, showsReadingTip: Binding<Bool>) {
     self.store = store
@@ -413,11 +479,11 @@ private struct EditorView: View {
           if saver.failed { Button("Retry Save") { scheduleSave() } }
         }
         HStack(alignment: .center, spacing: Space.md) {
-          Button { showsTextSize = true } label: {
-            Label("Editor text size", systemImage: "chevron.down")
+          Button { showsTextSize.toggle() } label: {
+            Label("Editor text size", systemImage: showsTextSize ? "chevron.down" : "chevron.right")
               .frame(minHeight: 24).contentShape(Rectangle())
           }
-            .accessibilityLabel("Editor text size")
+            .accessibilityLabel("Editor text size").accessibilityValue(showsTextSize ? "Expanded" : "Collapsed")
             .buttonStyle(.plain).help("Change the editor font and text size")
             .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
@@ -438,7 +504,7 @@ private struct EditorView: View {
             if let path = script.metadata.linkedPath {
               Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
                 .fixedSize(horizontal: false, vertical: true).help(path)
-              Button("Unlink file") { store.unlink(script.id) }.buttonStyle(.link)
+              Button("Unlink") { store.unlink(script.id, undoManager: undoManager) }.buttonStyle(.link)
                 .help("Keep this script in Video Prompter without changing the original file again")
             } else {
               Text("Stored in Video Prompter")
@@ -507,15 +573,15 @@ struct LibraryPresenterActions: View {
   var showsDeleted = false
   var body: some View {
         Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
-          .labelStyle(.titleAndIcon).help("Open the Recordings folder")
+          .labelStyle(.titleAndIcon).help("Show the Recordings folder in Finder")
         Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
           .labelStyle(.titleAndIcon)
-          .help("Check framing or record without a script")
+          .help("Check framing or record without a script (⌥⌘C)")
         Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
           .tint(.accentColor)
-          .help("Reading settings are in Settings (⌘,)")
+          .help("Open the presenter with this script (⌥⌘P)")
           .disabled(!store.libraryAvailable || showsDeleted)
   }
 }

@@ -130,15 +130,15 @@ import XCTest
     manager.groupsByEvent = false
     manager.beginUndoGrouping(); store.deleteFolder(folder.id, undoManager: manager); manager.endUndoGrouping()
     XCTAssertTrue(manager.canUndo, "offered before the disk change completes")
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
     manager.beginUndoGrouping(); store.deletePreset(store.presets[0].id, undoManager: manager); manager.endUndoGrouping()
     XCTAssertEqual(manager.undoActionName, "Delete Preset", "the later action is undone first")
     manager.undo()
     XCTAssertEqual(store.presets.map(\.name), ["Keep"])
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
     manager.undo()
     XCTAssertFalse(manager.canUndo)
-    XCTAssertEqual(manager.redoActionName, "Delete Folder")
+    XCTAssertEqual(manager.redoActionName, "Remove Folder")
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
     XCTAssertEqual(store.folders.map(\.id), [folder.id])
@@ -148,7 +148,7 @@ import XCTest
     _ = await store.flushPendingSaves()
     XCTAssertTrue(store.folders.isEmpty)
     XCTAssertNil(store.scripts.first(where: { $0.id == script.id })?.metadata.folderID)
-    XCTAssertEqual(manager.undoActionName, "Delete Folder")
+    XCTAssertEqual(manager.undoActionName, "Remove Folder")
   }
 
   func testFailedFolderDeletionDropsOnlyItsOwnQueuedUndoAndRedo() async throws {
@@ -198,7 +198,7 @@ import XCTest
       manager.undo(); manager.redo()
       _ = await store.flushPendingSaves()
       XCTAssertTrue(manager.canUndo)
-      XCTAssertEqual(manager.undoActionName, "Delete Folder")
+      XCTAssertEqual(manager.undoActionName, "Remove Folder")
       released = manager
     }
     for _ in 0..<50 where released != nil { try await Task.sleep(for: .milliseconds(10)) }

@@ -22,12 +22,7 @@ import XCTest
     XCTAssertEqual(positions.count, 2)
   }
 
-  func testReferenceMonitorKeepsChosenReadingSize() {
-    let caption = ReferenceMonitorCaption(passage: String(repeating: "Bonjour, welcome back. ", count: 100),
-      fontName: "Helvetica Neue", readingSize: 72, end: {})
-    XCTAssertEqual(caption.readingSize, 72)
-    XCTAssertGreaterThan(caption.passage.count, 1000)
-  }
+
 }
 
 extension ReadingAccessibilityTests {
