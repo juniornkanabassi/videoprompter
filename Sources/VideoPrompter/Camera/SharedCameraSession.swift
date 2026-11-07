@@ -171,7 +171,7 @@ struct CameraHolders {
     guard uid != attachedUID else { return }
     let session = self.session
     let device = uid.flatMap { AVCaptureDevice(uniqueID: $0) }
-    let input = CaptureAccess.mayUse(.video) ? device.flatMap { try? AVCaptureDeviceInput(device: $0) } : nil
+    let input = CaptureAccess.mayUse(.video) ? device.flatMap { try? CaptureAccess.deviceInput($0, media: .video) } : nil
     // Remember the camera only once it is really attached: selected before access was granted,
     // the input fails, and remembering it anyway left the picture black until relaunch.
     attachedUID = input != nil && AVCaptureDevice.authorizationStatus(for: .video) == .authorized ? uid : nil
@@ -417,7 +417,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
 
   /// Session queue only: start with the format held, then check it.
   func start(_ session: AVCaptureSession) {
-    if !session.isRunning, CaptureAccess.mayUse(.video) { holdingFormat(session) { session.startRunning() } }
+    if !session.isRunning, CaptureAccess.mayUse(.video) { holdingFormat(session) { CaptureAccess.start(session) } }
     watch(session)
   }
 

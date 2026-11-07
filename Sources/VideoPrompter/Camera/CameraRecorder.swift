@@ -204,7 +204,7 @@ import PrompterCore
       guard Self.hasRecordingSpace(free) else { throw recordingError("Free at least 2 GB on the recording drive, then try Record again.", recovery: .storage) }
       activeMicrophoneName = microphone.localizedName
       recovery = .microphone
-      let input = try AVCaptureDeviceInput(device: microphone)
+      let input = try CaptureAccess.deviceInput(microphone, media: .audio)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
       audioChannels = spec.channels

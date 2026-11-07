@@ -4,6 +4,7 @@
 // just fully transparent and let clicks through. Runs when the test bundle loads, before any test.
 #import <AppKit/AppKit.h>
 #import <objc/runtime.h>
+#import <AVFoundation/AVFoundation.h>
 #import "TestOffscreen.h"
 
 void TestOffscreenInstalled(void) {}
@@ -38,7 +39,32 @@ static void swap(Class type, SEL original, SEL replacement) {
 - (void)testOffscreen_activate {}
 @end
 
+// Last line of defence for tests that bypass the Swift helper. Never ask or open a real device.
+@implementation AVCaptureDevice (TestOffscreen)
++ (void)testOffscreen_requestAccessForMediaType:(AVMediaType)mediaType completionHandler:(void (^)(BOOL))handler {
+  handler(NO);
+}
+@end
+
+@implementation AVCaptureDeviceInput (TestOffscreen)
+- (instancetype)testOffscreen_initWithDevice:(AVCaptureDevice *)device error:(NSError **)error {
+  if (error) *error = [NSError errorWithDomain:AVFoundationErrorDomain code:AVErrorApplicationIsNotAuthorizedToUseDevice userInfo:nil];
+  return nil;
+}
+@end
+
+static IMP blockedAccess, blockedInput;
+int TestOffscreenCaptureGuardsInstalled(void) {
+  return blockedAccess && blockedInput
+    && method_getImplementation(class_getClassMethod(AVCaptureDevice.class, @selector(requestAccessForMediaType:completionHandler:))) == blockedAccess
+    && method_getImplementation(class_getInstanceMethod(AVCaptureDeviceInput.class, @selector(initWithDevice:error:))) == blockedInput;
+}
+
 __attribute__((constructor)) static void installTestOffscreen(void) {
+  blockedAccess = method_getImplementation(class_getClassMethod(AVCaptureDevice.class, @selector(testOffscreen_requestAccessForMediaType:completionHandler:)));
+  blockedInput = method_getImplementation(class_getInstanceMethod(AVCaptureDeviceInput.class, @selector(testOffscreen_initWithDevice:error:)));
+  swap(object_getClass(AVCaptureDevice.class), @selector(requestAccessForMediaType:completionHandler:), @selector(testOffscreen_requestAccessForMediaType:completionHandler:));
+  swap(AVCaptureDeviceInput.class, @selector(initWithDevice:error:), @selector(testOffscreen_initWithDevice:error:));
   Class window = NSWindow.class, app = NSApplication.class;
   swap(window, @selector(setAlphaValue:), @selector(testOffscreen_setAlphaValue:));
   swap(window, @selector(orderWindow:relativeTo:), @selector(testOffscreen_orderWindow:relativeTo:));

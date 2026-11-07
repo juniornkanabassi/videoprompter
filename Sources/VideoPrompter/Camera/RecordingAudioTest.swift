@@ -10,7 +10,7 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
     self.onLevels = onLevels
     super.init()
     guard CaptureAccess.mayUse(.audio) else { throw CocoaError(.userCancelled) }
-    let input = try AVCaptureDeviceInput(device: device)
+    let input = try CaptureAccess.deviceInput(device, media: .audio)
     let output = AVCaptureAudioDataOutput()
     let format = CMAudioFormatDescriptionGetStreamBasicDescription(device.activeFormat.formatDescription)?.pointee
     output.audioSettings = Self.settings(sampleRate: (floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000)), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
@@ -22,7 +22,7 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
   }
   func start() async {
     await withCheckedContinuation { continuation in
-      queue.async { if CaptureAccess.mayUse(.audio) { self.session.startRunning() }; continuation.resume() }
+      queue.async { if CaptureAccess.mayUse(.audio) { CaptureAccess.start(self.session) }; continuation.resume() }
     }
   }
   func stop() async {
