@@ -841,6 +841,10 @@ final class PresenterControllerTests: XCTestCase {
   /// Voice paints its glide on the same path as Manual, but a hand scroll does not pause it: once
   /// the gesture's seek has come back through an update, Voice follows the glide again from there.
   func testHandScrolledVoiceResumesGlidingOnceItsSeekArrives() {
+    // Exercise easing regardless of the host's accessibility preference.
+    let systemMotion = ScriptTextView.Coordinator.reducesMotion
+    ScriptTextView.Coordinator.reducesMotion = { false }
+    defer { ScriptTextView.Coordinator.reducesMotion = systemMotion }
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
     session.present(
@@ -956,6 +960,10 @@ final class PresenterControllerTests: XCTestCase {
   }
 
   func testRunningMultiwordProgressAnimatesAndExplicitSnapCancelsIt() {
+    // Exercise easing regardless of the host's accessibility preference.
+    let systemMotion = ScriptTextView.Coordinator.reducesMotion
+    ScriptTextView.Coordinator.reducesMotion = { false }
+    defer { ScriptTextView.Coordinator.reducesMotion = systemMotion }
     let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 760, height: 300))
     let text = NSTextView(frame: NSRect(x: 0, y: 0, width: 760, height: 2400))
     scroll.documentView = text
