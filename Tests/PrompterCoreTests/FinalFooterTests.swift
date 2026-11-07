@@ -191,6 +191,35 @@ import XCTest
     }
   }
 
+  func testReadyOutputStaysOnOneLineAtDoubleSize() async throws {
+    let (store, camera, recorder, record) = try await fixture()
+    store.uiZoom = 2
+    camera.guides.falseColour = true
+    let size = NSSize(width: 720, height: 520)
+    for picture in [CGSize(width: 1080, height: 1920), CGSize(width: 1920, height: 1080)] {
+      camera.pictureSizeOverride = picture
+      let orientation = picture.width < picture.height ? "Portrait" : "Landscape"
+      let resolution = "\(Int(picture.width))×\(Int(picture.height))"
+      for saved in [false, true] {
+        recorder.savedTake = saved ? URL(fileURLWithPath: "/tmp/My Script.mov") : nil
+        let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
+        XCTAssertEqual(view.recordingStateDisplayTitle, "\(orientation) · \(resolution)")
+        let (window, host) = await LibraryAX.host(view, size: size)
+        host.sizingOptions = []; host.frame = .init(origin: .zero, size: size)
+        for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
+        let status = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
+        let frame = try XCTUnwrap(status.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+        XCTAssertLessThanOrEqual(frame.height, 48 + 1, "Output must remain a single line")
+        let textWidth = (view.recordingStateDisplayTitle as NSString).size(withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)]).width * 2
+        XCTAssertGreaterThanOrEqual(frame.width, textWidth, "The complete resolution must fit without truncation")
+        XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Ready · \(orientation) · \(Int(picture.width)) × \(Int(picture.height))"))
+        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading status", in: host).first), "accessibilityValue").contains("Automatic scroll"))
+        try assertFrozenFooter(host, size: size, zoom: 2, readingFloor: 0.60)
+        LibraryAX.close(window)
+      }
+    }
+  }
+
   func testFileActionsUndoWithoutLosingContents() async throws {
     let (store, _, _, record) = try await fixture()
     let manager = UndoManager(); manager.groupsByEvent = false

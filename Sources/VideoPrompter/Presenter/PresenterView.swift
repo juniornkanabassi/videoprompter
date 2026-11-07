@@ -341,9 +341,18 @@ struct PresenterView: View {
     guard camera.pictureSize != nil else { return "Waiting for picture" }
     return "Ready · " + recorder.compactOutputConfirmation(camera: camera)
   }
+  private var showsReadyOutput: Bool {
+    !recorder.isRecording && !recorder.isBusy && camera.isReadyToRecord && camera.pictureSize != nil
+  }
+  var recordingStateDisplayTitle: String {
+    if showsReadyOutput {
+      return recorder.compactOutputConfirmation(camera: camera).replacingOccurrences(of: " × ", with: "×")
+    }
+    return recordingStateTitle
+  }
   /// Neutral camera status recedes; active recording and recovery retain emphasis.
   private var recordingStateText: Text {
-    Text(recordingStateTitle)
+    Text(recordingStateDisplayTitle)
       .fontWeight(recorder.isRecording || recorder.isBusy || !camera.isReadyToRecord ? .semibold : .regular)
   }
   private func recordingAccessibilityValue(sound: String) -> String {
@@ -379,7 +388,8 @@ struct PresenterView: View {
           VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.xs) {
               if recorder.isRecording { Image(systemName: "record.circle.fill").foregroundStyle(.red) }
-              recordingStateText.monospacedDigit().fixedSize(horizontal: false, vertical: true)
+              recordingStateText.monospacedDigit().lineLimit(showsReadyOutput ? 1 : nil)
+                .fixedSize(horizontal: showsReadyOutput, vertical: true)
               if recorder.isRecording { RecordingBarLevel(meter: recorder.inputMeter, compact: true).frame(width: 12) }
             }
             if recorder.isRecording {
@@ -390,7 +400,7 @@ struct PresenterView: View {
         }.frame(minHeight: 24).contentShape(Rectangle())
       }.buttonStyle(.plain)
         .font(recorder.isRecording || recorder.isBusy || !camera.isReadyToRecord ? .body : .callout)
-        // The output check is sized first so it only wraps when the band truly cannot hold it.
+        // Keep orientation and the complete resolution together at enlarged interface sizes.
         .layoutPriority(1)
         .foregroundStyle(problem || (!camera.isReadyToRecord && !recorder.isBusy && !recorder.isRecording) ? Color.orange : (recorder.isRecording || recorder.isBusy ? Color.primary : Palette.onDarkQuiet(contrast)))
         .accessibilityLabel("Recording status")
