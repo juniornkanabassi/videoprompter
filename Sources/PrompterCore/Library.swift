@@ -501,7 +501,7 @@ public actor MarkdownLibrary {
     }
     try Self.withLinkAccess(url) { try validateLinkTarget($0) }
     await linkedAccessHook?(writing)
-    let timeoutKey = url.path + (writing ? ":write" : ":read")
+    let timeoutKey = url.path + (timeoutLimit != nil ? ":save" : (writing ? ":write" : ":read"))
     let timeout = min(linkTimeouts[timeoutKey] ?? 1, timeoutLimit ?? 30)
     let access: LinkedFileAccess
     do {
