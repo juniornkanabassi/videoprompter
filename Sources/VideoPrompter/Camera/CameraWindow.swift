@@ -302,7 +302,7 @@ struct PresenterRecordButton: View {
           .font(.callout).fixedSize(horizontal: false, vertical: true) }
       } else if recorder.isRecording {
         Button { Task { await recorder.stop() } } label: {
-          if compact { Text("Stop recording").fixedSize(horizontal: false, vertical: true) }
+          if compact { Text("Stop recording").fixedSize() } // grid: ok The transport row is one line; the take's stop control must never truncate.
           else { Label("Stop recording", systemImage: "stop.circle.fill") }
         }.accessibilityLabel("Stop recording")
           .buttonStyle(PresenterButtonStyle(prominent: true)).tint(.red)

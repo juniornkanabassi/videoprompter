@@ -5,7 +5,7 @@ import unittest
 import runpy
 
 _grid = runpy.run_path(str(Path(__file__).with_name("check-grid.py")))
-source_files, violations = _grid["source_files"], _grid["violations"]
+source_files, violations, fixed_text_errors = _grid["source_files"], _grid["violations"], _grid["fixed_text_errors"]
 
 
 class GridTests(unittest.TestCase):
@@ -33,6 +33,12 @@ class GridTests(unittest.TestCase):
         self.assertEqual(violations('.padding([.horizontal, .top], 7)'), [(1, '7')])
         self.assertEqual(violations('.padding(has("\\(name)") ? 7 : 8)'), [(1, '7')])
         self.assertEqual(violations('let packet = Packet.frame(width: 9)', view_calls=False), [])
+        self.assertEqual(violations('var spacing: CGFloat = 8\nlet half = width / 2.5'), [])
+        self.assertEqual(violations('HStack(\n  spacing: 5) {}'), [(2, '5')])
+
+    def test_fixed_width_text_allows_a_reasoned_exception(self):
+        self.assertEqual(fixed_text_errors('Text("Stop recording").fixedSize()'), [1])
+        self.assertEqual(fixed_text_errors('Text("Stop recording").fixedSize() // grid: ok Never truncate'), [])
 
     def test_new_views_are_discovered_in_both_targets(self):
         with tempfile.TemporaryDirectory() as directory:

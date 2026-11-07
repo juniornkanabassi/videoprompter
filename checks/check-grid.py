@@ -7,7 +7,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 NUMBER = re.compile(r'(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])')
 CALL = re.compile(r'\.(?:padding|frame|defaultSize|cornerRadius)\s*\(')
-SPACING = re.compile(r'\b(?:spacing|horizontalSpacing|verticalSpacing|cornerRadius|minLength)\s*:\s*')
+SPACING = re.compile(r'[(,]\s*(?:spacing|horizontalSpacing|verticalSpacing|cornerRadius|minLength)\s*:\s*')  # an argument, not a `var spacing:` declaration
 EXCEPTION = re.compile(r'//\s*grid: ok\s+\S.*')
 
 
@@ -37,7 +37,8 @@ def fixed_text_errors(source):
                 end += 1
             arguments = source[start:end - 1].strip()
             if modifier[1] == "fixedSize" and (not arguments or re.search(r'horizontal:\s*true', arguments)):
-                failures.append(source.count("\n", 0, cursor) + 1)
+                line = source.count("\n", 0, cursor) + 1
+                if not EXCEPTION.search(source.split("\n")[line - 1]): failures.append(line)
             cursor = end
     return failures
 
