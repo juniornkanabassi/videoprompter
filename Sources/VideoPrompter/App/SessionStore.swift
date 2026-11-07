@@ -621,11 +621,7 @@ final class SessionStore: ObservableObject {
           globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       anchorNotice = nil
-      if update.tokenIndex >= document.spokenTokens.count - 1 {
-        state = .paused
-        stopTasks()
-        rememberCurrent()
-      } else { rememberSoon() }
+      rememberSoon()
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }

@@ -561,6 +561,20 @@ final class SessionStoreTests: XCTestCase {
     XCTAssertEqual(session.voicePosition(), 7, "paused holds")
   }
 
+  func testVoiceContinuesListeningAfterReachingLastWord() {
+    let session = SessionStore()
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    let script = ScriptRecord(metadata: ScriptMetadata(title: "Repeated", fileName: "repeat.md"),
+      markdown: "one two thank you more words come later thank you")
+    session.present(record: script, settings: settings)
+    session.seek(to: 6)
+    session.play(captureAudio: false)
+    let range = CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1))
+    session.acceptSpeechCandidate(SpeechCandidate(replacementID: "last", generation: 1, locale: Locale(identifier: "en-GB"), text: "come later thank you", range: range, isFinal: true))
+    XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.isActivelyRunning, "Recognition must remain available to correct a premature match")
+  }
+
   func testVoiceTrackingCanRejectBackwardMatchesWithoutPoisoningForwardTracking() async {
     let session = SessionStore()
     var settings = PrompterSettings()
@@ -582,9 +596,10 @@ final class SessionStoreTests: XCTestCase {
     session.acceptSpeechCandidate(candidate("forward", "eight nine ten"))
     try? await Task.sleep(for: .milliseconds(40))
     XCTAssertEqual(session.tokenIndex, 9)
+    XCTAssertTrue(session.isActivelyRunning)
+    session.pause()
     XCTAssertTrue(session.reachedEnd)
     XCTAssertEqual(session.readingStatus, "End of script")
-    XCTAssertFalse(session.isActivelyRunning)
   }
 
   func testOverlappingEnglishAndFrenchFinalsChooseTheStrongerCandidate() {
