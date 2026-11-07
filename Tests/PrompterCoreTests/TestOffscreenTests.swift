@@ -42,17 +42,15 @@ import XCTest
 final class AgentModeTests: XCTestCase {
   func testOnlyTheRealBundleRunsVisibleOutsideTests() {
     XCTAssertEqual(AgentMode.realBundleID, "com.juniornkanabassi.VidPrompt")
-    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.realBundleID, bundlePath: "/tmp/Video Prompter.app", underTest: false))
+    // The real app stays visible wherever it is opened from (DMG, Downloads, App Translocation).
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.realBundleID, underTest: false))
     XCTAssertFalse(AgentMode.isOn, "tests keep their own window and focus guards")
     let real = AgentMode.realBundleID
-    for path in ["/Applications/Video Prompter.app", NSHomeDirectory() + "/Applications/Video Prompter.app"] {
-      XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, bundlePath: path, underTest: false), "normal drag installations must still work")
-    }
-    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, bundlePath: "/Applications/JuniorOS Apps/Video Prompter.app", underTest: false), "the installed app runs normally")
-    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, bundlePath: "/Applications/JuniorOS Apps/Video Prompter.app", underTest: false))
-    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", bundlePath: "/tmp/Video Prompter.app", underTest: false), "a re-identified copy is hidden")
-    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, bundlePath: "/tmp/VideoPrompter", underTest: false), "a bare debug build is hidden")
-    XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, bundlePath: "/tmp/VideoPrompter", underTest: true))
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: real, underTest: false), "the installed app runs normally")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, underTest: false))
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", underTest: false), "a re-identified copy is hidden")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, underTest: false), "a bare debug build is hidden")
+    XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, underTest: true))
   }
 }
 

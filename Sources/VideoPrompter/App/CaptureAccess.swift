@@ -2,16 +2,14 @@ import AVFoundation
 import Foundation
 import PrompterCore
 
-/// Only the installed app can behave as an interactive app. A signed build in a temporary
-/// folder still has the real bundle ID, but must never show windows or ask for permission.
+/// Only the real app (its bundle ID, from any folder, including a DMG or Downloads) behaves as an
+/// interactive app. Agent copies are re-identified or pass --agent-screen; bare debug builds have no ID.
 enum AgentMode {
   static let realBundleID = ControlProtocol.bundleID
   static let isOn = rule(arguments: CommandLine.arguments, bundleID: Bundle.main.bundleIdentifier,
-    bundlePath: Bundle.main.bundleURL.resolvingSymlinksInPath().path,
     underTest: NSClassFromString("XCTestCase") != nil)
-  static func rule(arguments: [String], bundleID: String?, bundlePath: String, underTest: Bool) -> Bool {
-    let installed = bundlePath.hasPrefix("/Applications/") || bundlePath.hasPrefix(NSHomeDirectory() + "/Applications/")
-    return !underTest && (arguments.contains("--agent-screen") || bundleID != realBundleID || !installed)
+  static func rule(arguments: [String], bundleID: String?, underTest: Bool) -> Bool {
+    !underTest && (arguments.contains("--agent-screen") || bundleID != realBundleID)
   }
 }
 
