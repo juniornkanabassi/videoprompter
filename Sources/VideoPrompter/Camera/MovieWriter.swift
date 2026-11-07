@@ -83,28 +83,25 @@ final class MovieWriter: @unchecked Sendable {
     try await Self.verify(writer.outputURL, expectedFrames: writtenFrames, expectsAudio: audio != nil)
     return writer.outputURL
   }
-  /// Inspect every stored sample before issuing a saved receipt. This also catches empty tracks.
+  /// Check tracks and a bounded sample without scanning or buffering the entire take.
   static func verify(_ url: URL, expectedFrames: Int, expectsAudio: Bool) async throws {
     let asset = AVURLAsset(url: url)
-    guard try await asset.load(.isPlayable), expectedFrames > 0 else { throw CocoaError(.fileReadCorruptFile) }
+    let duration = try await asset.load(.duration).seconds
+    guard try await asset.load(.isPlayable), expectedFrames > 0, duration.isFinite, duration > 0 else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
     let videoTracks = try await asset.loadTracks(withMediaType: .video)
     let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-    guard let track = videoTracks.first, !expectsAudio || !audioTracks.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
-    let reader = try AVAssetReader(asset: asset)
-    let picture = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
-    guard reader.canAdd(picture) else { throw CocoaError(.fileReadCorruptFile) }
-    reader.add(picture)
-    let sound = expectsAudio ? audioTracks.first.map { AVAssetReaderTrackOutput(track: $0, outputSettings: nil) } : nil
-    if let sound {
-      guard reader.canAdd(sound) else { throw CocoaError(.fileReadCorruptFile) }
-      reader.add(sound)
-    }
-    guard reader.startReading() else { throw reader.error ?? CocoaError(.fileReadCorruptFile) }
-    var frames = 0, audioSamples = 0
-    while let sample = picture.copyNextSampleBuffer() { frames += CMSampleBufferGetNumSamples(sample) }
-    while sound?.copyNextSampleBuffer() != nil { audioSamples += 1 }
-    guard reader.status == .completed, frames == expectedFrames, !expectsAudio || audioSamples > 0 else {
-      throw reader.error ?? NSError(domain: "MovieWriter", code: 2, userInfo: [NSLocalizedDescriptionKey: "The saved video or sound is incomplete. Try recording again."] )
+    guard let video = videoTracks.first, !expectsAudio || !audioTracks.isEmpty else { throw CocoaError(.fileReadCorruptFile) }
+    for track in [video] + (expectsAudio ? Array(audioTracks.prefix(1)) : []) {
+      let reader = try AVAssetReader(asset: asset)
+      let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
+      guard reader.canAdd(output) else { throw CocoaError(.fileReadCorruptFile) }
+      reader.add(output)
+      guard reader.startReading(), output.copyNextSampleBuffer() != nil, reader.status != .failed else {
+        throw reader.error ?? CocoaError(.fileReadCorruptFile)
+      }
+      reader.cancelReading()
     }
   }
 

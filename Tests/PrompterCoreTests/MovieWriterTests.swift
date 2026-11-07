@@ -123,6 +123,17 @@ final class MovieWriterTests: XCTestCase {
     do { _ = try await writer.finish(); XCTFail("No frame was written") } catch {}
   }
 
+  func testPlayableTakeWithFewerStoredFramesStillVerifies() async throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("take.mov")
+    let writer = try MovieWriter(url: file, width: 320, height: 240, transform: .identity, preset: .standard, audio: nil, floatAudio: false)
+    XCTAssertTrue(try writer.append(video: video(0)))
+    _ = try await writer.finish()
+    try await MovieWriter.verify(file, expectedFrames: 2, expectsAudio: false)
+  }
+
   func testSavedVerificationRejectsMissingAudioAndCorruptMedia() async throws {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
