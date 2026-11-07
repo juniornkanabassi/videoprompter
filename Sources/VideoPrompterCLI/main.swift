@@ -50,7 +50,7 @@ func connectSocket(_ path: String) -> Int32? {
   return fd
 }
 /// Whether a copy of the app is running already: a process whose executable is `exact` when given (this helper's
-/// own app, so a test copy elsewhere never counts), else any `…/Contents/MacOS/<name>`. Costs well under a millisecond.
+/// target app, so a different copy never counts), else any `…/Contents/MacOS/<name>`. Costs well under a millisecond.
 func appRunning(executable name: String, exact: String? = nil) -> Bool {
   var pids = [pid_t](repeating: 0, count: 4096)
   let count = Int(proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size)))
@@ -117,7 +117,7 @@ if fd == nil {
   guard launchLock >= 0, flock(launchLock, LOCK_EX) == 0 else { failure("Could not take the launch lock in \(root.path).", json: invocation.json) }
   fd = connectSocket(path)
 }
-if fd == nil && invocation.dataDirectory == nil && !appRunning(executable: "VideoPrompter", exact: ownApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path }) {
+if fd == nil && invocation.dataDirectory == nil && !appRunning(executable: "VideoPrompter", exact: launchApp.map { $0.appendingPathComponent("Contents/MacOS/VideoPrompter").resolvingSymlinksInPath().path }) {
   let process = Process(); process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
   do {
     process.arguments = try ControlLaunch.arguments(appPath: launchApp?.path, bundleID: bundleID,
