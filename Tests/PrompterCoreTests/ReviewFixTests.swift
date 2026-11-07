@@ -47,6 +47,30 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     return (store, defaults, root)
   }
 
+  func testUnsupportedOriginalIsPreservedOnlyOnceAcrossEdits() async throws {
+    let (store, _, root) = try await fixture()
+    let library = try XCTUnwrap(store.library)
+    let file = root.appendingPathComponent("unmarked.md")
+    let original = try XCTUnwrap("# Café 世界".data(using: .utf16LittleEndian))
+    try original.write(to: file)
+    var record = try await library.createLinked(title: "Unmarked", markdown: "# Café 世界", to: file)
+    for i in 0..<5 { record = try await library.save(record.id, markdown: "Edit \(i)", expectedFingerprint: record.metadata.contentFingerprint) }
+    let files = try FileManager.default.contentsOfDirectory(at: root.appendingPathComponent("library/Conflicts"), includingPropertiesForKeys: nil)
+    XCTAssertEqual(files.filter { $0.lastPathComponent.contains("-unsupported-") }.count, 1)
+    XCTAssertEqual(try Data(contentsOf: file), original)
+  }
+
+  func testFailedUnsupportedRelinkDoesNotLeaveWarning() async throws {
+    let (store, _, root) = try await fixture()
+    let library = try XCTUnwrap(store.library)
+    let file = root.appendingPathComponent("unmarked.md")
+    try XCTUnwrap("# Café 世界".data(using: .utf16LittleEndian)).write(to: file)
+    let record = try await library.create(title: "Local", markdown: "Local edit")
+    do { _ = try await library.relink(id: record.id, to: file, resolution: .keepLibrary); XCTFail("Relink should fail") } catch {}
+    let waiting = await library.linkedSyncWaiting()
+    XCTAssertTrue(waiting.isEmpty)
+  }
+
   func testBOMlessUTF16NeverReplacesOriginalAndPreservesBothVersions() async throws {
     for encoding in [String.Encoding.utf16LittleEndian, .utf16BigEndian] {
       for path in ["save", "poll", "relink"] {

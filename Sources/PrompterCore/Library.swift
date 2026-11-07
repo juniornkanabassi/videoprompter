@@ -635,7 +635,7 @@ public actor MarkdownLibrary {
       preservedEncodings[metadata.id] = nil
       return true
     }
-    let signature = Self.fingerprint(original.base64EncodedString() + local)
+    let signature = Self.fingerprint(original.base64EncodedString())
     if preservedEncodings[metadata.id] != signature {
       let file = conflictsURL.appendingPathComponent("\(metadata.id)-unsupported-\(UUID()).md")
       try original.write(to: file, options: .withoutOverwriting)
