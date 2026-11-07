@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="${0:A:h}"
 source "$ROOT/env.sh"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_capture_safety.py"
+PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_review_launch_install.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_check_grid.py"
 PYTHONDONTWRITEBYTECODE=1 python3 "$ROOT/checks/test_snapshot_runner.py"
 "$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" >&2
