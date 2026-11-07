@@ -20,7 +20,7 @@ if pgrep -x VidPrompt >/dev/null 2>&1; then print -u2 'VidPrompt (the pre-2.0 ap
 mkdir -p "$INSTALL_ROOT"
 WORK=$(mktemp -d "$INSTALL_ROOT/.videoprompter-install.XXXXXX")
 STAGE="$WORK/Video Prompter.app"
-BACKUP="$INSTALL_ROOT/.Video Prompter.app.previous.$$"
+BACKUP=""  # set only once this run has moved the previous app into a folder it created itself
 CLI_STAGE="$BIN_DIR/.videoprompter.$$"
 cleanup() { rm -rf "$WORK"; rm -f "$CLI_STAGE"; }
 trap cleanup EXIT
@@ -37,27 +37,32 @@ if pgrep -x VideoPrompter >/dev/null 2>&1; then print -u2 'Video Prompter starte
 mkdir -p "$BIN_DIR"
 [[ ! -e "$CLI_LINK" || -L "$CLI_LINK" ]] || { print -u2 "Refusing to replace real file $CLI_LINK"; exit 1; }
 ln -s "$DEST/Contents/Helpers/videoprompter" "$CLI_STAGE"
-if [[ -e "$DEST" ]]; then /bin/mv "$DEST" "$BACKUP"; fi
+if [[ -e "$DEST" ]]; then
+  # An exclusive folder made by this run, so the deletion below can only ever remove the bundle it moved.
+  BACKUP_DIR=$(/usr/bin/mktemp -d "$INSTALL_ROOT/.Video Prompter previous.XXXXXX") || { print -u2 'Could not prepare a backup folder; nothing changed.'; exit 1; }
+  BACKUP="$BACKUP_DIR/Video Prompter.app"
+  /bin/mv "$DEST" "$BACKUP" || { /bin/rmdir "$BACKUP_DIR"; print -u2 'Could not move the previous app aside; nothing changed.'; exit 1; }
+fi
 if ! /bin/mv "$STAGE" "$DEST"; then
-  [[ ! -e "$BACKUP" ]] || /bin/mv "$BACKUP" "$DEST"
+  [[ -z "$BACKUP" || ! -e "$BACKUP" ]] || { /bin/mv "$BACKUP" "$DEST" && /bin/rmdir "$BACKUP_DIR"; }
   print -u2 'Install failed; the previous app was restored.'
   exit 1
 fi
 if ! /usr/bin/codesign --verify --strict "$DEST"; then
   /bin/rm -rf "$DEST"
-  [[ ! -e "$BACKUP" ]] || /bin/mv "$BACKUP" "$DEST"
+  [[ -z "$BACKUP" || ! -e "$BACKUP" ]] || { /bin/mv "$BACKUP" "$DEST" && /bin/rmdir "$BACKUP_DIR"; }
   print -u2 'Installed signature verification failed; the previous app was restored.'
   exit 1
 fi
 if ! /bin/mv -f "$CLI_STAGE" "$CLI_LINK"; then
   /bin/rm -rf "$DEST"
-  [[ ! -e "$BACKUP" ]] || /bin/mv "$BACKUP" "$DEST"
+  [[ -z "$BACKUP" || ! -e "$BACKUP" ]] || { /bin/mv "$BACKUP" "$DEST" && /bin/rmdir "$BACKUP_DIR"; }
   print -u2 'CLI setup failed; the previous app was restored.'
   exit 1
 fi
 # The new app is installed and verified, so the previous copy is deleted outright (Junior's rule, 6 Nov 2026).
 # Moving it to the Bin made AppCleaner offer to remove the app's real settings after every update.
-if [[ -e "$BACKUP" ]] && ! /bin/rm -rf "$BACKUP"; then
+if [[ -n "$BACKUP" && -e "$BACKUP" ]] && ! { /bin/rm -rf "$BACKUP" && /bin/rmdir "$BACKUP_DIR"; }; then
   print -u2 "Installed Video Prompter $ACTUAL_VERSION, but the previous app could not be removed. It is kept at $BACKUP."
 fi
 # Retire the pre-2.0 command link, only if it is a symlink.
