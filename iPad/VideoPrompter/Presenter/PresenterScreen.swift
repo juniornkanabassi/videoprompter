@@ -94,7 +94,7 @@ struct PresenterScreen: View {
         Spacer()
         Text(message)
           .font(.callout)
-          .padding(.horizontal, 14).padding(.vertical, 8)
+          .padding(.horizontal, 16).padding(.vertical, 8)
           .background(.ultraThinMaterial, in: Capsule())
           .padding(.bottom, controlsVisible ? 110 : 30)
       }
@@ -110,7 +110,7 @@ struct PresenterScreen: View {
         Spacer()
         Text(session.activeRecord?.metadata.title ?? "")
           .font(.headline).lineLimit(1)
-          .padding(.horizontal, 14).padding(.vertical, 8)
+          .padding(.horizontal, 16).padding(.vertical, 8)
           .background(.ultraThinMaterial, in: Capsule())
         Spacer()
         if let script = session.activeScriptID.flatMap(store.folder.script) {
@@ -145,8 +145,8 @@ struct PresenterScreen: View {
         if settings.mode == "Manual" {
           Stepper("\(Int(settings.speed)) wpm", value: Binding(
             get: { settings.speed }, set: { store.settings.speed = min(max($0, 20), 300) }), step: 10)
-            .frame(width: 190)
-            .padding(.horizontal, 12).padding(.vertical, 6)
+            .frame(width: 192)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .background(.ultraThinMaterial, in: Capsule())
         }
         PresenterButton("Smaller text", systemImage: "textformat.size.smaller") { stepFont(-4) }
@@ -222,7 +222,7 @@ struct GuideLine: View {
     }
     .foregroundStyle(Color.accentColor)
     .opacity(opacity)
-    .padding(.horizontal, 6)
+    .padding(.horizontal, 8)
   }
 }
 

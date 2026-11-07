@@ -14,9 +14,10 @@ enum ScriptShortcuts {
   static let italic = KeyboardShortcut("i", modifiers: .command)
   static let newScript = KeyboardShortcut("n", modifiers: .command)
   static let library = KeyboardShortcut("l", modifiers: [.command, .shift])
-  static let camera = KeyboardShortcut("c", modifiers: [.command, .shift])
-  static let biggerText = KeyboardShortcut(">", modifiers: .command)
-  static let smallerText = KeyboardShortcut("<", modifiers: .command)
+  // Shift-Command-C belongs to the standard Show Colors command.
+  static let camera = KeyboardShortcut("c", modifiers: [.command, .control])
+  static let biggerText = KeyboardShortcut(".", modifiers: [.command, .shift])
+  static let smallerText = KeyboardShortcut(",", modifiers: [.command, .shift])
 }
 
 
@@ -42,7 +43,7 @@ enum ScriptShortcuts {
         .background(HeadlessWindowHider())
         .onAppear { appDelegate.store = store }
     }
-      .defaultSize(width: 1100, height: 750)
+      .defaultSize(width: 1100, height: 752)
       .windowResizability(.contentMinSize)
       // Headless, the library window is never made, so it cannot appear even for a frame; a reveal opens it.
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
@@ -393,7 +394,7 @@ extension NSScreen {
 }
 
 struct MainWindowConfigurator: NSViewRepresentable {
-  var size = NSSize(width: 1100, height: 750)
+  var size = NSSize(width: 1100, height: 752)
   final class Coordinator {
     var placed = false
   }

@@ -215,7 +215,7 @@ struct CameraPickerList: View {
             .multilineTextAlignment(.center).padding(Space.md)
         }
       }
-      .frame(width: 240, height: 135)
+      .frame(width: 240, height: 135) // grid: ok Exact 16:9 video preview; do not distort the picture.
       .clipShape(.rect(cornerRadius: Space.md))
       .accessibilityElement(children: .ignore)
       .accessibilityLabel(note ?? "Camera preview: \(caption)")

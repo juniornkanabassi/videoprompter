@@ -9,11 +9,24 @@ import XCTest
     XCTAssertEqual(ScriptShortcuts.newScript.key, KeyEquivalent("n"))
     XCTAssertEqual(ScriptShortcuts.newScript.modifiers, .command)
     XCTAssertEqual(ScriptShortcuts.library.modifiers, [.command, .shift])
-    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .shift])
-    XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent(">"))
-    XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, .command)
-    XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent("<"))
-    XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, .command)
+    XCTAssertEqual(ScriptShortcuts.camera.modifiers, [.command, .control])
+    XCTAssertEqual(ScriptShortcuts.biggerText.key, KeyEquivalent("."))
+    XCTAssertEqual(ScriptShortcuts.biggerText.modifiers, [.command, .shift])
+    XCTAssertEqual(ScriptShortcuts.smallerText.key, KeyEquivalent(","))
+    XCTAssertEqual(ScriptShortcuts.smallerText.modifiers, [.command, .shift])
+    let shortcuts = [ScriptShortcuts.newScript, ScriptShortcuts.library, ScriptShortcuts.camera,
+                     ScriptShortcuts.importFile, ScriptShortcuts.italic,
+                     ScriptShortcuts.biggerText, ScriptShortcuts.smallerText]
+    let reserved = [KeyboardShortcut("c", modifiers: [.command, .shift]),
+                    KeyboardShortcut("c", modifiers: [.command, .option]),
+                    KeyboardShortcut("+", modifiers: .command),
+                    KeyboardShortcut("-", modifiers: .command)]
+    for (index, shortcut) in shortcuts.enumerated() {
+      for other in Array(shortcuts.dropFirst(index + 1)) + reserved {
+        XCTAssertFalse(shortcut.key == other.key && shortcut.modifiers == other.modifiers,
+                       "Script commands must not collide with each other, Show Colors, Camera Only or interface zoom")
+      }
+    }
     XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Shoot setups", "Microphone", "Camera & Recording"])
   }
 

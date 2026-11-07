@@ -23,6 +23,23 @@ To make a download disk image from an app bundle that has already been verified,
 
 Optional overrides: `VIDEOPROMPTER_BUILD_ROOT`, `VIDEOPROMPTER_TEST_SCRATCH` and `VIDEOPROMPTER_OUTPUT_ROOT` choose disposable cache and output paths. Use a short path you own outside Documents, such as `/private/tmp/vp-build`. Never test against a personal library.
 
+`test.sh` also runs the grid checker over every Mac and iPad Swift source file and
+captures the light/dark snapshot suite in separate, invisible XCTest processes.
+Set `VIDEOPROMPTER_SNAPSHOTS` to keep the images in a chosen evidence folder;
+otherwise the script prints its temporary output folder. A failed grid or snapshot
+check fails the normal test command. The standalone `checks/check-snapshots.sh`
+remains available. Off-grid layout literals need an inline `// grid: ok <reason>`.
+
+The library deliberately supports multiple windows (File > New Library Window,
+Shift-Command-L), and keeps an explicit Format menu for the two script editors.
+Open Second monitor window uses Control-Command-C, leaving Shift-Command-C to
+Show Colors. Text size uses Shift-Command-period/comma; interface size keeps
+Command-plus/minus/zero. Camera Only keeps Option-Command-C.
+
+The formatted editor's source-patching model is in `FormattedMarkdownEditModel.swift`;
+`PresenterView.swift` holds the presenter's views separately from its controller;
+`CameraModel.swift` owns the camera state separately from its window controls.
+
 `test.sh` records each disposable defaults suite and removes its plist after XCTest exits. Use the same runner for a Release test bundle, with testable imports enabled and a separate cache:
 
 ```sh

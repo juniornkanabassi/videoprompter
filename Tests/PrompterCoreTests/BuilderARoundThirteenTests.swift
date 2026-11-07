@@ -87,8 +87,8 @@ import XCTest
 
   func testOwnedVocabularyUsesOneNamePerTask() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let paths = ["Sources/VideoPrompter/App", "Sources/VideoPrompter/Camera", "Sources/VideoPrompter/Settings", "Sources/VideoPrompter/Control"]
-    var files = [root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterController.swift"), root.appendingPathComponent("README.md")]
+    let paths = ["Sources/VideoPrompter/App", "Sources/VideoPrompter/Camera", "Sources/VideoPrompter/Settings", "Sources/VideoPrompter/Control", "Sources/VideoPrompter/Presenter"]
+    var files = [root.appendingPathComponent("README.md")]
     for path in paths {
       files += (FileManager.default.enumerator(at: root.appendingPathComponent(path), includingPropertiesForKeys: nil)?.allObjects as? [URL] ?? []).filter { $0.pathExtension == "swift" && $0.lastPathComponent != "CameraPicker.swift" }
     }

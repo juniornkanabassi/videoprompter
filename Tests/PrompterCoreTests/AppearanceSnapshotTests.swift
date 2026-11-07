@@ -4,7 +4,7 @@ import SwiftUI
 import XCTest
 @testable import VideoPrompter
 
-/// Opt-in, offscreen snapshots. No window is ordered, camera requested or account connected.
+/// Offscreen snapshots, run automatically by test.sh. No window is ordered, camera requested or account connected.
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
   func testRoundNineCountdownAndCameraSections() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }

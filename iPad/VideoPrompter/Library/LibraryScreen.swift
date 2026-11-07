@@ -197,7 +197,7 @@ private struct ScriptDetail: View {
       if let updateNote {
         Text(updateNote)
           .font(.callout)
-          .padding(.horizontal, 14).padding(.vertical, 8)
+          .padding(.horizontal, 16).padding(.vertical, 8)
           .background(.thinMaterial, in: Capsule())
           .padding(.top, 8)
           .task {
