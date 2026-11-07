@@ -469,7 +469,7 @@ class PresenterPanel: NSPanel {
       event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
       event.windowNumber == windowNumber
     else { return false }
-    if event.keyCode == 49, firstResponder is NSButton { return false }
+    if event.keyCode == 49, firstResponder !== self, !(firstResponder is TrackingTextView) { return false }
     if let text = firstResponder as? NSTextView, text.isEditable { return false }
     if let field = firstResponder as? NSTextField, field.isEditable { return false }
     return onPassageKey?(event.keyCode) == true
