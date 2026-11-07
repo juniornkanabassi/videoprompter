@@ -100,15 +100,14 @@ final class MovieWriter: @unchecked Sendable {
     guard videoRange.duration.seconds.isFinite, videoRange.duration.seconds + 0.1 >= minimumDuration else {
       throw CocoaError(.fileReadCorruptFile)
     }
-    // Seek to a few points and decode one frame at each. This bounds memory and work by
+    // Seek to a few points and read one sample at each. This bounds memory and work by
     // the sample count, including for long takes with dropped frames.
-    for (track, fraction) in [0.0, 0.33, 0.66, 0.9].map({ (video, $0) }) + (expectsAudio ? [(audioTracks[0], 0.0)] : []) {
+    for (track, fraction) in [0.0, 0.33, 0.66, 0.9].map({ (video, $0) }) + (expectsAudio ? [0.0, 0.5, 0.9].map({ (audioTracks[0], $0) }) : []) {
       let reader = try AVAssetReader(asset: asset)
       let range = try await track.load(.timeRange)
       let offset = CMTimeMultiplyByFloat64(range.duration, multiplier: fraction)
       reader.timeRange = CMTimeRange(start: CMTimeAdd(range.start, offset), duration: CMTimeSubtract(range.duration, offset))
-      let settings: [String: Any]? = track === video ? [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange] : nil
-      let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
+      let output = AVAssetReaderTrackOutput(track: track, outputSettings: nil)
       guard reader.canAdd(output) else { throw CocoaError(.fileReadCorruptFile) }
       reader.add(output)
       guard reader.startReading(), output.copyNextSampleBuffer() != nil, reader.status != .failed else {
