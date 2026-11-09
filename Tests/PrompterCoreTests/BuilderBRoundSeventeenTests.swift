@@ -29,7 +29,7 @@ import XCTest
     for band in CameraExposure.Settings().legendBands {
       XCTAssertFalse(LibraryAX.named(band.label, in: host).isEmpty)
     }
-    XCTAssertFalse(LibraryAX.named("Grey shows brightness between these bands.", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Everything else shows in grey. Measured from the incoming picture.", in: host).isEmpty)
     XCTAssertFalse(ExposureLegend.zebraTitle(for: .brightAreas).contains("blown"))
   }
 }

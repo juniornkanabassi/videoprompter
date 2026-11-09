@@ -166,16 +166,16 @@ struct CameraGuideSections: View {
     }, set: { choice in
       editingCustom = choice == "Custom"
       invalidDimension = false
-      if choice == "Off" { model.guides.marker = nil }
-      else if choice == "Custom" { model.guides.marker = model.guides.marker ?? CameraAspect(width: 2.39, height: 1) }
-      else { model.guides.marker = CameraAspect.presets.first { $0.label == choice } }
+      if choice == "Off" { model.chooseFrameMarker(nil) }
+      else if choice == "Custom" { model.chooseFrameMarker(model.guides.marker ?? CameraAspect(width: 2.39, height: 1)) }
+      else { model.chooseFrameMarker(CameraAspect.presets.first { $0.label == choice }) }
     })
   }
   private func updateMarker(width: Double, height: Double) {
     editingCustom = true
     let marker = CameraAspect(width: width, height: height)
     invalidDimension = !marker.isValid
-    if marker.isValid { model.guides.marker = marker }
+    if marker.isValid { model.chooseFrameMarker(marker) }
   }
   private var customWidth: Binding<Double> {
     Binding(get: { model.guides.marker?.width ?? 2.39 },

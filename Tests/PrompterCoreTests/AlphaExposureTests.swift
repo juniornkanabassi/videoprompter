@@ -92,3 +92,88 @@ extension AppearanceSnapshotTests {
     }
   }
 }
+
+@MainActor final class ExposureVisibilityG2Tests: XCTestCase {
+  func testBypassedFalseColourCanBeEnabledAgain() {
+    let model = CameraModel(defaults: freshDefaults("G2FalseColour"))
+    model.guides.falseColour = true
+    model.exposureBypassed = true
+    model.cleanView = true
+    XCTAssertFalse(model.effectiveFalseColour)
+    model.exposureBinding(\.falseColour).wrappedValue = true
+    XCTAssertTrue(model.effectiveFalseColour)
+  }
+
+  func testBypassedGreyCardFinishesWithOriginalAids() {
+    for falseColour in [false, true] {
+      let model = CameraModel(defaults: freshDefaults("G2GreyCard"))
+      model.guides = .firstUse
+      model.guides.falseColour = falseColour
+      let original = model.guides
+      model.exposureBypassed = true
+      model.setGreyCardCheck(true)
+      XCTAssertTrue(model.effectiveZebras)
+      XCTAssertTrue(model.effectiveFalseColour)
+      XCTAssertEqual(model.effectiveGuides.exposure.zebraReadout, "Stripes on 39 to 43 IRE")
+      model.setGreyCardCheck(false)
+      XCTAssertEqual(model.guides, original)
+      XCTAssertEqual(model.effectiveFalseColour, falseColour)
+      XCTAssertTrue(model.effectiveZebras)
+    }
+  }
+
+  func testBypassPresetAndTargetRestoreZebras() {
+    let model = CameraModel(defaults: freshDefaults("G2Presets"))
+    for purpose in [CameraGuides.ZebraPurpose.faceReference, .brightAreas] {
+      model.exposureBypassed = true
+      model.chooseZebraPreset(purpose)
+      XCTAssertTrue(model.effectiveZebras)
+      XCTAssertEqual(model.guides.validatedZebraPurpose, purpose)
+      XCTAssertTrue(model.effectiveGuides.exposure.zebraReadout.hasPrefix("Stripes on"))
+    }
+    model.exposureBypassed = true
+    model.zebraBinding(\.zebraLevel).wrappedValue = 88
+    XCTAssertTrue(model.effectiveZebras)
+    XCTAssertEqual(model.effectiveGuides.zebraLevel, 88)
+  }
+
+  func testPresetEndsBypassedGreyCardWithoutEnablingFalseColour() {
+    let model = CameraModel(defaults: freshDefaults("G2GreyCardPreset"))
+    model.guides.falseColour = false
+    model.setGreyCardCheck(true)
+    model.exposureBypassed = true
+    model.chooseZebraPreset(.brightAreas)
+    XCTAssertFalse(model.guides.greyCardCheck)
+    XCTAssertFalse(model.effectiveFalseColour)
+    XCTAssertTrue(model.effectiveZebras)
+  }
+
+  func testAdvancedShapeAndSameCustomShapeRestoreGuides() {
+    let model = CameraModel(defaults: freshDefaults("G2Guides"))
+    for marker in [CameraAspect(width: 4, height: 5), CameraAspect(width: 2.39, height: 1)] {
+      model.chooseFrameMarker(marker)
+      model.framingGuidesBypassed = true
+      model.cleanView = true
+      XCTAssertNil(model.effectiveGuides.marker)
+      model.chooseFrameMarker(marker)
+      XCTAssertEqual(model.effectiveGuides.marker, marker)
+      XCTAssertTrue(model.framingIsVisible)
+    }
+  }
+
+  func testLegacySkinActionRestoresVisibilityFromCleanView() {
+    let model = CameraModel(defaults: freshDefaults("G2LegacySkin"))
+    model.cleanView = true
+    model.exposureBypassed = true
+    model.applySkinExposurePreset()
+    XCTAssertTrue(model.effectiveZebras)
+    XCTAssertFalse(model.effectiveFalseColour)
+  }
+
+  func testNumberRowsSpeakTheirOwnSubject() {
+    let skin = ExposureNumberRow(title: "Level", subject: "skin reference level", value: .constant(45), limits: 0...100)
+    let zebra = ExposureNumberRow(title: "Level", subject: "zebra level", value: .constant(95), limits: 0...100)
+    XCTAssertEqual(skin.accessibilityLabel(increasing: true), "Increase skin reference level, currently 45 IRE")
+    XCTAssertEqual(zebra.accessibilityLabel(increasing: false), "Decrease zebra level, currently 95 IRE")
+  }
+}
