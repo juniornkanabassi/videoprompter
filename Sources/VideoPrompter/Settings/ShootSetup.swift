@@ -89,7 +89,7 @@ extension AppStore {
     manager?.registerUndo(withTarget: self) { [weak manager] target in
       target.restoreShootSetup(setup, at: index, manager: manager)
     }
-    manager?.setActionName("Delete Shoot Setup")
+    manager?.setActionName("Delete shoot setup")
     shootSetupError = nil
   }
 
@@ -106,7 +106,7 @@ extension AppStore {
     manager?.registerUndo(withTarget: self) { [weak manager] target in
       target.deleteShootSetup(setup.id, undoManager: manager)
     }
-    manager?.setActionName("Delete Shoot Setup")
+    manager?.setActionName("Delete shoot setup")
   }
   private func registerShootStateUndo(_ name: String, camera: CameraModel, recorder: CameraRecorder, manager: UndoManager?) {
     let previous = currentShootSetup(named: "Previous setup", camera: camera, recorder: recorder)
@@ -182,7 +182,7 @@ extension AppStore {
     guard required.allSatisfy({ uid in microphones.contains { $0.uid == uid } }) else {
       return reject("A microphone for \(setup.name) is unavailable. Connect it before applying this setup.")
     }
-    registerShootStateUndo("Apply Shoot Setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
+    registerShootStateUndo("Apply shoot setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     previousShootSetup = currentShootSetup(named: "Previous setup", camera: camera, recorder: recorder)
     previousShootExposure = (camera.cleanView, camera.exposureBypassed)
     setShootSetup(setup, camera: camera, recorder: recorder)
@@ -200,7 +200,7 @@ extension AppStore {
 
   @discardableResult func restorePreviousShootSetup(camera: CameraModel, recorder: CameraRecorder, undoManager: UndoManager? = nil) -> Bool {
     guard !recorder.settingsLocked, !session.isActivelyRunning, let previousShootSetup else { return false }
-    registerShootStateUndo("Restore Previous Setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
+    registerShootStateUndo("Restore previous setup", camera: camera, recorder: recorder, manager: undoManager ?? NSApp?.keyWindow?.undoManager)
     // Restore the actual prior choices even if a device has since disconnected.
     setShootSetup(previousShootSetup, camera: camera, recorder: recorder)
     camera.cleanView = previousShootExposure.clean
@@ -247,11 +247,11 @@ struct ShootSetupSection: View {
         Text("Applied \(applied)").font(.callout)
       }
       if store.previousShootSetup != nil {
-        Button("Restore Previous Setup") { store.restorePreviousShootSetup(camera: camera, recorder: recorder, undoManager: undoManager) }
+        Button("Restore previous setup") { store.restorePreviousShootSetup(camera: camera, recorder: recorder, undoManager: undoManager) }
           .disabled(locked)
       }
       TextField("Setup name", text: $name).initialPopoverFocus()
-      Button("Save Shoot Setup") {
+      Button("Save shoot setup") {
         if store.saveShootSetup(named: name, camera: camera, recorder: recorder) { name = "" }
       }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || locked)
       if store.shootSetups.isEmpty { Text("No saved setups yet. Save one to switch camera, framing and microphone in one step.").font(.callout) }
@@ -288,7 +288,7 @@ private struct ShootSetupRow: View {
         Button("Delete", role: .destructive) { store.deleteShootSetup(setup.id, undoManager: undoManager) }
       }.accessibilityLabel("Actions for \(setup.name)")
     }
-    .alert("Rename Shoot Setup", isPresented: $renaming) {
+    .alert("Rename shoot setup", isPresented: $renaming) {
       TextField("Setup name", text: $name)
       Button("Save") { store.renameShootSetup(setup.id, to: name) }
       Button("Cancel", role: .cancel) {}

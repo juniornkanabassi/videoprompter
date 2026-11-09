@@ -106,13 +106,12 @@ struct SettingsPage: View {
     }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
   }
 
-  @State private var readingSection = "Reading"
   private var readingPage: some View {
-    VStack {
-      Picker("Reading section", selection: $readingSection) { Text("Reading").tag("Reading"); Text("Reading presets").tag("Reading presets") }
-        .pickerStyle(.segmented).padding(Space.md)
-      if readingSection == "Reading" { ReadingSettingsPage(store: store) }
-      else { SettingsPage(store: store, tab: .presets) }
+    ScrollView {
+      VStack(alignment: .leading, spacing: Space.lg) {
+        ReadingSettingsPage(store: store).frame(minHeight: 700)
+        SettingsPage(store: store, tab: .presets).frame(minHeight: 500)
+      }
     }
   }
 
@@ -120,7 +119,7 @@ struct SettingsPage: View {
     Form {
       switch tab {
       case .general:
-        Section("Interface size") {
+        Section {
           Picker("Interface size", selection: $store.uiZoom) {
             ForEach(AppStore.uiZoomSteps, id: \.self) { Text("\(Int($0 * 100))%").tag($0) }
           }
@@ -141,7 +140,7 @@ struct SettingsPage: View {
         Section("Save current reading settings") {
           TextField("Preset name", text: $presetName, prompt: Text("For example, Studio"))
             .help("Give the current presenter settings a name")
-          Button(existing.map { "Replace “\($0.name)”" } ?? "Save Reading Preset") {
+          Button(existing.map { "Replace “\($0.name)”" } ?? "Save reading preset") {
             if let existing { replacementUndoID = store.updatePreset(existing.id, undoManager: undoManager) } else { store.savePreset(named: presetName) }
             replacedPreset = existing; presetName = ""
           }.disabled(presetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -165,7 +164,7 @@ struct SettingsPage: View {
                 Menu {
                   Button("Rename…") { renamePreset = preset; renameValue = preset.name }
                   Button("Duplicate") { store.duplicatePreset(preset.id) }
-                  Button("Replace with Current Settings") { store.updatePreset(preset.id, undoManager: undoManager) }
+                  Button("Replace with current settings") { store.updatePreset(preset.id, undoManager: undoManager) }
                   Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
                 } label: { Label("Actions", systemImage: "ellipsis.circle") }
                 .accessibilityLabel("Actions for \(preset.name)")
@@ -178,7 +177,7 @@ struct SettingsPage: View {
               Button("Rename…") { renamePreset = preset; renameValue = preset.name }
                 .help("Change the name of this reading preset")
               Button("Duplicate") { store.duplicatePreset(preset.id) }.help("Make another copy of this reading preset")
-              Button("Replace with Current Settings") { store.updatePreset(preset.id, undoManager: undoManager) }
+              Button("Replace with current settings") { store.updatePreset(preset.id, undoManager: undoManager) }
                 .help("Replace this reading preset with the settings in use")
               Button("Delete", role: .destructive) { store.deletePreset(preset.id, undoManager: undoManager) }
                 .help("Remove this reading preset; choose Edit > Undo to restore it")
@@ -187,7 +186,7 @@ struct SettingsPage: View {
         } header: { Text("Reading presets").foregroundStyle(.primary) } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.").foregroundStyle(.primary) }
       }
     }.formStyle(.grouped)
-      .alert("Rename Reading Preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
+      .alert("Rename reading preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
         TextField("Preset name", text: $renameValue).help("Enter a new name for this reading preset")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
           .disabled(renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -396,7 +395,7 @@ private struct MicrophoneTestRow: View {
   let gain: Double
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
-      Button(session.isTestingMicrophone ? "Stop Test" : "Test Microphone") {
+      Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
         if session.isTestingMicrophone { session.stopMicrophoneTest() }
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")
@@ -423,8 +422,8 @@ private struct LoudestSoundReadout: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
       if meter.isClipping {
-        Label("Too loud. Lower Microphone volume.", systemImage: "exclamationmark.triangle.fill")
-          .foregroundStyle(.primary).help("Lower Microphone volume if the input is distorted")
+        Label("Too loud. Lower microphone volume.", systemImage: "exclamationmark.triangle.fill")
+          .foregroundStyle(.primary).help("Lower microphone volume if the input is distorted")
       }
       Text(meter.peakDBFS.isFinite ? "Sound detected · " + String(format: "%.1f dBFS", meter.peakDBFS) : "No sound yet")
         .monospacedDigit().fixedSize(horizontal: false, vertical: true)
@@ -566,34 +565,75 @@ struct CameraRecordingPage: View {
   @ObservedObject var recorder = CameraRecorder.shared
   var startsCamera = true
   @State var section = "Camera"
-  @Environment(\.openWindow) private var openWindow
-  var body: some View {
-    ScrollViewReader { proxy in
-      VStack(spacing: Space.sm) {
-        Picker(Features.recording ? "Camera and recording sections" : "Camera sections", selection: $section) {
-          Text("Camera").tag("Camera")
-          if Features.recording { Text("Recording").tag("Recording") }
-          Text("Guides").tag("Framing guides")
-          Text("Exposure").tag("Exposure")
-        }.pickerStyle(.segmented).labelsHidden().controlSize(.small).padding(.horizontal, Space.md)
-          .onChange(of: section) { _, value in proxy.scrollTo(value, anchor: .top) }
+  @AppStorage("presenterExposureKey") private var exposureKey = true
+  @State private var detail: CameraSettingsDetail?
 
-        Form {
-          // Package E: replace these existing controls with the shared Camera, Zebra and False colour adjust views.
-          CameraSettingsSections(model: camera, zoom: store.uiZoom).id("Camera")
-          RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom).id("Recording")
-          RecordingFolderSection(recorder: recorder)
-          AlphaGuideSections(model: camera).id("Framing guides")
-          Section("Skin reference") { SkinTonePicker(guides: $camera.guides) }
-          CameraExposureSections(model: camera).id("Exposure")
-          ShootSetupSection(store: store, camera: camera, recorder: recorder)
-          PermissionSection()
-        }.formStyle(.grouped)
-          .environment(\.popoverEntryRequested, false)
-          .onAppear { proxy.scrollTo(section == "Framing" ? "Framing guides" : section, anchor: .top) }
-      }
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        Text("Camera and monitor").font(.system(size: 28, weight: .bold)).padding(.bottom, Space.xxl)
+        row("Camera", "Used for the monitor picture", camera.sourceInfo?.displayName ?? "No camera chosen", .camera)
+        row("Shot", "Landscape, vertical turned left or vertical turned right", camera.shotSummary, .shot)
+        row("My skin reference", "Pink in false colour and the My skin zebra preset", "\(camera.guides.skinReference.level) ±\(camera.guides.skinReference.range) IRE", .skin)
+        row("Zebras", "Range or limit, with your presets", camera.guides.zebraRangeMode ? "Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "Limit \(camera.guides.zebraLevel)", .zebras)
+        row("False colour", "Brightness bands, with your skin in pink", camera.guides.falseColour ? "On" : "Off", .falseColour)
+        row("Guides", "Vertical 9:16, thirds, centre mark", guideSummary, .guides)
+        row("Exposure key", "Shown while setting up", exposureKey ? "On" : "Off", .key)
+        row("Advanced", "Other camera and guide choices", "", .advanced)
+      }.padding(AlphaStyle.panelInset).frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .tint(AlphaStyle.accent)
+    .sheet(item: $detail) { item in
+      VStack(alignment: .leading, spacing: Space.lg) {
+        HStack { Text(item.rawValue).font(.title2.bold()); Spacer(); Button("Done") { detail = nil } }
+        ScrollView {
+          switch item {
+          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [])
+          case .skin: SkinTonePicker(guides: $camera.guides)
+          case .zebras: ZebraAdjustView(guides: $camera.guides)
+          case .falseColour: FalseColourAdjustView(guides: $camera.guides)
+          case .guides: AlphaGuideSections(model: camera)
+          case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch)
+          case .advanced:
+            VStack(alignment: .leading) {
+              Toggle("Mirror camera preview", isOn: $camera.mirrored).toggleStyle(.switch)
+              Button("Upside down") { camera.setRotation(.half) }
+              Button("Automatic") { camera.guides.automaticRotation = true }
+              CameraGuideSections(model: camera)
+              ShootSetupSection(store: store, camera: camera, recorder: recorder)
+              PermissionSection()
+            }
+          }
+        }
+      }.padding(AlphaStyle.panelInset).frame(minWidth: 480, minHeight: 500).tint(AlphaStyle.accent)
     }
   }
+  private var guideSummary: String {
+    guard camera.framingIsVisible else { return "Off" }
+    var names: [String] = []
+    if camera.guides.marker == CameraAspect(width: 9, height: 16) { names.append("Vertical 9:16") }
+    else if let marker = camera.guides.marker { names.append(marker.label) }
+    if camera.guides.thirds { names.append("Thirds") }
+    if camera.guides.axes || camera.guides.bullseye { names.append("Centre mark") }
+    return names.joined(separator: ", ")
+  }
+  private func row(_ title: String, _ subtitle: String, _ value: String, _ destination: CameraSettingsDetail) -> some View {
+    Button { detail = destination } label: {
+      HStack(spacing: Space.md) {
+        VStack(alignment: .leading, spacing: Space.xs) {
+          Text(title).font(.system(size: 17, weight: .semibold))
+          Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+        Text(value).font(.system(size: 15)).foregroundStyle(.secondary)
+        Image(systemName: "chevron.right").foregroundStyle(.secondary)
+      }.frame(minHeight: 56).contentShape(Rectangle())
+    }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(value)
+      .overlay(alignment: .bottom) { Divider() }
+  }
+}
+private enum CameraSettingsDetail: String, Identifiable {
+  case camera = "Camera", shot = "Shot", skin = "My skin reference", zebras = "Zebras", falseColour = "False colour", guides = "Guides", key = "Exposure key", advanced = "Advanced"
+  var id: String { rawValue }
 }
 
 
@@ -641,7 +681,7 @@ struct PermissionSection: View {
     Section("Permissions") {
       PermissionRow(name: "Camera", status: AVCaptureDevice.authorizationStatus(for: .video), pane: "Camera")
       PermissionRow(name: "Microphone", status: AVCaptureDevice.authorizationStatus(for: .audio), pane: "Microphone")
-      PermissionRow(name: "Speech Recognition", status: speechStatus, pane: "SpeechRecognition")
+      PermissionRow(name: "Speech recognition", status: speechStatus, pane: "SpeechRecognition")
     }.onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in permissionRevision += 1 }
   }
   private var speechStatus: AVAuthorizationStatus {
@@ -667,7 +707,7 @@ struct PermissionRow: View {
   var body: some View {
     LabeledContent(name) {
       Text(Self.statusText(status))
-      Button("System Settings…") { NSWorkspace.shared.open(Self.settingsURL(pane)) }
+      Button("System settings…") { NSWorkspace.shared.open(Self.settingsURL(pane)) }
         .accessibilityLabel("Open \(name) in System Settings").help("Change \(name) permission in System Settings")
     }.accessibilityElement(children: .contain).accessibilityLabel(name).accessibilityValue(Self.statusText(status))
   }
@@ -677,14 +717,14 @@ struct IPadSettingsSection: View {
   @ObservedObject var sender = IPadCameraSender.shared
   var body: some View {
     Section("iPad") {
-      Toggle("Keep Scripts in iCloud Drive for iPad", isOn: $store.keepsScriptsInICloud)
+      Toggle("Keep scripts in iCloud Drive for iPad", isOn: $store.keepsScriptsInICloud)
         .disabled(!ICloudScripts.isAvailable)
         .help("Copies every script to iCloud Drive › Video Prompter and keeps it in step with Video Prompter on iPad")
-      Toggle("Send Camera to iPad", isOn: $sender.isOn)
+      Toggle("Send camera to iPad", isOn: $sender.isOn)
         .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
-      Toggle("Also Connect over Wi-Fi", isOn: $sender.usesWiFi)
+      Toggle("Also connect over Wi-Fi", isOn: $sender.usesWiFi)
         .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The link is encrypted with that key.")
-      Text(sender.status).font(.callout)
+      if sender.isOn { Text(sender.status).font(.callout) }
     }
   }
 }

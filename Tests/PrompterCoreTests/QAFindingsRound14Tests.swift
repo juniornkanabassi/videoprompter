@@ -52,9 +52,9 @@ import XCTest
     recorder.phase = .recording
     manager.undo()
     group(manager) { store.deleteShootSetup(saved.id, undoManager: manager) }
-    XCTAssertEqual(manager.undoActionName, "Delete Shoot Setup")
+    XCTAssertEqual(manager.undoActionName, "Delete shoot setup")
     recorder.phase = .idle
-    XCTAssertEqual(manager.undoActionName, "Delete Shoot Setup", "A deferred old undo must not be inserted above a newer edit")
+    XCTAssertEqual(manager.undoActionName, "Delete shoot setup", "A deferred old undo must not be inserted above a newer edit")
     manager.undo()
     XCTAssertEqual(store.shootSetups.map(\.id), [saved.id])
     XCTAssertEqual(store.settings.fontSize, 120, "Undo Delete must not unexpectedly switch the active setup")
@@ -75,14 +75,14 @@ import XCTest
     recorder.phase = .recording
     manager.undo()
     recorder.phase = .idle
-    XCTAssertEqual(manager.undoActionName, "Apply Shoot Setup")
+    XCTAssertEqual(manager.undoActionName, "Apply shoot setup")
     XCTAssertEqual(manager.redoActionName, "Replace Preset")
     manager.undo()
     XCTAssertEqual(store.settings.fontSize, originalSize)
     recorder.phase = .recording
     manager.redo()
     recorder.phase = .idle
-    XCTAssertEqual(manager.redoActionName, "Apply Shoot Setup")
+    XCTAssertEqual(manager.redoActionName, "Apply shoot setup")
     manager.redo()
     XCTAssertEqual(store.settings.fontSize, 120)
     XCTAssertEqual(manager.redoActionName, "Replace Preset")

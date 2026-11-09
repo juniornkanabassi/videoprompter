@@ -82,7 +82,7 @@ struct CameraChoiceItems: ToolbarContent {
     // The picker previews each camera on hover, so choosing one is never blind.
     ToolbarItem { CameraPicker(model: model).disabled(recording) }
     ToolbarItem {
-      ToolbarPopUp(title: "Rotation", help: "Rotate the camera picture, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation).disabled(recording)
+      ToolbarPopUp(title: "Shot", help: "Choose the camera picture orientation", options: [("Landscape", CameraRotation.none), ("Vertical turned left", CameraRotation.quarter), ("Vertical turned right", CameraRotation.threeQuarters), ("Upside down", CameraRotation.half), ("Automatic", nil)], selection: $rotation).disabled(recording)
     }
   }
 }
@@ -149,15 +149,8 @@ struct CameraSettingsSections: View {
   @ObservedObject var model: CameraModel
   var zoom = 1.0
   var body: some View {
-    Section {
-      LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
-        .disabled(model.recordingLocked).help("Stop recording to change this")
-      Picker(Features.recording ? "Camera and saved-video rotation" : "Shot", selection: model.rotationChoice) {
-        ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
-      }.disabled(model.recordingLocked).help("Stop recording to change this")
-      if model.guides.automaticRotation { Text("Detected angle: \(model.guides.rotation.label)").font(.callout) }
-      Toggle("Mirror camera preview", isOn: $model.mirrored)
-    } header: { Text("Device") } footer: { Text(Features.recording ? "Rotation changes both the camera preview and the saved take." : "Rotation changes the camera picture.").font(.callout) }
+    CameraAdjustView(model: model)
+
   }
 }
 
@@ -195,16 +188,13 @@ struct CameraGuideSections: View {
   var body: some View {
     Group {
       Section("Framing guides") {
-        Toggle("Rule of thirds", isOn: $model.guides.thirds).initialPopoverFocus().help("Divide the picture into thirds to help compose your shot")
-        Toggle("Centre cross", isOn: $model.guides.axes).help("Mark the horizontal and vertical centre of the picture")
-        Toggle("Centre target", isOn: $model.guides.bullseye).help("Mark the centre with a target")
         ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")
         LabeledContent("Guide visibility") { ReadingSlider(value: $model.guides.opacity, range: 0...1, title: "Guide visibility", spokenValue: "\(Int(model.guides.opacity * 100)) percent") }.help("Fade the guides; zero hides them")
       }
       Section("Frame marker") {
         Picker("Frame shape", selection: shape) {
           Text("Off").tag("Off")
-          ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
+          ForEach(CameraAspect.presets.filter { $0 != CameraAspect(width: 9, height: 16) }) { Text($0.label).tag($0.label) }
           Text("Custom").tag("Custom")
         }.help("Mark the shape of your intended picture without cropping it")
         if let marker = model.guides.marker { Text("\(marker.label) guide only. The full camera frame stays visible.").font(.callout) }
@@ -408,7 +398,7 @@ struct RecordingSettingsSections: View {
     if Features.recording {
     Section {
       LabeledContent("Picture", value: recorder.compactOutputConfirmation(camera: camera))
-      LabeledContent("Rotation", value: camera.guides.rotation.label)
+      LabeledContent("Shot", value: camera.guides.rotation.label)
       LabeledContent("Format", value: recorder.recordingFormatName)
       if zoom >= 1.5 {
         VStack(alignment: .leading, spacing: Space.xs) {
