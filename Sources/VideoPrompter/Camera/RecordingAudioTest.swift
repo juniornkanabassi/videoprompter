@@ -4,10 +4,10 @@
 final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
   private let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "VideoPrompter.recording-input-test")
-  private let onLevels: @Sendable ([Float]) -> Void
+  private let meterDelivery: AudioMeterDelivery
 
-  init(device: AVCaptureDevice, floatAudio: Bool, onLevels: @escaping @Sendable ([Float]) -> Void) throws {
-    self.onLevels = onLevels
+  init(device: AVCaptureDevice, floatAudio: Bool, onLevels: @escaping @MainActor @Sendable ([Float]) -> Void) throws {
+    self.meterDelivery = AudioMeterDelivery(onLevels: onLevels)
     super.init()
     guard CaptureAccess.mayUse(.audio) else { throw CocoaError(.userCancelled) }
     let input = try CaptureAccess.deviceInput(device, media: .audio)
@@ -56,6 +56,6 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
     return peaks
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput buffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-    onLevels(Self.channelPeaks(in: buffer))
+    meterDelivery.receive(buffer, clock: session.synchronizationClock)
   }
 }

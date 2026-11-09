@@ -487,10 +487,10 @@ final class SessionStore: ObservableObject {
         let capture = AudioCapture(device: device, outputFormat: format, gain: Float(gain))
         self.audioCapture = capture
         try capture.start(
-          onBuffer: { [weak self] _, _, _, peak, clipping in
+          onBuffer: { [weak self] _, time, _, peak, clipping in
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
-              self.publishMeter(peak: peak, clipping: clipping)
+              self.publishMeter(peak: peak, clipping: clipping, capturedAt: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
             }
           },
           onStop: { [weak self] error in
@@ -544,18 +544,20 @@ final class SessionStore: ObservableObject {
     audioCapture.stop(reason: .deviceLost)
   }
 
-  /// The meter is a Settings-window readout; the eye cannot use more than 20 Hz and every
-  /// publish re-renders every view observing the session. Buffers arrive at ~47 Hz.
+  /// Only the meter observes these changes. Keep transients at up to display cadence.
   private var lastMeterPublish: TimeInterval = 0
   private var pendingPeak: Float = 0
-  func publishMeter(peak: Float, clipping: Bool) {
+  func publishMeter(peak: Float, clipping: Bool, capturedAt: Double? = nil) {
     pendingPeak = max(pendingPeak, peak)
     let now = ProcessInfo.processInfo.systemUptime
-    guard clipping != isClipping || now - lastMeterPublish >= 0.05 else { return }
+    guard clipping != isClipping || now - lastMeterPublish >= 1.0 / 60.0 else { return }
     lastMeterPublish = now
     // The loudest buffer since the last publish, so throttling cannot hide a transient peak.
     meter.show(peakDBFS: AudioCapture.decibels(fullScalePeak: pendingPeak), isClipping: clipping)
     pendingPeak = 0
+    if ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1", let capturedAt {
+      NSLog("Speech meter: capture-to-publish=%.3f ms", (ProcessInfo.processInfo.systemUptime - capturedAt) * 1000)
+    }
   }
 
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
@@ -760,7 +762,7 @@ final class SessionStore: ObservableObject {
         self.analyzerContinuation = pair.continuation
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
-          onBuffer: { [weak self] buffer, _, _, peak, clipping in
+          onBuffer: { [weak self] buffer, time, _, peak, clipping in
             // One main-actor hop per buffer, not two: at ~47 Hz the second hop was pure overhead.
             let start = counter.next(buffer.frameLength)
             pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
@@ -768,7 +770,7 @@ final class SessionStore: ObservableObject {
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
               self.noteSubmittedAudioEnd(through: submittedEnd)
-              self.publishMeter(peak: peak, clipping: clipping)
+              self.publishMeter(peak: peak, clipping: clipping, capturedAt: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
             }
           },
           onStop: { [weak self] error in

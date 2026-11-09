@@ -235,10 +235,8 @@ import PrompterCore
           self.lastFrameAt = Date()
         }
       }, onAudio: { [weak self] levels in
-        Task { @MainActor in
-          guard let self, self.recordingID == takeID, self.isCapturing else { return }
-          self.inputMeter.show(channelPeaks: levels)
-        }
+        guard let self, self.recordingID == takeID, self.isCapturing else { return }
+        self.inputMeter.show(channelPeaks: levels)
       }, onVideoDrop: { [weak self] count in
         Task { @MainActor in
           guard let self, self.recordingID == takeID else { return }
@@ -271,7 +269,8 @@ import PrompterCore
               session.addOutput(sink.video); session.addOutput(sink.audio); success = true
             } else { session.removeInput(input) }
           }
-          session.commitConfiguration(); continuation.resume(returning: success)
+          session.commitConfiguration(); sink.captureClock = session.synchronizationClock
+          continuation.resume(returning: success)
         }
       }
       guard attached else { shared.release(); throw recordingError("This camera cannot start recording. Choose another camera or close other apps using it, then try again.", recovery: .camera) }
@@ -388,10 +387,8 @@ import PrompterCore
         ?? (resolvedMicrophoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
       guard let device else { throw recordingError("Open Microphone settings and choose an available microphone.", recovery: .microphone) }
       let test = try RecordingAudioTest(device: device, floatAudio: floatAudio) { [weak self] levels in
-        Task { @MainActor in
-          guard let self, self.testGeneration == generation, self.isTestingInput else { return }
-          self.inputMeter.show(channelPeaks: levels)
-        }
+        guard let self, self.testGeneration == generation, self.isTestingInput else { return }
+        self.inputMeter.show(channelPeaks: levels)
       }
       inputTest = test
       await test.start()
@@ -430,14 +427,21 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   let video = AVCaptureVideoDataOutput()
   let audio = AVCaptureAudioDataOutput()
   let microphone: AVCaptureDeviceInput
+  private let clockLock = NSLock()
+  private var storedCaptureClock: CMClock?
+  var captureClock: CMClock? {
+    get { clockLock.withLock { storedCaptureClock } }
+    set { clockLock.withLock { storedCaptureClock = newValue } }
+  }
   private let queue = DispatchQueue(label: "VideoPrompter.recording")
+  private let audioQueue = DispatchQueue(label: "VideoPrompter.recording-meter", qos: .userInteractive)
   private let url: URL
   var fileURL: URL { url }
   private let preset: RecordingPreset
   private let rotation: CameraRotation
   private let mirrored: Bool
   private let onFrame: @Sendable (TimeInterval) -> Void
-  private let onAudio: @Sendable ([Float]) -> Void
+  private let meterDelivery: AudioMeterDelivery
   private let onAudioDrop: @Sendable (Int) -> Void
   private let onVideoDrop: @Sendable (Int) -> Void
   private var captureVideoDrops = 0
@@ -448,15 +452,22 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @Sendable ([Float]) -> Void, onVideoDrop: @escaping @Sendable (Int) -> Void = { _ in }, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
-    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.onAudio = onAudio; spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop; self.onVideoDrop = onVideoDrop
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @MainActor @Sendable ([Float]) -> Void, onVideoDrop: @escaping @Sendable (Int) -> Void = { _ in }, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.meterDelivery = AudioMeterDelivery(onLevels: onAudio); spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop; self.onVideoDrop = onVideoDrop
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
     self.audio.audioSettings = RecordingAudioTest.settings(sampleRate: audio.sampleRate, channels: audio.channels)
-    video.setSampleBufferDelegate(self, queue: queue); self.audio.setSampleBufferDelegate(self, queue: queue)
+    video.setSampleBufferDelegate(self, queue: queue); self.audio.setSampleBufferDelegate(self, queue: audioQueue)
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    if output === audio {
+      meterDelivery.receive(sampleBuffer, clock: captureClock)
+      // Keep writer access serial and retain the original capture timestamp.
+      let captured = CapturedRecordingAudio(buffer: sampleBuffer)
+      queue.async { [self] in appendAudio(captured.buffer) }
+      return
+    }
     guard failure == nil else { return }
     do {
       if output === video {
@@ -471,11 +482,14 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
           onFrame(max(0, (time - firstFrame!).seconds))
         }
         onVideoDrop(captureVideoDrops + (writer?.droppedFrames ?? 0))
-      } else {
-        onAudio(RecordingAudioTest.channelPeaks(in: sampleBuffer))
-        if let writer { try writer.append(audio: sampleBuffer) } else { earlyAudioDrops += 1 }
-        onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
       }
+    } catch { failure = error; onFailure(error) }
+  }
+  private func appendAudio(_ buffer: CMSampleBuffer) {
+    guard failure == nil else { return }
+    do {
+      if let writer { try writer.append(audio: buffer) } else { earlyAudioDrops += 1 }
+      onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
     } catch { failure = error; onFailure(error) }
   }
   func captureOutput(_ output: AVCaptureOutput, didDrop sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -485,13 +499,19 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
       return
     }
     guard output === audio else { return }
-    earlyAudioDrops += 1
-    onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
+    queue.async { [self] in
+      earlyAudioDrops += 1
+      onAudioDrop(earlyAudioDrops + (writer?.droppedAudioBuffers ?? 0))
+    }
   }
   static func recordingTransform(rotation: CameraRotation, mirrored: Bool) -> CGAffineTransform {
     CGAffineTransform(rotationAngle: rotation.radians).concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1))
   }
   func finish() async throws -> (URL, Int, Int) {
+    // Delegates are detached before finish. Drain audio callbacks and their writer handoffs first.
+    await withCheckedContinuation { continuation in
+      audioQueue.async { continuation.resume() }
+    }
     let value: MovieWriter = try await withCheckedThrowingContinuation { continuation in
       queue.async { [self] in
         if let failure { continuation.resume(throwing: failure) }
@@ -502,4 +522,9 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     let file = try await value.finish()
     return (file, captureVideoDrops + value.droppedFrames, earlyAudioDrops + value.droppedAudioBuffers)
   }
+}
+
+// The retained capture buffer is only read, first by the meter, then by the serial writer.
+private struct CapturedRecordingAudio: @unchecked Sendable {
+  let buffer: CMSampleBuffer
 }
