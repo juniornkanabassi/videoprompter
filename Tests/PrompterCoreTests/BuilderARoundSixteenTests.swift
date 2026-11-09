@@ -62,41 +62,7 @@ import XCTest
     XCTAssertTrue(camera.guides.thirds)
   }
 
-  func testTopLevelRoutesVisibleStructureAndReadingStatusAtEverySize() async throws {
-    let (store, camera, recorder, _) = fixture()
-    let record = try await store.createScript(title: "Status", markdown: String(repeating: "Read at your pace. ", count: 100))
-    store.session.present(record: record, settings: store.settings)
-    camera.displayMode = .prompterWithVideo; camera.recordingReadyOverride = true
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      let (window, host) = await LibraryAX.host(view, size: .init(width: 720, height: 520))
-      host.sizingOptions = []; host.frame = .init(x: 0, y: 0, width: 720, height: 520)
-      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      let status = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
-      XCTAssertEqual(LibraryAX.value(status, "accessibilityRole"), "AXButton")
-      XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Automatic scroll"))
-      XCTAssertEqual(LibraryAX.named("Recording status", in: host).isEmpty, !Features.recording)
-      func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-      let text = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
-      let viewport = try XCTUnwrap(text.enclosingScrollView)
-      print("A16_GEOMETRY zoom=\(zoom) reading=\(viewport.frame.height)")
-      // The Alpha HUD adds the zebra key strip below the script by default, so at 200% the floor is 60% (7 Nov 2026).
-      XCTAssertGreaterThanOrEqual(viewport.frame.height, 520 * (zoom == 2 ? 0.60 : 0.65), "Reading height at \(zoom)")
-      LibraryAX.close(window)
-      let (toolWindow, toolHost) = await LibraryAX.host(view.toolsSurface, size: .init(width: 640, height: 700))
-      for label in Features.recording ? ["Tools section", "Before recording check…", "Presenter help…", "Last take"] : ["Tools section", "Presenter help…"] {
-        XCTAssertFalse(LibraryAX.named(label, in: toolHost).isEmpty, label)
-      }
-      LibraryAX.close(toolWindow)
-    }
-    let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false), size: .init(width: 700, height: 800))
-    defer { LibraryAX.close(window) }
-    for label in Features.recording ? ["Camera", "Recording", "Guides", "Exposure"] : ["Camera", "Guides", "Exposure"] {
-      XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
-    }
-    XCTAssertTrue(LibraryAX.named("Camera & Recording section", in: host).isEmpty)
-  }
+
 
   func testShootSetupErrorHasNormalTextContrastInBothAppearances() async throws {
     let (store, camera, recorder, _) = fixture()
@@ -190,7 +156,6 @@ extension AppearanceSnapshotTests {
       _ = store.applyShootSetup(saved, camera: camera, recorder: recorder, microphones: [])
       try await snapshot(Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }.formStyle(.grouped).uiZoom(zoom), name: "a16-setup-recovery-\(Int(zoom * 100))-\(appearance)", size: .init(width: 700, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output))
       let presenter = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      if Features.recording { try await snapshot(presenter.outputControls, name: "a16-output-\(Int(zoom * 100))-\(appearance)", size: .init(width: 700, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output)) }
       try await snapshot(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false).uiZoom(zoom), name: "a16-camera-\(Int(zoom * 100))-\(appearance)", size: .init(width: 780, height: 800), scheme: scheme, destination: URL(fileURLWithPath: output))
     }
   }

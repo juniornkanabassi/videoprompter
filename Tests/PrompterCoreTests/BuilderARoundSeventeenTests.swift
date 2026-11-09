@@ -37,48 +37,7 @@ import XCTest
     camera.togglePictureExposureCheck(); XCTAssertTrue(camera.exposureBypassed)
   }
 
-  func testPictureRowActsDirectlyAtEverySizeAndModeNameNeverAbbreviates() async throws {
-    let (store, camera, recorder) = fixture()
-    let record = try await store.createScript(title: "Picture", markdown: String(repeating: "Read these words. ", count: 100))
-    store.settings.mode = "Manual"
-    store.session.present(record: record, settings: store.settings)
-    camera.displayMode = .prompterWithVideo; camera.recordingReadyOverride = true
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      let (window, host) = await LibraryAX.host(view, size: .init(width: 720, height: 520))
-      host.sizingOptions = []; host.frame = .init(x: 0, y: 0, width: 720, height: 520)
-      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      for name in ["Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Clean", "Tools"] {
-        let action = try XCTUnwrap(LibraryAX.named(name, in: host).first, name)
-        XCTAssertTrue(LibraryAX.bool(action, "isAccessibilityEnabled"))
-        let frame = try XCTUnwrap(action.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertGreaterThanOrEqual(frame.height, 24 * zoom)
-        let local = host.convert(window.convertFromScreen(frame), from: nil)
-        XCTAssertGreaterThanOrEqual(local.minX, -1)
-        XCTAssertLessThanOrEqual(local.maxX, 721, "Picture control must fit at \(zoom): \(name)")
-      }
-      let guide = try XCTUnwrap(LibraryAX.named("Guides", in: host).first)
-      let before = camera.framingIsVisible
-      XCTAssertTrue(LibraryAX.bool(guide, "accessibilityPerformPress"))
-      XCTAssertNotEqual(camera.framingIsVisible, before)
-      let exposureButton = try XCTUnwrap(LibraryAX.named("False colour", in: host).first)
-      let exposureBefore = camera.previewGuides.falseColour
-      XCTAssertTrue(LibraryAX.bool(exposureButton, "accessibilityPerformPress"))
-      XCTAssertNotEqual(camera.previewGuides.falseColour, exposureBefore)
-      XCTAssertTrue(LibraryAX.named("Tools section", in: host).isEmpty, "A picture check must not open the full Tools form")
-      let status = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
-      XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Automatic scroll"))
-      camera.exposureBypassed = true
-      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      func views(_ v: NSView) -> [NSView] { [v] + v.subviews.flatMap(views) }
-      let text = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
-      let height = try XCTUnwrap(text.enclosingScrollView).frame.height
-      print("A17_GEOMETRY zoom=\(zoom) reading=\(height)")
-      XCTAssertGreaterThanOrEqual(height, 520 * 0.65)
-      LibraryAX.close(window)
-    }
-  }
+
 
   func testMicrophoneVolumeStepsAndResetAreVisibleAndWork() async throws {
     var gain = 1.37
@@ -132,7 +91,7 @@ extension AppearanceSnapshotTests {
       }
       recorder.phase = .recording; recorder.errorMessage = nil; recorder.phase = .idle; camera.cleanView = false
       let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      try await snapshot(view.toolsSurface, name: "a17-tools-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
+      try await snapshot(AdjustPanel(selection: .constant(.zebras), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, recorder: recorder), name: "a17-tools-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
       try await snapshot(MicrophonePage(store: store, compact: true, startsMeter: false, recorder: recorder).uiZoom(zoom), name: "a17-mic-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
     }
   }

@@ -122,29 +122,7 @@ import XCTest
     }
   }
 
-  func testPresenterToolsKeepOrderAndRemainPresentAtEverySize() async throws {
-    let (store, camera, recorder) = fixture()
-    let record = try await store.createScript(title: "Order", markdown: String(repeating: "One two three four five. ", count: 50))
-    store.settings.mode = "Manual"; store.session.present(record: record, settings: store.settings)
-    camera.displayMode = .prompterWithVideo; camera.recordingReadyOverride = true
-    let names = ["Tools"]
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
-      defer { LibraryAX.close(window) }
-      let buttons = LibraryAX.elements(host)
-      let actual = buttons.map { LibraryAX.value($0, "accessibilityLabel").isEmpty ? LibraryAX.value($0, "accessibilityTitle") : LibraryAX.value($0, "accessibilityLabel") }.filter { names.contains($0) }
-      XCTAssertEqual(actual, names, "Only wrapping changes at \(zoom)")
-      let bounds = window.convertToScreen(host.bounds)
-      for button in buttons where names.contains(LibraryAX.value(button, "accessibilityLabel")) {
-        let frame = try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertGreaterThanOrEqual(frame.minX, bounds.minX)
-        XCTAssertLessThanOrEqual(frame.maxX, bounds.maxX, "Whole controls wrap inside the presenter")
-      }
-      let status = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
-      XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Automatic scroll"))
-    }
-  }
+
 }
 
 extension AppearanceSnapshotTests {

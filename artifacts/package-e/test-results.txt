@@ -1,0 +1,15 @@
+Command: export VIDEOPROMPTER_TEST_SCRATCH=/private/tmp/VideoPrompter-test-cache-pkgE; zsh test.sh
+Exit code: 0
+
+Executed 831 tests, with 72 tests skipped and 0 failures (0 unexpected) in 299.494 (299.589) seconds
+Executed 831 tests, with 72 tests skipped and 0 failures (0 unexpected) in 299.494 (299.590) seconds
+Executed 41 tests, with 1 test skipped and 0 failures (0 unexpected) in 144.458 (144.462) seconds
+Executed 41 tests, with 1 test skipped and 0 failures (0 unexpected) in 144.458 (144.463) seconds
+Executed 41 tests, with 1 test skipped and 0 failures (0 unexpected) in 147.181 (147.185) seconds
+Executed 41 tests, with 1 test skipped and 0 failures (0 unexpected) in 147.181 (147.186) seconds
+PASS grid: 94 Swift source files (Mac and iPad)
+
+Dedicated package snapshots: 9 PNGs; one snapshot test; zero failures.
+Focused PresenterShellTests: 4 tests; zero failures.
+Focused UIZoom presenter regression: 1 test; zero failures.
+Focused ReviewFixTests: 14 tests; zero failures.

@@ -91,12 +91,12 @@ import XCTest
     XCTAssertTrue(LibraryAX.named("Start reading", in: host).isEmpty)
     NotificationCenter.default.post(name: .init("VideoPrompter.presenterInteraction"), object: nil)
     for _ in 0..<5 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-    XCTAssertFalse(LibraryAX.named("Exit clean view", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Exit Clean · Esc", in: host).isEmpty)
     XCTAssertTrue(camera.cleanView)
     XCTAssertEqual(camera.guides, previous)
   }
 
-  func testCleanHidesNativeWindowButtonsUntilInteraction() throws {
+  func testCleanKeepsNativeWindowButtonsHiddenOnMouseMovement() throws {
     let camera = CameraModel(defaults: freshDefaults("CleanWindowControls"))
     let controller = PresenterController(camera: camera, frameDefaults: nil)
     let panel = PresenterPanel(captureVisible: false)
@@ -108,7 +108,7 @@ import XCTest
     let move = try XCTUnwrap(NSEvent.mouseEvent(with: .mouseMoved, location: .zero, modifierFlags: [],
       timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0))
     panel.sendEvent(move)
-    for type in buttons { XCTAssertFalse(try XCTUnwrap(panel.standardWindowButton(type)).isHidden) }
+    for type in buttons { XCTAssertTrue(try XCTUnwrap(panel.standardWindowButton(type)).isHidden) }
     camera.cleanView = false
     for type in buttons { XCTAssertFalse(try XCTUnwrap(panel.standardWindowButton(type)).isHidden) }
   }

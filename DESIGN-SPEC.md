@@ -117,60 +117,13 @@ Not added in this round: a combined "Record and start reading" action and a coun
 - **Move to Folder menu:** the destination currently called "All Scripts" becomes **No Folder**. "All Scripts" stays as the scope name.
 - **Deleting a script:** Move to Trash registers one Undo action for the whole selection ("Undo Move to Trash") and posts the announcement "Moved 3 scripts to Recently Deleted". No confirmation dialog.
 
-### 2.2 Presenter (`Presenter/PresenterView.swift`, struct `PresenterView`; its controller in `Presenter/PresenterController.swift`)
+### 2.2 Presenter (`Presenter/PresenterView.swift`)
 
-Current placement, superseding the older arrangements below (round 13 Builder A):
+Alpha package E supersedes the earlier presenter bar and Tools contracts below. Set up the shot has a 132 pt bar, large Start reading and Back to start actions, and 104 × 92 pt named Camera, Zebras, False colour, Guides, Mic, Adjust and Clean tiles. Active toggles have an accent border and check badge. Labels remain visible at 125–200% by wrapping the bar.
 
-| Job | Current placement |
-|---|---|
-| Start/Pause and Record/Stop | Fixed transport with whole labels; Save/Cancel while editing |
-| Back to start | Beside Start whenever applicable; transport wraps whole controls in place |
-| State and countdown | Primary reading mode, pace and state control opens mode/speed; recording state aligns beside it; draft state is Editing · not saved yet |
-| Camera monitoring | Alpha heads-up Picture row whenever camera is shown: big On/Off toggles for Zebras (with its level, such as 45 ±2), False colour, Guides, Mic level, Legend, Camera (opens the picker) and Clean; the arrow beside Zebras, Guides and Mic level opens that tool's settings. Mic level shows a vertical meter at the picture's right edge. Legend defaults to on and persists; it shows a readable near-opaque dark key with a subtle border in the picture's bottom leading corner while either exposure aid is on, including during reading, and hides in Clean view. Zebras show the active IRE range; false colour shows the active table's swatches with Crushed, Very dark, Mid grey, Skin, Near white and Clipped labels and IRE ranges. Skin follows the configured zebra band; without a skin range the ARRI 52 to 56 band is labelled Brighter mid-tones. The key uses 16 pt semibold white text, swatches at least 16 pt tall, and a two-row grid with band name and range on separate lines. Its zebra line names Limit or Range and the stripe swatch is clipped. It stays clear of the face and the trailing mic meter. The zebra popover and Tools custom exposure levels share a segmented Limit / Range picker, a large 0 to 100 IRE Level value, and a 1 to 10 IRE Plus or minus stepper visible only in Range. Switching to Range starts at ±2; Limit sets width to zero. Skin 45 ±2 and Clipping 95+ presets sit above a one-line Stripes on readout. New cameras retain the Alpha default of 45 ±2 and settings remain per-camera. At 125% and above, or in a narrow window, the row is one line. |
-| Secondary adjustments | Tools has a named section picker at every size: Text, Camera, Exposure, Microphone. Below the section, Before recording check…, Shoot setups…, Presenter help… and Last take are listed by name (round 19 retired the generic More menu). |
-| Narrow Script only | Text, Camera and Microphone remain in the same wrapping tools region |
-| Take receipt | A clean take keeps the Picture row with a Last take opener; a take with problems replaces the row with the full receipt until Hide |
-| Camera prerequisites and destination | Recovery replaces unknown output metadata; a received picture is required for the output summary; Show Recordings Folder is in Before recording check… |
+The exposure key sits in the left pillarbox, the microphone meter at the right edge, and camera/shot pills at the top. Adjust opens a 470 pt right panel with Camera, Zebras, False colour, Guides and Mic tabs; right-click or long press selects the matching tab. Escape closes it.
 
-
-The presenter always uses dark appearance for its own chrome (`.environment(\.colorScheme, .dark)` on the control bar and notices), whatever the system setting. It is a stage, like QuickTime full screen. The script colours remain the user's.
-
-The bottom bar is one Liquid Glass container with two rows.
-
-**Row 1, the transport row (always visible, never scrolls):**
-
-| Slot | Content |
-|---|---|
-| 1 | Status capsule: "Voice follow · Listening", "Automatic scroll · Paused", "Editing · not saved yet" or, in Camera only view, the camera name. |
-| 2 | **Start reading** / **Pause** (prominent). Hidden in Camera only view. |
-| 3 | **Back to start**. Shown only when not actively reading. Hidden in Camera only view. |
-| 4 | **Record** / **Stop recording**, or **Show camera** when the view is Script only. While recording, a red dot and "REC 01:23" follow the button. |
-| 5 | **Choose camera**, only when a camera is shown but not ready. |
-| 6 | During a take only: **More controls** / **Fewer controls** toggle. |
-
-Under row 1, while recording only, a single **recording health line**: "Mic: ZOOM UAC-232 · [one combined level bar] · Receiving sound". When there is a problem, the status words are replaced by the problem in `.callout.weight(.semibold)` with a warning symbol: "Too loud. Lower the microphone level.", "No sound for 3 seconds. Check the microphone.", "Sound dropped from the file (12 times)". Per-channel meters appear only when More controls is on.
-
-**Row 2, the tools row (shown when no take is running, or when More controls is on):**
-
-Full layout, in this order:
-**View** menu · **Camera** picker · **Guides** · **Zebras** · **False colour** · **Exposure…** · **Clean view** · **Text** A− A+ · **Microphone** · **Edit script** · **More** menu
-
-- Camera, Guides, Zebras, False colour, Exposure… and Clean view appear only when the view shows a camera.
-- Text A− A+ and Edit script appear only when the view shows the script.
-- **More** menu: Reading presets ▸ (each item shows its summary as a second line), Settings… (opens the presenter settings popover, see 2.4), Pin Selected Text over Camera, Match Camera Size, Presenter Full Screen, Close Presenter.
-- The close button leaves the bar. Close is in More, in the window's own close button and on ⌘W.
-
-Compact layout, chosen automatically with `ViewThatFits(in: .horizontal)` when the full row does not fit on one line:
-**View** · **Camera tools** menu · **Text** A− A+ · **Microphone** · **Edit** · **More**
-
-- **Camera tools** menu holds: the camera list as a submenu, Framing Guides…, Zebras (toggle), False Colour (toggle), Exposure…, Clean View (toggle).
-- When any exposure aid is on, the Camera tools button shows a filled `sun.max.fill` symbol and its accessibility value names what is on ("Zebras on, False colour off").
-
-The tools row may wrap to a second line in the full layout only between groups (camera group, script group, More). It never wraps inside a group.
-
-**Removed from the presenter:** the "Set up this take" button and `TakeSetupPanel` (in `Settings/SettingsView.swift`); the "Reading does not record" text (the separate Record button now says it); the View menu's "Camera Settings…" item and its `CameraSettingsPanel` popover.
-
-**Kept:** the drag handle at the top, the reference cue (pin) at the top, notices above the bar, the close-during-take dialog, the discard-draft dialog, every keyboard shortcut.
+Reading hides setup tiles, uses the compact exposure key, and shows Back to start, Pause/Start reading and Set up the shot. Space controls reading; Escape pauses and returns to setup. Clean pauses at the exact word and shows only the picture. Mouse movement reveals Exit Clean · Esc for two seconds; keyboard focus retains it. Escape exits Clean without restarting reading. Openers expose camera identity to VoiceOver; only real toggles expose On/Off.
 
 ### 2.3 Second monitor window (`Camera/CameraWindow.swift`, `CameraView`)
 

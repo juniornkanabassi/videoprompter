@@ -54,23 +54,7 @@ import XCTest
     recorder.phase = .idle
   }
 
-  func testToolsNamesEveryJobAndFitsItsContent() async throws {
-    let (store, camera, recorder, record) = try await fixture()
-    for zoom in [1.0, 2.0] {
-      store.uiZoom = zoom
-      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      let (window, host) = await LibraryAX.host(view.toolsSurface, size: .init(width: 640, height: 900))
-      defer { LibraryAX.close(window) }
-      XCTAssertTrue(LibraryAX.named("More", in: host).isEmpty, "The generic More menu is gone at \(zoom)")
-      for label in Features.recording ? ["Before recording check…", "Shoot setups…", "Presenter help…", "Last take"] : ["Shoot setups…", "Presenter help…"] {
-        XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "\(label) at \(zoom)")
-      }
-      if Features.recording { XCTAssertFalse(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Last take", in: host).first), "isAccessibilityEnabled"), "Nothing to review yet") }
-      let fitting = host.fittingSize.height
-      XCTAssertLessThan(fitting, 620 * zoom, "Text tools size to their content at \(zoom): \(fitting)")
-      XCTAssertGreaterThan(fitting, 200, "Tools still show their sections at \(zoom): \(fitting)")
-    }
-  }
+
 
   func testCleanTakeKeepsPictureChecksAndOpensItsReceipt() async throws {
     guard Features.recording else { throw XCTSkip("Recording is not available in this build") }

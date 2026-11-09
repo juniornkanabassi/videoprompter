@@ -36,6 +36,8 @@ import SwiftUI
     self.frameDefaults = frameDefaults
     super.init()
     cleanObserver = camera.$cleanView.removeDuplicates().sink { [weak self] clean in
+      if clean { self?.activeSession?.pause() }
+      self?.panel?.cleanViewActive = clean
       self?.panel?.setWindowControlsHidden(clean)
     }
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
@@ -241,7 +243,7 @@ import SwiftUI
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
     panel.onPassageKey = { [weak self] direction in
-      guard let self, !self.isEditing, self.camera.displayMode != .videoOnly else { return false }
+      guard let self, !self.isEditing, !self.camera.cleanView, self.camera.displayMode != .videoOnly else { return false }
       self.moveReading { session in
         switch direction {
         case 49: session.toggle()
@@ -355,6 +357,7 @@ import SwiftUI
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
+    value.cleanViewActive = camera.cleanView
     value.setWindowControlsHidden(camera.cleanView)
     if let frame = PresenterFrameMemory.restored(from: frameDefaults, screens: NSScreen.screens.map(PresenterFrameMemory.Screen.init)) {
       value.setFrame(frame, display: false)
@@ -485,6 +488,7 @@ class PresenterPanel: NSPanel {
     super.setFrame(frame, display: flag)
   }
   func updateMinimum(for area: NSRect) { minSize = PresenterFrameMemory.minimumSize(in: area) }
+  var cleanViewActive = false
   var onPassageKey: ((UInt16) -> Bool)?
   /// The key presenter owns reading commands unless a text field or script is being edited.
   func handlePassageKey(_ event: NSEvent) -> Bool {
@@ -503,8 +507,10 @@ class PresenterPanel: NSPanel {
   }
   override func sendEvent(_ event: NSEvent) {
     if event.type == .keyDown || event.type == .leftMouseDown || event.type == .mouseMoved {
-      setWindowControlsHidden(false)
-      NotificationCenter.default.post(name: .init("VideoPrompter.presenterInteraction"), object: self)
+      if !cleanViewActive { setWindowControlsHidden(false) }
+      if !cleanViewActive || event.type == .mouseMoved {
+        NotificationCenter.default.post(name: .init("VideoPrompter.presenterInteraction"), object: self)
+      }
     }
     super.sendEvent(event)
   }

@@ -80,14 +80,13 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
       let start = try buttonFrame("Start reading")
-      let camera = try buttonFrame("Show camera")
-      let edit = try buttonFrame("Tools")
+      let camera = try buttonFrame("Camera")
+      let edit = try buttonFrame("Adjust")
       let screenBounds = panel.convertToScreen(content.bounds)
       for frame in [start, camera, edit] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
-      XCTAssertEqual(start.midY, camera.midY, accuracy: 2)
-      XCTAssertLessThan(edit.midY, start.midY, "Tools has its own row below the fixed transport")
+      // Package E wraps complete labelled tiles instead of maintaining the old Tools row.
     }
     let draft = try XCTUnwrap(Mirror(reflecting: controller).descendant("draft") as? PresenterDraft)
     draft.begin(session: store.session)

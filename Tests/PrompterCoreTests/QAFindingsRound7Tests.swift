@@ -105,7 +105,7 @@ import XCTest
       draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder),
       size: .init(width: 720, height: 520))
     defer { LibraryAX.close(narrow) }
-    XCTAssertFalse(LibraryAX.named("Tools", in: narrowHost).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Adjust", in: narrowHost).isEmpty)
     camera.guides.zebras = true
     XCTAssertTrue(camera.previewGuides.zebras)
     camera.toggleExposureCheck()
