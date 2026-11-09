@@ -52,6 +52,7 @@ fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # Everything taken from the source tree is copied before the commit is stamped below.
 if [[ -f "$ROOT/Resources/AppIcon/$ICON.icns" ]]; then cp "$ROOT/Resources/AppIcon/$ICON.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
+if [[ -d "$ROOT/Resources/SkinTones" ]]; then cp -R "$ROOT/Resources/SkinTones" "$APP/Contents/Resources/SkinTones"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
 ENTITLEMENTS="$WORK/Entitlements.plist"   # signed from this copy, so a later edit to the source cannot reach the app
 cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"

@@ -19,11 +19,18 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var falseColour = false
     var skinLevel = 45
     var skinRange = 2
+    var greyCardCheck = false
     var isOn: Bool { zebras || falseColour }
     var skinCodes: ClosedRange<UInt8>? {
-      CameraExposure.zebraCodes(level: skinLevel, range: skinRange)
+      greyCardCheck ? nil : CameraExposure.zebraCodes(level: skinLevel, range: skinRange)
     }
-    var colourTable: [UInt32] { CameraExposure.falseColourTable(skin: skinCodes) }
+    var colourTable: [UInt32] {
+      var table = CameraExposure.falseColourTable(skin: skinCodes)
+      if greyCardCheck {
+        for code in CameraExposure.zebraCodes(level: 41, range: 2) { table[Int(code)] = 0xFF00_C800 }
+      }
+      return table
+    }
     var zebraRangeLabel: String {
       zebraRange > 0 ? "\(max(0, zebraLevel - zebraRange)) to \(min(100, zebraLevel + zebraRange))" : "\(zebraLevel)+"
     }
@@ -42,7 +49,9 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         let codes = table.indices.filter { table[$0] == colour }
         guard !codes.isEmpty else { return nil }
         let range: String
-        if index == 3, skinCodes != nil {
+        if index == 2, greyCardCheck {
+          range = "38 to 43"
+        } else if index == 3, skinCodes != nil {
           range = "\(max(0, skinLevel - skinRange)) to \(min(100, skinLevel + skinRange))"
         } else if skinCodes.map({ CameraExposure.codesForBand(band.range).overlaps($0) }) == true {
           // A skin band can split a colour in two. Do not label the missing middle as coloured.
@@ -251,6 +260,6 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 /// Here rather than in CameraGuides.swift, which the iPad app compiles without this file.
 extension CameraGuides {
   var exposure: CameraExposure.Settings {
-    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour, skinLevel: skinReference.level, skinRange: skinReference.range)
+    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour, skinLevel: skinReference.level, skinRange: skinReference.range, greyCardCheck: greyCardCheck)
   }
 }

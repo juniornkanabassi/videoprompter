@@ -51,12 +51,14 @@ struct CameraGuides: Codable, Equatable, Sendable {
     var range = 2
   }
   enum SkinTone: String, CaseIterable {
-    case deep = "Deep", medium = "Medium", fair = "Fair", custom = "Custom"
+    case deep = "Deep", brown = "Brown", medium = "Medium", light = "Light", fair = "Fair", custom = "Custom"
     var reference: SkinReference? {
       switch self {
       case .deep: SkinReference(level: 45, range: 2)
+      case .brown: SkinReference(level: 50, range: 3)
       case .medium: SkinReference(level: 55, range: 3)
-      case .fair: SkinReference(level: 65, range: 3)
+      case .light: SkinReference(level: 62, range: 3)
+      case .fair: SkinReference(level: 68, range: 3)
       case .custom: nil
       }
     }
@@ -66,6 +68,34 @@ struct CameraGuides: Codable, Equatable, Sendable {
     didSet {
       if skinReference != oldValue && zebraPurpose == .faceReference {
         zebraLevel = skinReference.level; zebraRange = skinReference.range; zebraPurpose = .faceReference
+      }
+    }
+  }
+  struct GreyCardRestore: Codable, Equatable, Sendable {
+    var skin: SkinReference
+    var zebras: Bool
+    var level: Int
+    var range: Int
+    var purpose: ZebraPurpose
+    var savedRangeLevel: Int
+    var savedRangeWidth: Int
+    var savedLimitLevel: Int
+    var falseColour: Bool
+  }
+  var greyCardRestore: GreyCardRestore?
+  var greyCardCheck: Bool {
+    get { greyCardRestore != nil }
+    set {
+      guard newValue != greyCardCheck else { return }
+      if newValue {
+        greyCardRestore = GreyCardRestore(skin: skinReference, zebras: zebras, level: zebraLevel, range: zebraRange, purpose: zebraPurpose, savedRangeLevel: savedRangeLevel, savedRangeWidth: savedRangeWidth, savedLimitLevel: savedLimitLevel, falseColour: falseColour)
+        zebraLevel = 41; zebraRange = 2; zebras = true; falseColour = true
+      } else if let previous = greyCardRestore {
+        skinReference = previous.skin
+        zebraLevel = previous.level; zebraRange = previous.range; zebraPurpose = previous.purpose
+        zebras = previous.zebras; falseColour = previous.falseColour
+        savedRangeLevel = previous.savedRangeLevel; savedRangeWidth = previous.savedRangeWidth; savedLimitLevel = previous.savedLimitLevel
+        greyCardRestore = nil
       }
     }
   }
@@ -188,6 +218,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     savedRangeWidth = c.preference(.savedRangeWidth, default: zebraRange > 0 ? zebraRange : 2)
     savedLimitLevel = c.preference(.savedLimitLevel, default: zebraRange == 0 ? zebraLevel : 95)
     falseColour = c.preference(.falseColour, default: false)
+    greyCardRestore = c.preference(.greyCardRestore, default: Optional<GreyCardRestore>.none)
     sanitise()
   }
 }

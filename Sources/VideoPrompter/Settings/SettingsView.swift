@@ -584,6 +584,7 @@ struct CameraRecordingPage: View {
           RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom).id("Recording")
           RecordingFolderSection(recorder: recorder)
           AlphaGuideSections(model: camera).id("Framing guides")
+          Section("Skin reference") { SkinTonePicker(guides: $camera.guides) }
           CameraExposureSections(model: camera).id("Exposure")
           ShootSetupSection(store: store, camera: camera, recorder: recorder)
           PermissionSection()

@@ -460,28 +460,75 @@ private struct ExposureNumberRow: View {
   }
 }
 
-struct FalseColourAdjustView: View {
+private struct TonePicture: View {
+  let name: String
+  var body: some View {
+    let bundled = Bundle.main.url(forResource: name, withExtension: "png", subdirectory: "SkinTones")
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let fallback = root.appendingPathComponent("Resources/SkinTones/\(name).png")
+    if let image = NSImage(contentsOf: bundled ?? fallback) {
+      Image(nsImage: image).resizable().scaledToFill().clipped()
+    } else {
+      Color.gray
+    }
+  }
+}
+
+struct SkinTonePicker: View {
   @Binding var guides: CameraGuides
   @State private var customSelected = false
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Toggle("False colour", isOn: $guides.falseColour)
       Text("Skin tone").font(.headline)
-      LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
+      Text("Pick the face closest to yours. Pink in false colour and the My skin zebras show where your skin should sit.").foregroundStyle(.secondary)
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8)], spacing: 8) {
         ForEach(CameraGuides.SkinTone.allCases, id: \.self) { tone in
           let selected = tone == .custom ? customSelected || guides.skinTone == .custom : !customSelected && guides.skinTone == tone
           Button {
             customSelected = tone == .custom
             if let reference = tone.reference { guides.skinReference = reference }
           } label: {
-            HStack { Circle().fill(tone == .deep ? Color.brown : tone == .medium ? Color.orange : tone == .fair ? Color(red: 0.95, green: 0.75, blue: 0.6) : Color.gray).frame(width: 16, height: 16); Text(tone.rawValue); Spacer() }
-              .padding(12).frame(maxWidth: .infinity, minHeight: 44)
-              .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
-          }.buttonStyle(.plain).accessibilityValue(selected ? "Selected" : "")
+            VStack(spacing: 4) {
+              Group {
+                if tone == .custom {
+                  Image(systemName: "slider.horizontal.3").frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.gray.opacity(0.2))
+                } else { TonePicture(name: tone.rawValue.lowercased()) }
+              }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 8))
+              Text(tone.rawValue).font(.callout.bold()).lineLimit(1).minimumScaleFactor(0.8)
+              if let ref = tone.reference { Text("\(ref.level) ±\(ref.range) IRE").font(.caption2).lineLimit(1).minimumScaleFactor(0.7) }
+              else { Text("Set your own").font(.caption2) }
+            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .top).padding(8)
+              .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+              .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+          }.buttonStyle(.plain)
+            .accessibilityLabel(tone.reference.map { "\(tone.rawValue) skin tone, \($0.level) plus or minus \($0.range) IRE" } ?? "Custom skin tone")
+            .accessibilityValue(selected ? "Selected" : "")
         }
       }
-      ExposureNumberRow(title: "Level", value: $guides.skinReference.level, limits: 0...100, suffix: " IRE")
-      ExposureNumberRow(title: "Plus or minus", value: $guides.skinReference.range, limits: 1...10, prefix: "±")
+      if customSelected || guides.skinTone == .custom {
+        ExposureNumberRow(title: "Level", value: $guides.skinReference.level, limits: 0...100, suffix: " IRE")
+        ExposureNumberRow(title: "Plus or minus", value: $guides.skinReference.range, limits: 1...10, prefix: "±")
+      }
+      Text(guides.greyCardCheck ? "Green shows the grey card at 39 to 43 IRE" : "Pink shows skin at \(max(0, guides.skinReference.level - guides.skinReference.range)) to \(min(100, guides.skinReference.level + guides.skinReference.range)) IRE")
+        .font(.callout.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(12)
+        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+    }.disabled(guides.greyCardCheck)
+  }
+}
+
+struct FalseColourAdjustView: View {
+  @Binding var guides: CameraGuides
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Toggle("False colour", isOn: $guides.falseColour).disabled(guides.greyCardCheck)
+      SkinTonePicker(guides: $guides)
+      HStack(alignment: .top, spacing: 12) {
+        TonePicture(name: "greycard").frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 8) {
+          Toggle("Grey card check", isOn: $guides.greyCardCheck).font(.headline)
+          Text("Hold an 18% grey card where your face will be. Adjust exposure until the card turns green (Mid grey, 41 IRE). Turn this off to go back to your skin settings.").font(.callout).foregroundStyle(.secondary)
+        }
+      }.padding(12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
       FalseColourKey(settings: guides.exposure)
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
