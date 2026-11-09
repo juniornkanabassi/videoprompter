@@ -71,7 +71,7 @@ struct PresenterView: View {
       let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 800 * controlZoom
       let meterWidth = micLevelVisible ? 120 * controlZoom : 0
       HStack(alignment: .top, spacing: 0) {
-        if !shell.reading && !camera.cleanView && camera.presentsWithVideo {
+        if !shell.reading && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo && !keyFits {
           VStack(alignment: .leading, spacing: Space.md) {
             sourceStatus.fixedSize(horizontal: false, vertical: true)
             if keyVisible {
@@ -102,20 +102,38 @@ struct PresenterView: View {
               .opacity(Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
             Group {
               if draft.isEditing {
-                PresenterEditorView(session: session, draft: draft, settings: store.settings,
-                  sideInset: ScriptTextView.sideInset(width: geometry.size.width - meterWidth, textWidth: store.settings.textWidth)) {
-                    editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-                  }
+                GeometryReader { editor in
+                  PresenterEditorView(session: session, draft: draft, settings: store.settings,
+                    sideInset: ScriptTextView.sideInset(width: editor.size.width, textWidth: store.settings.textWidth)) {
+                      editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+                    }
+                }
               } else {
                 PresenterScriptView(session: session, settings: store.settings,
                   sideInset: ScriptTextView.sideInset(width: geometry.size.width - meterWidth, textWidth: store.settings.textWidth),
-                  overVideo: camera.presentsWithVideo)
+                  overVideo: camera.presentsWithVideo,
+                  topInset: keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0)
               }
             }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
               .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
             GuideLine(settings: store.settings).offset(y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
           }
-          if keyVisible && shell.reading {
+          if keyFits && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo {
+            HStack(alignment: .top) {
+              if keyVisible {
+                ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom)
+                  .frame(width: 280 * controlZoom)
+                  .accessibilityIdentifier("presenter-exposure-legend")
+              }
+              Spacer(minLength: 0)
+            }.padding(Space.md)
+            HStack(alignment: .top, spacing: Space.md) {
+              if keyVisible { Color.clear.frame(width: 280 * controlZoom) }
+              sourceStatus.frame(maxWidth: 480 * controlZoom)
+              Spacer(minLength: 0)
+            }.padding(Space.md)
+          }
+          if keyVisible && shell.reading && !draft.isEditing {
             HStack(spacing: Space.sm) {
               if camera.guides.falseColour {
                 HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
@@ -165,13 +183,29 @@ struct PresenterView: View {
 
   private var sourceStatus: some View {
     Button { adjustOpener = "Camera"; shell.adjustTab = .camera } label: {
-      VStack(spacing: Space.xs) {
-        Text(sourceInfo.map { "\($0.displayName) · \($0.connectionDescription)" } ?? "No camera chosen")
-        Text([sourceInfo.map { $0.summary.components(separatedBy: " · ").dropFirst(2).joined(separator: " · ") }, shotLabel].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-      }.font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.center)
-        .fixedSize(horizontal: false, vertical: true).padding(Space.sm)
-        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: Space.md))
+      VStack(alignment: .leading, spacing: Space.xs) {
+        sourcePill(parts: sourceInfo.map { [$0.displayName, $0.connectionDescription] } ?? ["No camera chosen"])
+        sourcePill(parts: (sourceInfo.map { Array($0.summary.components(separatedBy: " · ").dropFirst(2)) } ?? []) + [shotLabel])
+      }.font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.leading)
+        .fixedSize(horizontal: false, vertical: true)
     }.buttonStyle(.plain).uiZoom(controlZoom)
+  }
+  private func sourcePill(parts: [String]) -> some View {
+    // Keep each separator attached to the preceding text when the pill wraps.
+    Text(parts.joined(separator: "\u{00a0}· "))
+      .fixedSize(horizontal: false, vertical: true)
+      .padding(Space.sm)
+      .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: Space.md))
+  }
+
+  private var shotBadge: String {
+    if camera.guides.automaticRotation { return "Auto" }
+    switch camera.guides.rotation {
+    case .none: return "Landscape"
+    case .quarter: return "↺ Vertical"
+    case .threeQuarters: return "↻ Vertical"
+    case .half: return "↻ Inverted"
+    }
   }
   private var shotLabel: String {
     if camera.guides.automaticRotation { return "Automatic" }
@@ -183,7 +217,7 @@ struct PresenterView: View {
     }
   }
 
-  private var micLevelVisible: Bool { showsMicLevel && !camera.cleanView }
+  private var micLevelVisible: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
   private var trackedStage: some View {
     stage
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stageWidth = $0 }
@@ -305,10 +339,10 @@ struct PresenterView: View {
   private var barContent: some View {
     VStack(spacing: Space.sm) {
       if draft.isEditing {
-        Text("Editing · not saved yet").font(.callout)
+        Text("Editing · not saved yet").font(.system(size: 15)).foregroundStyle(.white)
         HStack {
-          transportButton("Save changes", icon: "checkmark", primary: true) { Task { await draft.confirm(store: store) } }.keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
-          transportButton("Cancel editing", icon: "xmark") { draft.requestCancel() }.disabled(draft.isSaving)
+          transportButton(compactEditing ? "Save" : "Save changes", icon: "checkmark", primary: true) { Task { await draft.confirm(store: store) } }.accessibilityLabel("Save changes").keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
+          transportButton(compactEditing ? "Cancel" : "Cancel editing", icon: "xmark") { draft.requestCancel() }.accessibilityLabel("Cancel editing").disabled(draft.isSaving)
         }.frame(minHeight: 44)
       }
       if let error = store.shootSetupError {
@@ -366,7 +400,7 @@ struct PresenterView: View {
       .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44)
   }
   @ViewBuilder private var setupTiles: some View {
-    shellTile("Camera", "video", tab: .camera, value: shotLabel) { shell.adjustTab = .camera }
+    shellTile("Camera", "video", tab: .camera, value: shotBadge) { shell.adjustTab = .camera }
     shellTile("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.guides.zebras && !camera.exposureBypassed, value: zebraDetail) { toggleExposure(\.zebras) }
     shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.guides.falseColour && !camera.exposureBypassed) { toggleExposure(\.falseColour) }
     if !barFit.movesTools {
@@ -382,13 +416,15 @@ struct PresenterView: View {
     camera.exposureBinding(key).wrappedValue = !enabled
   }
 
+  private var compactEditing: Bool { draft.isEditing && viewport.width / controlZoom < 700 }
+
   private func transportButton(_ title: String, icon: String, primary: Bool = false, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Label(title, systemImage: icon).font(.system(size: primary ? 22 : (compactReading ? 16 : 18), weight: primary ? .bold : .semibold))
+      Label(title, systemImage: icon).font(.system(size: compactEditing ? 18 : (primary ? 22 : (compactReading ? 16 : 18)), weight: primary ? .bold : .semibold))
         .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, Space.sm)
-        .frame(minWidth: shell.reading && primary ? (compactReading ? 160 : 240) : (compactReading ? 0 : barFit.transportWidth),
-               maxWidth: shell.reading ? (primary ? (compactReading ? 160 : 240) : (compactReading ? 140 : 192)) : nil, minHeight: shell.reading ? (narrowReading ? 44 : 56) : barFit.transportHeight)
+        .padding(.horizontal, draft.isEditing ? Space.md : Space.sm)
+        .frame(minWidth: shell.reading && primary ? (compactReading ? 160 : 240) : (compactEditing || compactReading ? 0 : barFit.transportWidth),
+               maxWidth: shell.reading ? (primary ? (compactReading ? 160 : 240) : (compactReading ? 140 : 192)) : nil, minHeight: compactEditing ? 44 : (shell.reading ? (narrowReading ? 44 : 56) : barFit.transportHeight))
         .foregroundStyle(primary ? AlphaStyle.onAccent : .white)
         .background(primary ? AlphaStyle.accent : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
     }.buttonStyle(.plain).accessibilityLabel(title)
@@ -398,19 +434,21 @@ struct PresenterView: View {
   private func shellTile(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool? = nil, value: String? = nil, action: @escaping () -> Void) -> some View {
     Button { adjustOpener = title; action() } label: {
       VStack(spacing: Space.xs) {
-        if let value {
-          Text(value).font(.system(size: 13, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
-            .lineLimit(2).multilineTextAlignment(.center).accessibilityHidden(true)
-        }
-        if title == "Zebras" { PresenterZebraSwatch().frame(width: 24, height: 24) }
-        else { Image(systemName: symbol).font(.system(size: 24)) }
-        Text(title).font(.system(size: 16, weight: .semibold)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+        Text(value ?? " ").font(.system(size: 13, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
+          .lineLimit(1).minimumScaleFactor(0.8).frame(maxWidth: .infinity)
+          .padding(.leading, on == true ? 24 : 0).frame(height: 16).accessibilityHidden(true)
+        Group {
+          if title == "Zebras" { PresenterZebraSwatch().frame(width: 24, height: 24) }
+          else { Image(systemName: symbol).font(.system(size: 24)) }
+        }.frame(height: 28)
+        Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+          .frame(height: 24)
       }.frame(width: barFit.tileWidth, height: barFit.tileHeight)
-        .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }
+        .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(AlphaStyle.accent).padding(Space.sm) } }
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(on == true ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
     }.buttonStyle(.plain).restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)").accessibilityLabel(title)
-      .accessibilityValue(title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? shotLabel : value ?? ""))
+      .accessibilityValue(title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? "\(sourceInfo?.displayName ?? "No camera chosen"), \(shotLabel)" : value ?? ""))
       .accessibilityAddTraits(on != nil && title != "Adjust" ? .isToggle : [])
       .contextMenu { if title != "Clean" && title != "Adjust" { Button("Adjust \(title)") { adjustOpener = title; shell.adjustTab = tab } } }
       .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if title != "Clean" && title != "Adjust" { adjustOpener = title; shell.adjustTab = tab } })
@@ -509,6 +547,7 @@ private struct PresenterScriptView: View {
   let settings: PrompterSettings
   let sideInset: CGFloat
   var overVideo = false
+  var topInset: CGFloat = 0
 
   var body: some View {
     ScriptTextView(
@@ -527,6 +566,8 @@ private struct PresenterScriptView: View {
         : ScriptTextView.Coordinator.reducesMotion() ? nil : { session.voicePosition() },
       onSeek: session.seek, onUserScroll: session.seekFromUserScroll
     )
+      .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-script-content")
+      .padding(.top, topInset)
   }
 }
 

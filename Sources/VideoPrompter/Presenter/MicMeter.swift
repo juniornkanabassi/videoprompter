@@ -36,7 +36,7 @@ struct MicMeterView: View {
       let clipLit = Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
       GeometryReader { available in
       let horizontal = available.size.height < 360
-      VStack(spacing: Space.sm) {
+      VStack(spacing: horizontal ? Space.xs : Space.sm) {
         Text("MIC").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.onDarkQuiet(contrast))
         Text("CLIP")
           .font(.system(size: 11, weight: .bold))
@@ -104,6 +104,8 @@ struct MicMeterView: View {
         if db.isFinite { Text("dBFS").font(.system(size: 13)).foregroundStyle(Palette.onDarkQuiet(contrast)) }
         Text(micName)
           .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
+          .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
+          .help(micName)
           .foregroundStyle(Palette.onDarkQuiet(contrast))
       }
       .padding(.horizontal, Space.sm)
