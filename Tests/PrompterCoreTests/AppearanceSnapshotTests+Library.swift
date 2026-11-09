@@ -22,6 +22,32 @@ extension AppearanceSnapshotTests {
     }
   }
 
+  func testH2SettingsPolish() async throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let destination = URL(fileURLWithPath: output)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("H2Settings")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let camera = CameraModel(defaults: defaults)
+    let recorder = CameraRecorder(defaults: defaults)
+    let scheme: ColorScheme = env["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
+    let mode = scheme == .dark ? "dark" : "light"
+    for zoom in [1.0, 2.0] {
+      store.uiZoom = zoom
+      for tab in SettingsTab.allCases {
+        try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "h2-settings-\(tab.label)-\(Int(zoom * 100))-\(mode)", size: .init(width: 1100, height: 800), scheme: scheme, destination: destination)
+      }
+      for state in ["automatic", "upside-down", "manual"] {
+        camera.setRotation(state == "upside-down" ? .half : .none)
+        camera.guides.automaticRotation = state == "automatic"
+        try await snapshot(CameraSettingsDetailSheet(item: .advanced, store: store, camera: camera, recorder: recorder, startsCamera: false, exposureKey: .constant(true), done: {}, containerSize: .init(width: 1000, height: 800)), name: "h2-advanced-\(state)-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 800), scheme: scheme, destination: destination)
+      }
+    }
+  }
+
   func testBuilderBLibraryDesign() async throws {
     let env = ProcessInfo.processInfo.environment
     guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }

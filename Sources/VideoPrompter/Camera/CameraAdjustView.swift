@@ -7,6 +7,8 @@ struct CameraAdjustView: View {
   var devicesOverride: [CameraDevice]? = nil
   var sourceInfoOverride: [String: CameraSourceInfo]? = nil
   var initiallyAdvanced = false
+  var advancedOnly = false
+  var showsShotHeading = true
   @State private var advancedOpen = false
   @State private var renaming: CameraDevice?
   @State private var nickname = ""
@@ -14,6 +16,7 @@ struct CameraAdjustView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
+      if advancedOnly { advancedControls } else {
         Text("Camera").font(.title2.bold())
         Text("Pick the camera, then make the picture upright. Remembered for each camera.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -48,21 +51,16 @@ struct CameraAdjustView: View {
             .overlay(alignment: .topTrailing) { selectionBadge(selected) }
         }
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
-        Text("Shot").font(.headline)
+        if showsShotHeading { Text("Shot").font(.headline) }
         ViewThatFits(in: .horizontal) {
           HStack(spacing: AlphaStyle.controlGap) { shotCards }
           VStack(spacing: AlphaStyle.controlGap) { shotCards }
         }.accessibilityElement(children: .contain).accessibilityLabel("Shot")
         Text("If you are on your side, pick the other Vertical.").font(.callout).foregroundStyle(.secondary)
-        DisclosureGroup("Advanced", isExpanded: $advancedOpen) {
-          shot("Upside down", detail: "Turned over", icon: "rotate.right", rotation: .half)
-          HStack {
-            Text("Automatic")
-            Spacer()
-            Toggle("Automatic", isOn: Binding(get: { model.guides.automaticRotation }, set: { model.guides.automaticRotation = $0 }))
-              .labelsHidden().toggleStyle(.switch)
-          }.frame(minHeight: AlphaStyle.minTarget)
-        }
+        DisclosureGroup(isExpanded: $advancedOpen) {
+          advancedControls
+        } label: { Text("Advanced").font(.headline) }
+      }
     }
     .onAppear { advancedOpen = initiallyAdvanced; if devicesOverride == nil { model.refreshDevices() } }
     .sheet(item: $renaming) { device in
@@ -71,6 +69,17 @@ struct CameraAdjustView: View {
         TextField(device.originalName, text: $nickname)
         HStack { Button("Cancel") { renaming = nil }; Button("Save") { model.renameCamera(device.uid, to: nickname); renaming = nil } }
       }.padding(Space.md).frame(width: 320)
+    }
+  }
+  var advancedControls: some View {
+    VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
+      shot("Upside down", detail: "Turned over", icon: "rotate.right", rotation: .half)
+      HStack {
+        Text("Automatic")
+        Spacer()
+        Toggle("Automatic", isOn: Binding(get: { model.guides.automaticRotation }, set: { model.guides.automaticRotation = $0 }))
+          .labelsHidden().toggleStyle(.switch)
+      }.frame(minHeight: AlphaStyle.minTarget)
     }
   }
   @ViewBuilder private var shotCards: some View {
@@ -109,6 +118,6 @@ struct CameraAdjustView: View {
         .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Space.md))
         .overlay(RoundedRectangle(cornerRadius: Space.md).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
         .overlay(alignment: .topTrailing) { selectionBadge(selected) }
-    }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+    }.buttonStyle(.plain).accessibilityValue(selected ? "Selected" : "Not selected").accessibilityAddTraits(selected ? .isSelected : [])
   }
 }

@@ -102,15 +102,22 @@ struct SettingsPage: View {
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
     Group {
-      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { readingPage } else if tab == .camera { CameraRecordingPage(store: store, section: cameraSection) } else { form }
+      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { readingPage } else if tab == .camera { CameraRecordingPage(store: store, section: cameraSection) } else if tab == .general { titledPage("App") { form } } else { form }
     }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
+  }
+
+  private func titledPage<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 0) {
+      Text(title).font(.system(size: 28, weight: .bold)).padding(.horizontal, AlphaStyle.panelInset).padding(.top, AlphaStyle.panelInset).padding(.bottom, Space.xxl)
+      content().font(.system(size: 15)).controlSize(.large).buttonStyle(SettingsFormButtonStyle())
+    }
   }
 
   private var readingPage: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: Space.lg) {
-        Text("Reading").font(.system(size: 28, weight: .bold))
-        ReadingSettingsPage(store: store).frame(minHeight: 700)
+      VStack(alignment: .leading, spacing: 0) {
+        Text("Reading").font(.system(size: 28, weight: .bold)).padding(.bottom, Space.xxl)
+        ReadingSettingsPage(store: store).font(.system(size: 15)).controlSize(.large).buttonStyle(SettingsFormButtonStyle()).frame(minHeight: 700)
         SettingsPage(store: store, tab: .presets).frame(minHeight: 500)
       }.padding(AlphaStyle.panelInset)
     }
@@ -118,7 +125,6 @@ struct SettingsPage: View {
 
   private var form: some View {
     Form {
-      if tab == .general { Text("App").font(.system(size: 28, weight: .bold)) }
       switch tab {
       case .general:
         Section {
@@ -187,7 +193,7 @@ struct SettingsPage: View {
           }
         } header: { Text("Reading presets").foregroundStyle(.primary) } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.").foregroundStyle(.primary) }
       }
-    }.formStyle(.grouped).padding(.top, tab == .general ? -8 : 0)
+    }.formStyle(.grouped).font(.system(size: 15)).controlSize(.large)
       .alert("Rename reading preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
         TextField("Preset name", text: $renameValue).help("Enter a new name for this reading preset")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
@@ -242,10 +248,10 @@ struct MicrophonePage: View {
   private var session: SessionStore { store.session }
 
   var body: some View {
-    Form {
-      if !compact { Text("Microphone").font(.system(size: 28, weight: .bold)) }
-      sections
-    }.formStyle(.grouped)
+    VStack(alignment: .leading, spacing: 0) {
+      if !compact { Text("Microphone").font(.system(size: 28, weight: .bold)).padding(.horizontal, AlphaStyle.panelInset).padding(.top, AlphaStyle.panelInset).padding(.bottom, Space.xxl) }
+      Form { sections }.formStyle(.grouped).font(.system(size: 15)).controlSize(.large).buttonStyle(SettingsFormButtonStyle())
+    }
     .task { supportedSpeechLocales = await SpeechTranscriber.supportedLocales }
     .task(id: gainDraft) {
       guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
@@ -291,7 +297,7 @@ struct MicrophonePage: View {
         .initialPopoverFocus(when: !recorder.settingsLocked || recorder.usesSeparateMicrophone)
       }
       if compact { LiveInputLevelMeter(meter: session.meter) }
-      else { MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
+      else { MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain, micName: microphoneName) }
       LabeledContent("Loudest sound") { LoudestSoundReadout(meter: session.meter) }
       MicrophoneVolumeControl(value: Binding(get: { gainDraft ?? store.settings.inputGain }, set: {
         gainDraft = $0; session.setMicrophoneTestGain($0)
@@ -398,6 +404,7 @@ private struct MicrophoneTestRow: View {
   @ObservedObject var session: SessionStore
   let deviceUID: String?
   let gain: Double
+  let micName: String
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
       Button(session.isTestingMicrophone ? "Stop test" : "Test microphone") {
@@ -405,7 +412,8 @@ private struct MicrophoneTestRow: View {
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")
 
-      LiveInputLevelMeter(meter: session.meter)
+      MicMeterView(meter: session.meter, micName: micName)
+        .frame(height: 180).background(Color.black, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     }
     if deviceUID == nil { Text("System default: \(AudioCapture.resolvedInput(nil)?.name ?? "No microphone available")").font(.callout) }
     if let notice = session.microphoneTestNotice {
@@ -586,9 +594,9 @@ struct CameraRecordingPage: View {
         row("Camera", "Used for the monitor picture", camera.sourceInfo?.displayName ?? "No camera chosen", .camera)
         row("Shot", "Landscape, vertical turned left or vertical turned right", camera.shotSummary, .shot)
         row("My skin reference", "Pink in false colour and the My skin zebra preset", "\(camera.guides.skinReference.level) ±\(camera.guides.skinReference.range) IRE", .skin)
-        row("Zebras", "Range or limit, with your presets", !camera.effectiveZebras ? "Off" : camera.guides.zebraRangeMode ? "On · Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "On · Limit \(camera.guides.zebraLevel)", .zebras)
+        row("Zebras", "Range or Limit, with your presets", !camera.effectiveZebras ? "Off" : camera.guides.zebraRangeMode ? "On · Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "On · Limit \(camera.guides.zebraLevel)", .zebras)
         row("False colour", "Brightness bands, with your skin in pink", camera.effectiveFalseColour ? "On" : "Off", .falseColour)
-        row("Guides", "Vertical 9:16, thirds, centre mark", guideSummary, .guides)
+        row("Guides", "Vertical 9:16, Thirds, Centre mark", guideSummary, .guides)
         row("Exposure key", "Shown while setting up", exposureKey ? "On" : "Off", .key)
         row("Advanced", "Other camera and guide choices", "", .advanced)
       }.padding(AlphaStyle.panelInset).frame(maxWidth: .infinity, alignment: .leading)
@@ -614,11 +622,11 @@ struct CameraRecordingPage: View {
       HStack(spacing: Space.md) {
         VStack(alignment: .leading, spacing: Space.xs) {
           Text(title).font(.system(size: 17, weight: .semibold))
-          Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
+          Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }.frame(maxWidth: .infinity, alignment: .leading)
         Text(value).font(.system(size: 15)).foregroundStyle(.secondary)
         Image(systemName: "chevron.right").foregroundStyle(.secondary)
-      }.frame(minHeight: 56).contentShape(Rectangle())
+      }.padding(.vertical, Space.sm).frame(minHeight: 56).contentShape(Rectangle())
     }.buttonStyle(.plain).accessibilityLabel(title).accessibilityValue(value)
       .overlay(alignment: .bottom) { Divider() }
   }
@@ -645,14 +653,16 @@ struct CameraSettingsDetailSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: Space.lg) {
       HStack {
-        Text(item.rawValue).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
+        if ![CameraSettingsDetail.camera, .zebras, .falseColour, .guides].contains(item) {
+          Text(item.rawValue).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
+        }
         Spacer()
         Button("Done", action: done).frame(minHeight: 44)
       }
       ScrollView {
         VStack(alignment: .leading, spacing: Space.md) {
           switch item {
-          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [])
+          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [], showsShotHeading: item != .shot)
           case .skin: SkinTonePicker(model: camera)
           case .zebras: ZebraAdjustView(model: camera)
           case .falseColour: FalseColourAdjustView(model: camera)
@@ -660,8 +670,7 @@ struct CameraSettingsDetailSheet: View {
           case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch).frame(minHeight: 44)
           case .advanced:
             Toggle("Mirror camera preview", isOn: $camera.mirrored).toggleStyle(.switch).frame(minHeight: 44)
-            Button("Upside down") { camera.setRotation(.half) }
-            Button("Automatic") { camera.guides.automaticRotation = true }
+            CameraAdjustView(model: camera, devicesOverride: [], advancedOnly: true)
             CameraGuideSections(model: camera)
             ShootSetupSection(store: store, camera: camera, recorder: recorder)
             PermissionSection()
@@ -673,6 +682,14 @@ struct CameraSettingsDetailSheet: View {
       .uiZoom(store.uiZoom)
       .frame(width: availableSize.width, height: availableSize.height)
       .tint(AlphaStyle.accent)
+  }
+}
+
+private struct SettingsFormButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.padding(.horizontal, Space.sm).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget)
+      .contentShape(Rectangle())
+      .background(.primary.opacity(configuration.isPressed ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
   }
 }
 
