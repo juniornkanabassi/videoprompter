@@ -303,7 +303,7 @@ extension AppearanceSnapshotTests {
       XCTAssertTrue(alphaSpec.contains(label), "Undocumented exposure vocabulary: \(label)")
     }
     let menu = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/App/VideoPrompterApp.swift"), encoding: .utf8)
-    for name in ["ToolbarCommands()", "Zoom In", "Zoom Out", "Actual Size", "Make Text Bigger", "Make Text Smaller", "Start Reading", "Pause Reading", "Last Take", "Open Second Monitor Window"] { XCTAssertTrue(menu.contains(name), name) }
+    for name in ["ToolbarCommands()", "Zoom In", "Zoom Out", "Actual Size", "Make text bigger", "Make text smaller", "Start Reading", "Pause Reading", "Last Take", "Open Second Monitor Window"] { XCTAssertTrue(menu.contains(name), name) }
     XCTAssertFalse(menu.contains("InspectorCommands()"))
     XCTAssertTrue(menu.contains("[.shift, .control, .command]"))
     for file in ["Presenter/PresenterController.swift", "Presenter/PresenterView.swift", "Camera/CameraWindow.swift", "Camera/CameraModel.swift", "App/VideoPrompterApp.swift", "Settings/SettingsView.swift", "Settings/ShootSetup.swift"] {

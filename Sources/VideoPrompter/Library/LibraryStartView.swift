@@ -1,6 +1,7 @@
 import PrompterCore
 import SwiftUI
 
+/// First launch, as mockup 07: two yellow-accented choices and one quiet line of extras.
 struct LibraryStartView: View {
   @ObservedObject var store: AppStore
   @Binding var importing: Bool
@@ -14,19 +15,21 @@ struct LibraryStartView: View {
         VStack(spacing: Space.sm) {
           Text("What do you want to do?").font(.largeTitle.bold())
           Text("Video Prompter Alpha is for reading your script and checking your camera. It does not record.")
-            .foregroundStyle(.secondary).multilineTextAlignment(.center)
+            .font(.system(size: 16)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
         }
         ViewThatFits(in: .horizontal) {
           HStack(alignment: .top, spacing: Space.md) { cards }
           VStack(spacing: Space.md) { cards }
         }
-        WrapLayout(spacing: Space.sm) {
-          Button(action: practice) { Text("Practice with an example script").frame(minHeight: 44) }
-          Button { store.showWelcomeScript(); guide() } label: { Text("Help").frame(minHeight: 44) }
-          Button { importing = true } label: { Text("Import file…").frame(minHeight: 44) }
-        }.buttonStyle(.bordered).controlSize(.large).foregroundStyle(.secondary).frame(minHeight: 44)
-      }.frame(maxWidth: 1000).frame(maxWidth: .infinity, minHeight: 600)
+        WrapLayout(spacing: Space.xs) {
+          Button(action: practice) { Text("Practice with an example script").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
+          Text("·").foregroundStyle(.secondary)
+          Button { store.showWelcomeScript(); guide() } label: { Text("Help").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
+          Text("·").foregroundStyle(.secondary)
+          Button { importing = true } label: { Text("Import file…").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
+        }.buttonStyle(.borderless).controlSize(.large).font(.system(size: 16)).foregroundStyle(.secondary)
+      }.frame(maxWidth: 1000).frame(maxWidth: .infinity)
         .padding(Space.margin)
     }
   }
@@ -34,41 +37,62 @@ struct LibraryStartView: View {
   @ViewBuilder private var cards: some View {
     card("Read a script", symbol: "doc.text", description: "Paste it or start a new one. It scrolls as you speak.") {
       WrapLayout(spacing: Space.sm) {
-        Button { store.importClipboard() } label: { Text("Paste script").frame(minHeight: 44) }.buttonStyle(.borderedProminent)
-        Button { store.create() } label: { Text("New script").frame(minHeight: 44) }
+        Button { store.importClipboard() } label: { Label("Paste script", systemImage: "doc.on.clipboard") }
+          .buttonStyle(AlphaPrimaryButtonStyle())
+        Button { store.create() } label: { Label("New script", systemImage: "plus") }
+          .buttonStyle(AlphaSecondaryButtonStyle())
       }
     }
     card("Set up camera", symbol: "video", description: "Pick your camera, turn it upright and check your exposure.") {
-      Button(action: camera) { Text("Choose camera").frame(minHeight: 44) }
+      Button(action: camera) { Label("Choose camera", systemImage: "video") }
+        .buttonStyle(AlphaSecondaryButtonStyle())
     }
   }
 
   private func card<Content: View>(_ title: String, symbol: String, description: String, @ViewBuilder content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: Space.md) {
-      Image(systemName: symbol).font(.title).foregroundStyle(Color.accentColor).accessibilityHidden(true)
+      Image(systemName: symbol).font(.system(size: 32)).foregroundStyle(AlphaStyle.accent)
+        .frame(height: 40, alignment: .leading).accessibilityHidden(true)
       Text(title).font(.title.bold())
-      Text(description).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      Text(description).font(.system(size: 16)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       content()
-    }.padding(Space.xxl).frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
-      .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 20))
+    }.padding(Space.xl).frame(maxWidth: .infinity, alignment: .topLeading)
+      .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).stroke(Color.primary.opacity(0.15)))
+  }
+}
+
+/// Yellow with black text: the one primary action on a card.
+private struct AlphaPrimaryButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.onAccent)
+      .padding(.horizontal, Space.lg).frame(minHeight: AlphaStyle.minTarget)
+      .background(AlphaStyle.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: Space.md))
+  }
+}
+
+private struct AlphaSecondaryButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label
+      .font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
+      .padding(.horizontal, Space.lg).frame(minHeight: AlphaStyle.minTarget)
+      .background(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.1), in: RoundedRectangle(cornerRadius: Space.md))
   }
 }
 
 struct ReadingFirstUseTip: View {
   let dismiss: () -> Void
-  static let explanation = "Present, then Start reading."
+  static let explanation = "Click Open presenter, then Start reading."
   var body: some View {
-    HStack(spacing: Space.sm) {
-      ViewThatFits(in: .horizontal) {
-        Text(Self.explanation).fixedSize(horizontal: false, vertical: true)
-        Text("Present, then Start reading.").fixedSize(horizontal: false, vertical: true)
-      }.lineLimit(1)
+    HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
+      Text(Self.explanation).fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: 0)
       Button("Got it", action: dismiss)
-        .buttonStyle(.plain).frame(minWidth: 44, minHeight: 44)
+        .buttonStyle(.plain).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget)
         .accessibilityLabel("Got it")
         .help("Hide reading tip")
-    }.font(.callout).foregroundStyle(.primary.opacity(0.75))
+    }.font(.system(size: 15)).foregroundStyle(.primary)
       .accessibilityElement(children: .contain)
   }
 }

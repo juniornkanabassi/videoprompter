@@ -177,7 +177,7 @@ struct LibraryView: View {
             ContentUnavailableView.search(text: store.search)
           } else {
           ContentUnavailableView(store.visible.isEmpty ? "No matching scripts" : "Select a script", systemImage: "doc.text",
-              description: Text(store.visible.isEmpty ? "Try another search or choose All Scripts." : "Choose a script on the left, then press Present."))
+              description: Text(store.visible.isEmpty ? "Try another search or choose All Scripts." : "Choose a script on the left, then click Open presenter."))
           }
           }
         }
@@ -374,7 +374,7 @@ struct LibraryView: View {
     let id = script.id
     let linked = script.metadata.linkedPath != nil
     let broken = store.linkStates[id]?.isBroken == true
-    Button("Present") { store.selectedID = id; PresenterController.shared.present(store: store) }
+    Button("Open presenter") { store.selectedID = id; PresenterController.shared.present(store: store) }
     Button("Duplicate") { store.selectedID = id; store.duplicate() }.keyboardShortcut("d")
     Menu("Move to Folder") {
       Button("No Folder") { store.moveSelectedScripts(store.contextSelection(for: id), to: nil, undoManager: undoManager) }
@@ -478,10 +478,10 @@ private struct EditorView: View {
             .fixedSize(horizontal: false, vertical: true)
           if saver.failed { Button("Retry Save") { scheduleSave() } }
         }
-        HStack(alignment: .center, spacing: Space.md) {
+        WrapLayout(spacing: Space.md) {
           Button { showsTextSize.toggle() } label: {
             Label("Editor text size", systemImage: showsTextSize ? "chevron.down" : "chevron.right")
-              .frame(minHeight: 24).contentShape(Rectangle())
+              .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
           }
             .accessibilityLabel("Editor text size").accessibilityValue(showsTextSize ? "Expanded" : "Collapsed")
             .buttonStyle(.plain).help("Change the editor font and text size")
@@ -489,14 +489,14 @@ private struct EditorView: View {
             .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
           Button { showsDetails.toggle() } label: {
             Label("Script details", systemImage: showsDetails ? "chevron.down" : "chevron.right")
-              .frame(minHeight: 24).contentShape(Rectangle())
+              .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
           }.buttonStyle(.plain).focusable().accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
           if script.metadata.linkedPath != nil {
-            Label("Linked", systemImage: "link")
+            Label("Linked file", systemImage: "link")
               .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
               .help("Edits also change the linked file. Open Script details to see the file or unlink it.")
           }
-        }.font(.callout)
+        }.font(.system(size: 16))
         if showsDetails {
           VStack(alignment: .leading, spacing: Space.sm) {
             TextField("Tags, separated by commas", text: $tags).textFieldStyle(.roundedBorder)
@@ -576,10 +576,10 @@ struct LibraryPresenterActions: View {
           Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
             .labelStyle(.titleAndIcon).help("Show the Recordings folder in Finder")
         }
-        Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
+        Button("Set up camera", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
           .labelStyle(.titleAndIcon)
           .help(Features.recording ? "Check framing or record without a script (⌥⌘C)" : "Check framing without a script (⌥⌘C)")
-        Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
+        Button("Open presenter", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
           .tint(.accentColor)

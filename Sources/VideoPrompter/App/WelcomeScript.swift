@@ -14,7 +14,7 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > Choose **Present**, then **Start reading**. To check your sound, open **Tools**, choose Microphone in **Tools section**, then **Check sound…**.
+    > Click **Open presenter**, then **Start reading**. To check your sound, open **Tools**, choose Microphone in **Tools section**, then **Check sound…**.
 
     Hello, and welcome. Pause whenever you like. [Look at the camera.]
 
