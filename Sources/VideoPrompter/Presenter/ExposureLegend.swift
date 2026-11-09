@@ -71,15 +71,9 @@ struct ExposureToolToggles: View {
   @ObservedObject var model: CameraModel
   var presenter = true
   private func binding(_ key: WritableKeyPath<CameraGuides, Bool>) -> Binding<Bool> {
-    let base = model.exposureBinding(key, presenter: presenter)
-    return Binding(get: { base.wrappedValue }, set: { value in
-      if model.guides.greyCardCheck {
-        model.guides.greyCardCheck = false
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-      }
-      base.wrappedValue = value
-    })
+    model.exposureBinding(key, presenter: presenter)
   }
+
   var body: some View {
     Toggle(isOn: binding(\.zebras)) {
       VStack(alignment: .leading, spacing: Space.xs) {
@@ -283,11 +277,11 @@ struct ZebraSettings: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
-      Picker("Zebra mode", selection: $guides.zebraRangeMode) {
+      Picker("Zebra mode", selection: $guides.manualExposure(\.zebraRangeMode)) {
         Text("Limit").tag(false)
         Text("Range").tag(true)
       }.pickerStyle(.segmented)
-      Stepper(value: $guides.zebraLevel, in: 0...100) {
+      Stepper(value: $guides.manualExposure(\.zebraLevel), in: 0...100) {
         HStack {
           Text("Level")
           Spacer(minLength: Space.sm)
@@ -295,14 +289,14 @@ struct ZebraSettings: View {
         }
       }
       if guides.zebraRangeMode {
-        Stepper("Plus or minus: \(guides.zebraRange) IRE", value: $guides.zebraRange, in: 1...10)
+        Stepper("Plus or minus: \(guides.zebraRange) IRE", value: $guides.manualExposure(\.zebraRange), in: 1...10)
       }
       HStack(spacing: Space.sm) {
         Button("My skin") {
-          guides.useZebraPreset(.faceReference)
+          guides.changeExposure { $0.useZebraPreset(.faceReference) }
           onPreset()
         }
-        Button("Highlights") { guides.useZebraPreset(.brightAreas); onPreset() }
+        Button("Highlights") { guides.changeExposure { $0.useZebraPreset(.brightAreas) }; onPreset() }
       }
       Text(guides.exposure.zebraReadout).font(.callout)
     }
@@ -426,21 +420,6 @@ struct ExposureKey: View {
 
 struct ZebraAdjustView: View {
   @Binding var guides: CameraGuides
-  private var manualGuides: Binding<CameraGuides> {
-    Binding(get: { guides }, set: { value in
-      if guides.greyCardCheck {
-        var restored = guides
-        restored.greyCardCheck = false
-        // Apply the control's requested change to the restored settings.
-        if value.zebraRangeMode != guides.zebraRangeMode { restored.zebraRangeMode = value.zebraRangeMode }
-        else if value.zebraLevel != guides.zebraLevel { restored.zebraLevel = value.zebraLevel }
-        else if value.zebraRange != guides.zebraRange { restored.zebraRange = value.zebraRange }
-        else { restored.useZebraPreset(value.zebraPurpose) }
-        guides = restored
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-      } else { guides = value }
-    })
-  }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Zebras").font(.title2.bold())
@@ -452,14 +431,14 @@ struct ZebraAdjustView: View {
       }
       HStack(spacing: 4) {
         ForEach([true, false], id: \.self) { range in
-          Button(range ? "Range" : "Limit") { manualGuides.zebraRangeMode.wrappedValue = range }
+          Button(range ? "Range" : "Limit") { $guides.manualExposure(\.zebraRangeMode).wrappedValue = range }
             .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
             .background(guides.zebraRangeMode == range ? Color.primary.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityAddTraits(guides.zebraRangeMode == range ? .isSelected : [])
         }
       }.padding(4).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-      ExposureNumberRow(title: "Level", subtitle: "Centre of the stripes", value: manualGuides.zebraLevel, limits: 0...100, suffix: " IRE")
-      if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", subtitle: "How wide the band is", value: manualGuides.zebraRange, limits: 1...10, prefix: "±") }
+      ExposureNumberRow(title: "Level", subtitle: "Centre of the stripes", value: $guides.manualExposure(\.zebraLevel), limits: 0...100, suffix: " IRE")
+      if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", subtitle: "How wide the band is", value: $guides.manualExposure(\.zebraRange), limits: 1...10, prefix: "±") }
       HStack(spacing: 12) {
         Canvas { context, size in
           context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
@@ -474,11 +453,7 @@ struct ZebraAdjustView: View {
   private func preset(_ title: String, detail: String, description: String, purpose: CameraGuides.ZebraPurpose) -> some View {
     let selected = guides.validatedZebraPurpose == purpose && !guides.greyCardCheck
     return Button {
-      if guides.greyCardCheck {
-        guides.greyCardCheck = false
-        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-      }
-      guides.useZebraPreset(purpose)
+      guides.changeExposure { $0.useZebraPreset(purpose) }
     } label: {
       VStack(alignment: .leading, spacing: 8) {
         HStack { Text(title).font(.headline); Spacer(); if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }
@@ -569,13 +544,7 @@ struct FalseColourAdjustView: View {
   @Binding var guides: CameraGuides
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Toggle("False colour", isOn: Binding(get: { guides.falseColour }, set: { value in
-        if guides.greyCardCheck {
-          guides.greyCardCheck = false
-          NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-        }
-        guides.falseColour = value
-      })).toggleStyle(.switch).font(.title2.bold()).frame(minHeight: 44)
+      Toggle("False colour", isOn: $guides.manualExposure(\.falseColour)).accessibilityLabel("False colour").toggleStyle(.switch).font(.title2.bold()).frame(minHeight: 44)
       SkinTonePicker(guides: $guides)
       HStack(alignment: .top, spacing: 12) {
         TonePicture(name: "greycard").frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 8))

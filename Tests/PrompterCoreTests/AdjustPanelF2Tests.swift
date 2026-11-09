@@ -16,7 +16,7 @@ extension AppearanceSnapshotTests {
     for tab in AdjustTab.allCases {
       for zoom in [1.0, 2.0] {
         for size in [CGSize(width: 1600, height: 1000), CGSize(width: 1000, height: 700)] {
-          let view = AdjustPanel(selection: .constant(tab), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, devicesOverride: devices, recorder: recorder)
+          let view = AdjustPanel(selection: .constant(tab), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: 470 * zoom, devicesOverride: devices, recorder: recorder)
           try await snapshot(view, name: "f2-\(tab.rawValue.replacingOccurrences(of: " ", with: "-"))-\(Int(zoom * 100))-\(Int(size.width))", size: size, scheme: .dark, destination: URL(fileURLWithPath: output))
         }
       }

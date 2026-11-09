@@ -12,13 +12,19 @@ struct AdjustPanel: View {
   @ObservedObject var store: AppStore
   let startsMeter: Bool
   var zoom = 1.0
+  var width: CGFloat = 470 // grid: ok Approved panel content width.
+  var close: () -> Void = {}
   var devicesOverride: [CameraDevice]? = nil
   let recorder: CameraRecorder
 
   var body: some View {
-    ScrollView {
+    VStack(spacing: 0) {
+      Button(action: close) {
+        Label("Close Adjust", systemImage: "xmark").frame(maxWidth: .infinity, minHeight: AlphaStyle.minTarget)
+      }.buttonStyle(.plain).initialPopoverFocus().padding(.horizontal, AlphaStyle.panelInset)
+      ScrollView {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Text("Adjust").font(.title2.bold()).accessibilityAddTraits(.isHeader).initialPopoverFocus()
+      Text("Adjust").font(.title2.bold()).accessibilityAddTraits(.isHeader)
       Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
       Group {
         WrapLayout(spacing: 4) {
@@ -37,12 +43,13 @@ struct AdjustPanel: View {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
         case .zebras: ZebraAdjustView(guides: $camera.guides)
         case .falseColour: FalseColourAdjustView(guides: $camera.guides)
-        case .guides: guides
+        case .guides: AlphaGuideSections(model: camera)
         case .mic: mic
         }
       }
     }.padding(AlphaStyle.panelInset)
-    }.uiZoom(zoom).frame(width: 470).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
+    }
+    }.uiZoom(zoom).frame(width: width).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
       .environment(\.colorScheme, .dark).tint(AlphaStyle.accent).accentColor(AlphaStyle.accent)
   }
@@ -57,17 +64,6 @@ struct AdjustPanel: View {
       Toggle("Show meter", isOn: $showsMic).toggleStyle(.switch).frame(minHeight: AlphaStyle.minTarget)
       Text("Speak to check your microphone level.").foregroundStyle(.secondary)
     }.onAppear { microphones = AudioCapture.inputDevices() }
-  }
-  private var guides: some View {
-    VStack(alignment: .leading, spacing: Space.md) {
-      Text("Guides").font(.title2.bold())
-      Toggle("Vertical 9:16", isOn: Binding(get: { camera.guides.marker == CameraAspect(width: 9, height: 16) }, set: { camera.guides.marker = $0 ? CameraAspect(width: 9, height: 16) : nil })).frame(minHeight: 44)
-      Toggle("Thirds", isOn: $camera.guides.thirds).frame(minHeight: 44)
-      Toggle("Centre mark", isOn: Binding(get: { camera.guides.axes || camera.guides.bullseye }, set: { camera.guides.axes = $0; camera.guides.bullseye = false })).frame(minHeight: 44)
-      DisclosureGroup("Advanced") {
-        CameraGuideSettings(model: camera).frame(height: 600)
-      }
-    }.toggleStyle(.switch).frame(maxWidth: .infinity, alignment: .leading)
   }
 
 }

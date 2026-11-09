@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import CoreGraphics
 import Foundation
 import PrompterCore
@@ -344,5 +346,27 @@ struct CameraGuideStore {
     path.addRect(picture)
     path.addRect(frame)
     return path
+  }
+}
+
+// All manual exposure controls restore the saved check state before making their edit.
+extension CameraGuides {
+  mutating func changeExposure(_ change: (inout CameraGuides) -> Void) {
+    if greyCardCheck {
+      greyCardCheck = false
+      NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+        userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+    }
+    change(&self)
+  }
+}
+
+extension Binding where Value == CameraGuides {
+  func manualExposure<T>(_ key: WritableKeyPath<CameraGuides, T>) -> Binding<T> {
+    Binding<T>(get: { wrappedValue[keyPath: key] }, set: { value in
+      var guides = wrappedValue
+      guides.changeExposure { $0[keyPath: key] = value }
+      wrappedValue = guides
+    })
   }
 }

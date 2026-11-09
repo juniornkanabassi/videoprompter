@@ -287,7 +287,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["What do you want to do?", "Paste script", "Import file", "New script", "Choose camera", "Practice with an example script"] {
+    let actions = zoom == 1 ? ["Paste script", "New script", "Choose camera"] : ["Read a script", "Set up camera"]
+    for text in ["What do you want to do?", "Import file", "Practice with an example script"] + actions {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }

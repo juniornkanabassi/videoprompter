@@ -582,7 +582,8 @@ struct LibraryPresenterActions: View {
         Button("Open presenter", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)
-          .tint(.accentColor)
+          .tint(AlphaStyle.accent)
+          .foregroundStyle(AlphaStyle.onAccent)
           .help("Open the presenter with this script (⌥⌘P)")
           .disabled(!store.libraryAvailable || showsDeleted)
   }

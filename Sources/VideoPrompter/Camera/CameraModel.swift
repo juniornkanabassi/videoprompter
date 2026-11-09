@@ -136,7 +136,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   func exposureBinding(_ key: WritableKeyPath<CameraGuides, Bool>, presenter: Bool = true) -> Binding<Bool> {
     Binding(get: { (presenter ? self.previewGuides : self.monitorGuides)[keyPath: key] }, set: { enabled in
       if enabled { self.exposureBypassed = false; if presenter { self.cleanView = false } }
-      self.guides[keyPath: key] = enabled
+      self.guides.changeExposure { $0[keyPath: key] = enabled }
     })
   }
   func toggleExposureCheck() {

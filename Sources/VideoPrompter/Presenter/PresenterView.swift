@@ -46,6 +46,8 @@ struct PresenterView: View {
   @State private var cleanControlsRevealed = false
   @StateObject private var shell: PresenterShell
   private var showsChrome: Bool { !camera.cleanView }
+  @AppStorage("presenterExposureKey") private var exposureKeyEnabled = true
+  @State private var adjustOpener = "Adjust"
   @AppStorage("presenterMicLevel") private var showsMicLevel = true
   @State private var settingsTab = SettingsTab.reading
   @FocusState private var cleanExitFocused: Bool
@@ -65,7 +67,7 @@ struct PresenterView: View {
   private var stage: some View { readingStage }
   private var readingStage: some View {
     GeometryReader { geometry in
-      let keyVisible = camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed
+      let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed
       let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 800 * controlZoom
       let meterWidth = micLevelVisible ? 120 * controlZoom : 0
       HStack(alignment: .top, spacing: 0) {
@@ -144,14 +146,25 @@ struct PresenterView: View {
       }.foregroundStyle(.white)
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
     }.background(camera.cleanView ? Color.black : Color(white: 0.035))
+      .onChange(of: exposureKeyEnabled) { _, enabled in if !enabled { showsExposureKey = false } }
       .popover(isPresented: $showsExposureKey) {
         ScrollView { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).padding(Space.md) }
           .frame(width: min(viewport.width, 360 * controlZoom), height: min(viewport.height * 0.8, 640 * controlZoom)) // grid: ok Keep the popover within the available height.
       }
   }
 
+  static func usesAdjustSheet(width: CGFloat, zoom: Double) -> Bool { width < 470 * zoom + 400 }
+  private var adjustIsSheet: Bool { Self.usesAdjustSheet(width: viewport.width, zoom: controlZoom) }
+  private func adjustPanel(width: CGFloat) -> some View {
+    AdjustPanel(selection: Binding(get: { shell.adjustTab ?? .camera }, set: { shell.adjustTab = $0 }),
+      showsMic: $showsMicLevel, camera: camera, store: store, startsMeter: startsCamera,
+      zoom: controlZoom, width: width, close: { shell.adjustTab = nil }, recorder: recorder)
+      .popoverEntryFocus()
+      .onExitCommand { shell.adjustTab = nil }
+  }
+
   private var sourceStatus: some View {
-    Button { shell.adjustTab = .camera } label: {
+    Button { adjustOpener = "Camera"; shell.adjustTab = .camera } label: {
       VStack(spacing: Space.xs) {
         Text(sourceInfo.map { "\($0.displayName) · \($0.connectionDescription)" } ?? "No camera chosen")
         Text([sourceInfo.map { $0.summary.components(separatedBy: " · ").dropFirst(2).joined(separator: " · ") }, shotLabel].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
@@ -225,17 +238,8 @@ struct PresenterView: View {
       }
     }
     .safeAreaInset(edge: .trailing, spacing: 0) {
-      if let tab = shell.adjustTab, !camera.cleanView {
-        VStack(spacing: 0) {
-          if barFit.movesTools {
-            VStack(spacing: Space.sm) {
-              Toggle("Guides", isOn: Binding(get: { camera.framingIsVisible }, set: { _ in camera.toggleFramingGuides() })).frame(minHeight: 44)
-              Toggle("Mic", isOn: $showsMicLevel).frame(minHeight: 44)
-            }.toggleStyle(.switch).tint(AlphaStyle.accent).padding(Space.md).uiZoom(controlZoom)
-          }
-          AdjustPanel(selection: Binding(get: { shell.adjustTab ?? tab }, set: { shell.adjustTab = $0 }), showsMic: $showsMicLevel,
-                      camera: camera, store: store, startsMeter: startsCamera, zoom: controlZoom, recorder: recorder)
-        }
+      if shell.adjustTab != nil, !camera.cleanView, !adjustIsSheet {
+        adjustPanel(width: 470 * controlZoom)
       }
     }
     .overlay(alignment: .top) {
@@ -255,6 +259,11 @@ struct PresenterView: View {
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
       if showsChrome { controlBar.environment(\.colorScheme, .dark) }
+    }
+    .overlay {
+      if shell.adjustTab != nil, !camera.cleanView, adjustIsSheet {
+        adjustPanel(width: viewport.width)
+      }
     }
     .popover(isPresented: $showsSettings) {
       PresenterSettingsPopover(store: store, initialTab: settingsTab, initialCameraSection: cameraSection)
@@ -370,7 +379,6 @@ struct PresenterView: View {
   }
   private func toggleExposure(_ key: WritableKeyPath<CameraGuides, Bool>) {
     let enabled = camera.guides[keyPath: key] && !camera.exposureBypassed
-    if camera.guides.greyCardCheck { camera.guides.greyCardCheck = false; announce("Grey card check ended.") }
     camera.exposureBinding(key).wrappedValue = !enabled
   }
 
@@ -388,7 +396,7 @@ struct PresenterView: View {
   }
 
   private func shellTile(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool? = nil, value: String? = nil, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
+    Button { adjustOpener = title; action() } label: {
       VStack(spacing: Space.xs) {
         if let value {
           Text(value).font(.system(size: 13, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
@@ -401,11 +409,11 @@ struct PresenterView: View {
         .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(on == true ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
-    }.buttonStyle(.plain).accessibilityLabel(title)
+    }.buttonStyle(.plain).restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)").accessibilityLabel(title)
       .accessibilityValue(title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? shotLabel : value ?? ""))
       .accessibilityAddTraits(on != nil && title != "Adjust" ? .isToggle : [])
-      .contextMenu { if title != "Clean" && title != "Adjust" { Button("Adjust \(title)") { shell.adjustTab = tab } } }
-      .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if title != "Clean" && title != "Adjust" { shell.adjustTab = tab } })
+      .contextMenu { if title != "Clean" && title != "Adjust" { Button("Adjust \(title)") { adjustOpener = title; shell.adjustTab = tab } } }
+      .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if title != "Clean" && title != "Adjust" { adjustOpener = title; shell.adjustTab = tab } })
   }
 
   private var zebraDetail: String {

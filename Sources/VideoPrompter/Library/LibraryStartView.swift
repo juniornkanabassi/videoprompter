@@ -10,17 +10,27 @@ struct LibraryStartView: View {
   var guide: () -> Void = {}
 
   var body: some View {
+    GeometryReader { geometry in
     ScrollView {
-      VStack(spacing: Space.xxl) {
+      VStack(spacing: geometry.size.height < 560 ? Space.sm : Space.xxl) {
         VStack(spacing: Space.sm) {
-          Text("What do you want to do?").font(.largeTitle.bold())
+          Text("What do you want to do?").font(geometry.size.height < 560 ? .title2.bold() : .largeTitle.bold())
           Text("Video Prompter Alpha is for reading your script and checking your camera. It does not record.")
             .font(.system(size: 16)).foregroundStyle(.secondary).multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
         }
+        if geometry.size.height < 560 {
+          VStack(spacing: Space.sm) {
+            Button { store.create() } label: { Label("Read a script", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 56) }
+              .buttonStyle(AlphaPrimaryButtonStyle())
+            Button(action: camera) { Label("Set up camera", systemImage: "video").frame(maxWidth: .infinity, minHeight: 56) }
+              .buttonStyle(AlphaSecondaryButtonStyle())
+          }
+        } else {
         ViewThatFits(in: .horizontal) {
           HStack(alignment: .top, spacing: Space.md) { cards }
           VStack(spacing: Space.md) { cards }
+        }
         }
         WrapLayout(spacing: Space.xs) {
           Button(action: practice) { Text("Practice with an example script").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
@@ -30,8 +40,10 @@ struct LibraryStartView: View {
           Button { importing = true } label: { Text("Import file…").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
         }.buttonStyle(.borderless).controlSize(.large).font(.system(size: 16)).foregroundStyle(.secondary)
       }.frame(maxWidth: 1000).frame(maxWidth: .infinity)
-        .padding(Space.margin)
+        .padding(geometry.size.height < 560 ? Space.md : Space.margin)
     }
+  }
+
   }
 
   @ViewBuilder private var cards: some View {

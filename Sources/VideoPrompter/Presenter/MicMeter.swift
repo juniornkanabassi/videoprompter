@@ -60,7 +60,7 @@ struct MicMeterView: View {
               }
             }
           }.frame(height: Self.barWidth)
-          HStack { Text("−60"); Spacer(); Text("0") }.font(.system(size: 14))
+          HStack(spacing: 0) { Text("−60"); Spacer(minLength: 0); Text("0") }.font(.system(size: 14))
         } else {
         HStack(spacing: Space.xs) {
           GeometryReader { geometry in
@@ -106,6 +106,7 @@ struct MicMeterView: View {
           .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
           .foregroundStyle(Palette.onDarkQuiet(contrast))
       }
+      .padding(.horizontal, Space.sm)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("Microphone level, \(micName), \(Self.readout(db))" + (clipLit ? ", Clipping" : ""))
