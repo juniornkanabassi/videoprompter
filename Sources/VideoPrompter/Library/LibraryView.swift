@@ -469,94 +469,94 @@ private struct EditorView: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: Space.xs) {
-        LibraryTitleField(title: $title)
-        HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
-          Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
-            .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
-            .fixedSize(horizontal: false, vertical: true)
-          if saver.failed { Button("Retry Save") { scheduleSave() } }
-        }
-        WrapLayout(spacing: Space.md) {
-          Button { showsTextSize.toggle() } label: {
-            Label("Editor text size", systemImage: showsTextSize ? "chevron.down" : "chevron.right")
-              .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
-          }
-            .accessibilityLabel("Editor text size").accessibilityValue(showsTextSize ? "Expanded" : "Collapsed")
-            .buttonStyle(.plain).help("Change the editor font and text size")
-            .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")
-            .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
-          Button { showsDetails.toggle() } label: {
-            Label("Script details", systemImage: showsDetails ? "chevron.down" : "chevron.right")
-              .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
-          }.buttonStyle(.plain).focusable().accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
-          if script.metadata.linkedPath != nil {
-            Label("Linked file", systemImage: "link")
-              .foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
-              .help("Edits also change the linked file. Open Script details to see the file or unlink it.")
-          }
-        }.font(.system(size: 16))
-        if showsDetails {
-          VStack(alignment: .leading, spacing: Space.sm) {
-            TextField("Tags, separated by commas", text: $tags).textFieldStyle(.roundedBorder)
-              .accessibilityLabel("Script tags")
-            if let path = script.metadata.linkedPath {
-              Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
-                .fixedSize(horizontal: false, vertical: true).help(path)
-              Button("Unlink") { store.unlink(script.id, undoManager: undoManager) }.buttonStyle(.link)
-                .help("Keep this script in Video Prompter without changing the original file again")
-            } else {
-              Text("Stored in Video Prompter")
-            }
-          }.font(.callout)
-        }
-      }.padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
-      Divider()
-      if script.metadata.title == WelcomeScript.title {
+    GeometryReader { geometry in
+      // Logical units (the uiZoom layout divides the zoom out), so 200% in a narrow pane is judged the same as 100%.
+      let compact = LibraryEditorLayout.isCompact(width: geometry.size.width, height: geometry.size.height)
+      VStack(spacing: 0) {
         VStack(alignment: .leading, spacing: Space.xs) {
-          Text("Getting Started Guide").fontWeight(.semibold)
-          Text(Features.recording ? "The full guide to writing, reading and recording." : "The full guide to writing, reading and camera monitoring.")
-          Button("Quick Reading Practice") { Task { await PracticeReading.present(store: store) } }
-            .help("Try reading for 30 seconds")
-        }.font(.callout).padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
-      } else if showsReadingTip {
-        ReadingFirstUseTip(dismiss: { showsReadingTip = false })
-          .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
+          LibraryTitleField(title: $title)
+          HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
+            Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
+              .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
+              .fixedSize(horizontal: false, vertical: true)
+            if saver.failed { Button("Retry Save") { scheduleSave() } }
+          }
+          WrapLayout(spacing: Space.md) {
+            Button { showsTextSize.toggle() } label: {
+              // Short visible name in the narrow layout so both disclosures share one row; VoiceOver keeps the full name.
+              Label(compact ? "Text size" : "Editor text size", systemImage: showsTextSize ? "chevron.down" : "chevron.right")
+                .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
+            }
+              .accessibilityLabel("Editor text size").accessibilityValue(showsTextSize ? "Expanded" : "Collapsed")
+              .buttonStyle(.plain).help("Change the editor font and text size")
+              .restoringPopoverFocus(isPresented: $showsTextSize, identifier: "editor-text-size")
+              .popover(isPresented: $showsTextSize) { EditorTextPopover(store: store) }
+            Button { showsDetails.toggle() } label: {
+              Label("Script details", systemImage: showsDetails ? "chevron.down" : "chevron.right")
+                .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
+            }.buttonStyle(.plain).focusable().accessibilityValue(showsDetails ? "Expanded" : "Collapsed")
+          }.font(.system(size: compact ? 14 : 16))
+          if showsDetails {
+            VStack(alignment: .leading, spacing: Space.sm) {
+              TextField("Tags, separated by commas", text: $tags).textFieldStyle(.roundedBorder)
+                .accessibilityLabel("Script tags")
+              if let path = script.metadata.linkedPath {
+                Label("Linked to \(URL(fileURLWithPath: path).lastPathComponent). Edits also change this file.", systemImage: "link")
+                  .fixedSize(horizontal: false, vertical: true).help(path)
+                Button("Unlink") { store.unlink(script.id, undoManager: undoManager) }.buttonStyle(.link)
+                  .help("Keep this script in Video Prompter without changing the original file again")
+              } else {
+                Text("Stored in Video Prompter")
+              }
+            }.font(.callout)
+          }
+        }.padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.sm)
+        Divider()
+        if script.metadata.title == WelcomeScript.title {
+          VStack(alignment: .leading, spacing: Space.xs) {
+            Text("Getting Started Guide").fontWeight(.semibold)
+            Text(Features.recording ? "The full guide to writing, reading and recording." : "The full guide to writing, reading and camera monitoring.")
+            Button("Quick Reading Practice") { Task { await PracticeReading.present(store: store) } }
+              .help("Try reading for 30 seconds")
+          }.font(.callout).padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.sm)
+        } else if showsReadingTip {
+          ReadingFirstUseTip(dismiss: { showsReadingTip = false }, compact: compact)
+            .padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.sm)
+        }
+        if let status = store.linkedSyncStatus {
+          Text(status).font(.callout).accessibilityIdentifier("linked-sync-status")
+            .padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.sm)
+        }
+        if let editNotice {
+          Text(editNotice).font(.callout).foregroundStyle(.primary)
+            .padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.sm)
+        }
+        if script.metadata.linkedPath != nil && store.linkStates[script.id]?.isBroken == true {
+          VStack(alignment: .leading, spacing: Space.sm) {
+            Label("The linked file has moved or is unavailable. Your saved script is still here.", systemImage: "exclamationmark.triangle")
+              .fixedSize(horizontal: false, vertical: true)
+            Button("Find Linked File…") { store.relinkingID = script.id }.buttonStyle(.link)
+          }.font(.callout).padding(.horizontal, compact ? Space.md : Space.xxl).padding(.vertical, Space.md)
+        }
+        if store.unavailableScriptIDs.contains(script.metadata.id) {
+          Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
+            .font(.callout).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, compact ? Space.md : 24).padding(.vertical, Space.md)
+        }
+        FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
+          fontSize: store.previewFontSize, onUnsupportedEdit: {
+            editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+          }).help("Type or paste your script; changes save automatically").padding(compact ? Space.md : Space.xxl)
       }
-      if let status = store.linkedSyncStatus {
-        Text(status).font(.callout).accessibilityIdentifier("linked-sync-status")
-          .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
-      }
-      if let editNotice {
-        Text(editNotice).font(.callout).foregroundStyle(.primary)
-          .padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
-      }
-      if script.metadata.linkedPath != nil && store.linkStates[script.id]?.isBroken == true {
-        VStack(alignment: .leading, spacing: Space.sm) {
-          Label("The linked file has moved or is unavailable. Your saved script is still here.", systemImage: "exclamationmark.triangle")
-            .fixedSize(horizontal: false, vertical: true)
-          Button("Find Linked File…") { store.relinkingID = script.id }.buttonStyle(.link)
-        }.font(.callout).padding(.horizontal, Space.xxl).padding(.vertical, Space.md)
-      }
-      if store.unavailableScriptIDs.contains(script.metadata.id) {
-        Label("Script file unavailable. Restore the original file, or export and import a copy.", systemImage: "exclamationmark.triangle")
-          .font(.callout).foregroundStyle(.primary).frame(maxWidth: .infinity, alignment: .leading)
-          .padding(.horizontal, 24).padding(.vertical, Space.md)
-      }
-      FormattedMarkdownEditor(markdown: $text, fontName: store.previewFontName,
-        fontSize: store.previewFontSize, onUnsupportedEdit: {
-          editNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-        }).help("Type or paste your script; changes save automatically").padding(Space.xxl)
+      .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id); scheduleSave() }
+      .onChange(of: title) { _, _ in scheduleSave() }
+      .onChange(of: tags) { _, _ in scheduleSave() }
+      .onChange(of: editNotice) { _, value in if let value { LibraryAnnouncement.post(value) } }
+      .onChange(of: script.markdown) { _, value in if value != text { text = value } }
+      .onChange(of: script.metadata.title) { _, value in if !saver.isSaving, value != title { title = value } }
     }
-    .onChange(of: text) { _, value in editNotice = nil; store.updateMarkdown(value, for: script.metadata.id); scheduleSave() }
-    .onChange(of: title) { _, _ in scheduleSave() }
-    .onChange(of: tags) { _, _ in scheduleSave() }
-    .onChange(of: editNotice) { _, value in if let value { LibraryAnnouncement.post(value) } }
-    .onChange(of: script.markdown) { _, value in if value != text { text = value } }
-    .onChange(of: script.metadata.title) { _, value in if !saver.isSaving, value != title { title = value } }
-
   }
+
 
   private func scheduleSave() {
     saver.schedule(store: store, id: script.id, title: title,
@@ -566,6 +566,14 @@ private struct EditorView: View {
 }
 
 private enum LibraryScope: Hashable { case all, folder(UUID), deleted }
+
+/// A narrow or short editor pane gives the writing area the room: title, one row of controls and
+/// the details disclosure, with the reading tip as a single small line.
+enum LibraryEditorLayout {
+  static func isCompact(width: CGFloat, height: CGFloat) -> Bool {
+    width < 560 || height < 620
+  }
+}
 
 /// The exact trailing toolbar content, also renderable in offscreen accessibility checks.
 struct LibraryPresenterActions: View {

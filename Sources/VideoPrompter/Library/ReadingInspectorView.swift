@@ -31,13 +31,16 @@ struct ReadingSettingsPage: View {
         slider("Reading text size", value: $store.settings.fontSize, range: AppStore.presenterFontSizes, readout: "\(Int(store.settings.fontSize)) pt", spoken: "\(Int(store.settings.fontSize)) points")
         ReadingChoice(title: "Text weight", values: ["Regular", "Bold"], names: ["Regular", "Bold"], selection: $store.settings.fontWeight, zoom: store.uiZoom)
         Toggle("Mirror for teleprompter glass", isOn: $store.settings.horizontalMirror)
-        Button("Show in Presenter") { PresenterController.shared.presentFromLibrary(store: store) }
-          .help("See your reading appearance settings in the presenter")
-          .disabled(store.selected == nil)
+        if store.selected == nil {
+          Text("Choose a script first").font(.callout).foregroundStyle(.secondary)
+        } else {
+          Button("Open presenter") { PresenterController.shared.presentFromLibrary(store: store) }
+            .help("See your reading appearance settings in the presenter")
+        }
       }
       Section("Layout") {
         percent("Text width", $store.settings.textWidth, PrompterSettings.textWidthRange)
-        Button("Narrow Column") { store.settings.textWidth = 0.65 }
+        Button("Narrow column") { store.settings.textWidth = 0.65 }
         ReadingChoice(title: "Alignment", values: ["Left", "Center", "Right"], names: ["Left", "Centre", "Right"], selection: $store.settings.alignment, zoom: store.uiZoom)
         percent("Line spacing", $store.settings.lineSpacing, 0...0.5)
         percent("Paragraph spacing", $store.settings.paragraphSpacing, 0...1)

@@ -95,6 +95,8 @@ private struct AlphaSecondaryButtonStyle: ButtonStyle {
 
 struct ReadingFirstUseTip: View {
   let dismiss: () -> Void
+  /// A smaller line for the editor's narrow layout, so the tip leaves the writing area room.
+  var compact = false
   static let explanation = "Click Open presenter, then Start reading."
   var body: some View {
     HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
@@ -104,7 +106,7 @@ struct ReadingFirstUseTip: View {
         .buttonStyle(.plain).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget)
         .accessibilityLabel("Got it")
         .help("Hide reading tip")
-    }.font(.system(size: 15)).foregroundStyle(.primary)
+    }.font(.system(size: compact ? 13 : 15)).foregroundStyle(.primary)
       .accessibilityElement(children: .contain)
   }
 }
