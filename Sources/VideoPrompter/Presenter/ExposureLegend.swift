@@ -79,10 +79,10 @@ struct ExposureToolToggles: View {
     }.initialPopoverFocus().accessibilityLabel(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
     Toggle(isOn: model.exposureBinding(\.falseColour, presenter: presenter)) {
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text("Check brightness · False colour").fontWeight(.semibold)
+        Text("False colour").fontWeight(.semibold)
         Text(ExposureGuidance.colourPurpose).font(.callout)
       }
-    }.accessibilityLabel("Check brightness · False colour").accessibilityHint(ExposureGuidance.colourPurpose)
+    }.accessibilityLabel("False colour").accessibilityHint(ExposureGuidance.colourPurpose)
   }
 }
 
@@ -121,9 +121,9 @@ struct ExposureLegend: View {
   @State private var showsHelp = false
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
-    case .brightAreas: "Check bright areas · Zebras"
-    case .faceReference: "Check brightness · Zebras"
-    case .custom: "Check custom brightness · Zebras"
+    case .brightAreas: "Zebras · Highlights"
+    case .faceReference: "Zebras · My skin"
+    case .custom: "Zebras · Custom"
     }
   }
   static func measurement(level: Int, range: Int) -> String {
@@ -174,7 +174,7 @@ struct ExposureLegend: View {
 /// Discrete measured bands, with quiet ticks and captions away from the colour.
 struct FalseColourStrip: View {
   @Environment(\.colorSchemeContrast) private var contrast
-  static let captions = ["Very dark", "Mid-tones", "Bright", "Near white"]
+  static let captions = ["Near black", "Mid grey", "Near white", "Signal white"]
   static let bandGroups = [0..<2, 2..<4, 4..<5, 5..<6]
   var showsLabels = true
   var body: some View {
@@ -187,7 +187,7 @@ struct FalseColourStrip: View {
               Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
                 .frame(minWidth: Space.xs, maxWidth: .infinity)
                 .frame(height: Space.xs)
-                .accessibilityLabel("\(FalseColourKey.labels[bandIndex]). \(band.name)")
+                .accessibilityLabel("\(CameraExposure.bands[bandIndex].name). \(band.name)")
             }
           }
           Rectangle().fill(Palette.onDarkQuiet(contrast)).frame(width: 1, height: Space.xs)
@@ -235,9 +235,7 @@ struct ExposureKeyHelp: View {
         Text(ExposureLegend.measurement(level: model.guides.zebraLevel, range: model.guides.zebraRange))
       }
       if model.guides.falseColour {
-        FalseColourKey()
-        ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
-        Text("Near white marks 99–100% brightness in the received picture, not proof of camera sensor clipping. Check important detail on your camera, especially with a flat picture setting.")
+        FalseColourKey(settings: model.guides.exposure)
       }
       Text("These guides show the received picture. They do not change your camera.")
     }.font(.callout).foregroundStyle(.primary)
@@ -249,25 +247,18 @@ struct ExposureKeyHelp: View {
 
 /// Use the renderer's ranges, so the detailed key cannot drift from its colours.
 struct FalseColourKey: View {
-  @Environment(\.colorSchemeContrast) private var contrast
-  static let labels = ["Almost black", "Very dark", "Mid-tones", "Brighter mid-tones", "Bright", "Near white"]
-  static func rangeLabel(_ range: ClosedRange<Double>) -> String {
-    "\(range.lowerBound.formatted(.number.precision(.fractionLength(0...1))))–\(range.upperBound.formatted(.number.precision(.fractionLength(0...1))))%"
-  }
+  var settings = CameraExposure.Settings()
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      Text("Check brightness · False colour").fontWeight(.semibold)
-      ForEach(Array(CameraExposure.bands.enumerated()), id: \.offset) { index, band in
-        HStack(spacing: Space.sm) {
-          Rectangle().fill(Color(red: Double(band.rgb.0)/255, green: Double(band.rgb.1)/255, blue: Double(band.rgb.2)/255))
-            .frame(width: Space.md, height: Space.md)
-          Text(Self.labels[index])
-          Spacer(minLength: Space.xs)
-          Text(Self.rangeLabel(band.range)).monospacedDigit()
-            .foregroundStyle(Color.primary.opacity(Palette.quietOpacity(contrast)))
+      Text("False colour").fontWeight(.semibold)
+      ForEach(Array(settings.legendBands.enumerated()), id: \.offset) { _, band in
+        HStack {
+          Rectangle().fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255)).frame(width: Space.md, height: Space.md)
+          Text(band.label)
+          Spacer()
+          Text(band.range + " IRE").monospacedDigit()
         }.accessibilityElement(children: .ignore)
-          .accessibilityLabel("\(Self.labels[index]). \(band.name)")
-          .accessibilityValue(Self.rangeLabel(band.range))
+          .accessibilityLabel(band.label).accessibilityValue(band.range + " IRE")
       }
       Text("Grey shows brightness between these bands.")
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -297,11 +288,11 @@ struct ZebraSettings: View {
         Stepper("Plus or minus: \(guides.zebraRange) IRE", value: $guides.zebraRange, in: 1...10)
       }
       HStack(spacing: Space.sm) {
-        Button("Skin 45 ±2") {
-          guides.zebraLevel = 45; guides.zebraRange = 2; guides.zebraPurpose = .faceReference
+        Button("My skin") {
+          guides.useZebraPreset(.faceReference)
           onPreset()
         }
-        Button("Clipping 95+") { guides.useZebraPreset(.brightAreas); onPreset() }
+        Button("Highlights") { guides.useZebraPreset(.brightAreas); onPreset() }
       }
       Text(guides.exposure.zebraReadout).font(.callout)
     }
@@ -378,5 +369,120 @@ struct ExposurePictureLegend: View {
     }.fixedSize(horizontal: true, vertical: true)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel("\(band.label), \(band.range) IRE")
+  }
+}
+
+/// The setup card and the smaller indicator used while reading.
+struct ExposureKey: View {
+  let guides: CameraGuides
+  var compact = false
+  var zoom = 1.0
+  var body: some View {
+    VStack(alignment: .leading, spacing: 12) {
+      if compact {
+        if guides.zebras { Text("Zebras on") }
+        if guides.falseColour { Text("False colour on") }
+      } else {
+        Text("EXPOSURE KEY").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+        if guides.zebras {
+          HStack(spacing: 16) {
+            Canvas { context, size in
+              context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+              context.stroke(Path(CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))), with: .color(.black), lineWidth: 2)
+            }.frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
+            VStack(alignment: .leading) {
+              Text("Zebras").font(.system(size: 19, weight: .semibold))
+              Text(guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 15)).foregroundStyle(.secondary)
+            }
+          }
+        }
+        if guides.falseColour {
+          ForEach(Array(guides.exposure.legendBands.reversed().sorted { ($0.label == "My skin" ? 0 : 1) < ($1.label == "My skin" ? 0 : 1) }.enumerated()), id: \.offset) { _, band in
+            HStack(spacing: 16) {
+              RoundedRectangle(cornerRadius: 4).fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255)).frame(width: 44, height: 28)
+              VStack(alignment: .leading) {
+                Text(band.label).font(.system(size: 19, weight: .semibold))
+                Text(band.range + " IRE").font(.system(size: 15)).foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+        Text("Measured from the incoming picture.").font(.system(size: 13)).foregroundStyle(.secondary)
+      }
+    }.padding(16).foregroundStyle(.white).background(Color.black.opacity(0.9), in: RoundedRectangle(cornerRadius: 16))
+      .environment(\.colorScheme, .dark).uiZoom(zoom)
+  }
+}
+
+struct ZebraAdjustView: View {
+  @Binding var guides: CameraGuides
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text("Zebras").font(.title2.bold())
+      Text("Stripes show where the picture is at a brightness you choose.").foregroundStyle(.secondary)
+      HStack(spacing: 12) {
+        preset("My skin", detail: "Range · \(guides.skinReference.level) ±\(guides.skinReference.range) IRE", purpose: .faceReference)
+        preset("Highlights", detail: "Limit · 95 IRE and up", purpose: .brightAreas)
+      }
+      Picker("Mode", selection: $guides.zebraRangeMode) { Text("Range").tag(true); Text("Limit").tag(false) }.pickerStyle(.segmented)
+      ExposureNumberRow(title: "Level", value: $guides.zebraLevel, limits: 0...100, suffix: " IRE")
+      if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", value: $guides.zebraRange, limits: 1...10, prefix: "±") }
+      Text(guides.exposure.zebraReadout).fontWeight(.semibold)
+      Text("Each mode keeps its own values. Skin in false colour is set separately.").foregroundStyle(.secondary)
+    }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+  private func preset(_ title: String, detail: String, purpose: CameraGuides.ZebraPurpose) -> some View {
+    Button { guides.useZebraPreset(purpose) } label: {
+      VStack(alignment: .leading, spacing: 8) {
+        Text(title).font(.headline)
+        Text(detail).font(.callout).foregroundStyle(.secondary)
+      }.frame(maxWidth: .infinity, minHeight: 76, alignment: .leading).padding(12)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(guides.validatedZebraPurpose == purpose ? Color.accentColor : .clear, lineWidth: 2))
+    }.buttonStyle(.plain)
+      .accessibilityValue(guides.validatedZebraPurpose == purpose ? "Selected" : "")
+  }
+}
+
+private struct ExposureNumberRow: View {
+  let title: String
+  @Binding var value: Int
+  let limits: ClosedRange<Int>
+  var prefix = ""
+  var suffix = ""
+  var body: some View {
+    HStack {
+      Text(title); Spacer()
+      Button { value = max(limits.lowerBound, value - 1) } label: { Text("−").frame(minWidth: 46, minHeight: 46).contentShape(Rectangle()) }.accessibilityLabel("Decrease \(title)") // grid: ok specified target
+      Text("\(prefix)\(value)\(suffix)").font(.title2.bold()).monospacedDigit().frame(minWidth: 88)
+      Button { value = min(limits.upperBound, value + 1) } label: { Text("+").frame(minWidth: 46, minHeight: 46).contentShape(Rectangle()) }.accessibilityLabel("Increase \(title)") // grid: ok specified target
+    }
+  }
+}
+
+struct FalseColourAdjustView: View {
+  @Binding var guides: CameraGuides
+  @State private var customSelected = false
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Toggle("False colour", isOn: $guides.falseColour)
+      Text("Skin tone").font(.headline)
+      LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())]) {
+        ForEach(CameraGuides.SkinTone.allCases, id: \.self) { tone in
+          let selected = tone == .custom ? customSelected || guides.skinTone == .custom : !customSelected && guides.skinTone == tone
+          Button {
+            customSelected = tone == .custom
+            if let reference = tone.reference { guides.skinReference = reference }
+          } label: {
+            HStack { Circle().fill(tone == .deep ? Color.brown : tone == .medium ? Color.orange : tone == .fair ? Color(red: 0.95, green: 0.75, blue: 0.6) : Color.gray).frame(width: 16, height: 16); Text(tone.rawValue); Spacer() }
+              .padding(12).frame(maxWidth: .infinity, minHeight: 44)
+              .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+          }.buttonStyle(.plain).accessibilityValue(selected ? "Selected" : "")
+        }
+      }
+      ExposureNumberRow(title: "Level", value: $guides.skinReference.level, limits: 0...100, suffix: " IRE")
+      ExposureNumberRow(title: "Plus or minus", value: $guides.skinReference.range, limits: 1...10, prefix: "±")
+      FalseColourKey(settings: guides.exposure)
+    }.frame(maxWidth: .infinity, alignment: .leading)
   }
 }

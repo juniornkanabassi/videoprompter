@@ -46,6 +46,32 @@ struct CameraGuides: Codable, Equatable, Sendable {
   /// How dark everything outside the marker goes.
   var shadeOpacity = 0.5
   /// Stripes over everything at or above `zebraLevel` IRE, or within ± `zebraRange` of it.
+  struct SkinReference: Codable, Equatable, Sendable {
+    var level = 45
+    var range = 2
+  }
+  enum SkinTone: String, CaseIterable {
+    case deep = "Deep", medium = "Medium", fair = "Fair", custom = "Custom"
+    var reference: SkinReference? {
+      switch self {
+      case .deep: SkinReference(level: 45, range: 2)
+      case .medium: SkinReference(level: 55, range: 3)
+      case .fair: SkinReference(level: 65, range: 3)
+      case .custom: nil
+      }
+    }
+  }
+  var skinTone: SkinTone { SkinTone.allCases.first { $0.reference == skinReference } ?? .custom }
+  var skinReference = SkinReference() {
+    didSet {
+      if skinReference != oldValue && zebraPurpose == .faceReference {
+        zebraLevel = skinReference.level; zebraRange = skinReference.range; zebraPurpose = .faceReference
+      }
+    }
+  }
+  var savedRangeLevel = 45
+  var savedRangeWidth = 2
+  var savedLimitLevel = 95
   var zebras = false
   var zebraLevel = 95 { didSet { if zebraLevel != oldValue { zebraPurpose = .custom } } }
   var zebraRange = 0 { didSet { if zebraRange != oldValue { zebraPurpose = .custom } } }
@@ -53,7 +79,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
   enum ZebraPurpose: String, Codable, CaseIterable {
     case brightAreas, faceReference, custom
     var label: String {
-      switch self { case .brightAreas: "Bright areas"; case .faceReference: "Face reference"; case .custom: "Custom" }
+      switch self { case .brightAreas: "Highlights"; case .faceReference: "My skin"; case .custom: "Custom" }
     }
   }
   /// Lit-cheek bands: about 40 IRE for deep brown skin up to about 70 for light skin. The preset is
@@ -66,7 +92,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     guides.useZebraPreset(.faceReference)
     return guides
   }
-  var isFaceBand: Bool { Self.faceLevels.contains(zebraLevel) && Self.faceRanges.contains(zebraRange) }
+  var isFaceBand: Bool { zebraLevel == skinReference.level && zebraRange == skinReference.range }
   // Never infer a face reference merely from the shape of a numerical band.
   var validatedZebraPurpose: ZebraPurpose {
     switch zebraPurpose {
@@ -76,13 +102,23 @@ struct CameraGuides: Codable, Equatable, Sendable {
     }
   }
   mutating func useZebraPreset(_ purpose: ZebraPurpose) {
-    if purpose == .faceReference, !isFaceBand { zebraLevel = Self.faceDefault.level; zebraRange = Self.faceDefault.range }
-    if purpose == .brightAreas { zebraLevel = 95; zebraRange = 0 }
+    if purpose == .faceReference {
+      if !zebraRangeMode { savedLimitLevel = zebraLevel }
+      zebraLevel = skinReference.level; zebraRange = skinReference.range
+    }
+    if purpose == .brightAreas {
+      if zebraRangeMode { savedRangeLevel = zebraLevel; savedRangeWidth = zebraRange }
+      zebraLevel = 95; zebraRange = 0
+    }
     zebraPurpose = purpose
   }
   var zebraRangeMode: Bool {
     get { zebraRange > 0 }
-    set { zebraRange = newValue ? 2 : 0 }
+    set {
+      guard newValue != zebraRangeMode else { return }
+      if newValue { savedLimitLevel = zebraLevel; zebraLevel = savedRangeLevel; zebraRange = savedRangeWidth }
+      else { savedRangeLevel = zebraLevel; savedRangeWidth = zebraRange; zebraLevel = savedLimitLevel; zebraRange = 0 }
+    }
   }
   var zebraMeasurement: String {
     zebraRange == 0 ? "Stripes mark \(zebraLevel) IRE and above in the received picture."
@@ -121,6 +157,11 @@ struct CameraGuides: Codable, Equatable, Sendable {
     shadeOpacity = InputValidation.shade.repair(shadeOpacity)
     zebraLevel = Int(InputValidation.zebraLevel.repair(Double(zebraLevel)))
     zebraRange = Int(InputValidation.zebraRange.repair(Double(zebraRange)))
+    skinReference.level = min(100, max(0, skinReference.level))
+    skinReference.range = min(10, max(1, skinReference.range))
+    savedRangeLevel = min(100, max(0, savedRangeLevel))
+    savedRangeWidth = min(10, max(1, savedRangeWidth))
+    savedLimitLevel = min(100, max(0, savedLimitLevel))
     colorHex = PrompterSettings.normalisedHexColour(colorHex) ?? "#3F8CFF"
   }
 
@@ -142,6 +183,10 @@ struct CameraGuides: Codable, Equatable, Sendable {
     zebraRange = c.preference(.zebraRange, default: 0)
     zebraPurpose = c.preference(.zebraPurpose, default: Optional<ZebraPurpose>.none)
       ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
+    skinReference = c.preference(.skinReference, default: zebraRange > 0 ? SkinReference(level: zebraLevel, range: zebraRange) : SkinReference())
+    savedRangeLevel = c.preference(.savedRangeLevel, default: zebraRange > 0 ? zebraLevel : 45)
+    savedRangeWidth = c.preference(.savedRangeWidth, default: zebraRange > 0 ? zebraRange : 2)
+    savedLimitLevel = c.preference(.savedLimitLevel, default: zebraRange == 0 ? zebraLevel : 95)
     falseColour = c.preference(.falseColour, default: false)
     sanitise()
   }

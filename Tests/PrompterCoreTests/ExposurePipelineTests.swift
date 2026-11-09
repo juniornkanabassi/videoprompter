@@ -35,7 +35,7 @@ import XCTest
     let processor = CameraExposure(settings: .init()) { _ in }
     for (width, height) in [(80, 40), (40, 80), (1920, 1080)] {
       let pixels = try buffer(width: width, height: height)
-      let frame = processor.process(pixels, settings: .init(zebras: true, falseColour: true))
+      let frame = processor.process(pixels, settings: .init(zebras: true, falseColour: true, skinLevel: 55, skinRange: 3))
       let colour = try XCTUnwrap(frame.falseColour)
       let mask = try XCTUnwrap(frame.zebraMask)
       XCTAssertLessThanOrEqual(max(colour.width, colour.height), 960)
@@ -112,7 +112,7 @@ import XCTest
     let first = processor.process(pixels, settings: skin)
     let image = try XCTUnwrap(first.falseColour)
     let before = render({ let layer = CALayer(); layer.bounds = CGRect(x: 0, y: 0, width: 128, height: 128); layer.contents = image; return layer }())
-    let next = processor.process(pixels, settings: .init(zebras: true, falseColour: true))
+    let next = processor.process(pixels, settings: .init(zebras: true, falseColour: true, skinLevel: 55, skinRange: 3))
     let bytes = try XCTUnwrap(image.dataProvider?.data) as Data
     XCTAssertEqual(Array(bytes.prefix(4)), [255, 120, 190, 255], "Active skin range is pink")
     let nextBytes = try XCTUnwrap(next.falseColour?.dataProvider?.data) as Data
@@ -146,7 +146,7 @@ import XCTest
         XCTAssertNotNil(oldImage(&a)); XCTAssertNotNil(oldImage(&b))
       }
       CVPixelBufferUnlockBaseAddress(pixels, .readOnly)
-      let after = bench { XCTAssertNotNil(processor.process(pixels, settings: .init(zebras: true, falseColour: true)).falseColour) }
+      let after = bench { XCTAssertNotNil(processor.process(pixels, settings: .init(zebras: true, falseColour: true, skinLevel: 55, skinRange: 3)).falseColour) }
       let off = bench { XCTAssertNil(processor.process(pixels, settings: .init()).falseColour) }
       print("EXPOSURE_BENCH \(width)x\(height) baseline pipeline \(before) ms; new including images \(after) ms; off \(off) ms")
     }

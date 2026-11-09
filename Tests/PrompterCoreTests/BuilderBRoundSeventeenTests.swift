@@ -26,10 +26,8 @@ import XCTest
     defer { LibraryAX.close(window) }
     XCTAssertFalse(LibraryAX.named(ExposureGuidance.cameraJudgement, in: host).isEmpty)
     XCTAssertTrue(LibraryAX.named("Clipping", in: host).isEmpty)
-    XCTAssertEqual(CameraExposure.bands.map { FalseColourKey.rangeLabel($0.range) },
-      ["0–2.5%", "2.5–4%", "38–42%", "52–56%", "97–99%", "99–100%"])
-    for (index, band) in CameraExposure.bands.enumerated() {
-      XCTAssertFalse(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).isEmpty)
+    for band in CameraExposure.Settings().legendBands {
+      XCTAssertFalse(LibraryAX.named(band.label, in: host).isEmpty)
     }
     XCTAssertFalse(LibraryAX.named("Grey shows brightness between these bands.", in: host).isEmpty)
     XCTAssertFalse(ExposureLegend.zebraTitle(for: .brightAreas).contains("blown"))

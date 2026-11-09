@@ -48,7 +48,7 @@ final class CameraExposureTests: XCTestCase {
     let grey: (UInt32) -> UInt32 = { $0 | $0 << 8 | $0 << 16 | 0xFF00_0000 }
     XCTAssertEqual(colour(0), 0xFFA0_0080, "crushed black is purple")
     XCTAssertEqual(colour(40), 0xFF00_C800, "middle grey is green")
-    XCTAssertEqual(colour(54), 0xFFBE_78FF, "one stop over is pink")
+    XCTAssertEqual(colour(45), 0xFFBE_78FF, "default skin is pink")
     XCTAssertEqual(colour(100), 0xFF00_00E6, "clipped is red")
     XCTAssertEqual(CameraExposure.falseColourTable[128], grey(128), "everything else stays grey")
     let skin = CameraExposure.falseColourTable(skin: CameraExposure.zebraCodes(level: 45, range: 2))
@@ -79,7 +79,7 @@ final class FaceReferenceBandTests: XCTestCase {
     XCTAssertEqual([guides.zebraLevel, guides.zebraRange], [45, 2])
     guides.zebraLevel = 62; guides.zebraPurpose = .faceReference
     guides.useZebraPreset(.faceReference)
-    XCTAssertEqual(guides.zebraLevel, 62, "a face band already set stays as it is")
+    XCTAssertEqual(guides.zebraLevel, 45, "My skin restores the independent reference")
     XCTAssertEqual(guides.validatedZebraPurpose, .faceReference)
     guides.zebraLevel = 88; guides.zebraPurpose = .faceReference
     XCTAssertEqual(guides.validatedZebraPurpose, .custom, "a near-white band is never called a face reference")

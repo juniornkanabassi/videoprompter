@@ -114,7 +114,7 @@ import XCTest
 
     let (wide, wideHost) = await LibraryAX.host(CameraExposureSettings(model: camera))
     defer { LibraryAX.close(wide) }
-    let tool = try XCTUnwrap(LibraryAX.named("Check brightness · False colour", in: wideHost).first {
+    let tool = try XCTUnwrap(LibraryAX.named("False colour", in: wideHost).first {
       LibraryAX.value($0, "accessibilityRole") == "AXCheckBox"
     })
     _ = LibraryAX.bool(tool, "accessibilityPerformPress")

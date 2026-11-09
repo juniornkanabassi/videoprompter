@@ -5,15 +5,15 @@ import XCTest
 
 @MainActor final class BuilderBRoundSixteenTests: XCTestCase {
   func testStripNamesReceivedBrightnessWithoutAFaceTarget() async throws {
-    XCTAssertEqual(FalseColourStrip.captions, ["Very dark", "Mid-tones", "Bright", "Near white"])
+    XCTAssertEqual(FalseColourStrip.captions, ["Near black", "Mid grey", "Near white", "Signal white"])
     XCTAssertEqual(FalseColourStrip.bandGroups, [0..<2, 2..<4, 4..<5, 5..<6])
     let camera = CameraModel(defaults: freshDefaults("BuilderBSixteenStrip"))
     camera.guides.falseColour = true
     let (window, host) = await LibraryAX.host(ExposureLegend(model: camera, zoom: 2), size: .init(width: 720, height: 100))
     defer { LibraryAX.close(window) }
     XCTAssertTrue(LibraryAX.named("Face", in: host).isEmpty)
-    let bright = try XCTUnwrap(LibraryAX.named("Bright", in: host).first)
-    let clipping = try XCTUnwrap(LibraryAX.named("Near white", in: host).first)
+    let bright = try XCTUnwrap(LibraryAX.named("Near white", in: host).first)
+    let clipping = try XCTUnwrap(LibraryAX.named("Signal white", in: host).first)
     XCTAssertLessThanOrEqual(frame(bright).maxX, frame(clipping).minX)
     XCTAssertTrue(LibraryAX.value(clipping, "accessibilityHelp").contains("not proof of camera sensor clipping"))
   }
@@ -37,12 +37,12 @@ import XCTest
   func testSharedExposureSwitchesLeadWithTheJobAndRetainReferenceQualifications() async throws {
     let camera = CameraModel(defaults: freshDefaults("BuilderBSixteenExposure"))
     camera.guides = CameraGuides() // the bright-areas wording is checked before the face preset; first use starts on the face preset
-    XCTAssertEqual(ExposureLegend.zebraTitle(for: .brightAreas), "Check bright areas · Zebras")
+    XCTAssertEqual(ExposureLegend.zebraTitle(for: .brightAreas), "Zebras · Highlights")
     XCTAssertTrue(ExposureGuidance.zebraLookFor(camera.guides).contains("do not prove"))
     camera.guides.useZebraPreset(.faceReference)
     let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped))
     defer { LibraryAX.close(window) }
-    for label in ["Check brightness · Zebras", "Check brightness · False colour"] {
+    for label in ["Zebras · My skin", "False colour"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
     let reference = ExposureGuidance.zebraLookFor(camera.guides)
