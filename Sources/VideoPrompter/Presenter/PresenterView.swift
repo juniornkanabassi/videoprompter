@@ -18,9 +18,12 @@ struct PresenterView: View {
   @ObservedObject private var monitor: ReferenceMonitor
   private let startsCamera: Bool
   private let referencePicture: NSImage?
+  private let revealsCleanExit: Bool
+  private let sourceInfoOverride: CameraSourceInfo?
+  private var sourceInfo: CameraSourceInfo? { sourceInfoOverride ?? camera.sourceInfo }
 
   init(store: AppStore, session: SessionStore, draft: PresenterDraft, hasScript: Bool = true,
-       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil) {
+       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil, revealsCleanExit: Bool = false, sourceInfoOverride: CameraSourceInfo? = nil) {
     self.store = store
     self.session = session
     self.draft = draft
@@ -29,6 +32,8 @@ struct PresenterView: View {
     self.monitor = monitor
     self.startsCamera = startsCamera
     self.referencePicture = startsCamera ? nil : referencePicture
+    self.revealsCleanExit = revealsCleanExit
+    self.sourceInfoOverride = sourceInfoOverride
     self.recorder = recorder
     _shell = StateObject(wrappedValue: shell ?? PresenterShell(reading: session.isActivelyRunning))
     _presentation = StateObject(wrappedValue: PresenterSessionState(session: session))
@@ -49,6 +54,10 @@ struct PresenterView: View {
   static func controlZoom(_ zoom: Double) -> Double { zoom }
   private var controlZoom: Double { Self.controlZoom(store.uiZoom) }
   @State private var stageWidth: CGFloat = 1600
+  @State private var viewport = CGSize(width: 1600, height: 1000)
+  @State private var showsExposureKey = false
+  private var barFit: PresenterBarFit { PresenterBarFit(size: viewport, zoom: controlZoom) }
+  private var narrowReading: Bool { shell.reading && viewport.width / controlZoom < 480 }
   private var compactReading: Bool { shell.reading && stageWidth / controlZoom < 700 }
   @ObservedObject private var recorder: CameraRecorder
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
@@ -56,78 +65,112 @@ struct PresenterView: View {
   private var stage: some View { readingStage }
   private var readingStage: some View {
     GeometryReader { geometry in
-      let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
-      ZStack(alignment: .top) {
-        if camera.presentsWithVideo || camera.cleanView {
-          // The live picture is the bottom layer only. The background colour above it is the
-          // script's backdrop, so colour, opacity, guide line, mirror, rotation and in-place
-          // editing all keep working exactly as they do without video.
+      let keyVisible = camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed
+      let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 800 * controlZoom
+      let meterWidth = micLevelVisible ? 120 * controlZoom : 0
+      HStack(alignment: .top, spacing: 0) {
+        if !shell.reading && !camera.cleanView && camera.presentsWithVideo {
+          VStack(alignment: .leading, spacing: Space.md) {
+            sourceStatus.fixedSize(horizontal: false, vertical: true)
+            if keyVisible {
           Group {
-            if let referencePicture {
-              Image(nsImage: referencePicture).resizable().scaledToFit()
-            } else { CameraPreview(model: camera, presenter: true) }
-          }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.leading, !shell.reading && !camera.cleanView && camera.exposureIsConfigured ? max(0, 2 * (300 * controlZoom - camera.guides.rotation.fittedRect(aspect: camera.pictureSize ?? CGSize(width: 16, height: 9), in: CGRect(origin: .zero, size: geometry.size)).minX)) : 0) // grid: ok Reserve room for the exposure key beside a 16:9 or portrait picture.
-            .ignoresSafeArea()
-            .task { if startsCamera { camera.start() } }
-        }
-        // Video only: the camera stage and its own guides, with no backdrop, script or reading guide.
-        if showsScript {
-        Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
-          .opacity(Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
-          .ignoresSafeArea()
-        Group {
-          if draft.isEditing {
-            PresenterEditorView(session: session, draft: draft, settings: store.settings, sideInset: sideInset) {
-              editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+            if keyFits { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).fixedSize(horizontal: false, vertical: true) }
+            else {
+              Button { showsExposureKey = true } label: {
+                Label("Exposure key", systemImage: "list.bullet.rectangle")
+                  .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44)
+              }.buttonStyle(.plain).uiZoom(controlZoom)
             }
-          } else {
-            PresenterScriptView(session: session, settings: store.settings, sideInset: sideInset, overVideo: camera.presentsWithVideo && !camera.cleanView)
+          }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")
+            }
+          }.frame(width: (keyFits ? 280 : 144) * controlZoom, alignment: .leading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .padding(Space.md)
+        }
+        ZStack(alignment: .top) {
+          if camera.presentsWithVideo || camera.cleanView {
+            Group {
+              if let referencePicture { Image(nsImage: referencePicture).resizable().scaledToFit() }
+              else { CameraPreview(model: camera, presenter: true) }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              .task { if startsCamera { camera.start() } }
           }
-        }
-        .scaleEffect(
-          x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1
-        ).rotationEffect(.degrees(Double(store.settings.rotation)))
-        .clipped()
-        GuideLine(settings: store.settings).offset(
-          y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
-        }
-        if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
-          CameraRecoveryView(model: camera) { shell.adjustTab = .camera }
-            .uiZoom(controlZoom).padding(Space.md)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .environment(\.colorScheme, .dark)
-        }
-        if camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed {
-          Group {
-            ExposureKey(guides: camera.guides, compact: shell.reading, zoom: controlZoom).frame(maxWidth: 280 * controlZoom, alignment: .leading)
-              .padding(Space.md).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          if showsScript {
+            Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
+              .opacity(Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
+            Group {
+              if draft.isEditing {
+                PresenterEditorView(session: session, draft: draft, settings: store.settings,
+                  sideInset: ScriptTextView.sideInset(width: geometry.size.width - meterWidth, textWidth: store.settings.textWidth)) {
+                    editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
+                  }
+              } else {
+                PresenterScriptView(session: session, settings: store.settings,
+                  sideInset: ScriptTextView.sideInset(width: geometry.size.width - meterWidth, textWidth: store.settings.textWidth),
+                  overVideo: camera.presentsWithVideo)
+              }
+            }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
+              .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
+            GuideLine(settings: store.settings).offset(y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
+          }
+          if keyVisible && shell.reading {
+            HStack(spacing: Space.sm) {
+              if camera.guides.falseColour {
+                HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
+              } else { PresenterZebraSwatch().frame(width: 24, height: 16) }
+              Text(camera.guides.falseColour ? "False colour on" : "Zebras on")
+            }
+              .font(.system(size: 15, weight: .semibold)).padding(Space.sm)
+              .background(.black.opacity(0.8), in: Capsule()).uiZoom(controlZoom)
+              .frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
               .accessibilityIdentifier("presenter-exposure-legend")
           }
-
-        }
+          if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
+            CameraRecoveryView(model: camera) { shell.adjustTab = .camera }.uiZoom(controlZoom).padding(Space.md)
+              .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+          }
+          if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
+            Text("No script yet. Choose one in the library, then open the prompter.")
+              .font(.title3).multilineTextAlignment(.center).padding(Space.lg)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
+          .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName)
-            .frame(width: 120, height: geometry.size.height * 0.85 / controlZoom).uiZoom(controlZoom) // grid: ok Fit the scaled meter inside the stage.
-            .frame(width: 120 * controlZoom, height: geometry.size.height * 0.85) // grid: ok The meter fits within the stage.
-            .padding(Space.sm).background(.black.opacity(0.45), in: .rect(cornerRadius: 12))
-            .padding(.trailing, Space.md)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .environment(\.colorScheme, .dark)
+            .frame(width: 120, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
+            .frame(width: meterWidth).padding(.vertical, Space.md)
         }
-        if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
-          Text("No script yet. Choose one in the library and press Present to add it here.")
-            .font(.title3).multilineTextAlignment(.center).foregroundStyle(.white)
-            .padding(Space.lg).background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Space.md))
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-
+      }.foregroundStyle(.white)
+        .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
+    }.background(camera.cleanView ? Color.black : Color(white: 0.035))
+      .popover(isPresented: $showsExposureKey) {
+        ScrollView { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).padding(Space.md) }
+          .frame(width: min(viewport.width, 360 * controlZoom), height: min(viewport.height * 0.8, 640 * controlZoom)) // grid: ok Keep the popover within the available height.
       }
-    }.background(Color(white: 0.035))
   }
 
-  private var micLevelVisible: Bool { showsMicLevel && camera.presentsWithVideo && !camera.cleanView }
+  private var sourceStatus: some View {
+    Button { shell.adjustTab = .camera } label: {
+      VStack(spacing: Space.xs) {
+        Text(sourceInfo.map { "\($0.displayName) · \($0.connectionDescription)" } ?? "No camera chosen")
+        Text([sourceInfo.map { $0.summary.components(separatedBy: " · ").dropFirst(2).joined(separator: " · ") }, shotLabel].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+      }.font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true).padding(Space.sm)
+        .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: Space.md))
+    }.buttonStyle(.plain).uiZoom(controlZoom)
+  }
+  private var shotLabel: String {
+    if camera.guides.automaticRotation { return "Automatic" }
+    switch camera.guides.rotation {
+    case .none: return "Landscape"
+    case .quarter: return "Vertical turned left"
+    case .threeQuarters: return "Vertical turned right"
+    case .half: return "Upside down"
+    }
+  }
+
+  private var micLevelVisible: Bool { showsMicLevel && !camera.cleanView }
   private var trackedStage: some View {
     stage
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stageWidth = $0 }
@@ -147,13 +190,20 @@ struct PresenterView: View {
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
     .onDisappear { quietTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
-      if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false }
+      if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false; showsExposureKey = false }
       cleanControlsRevealed = false
       if clean { quietTask?.cancel() }
       announce("Clean view " + (clean ? "on" : "off"))
     }
   }
   var body: some View {
+    GeometryReader { geometry in
+      presenterContent
+        .onAppear { viewport = geometry.size }
+        .onChange(of: geometry.size) { _, size in viewport = size }
+    }
+  }
+  private var presenterContent: some View {
     trackedStage
     .onAppear { recorder.useSettings(store.settings); camera.recorder = recorder; if camera.cleanView { shell.cleanEntered(session: session) } }
     .onExitCommand {
@@ -176,19 +226,28 @@ struct PresenterView: View {
     }
     .safeAreaInset(edge: .trailing, spacing: 0) {
       if let tab = shell.adjustTab, !camera.cleanView {
-        AdjustPanel(selection: Binding(get: { shell.adjustTab ?? tab }, set: { shell.adjustTab = $0 }), showsMic: $showsMicLevel,
-                    camera: camera, store: store, startsMeter: startsCamera, zoom: controlZoom, recorder: recorder)
+        VStack(spacing: 0) {
+          if barFit.movesTools {
+            VStack(spacing: Space.sm) {
+              Toggle("Guides", isOn: Binding(get: { camera.framingIsVisible }, set: { _ in camera.toggleFramingGuides() })).frame(minHeight: 44)
+              Toggle("Mic", isOn: $showsMicLevel).frame(minHeight: 44)
+            }.toggleStyle(.switch).tint(AlphaStyle.accent).padding(Space.md).uiZoom(controlZoom)
+          }
+          AdjustPanel(selection: Binding(get: { shell.adjustTab ?? tab }, set: { shell.adjustTab = $0 }), showsMic: $showsMicLevel,
+                      camera: camera, store: store, startsMeter: startsCamera, zoom: controlZoom, recorder: recorder)
+        }
       }
     }
     .overlay(alignment: .top) {
-      if camera.cleanView && (cleanControlsRevealed || cleanExitFocused) {
-        Button("Exit Clean · Esc") { camera.cleanView = false }
-          .buttonStyle(.plain).padding(.horizontal, 12).frame(minHeight: 44).background(.black.opacity(0.85), in: Capsule()).foregroundStyle(.white).focused($cleanExitFocused).padding(24)
-      } else if !camera.cleanView && !shell.reading && camera.presentsWithVideo {
-        HStack {
-          Text(camera.sourceInfo?.summary ?? "Camera").padding(8).background(.black.opacity(0.8), in: Capsule())
-          Text(camera.shotSummary).padding(8).background(.black.opacity(0.8), in: Capsule())
-        }.font(.callout.weight(.semibold)).foregroundStyle(.white).padding(.top, 24)
+      if camera.cleanView {
+        Button { camera.cleanView = false } label: {
+          Label("Exit Clean · Esc", systemImage: "xmark")
+            .font(.system(size: 15, weight: .semibold))
+            .padding(.horizontal, Space.md).frame(minHeight: 44)
+            .background(.black.opacity(0.85), in: Capsule()).foregroundStyle(.white)
+            .opacity(cleanControlsRevealed || cleanExitFocused || revealsCleanExit ? 1 : 0)
+        }.buttonStyle(.plain).accessibilityLabel("Exit Clean · Esc")
+          .focused($cleanExitFocused).padding(Space.xxl)
       }
     }
     .onContinuousHover { phase in
@@ -239,8 +298,8 @@ struct PresenterView: View {
       if draft.isEditing {
         Text("Editing · not saved yet").font(.callout)
         HStack {
-          Button("Save changes") { Task { await draft.confirm(store: store) } }.keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
-          Button("Cancel editing") { draft.requestCancel() }.disabled(draft.isSaving)
+          transportButton("Save changes", icon: "checkmark", primary: true) { Task { await draft.confirm(store: store) } }.keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
+          transportButton("Cancel editing", icon: "xmark") { draft.requestCancel() }.disabled(draft.isSaving)
         }.frame(minHeight: 44)
       }
       if let error = store.shootSetupError {
@@ -253,58 +312,100 @@ struct PresenterView: View {
         if shell.reading { readingNotice } else { bottomNotice }
       }
       if !draft.isEditing {
-      WrapLayout(spacing: 12, distributeAfter: shell.reading ? nil : 2) {
       if shell.reading {
-        transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }
-        transportButton(session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", icon: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", primary: true) { session.toggle() }
-        transportButton("Set up the shot", icon: "display") { session.pause(); shell.reading = false }
+        if narrowReading {
+          ScrollView(.horizontal) { HStack(spacing: Space.md) { readingTransport } }
+            .scrollIndicators(.hidden).frame(height: 44)
+        } else {
+          HStack(spacing: Space.md) { Spacer(minLength: 0); readingTransport; Spacer(minLength: 0) }
+        }
+        ViewThatFits(in: .horizontal) {
+          HStack { readingStatus; readingSettings; keyboardHint }
+          VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings }; keyboardHint }
+        }
+      } else if barFit.twoRows {
+        HStack(spacing: Space.sm) { setupTransport }
+        HStack(spacing: Space.sm) { setupTiles }
       } else {
-        transportButton("Start reading", icon: "play.fill", primary: true) { shell.reading = true; session.startReading() }.disabled(!hasScript || draft.isEditing)
-        transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }.disabled(!hasScript)
-        shellTile("Camera", "video", tab: .camera, value: camera.guides.rotation == .none ? "Landscape" : "↻ Vertical") { shell.adjustTab = .camera }
-        shellTile("Zebras", "circle.lefthalf.striped.horizontal", tab: .zebras, on: camera.guides.zebras, value: zebraDetail) { camera.exposureBinding(\.zebras).wrappedValue.toggle() }
-        shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.guides.falseColour) { camera.exposureBinding(\.falseColour).wrappedValue.toggle() }
-        shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
-        shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { showsMicLevel.toggle() }
-        Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 72)
-        shellTile("Adjust", "slider.horizontal.3", tab: .camera) { shell.adjustTab = shell.adjustTab == nil ? .camera : nil }
-        shellTile("Clean", "rectangle", tab: .camera) { camera.cleanView = true }
+        HStack(spacing: Space.md) { setupTransport; Spacer(minLength: 0); setupTiles }
       }
       }
-      }
-    }.padding(compactReading ? 8 : 16).frame(maxWidth: .infinity, minHeight: 132)
+    }.padding(narrowReading ? Space.xs : Space.md).frame(maxWidth: .infinity)
       .background(Color(nsColor: NSColor(white: 0.08, alpha: 1)))
       .buttonStyle(PresenterButtonStyle()).accessibilityIdentifier("presenter-control-bar")
   }
 
+  @ViewBuilder private var setupTransport: some View {
+    transportButton("Start reading", icon: "play.fill", primary: true) { shell.reading = true; session.startReading() }.disabled(!hasScript || draft.isEditing)
+    transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }.disabled(!hasScript)
+  }
+  @ViewBuilder private var readingTransport: some View {
+    transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }
+    transportButton(session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", icon: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", primary: true) { session.toggle() }
+    transportButton("Set up the shot", icon: "display") { session.pause(); shell.reading = false }
+  }
+  private var readingStatus: some View {
+    Text(store.settings.mode == "Voice" ? "Voice follow · \(session.isActivelyRunning ? "Listening" : "Paused")" : "Automatic scroll · \(Int(store.settings.speed)) wpm · \(session.isActivelyRunning ? "Running" : "Paused")")
+      .font(.system(size: 14)).foregroundStyle(.white.opacity(0.75))
+  }
+  private var keyboardHint: some View {
+    Text("Space: pause or resume · Esc: set up the shot").font(.system(size: 13)).foregroundStyle(.white.opacity(0.75))
+      .fixedSize(horizontal: false, vertical: true)
+  }
+  private var readingSettings: some View {
+    Button("Reading settings") { settingsTab = .reading; showsSettings = true }.buttonStyle(.plain)
+      .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44)
+  }
+  @ViewBuilder private var setupTiles: some View {
+    shellTile("Camera", "video", tab: .camera, value: shotLabel) { shell.adjustTab = .camera }
+    shellTile("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.guides.zebras && !camera.exposureBypassed, value: zebraDetail) { toggleExposure(\.zebras) }
+    shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.guides.falseColour && !camera.exposureBypassed) { toggleExposure(\.falseColour) }
+    if !barFit.movesTools {
+      shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
+      shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { showsMicLevel.toggle() }
+      Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 72)
+    }
+    shellTile("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, value: barFit.movesTools ? "2 more" : nil) { shell.adjustTab = shell.adjustTab == nil ? .camera : nil }
+    shellTile("Clean", "rectangle", tab: .camera) { camera.cleanView = true }
+  }
+  private func toggleExposure(_ key: WritableKeyPath<CameraGuides, Bool>) {
+    let enabled = camera.guides[keyPath: key] && !camera.exposureBypassed
+    if camera.guides.greyCardCheck { camera.guides.greyCardCheck = false; announce("Grey card check ended.") }
+    camera.exposureBinding(key).wrappedValue = !enabled
+  }
+
   private func transportButton(_ title: String, icon: String, primary: Bool = false, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      Label(title, systemImage: icon).font(.system(size: 18, weight: .semibold))
-        .fixedSize().padding(.horizontal, compactReading ? Space.sm : Space.lg)
-        .frame(minWidth: compactReading ? 0 : 190, minHeight: compactReading ? 44 : 92) // grid: ok Match the large transport buttons in the approved mockup.
-        .foregroundStyle(primary ? .black : .white)
-        .background(primary ? Color.yellow : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
+      Label(title, systemImage: icon).font(.system(size: primary ? 22 : (compactReading ? 16 : 18), weight: primary ? .bold : .semibold))
+        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, Space.sm)
+        .frame(minWidth: shell.reading && primary ? (compactReading ? 160 : 240) : (compactReading ? 0 : barFit.transportWidth),
+               maxWidth: shell.reading ? (primary ? (compactReading ? 160 : 240) : (compactReading ? 140 : 192)) : nil, minHeight: shell.reading ? (narrowReading ? 44 : 56) : barFit.transportHeight)
+        .foregroundStyle(primary ? AlphaStyle.onAccent : .white)
+        .background(primary ? AlphaStyle.accent : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16))
     }.buttonStyle(.plain).accessibilityLabel(title)
+      .fixedSize(horizontal: narrowReading, vertical: false)
   }
 
   private func shellTile(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool? = nil, value: String? = nil, action: @escaping () -> Void) -> some View {
     Button(action: action) {
-      VStack(spacing: 4) {
-        Image(systemName: symbol).font(.title2)
-          .padding(.top, Space.sm)
-        Text(title).font(.system(size: 16, weight: .semibold)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-
-      }.frame(width: 104, height: 92)
-        .overlay(alignment: .topTrailing) {
-          if let value { Text(value).font(.system(size: 11, weight: .semibold)).foregroundStyle(.yellow).padding(4).accessibilityHidden(true) }
+      VStack(spacing: Space.xs) {
+        if let value {
+          Text(value).font(.system(size: 13, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
+            .lineLimit(2).multilineTextAlignment(.center).accessibilityHidden(true)
         }
-        .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(.yellow).padding(4) } }
+        if title == "Zebras" { PresenterZebraSwatch().frame(width: 24, height: 24) }
+        else { Image(systemName: symbol).font(.system(size: 24)) }
+        Text(title).font(.system(size: 16, weight: .semibold)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+      }.frame(width: barFit.tileWidth, height: barFit.tileHeight)
+        .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(on == true ? Color.yellow : .clear, lineWidth: 2))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(on == true ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
     }.buttonStyle(.plain).accessibilityLabel(title)
-      .accessibilityValue(on.map { $0 ? "On" : "Off" } ?? ((title == "Camera" || title == "Adjust") ? camera.sourceInfo?.displayName ?? "No camera selected" : value ?? ""))
+      .accessibilityValue(title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? shotLabel : value ?? ""))
+      .accessibilityAddTraits(on != nil && title != "Adjust" ? .isToggle : [])
       .contextMenu { if title != "Clean" && title != "Adjust" { Button("Adjust \(title)") { shell.adjustTab = tab } } }
-      .onLongPressGesture { if title != "Clean" && title != "Adjust" { shell.adjustTab = tab } }
+      .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if title != "Clean" && title != "Adjust" { shell.adjustTab = tab } })
   }
 
   private var zebraDetail: String {
@@ -601,5 +702,44 @@ extension EnvironmentValues {
   var presenterReduceTransparency: Bool? {
     get { self[PresenterTransparencyOverride.self] }
     set { self[PresenterTransparencyOverride.self] = newValue }
+  }
+}
+
+/// Fit in this order: full row, narrower row, secondary tools in Adjust, then two rows.
+struct PresenterBarFit {
+  let movesTools: Bool
+  let twoRows: Bool
+  let tileWidth: CGFloat
+  let tileHeight: CGFloat
+  let transportWidth: CGFloat
+  let transportHeight: CGFloat
+  init(size: CGSize, zoom: Double) {
+    let width = size.width / zoom - 32
+    if width >= 1260 {
+      movesTools = false; twoRows = false; tileWidth = 104; tileHeight = 112; transportWidth = 190; transportHeight = 112
+    } else if width >= 1100 {
+      movesTools = false; twoRows = false; tileWidth = 88; tileHeight = 112; transportWidth = 160; transportHeight = 112
+    } else {
+      movesTools = true; twoRows = width < 844
+      tileWidth = twoRows ? max(80, min(104, (width - 32) / 5)) : 88
+      let short = size.height / zoom < 440
+      tileHeight = short ? 88 : 112
+      transportHeight = twoRows ? (short ? 44 : 56) : tileHeight
+      transportWidth = 160
+    }
+  }
+}
+
+private struct PresenterZebraSwatch: View {
+  var body: some View {
+    Canvas { context, size in
+      var stripes = Path()
+      for x in stride(from: -size.height, through: size.width, by: 8) {
+        stripes.move(to: CGPoint(x: x, y: 0))
+        stripes.addLine(to: CGPoint(x: x + size.height, y: size.height))
+      }
+      context.stroke(stripes, with: .color(.white), lineWidth: 4)
+    }.clipShape(RoundedRectangle(cornerRadius: 4))
+      .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.6)))
   }
 }

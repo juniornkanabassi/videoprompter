@@ -76,7 +76,9 @@ import XCTest
     for identifier in ["presenter-control-bar", "presenter-state-band", "presenter-context-band", "presenter-exposure-legend"] {
       XCTAssertFalse(elements.contains { LibraryAX.value($0, "accessibilityIdentifier") == identifier }, identifier)
     }
-    XCTAssertFalse(elements.contains { ["AXButton", "AXTextArea", "AXStaticText"].contains(LibraryAX.value($0, "accessibilityRole")) })
+    XCTAssertFalse(elements.contains { LibraryAX.value($0, "accessibilityRole") == "AXTextArea" })
+    let buttons = elements.filter { LibraryAX.value($0, "accessibilityRole") == "AXButton" }
+    XCTAssertTrue(buttons.allSatisfy { LibraryAX.value($0, "accessibilityLabel") == "Exit Clean · Esc" })
     XCTAssertTrue(descendants(host).contains { $0 is CameraStageView })
     XCTAssertFalse(camera.previewGuides.zebras)
     XCTAssertFalse(camera.previewGuides.falseColour)

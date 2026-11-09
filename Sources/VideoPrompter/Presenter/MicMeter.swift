@@ -34,22 +34,45 @@ struct MicMeterView: View {
       let db = Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now))
       let fill = InputLevelMeter.position(db)
       let clipLit = Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
+      GeometryReader { available in
+      let horizontal = available.size.height < 360
       VStack(spacing: Space.sm) {
-        Text("Mic").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.onDarkQuiet(contrast))
+        Text("MIC").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.onDarkQuiet(contrast))
         Text("CLIP")
           .font(.system(size: 11, weight: .bold))
           .foregroundStyle(.white.opacity(clipLit ? 1 : 0))
           .padding(.horizontal, Space.xs)
           .background(Capsule().fill(Color.red.opacity(clipLit ? 0.9 : 0)))
+        if horizontal {
+          GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+              InputLevelMeter.zoneTrack(vertical: false).opacity(0.2)
+              InputLevelMeter.zoneTrack(vertical: false).mask(alignment: .leading) {
+                Rectangle().frame(width: geometry.size.width * fill)
+              }
+              ForEach([-18, -6], id: \.self) { boundary in
+                Rectangle().fill(.white.opacity(0.65)).frame(width: 1)
+                  .offset(x: geometry.size.width * InputLevelMeter.position(Float(boundary)))
+              }
+              if let peak = peakHold.value(at: now) {
+                Rectangle().fill(.white).frame(width: 2)
+                  .offset(x: geometry.size.width * InputLevelMeter.position(peak))
+              }
+            }
+          }.frame(height: Self.barWidth)
+          HStack { Text("−60"); Spacer(); Text("0") }.font(.system(size: 14))
+        } else {
         HStack(spacing: Space.xs) {
           GeometryReader { geometry in
             ZStack(alignment: .topTrailing) {
               ForEach(Self.scale.indices, id: \.self) { index in
                 let entry = Self.scale[index]
+                if geometry.size.height >= 260 || ![-30, -45].contains(entry.value) {
                 Text(entry.label)
                   .font(.system(size: 14)).monospacedDigit()
                   .foregroundStyle(Palette.onDarkQuiet(contrast))
                   .offset(y: geometry.size.height * (1 - InputLevelMeter.position(entry.value)) - 8)
+                }
               }
             }
           }
@@ -73,18 +96,22 @@ struct MicMeterView: View {
           }
           .frame(width: Self.barWidth)
         }
-        .frame(maxHeight: .infinity)
-        Text(Self.readout(db))
+        .frame(minHeight: 180, maxHeight: .infinity)
+        }
+        Text(db.isFinite ? Self.readout(db).replacingOccurrences(of: " dBFS", with: "") : "No signal")
           .font(.system(size: 22, weight: .semibold)).monospacedDigit()
-          .foregroundStyle(.white)
+          .foregroundStyle(.white).minimumScaleFactor(0.7).lineLimit(1)
+        if db.isFinite { Text("dBFS").font(.system(size: 13)).foregroundStyle(Palette.onDarkQuiet(contrast)) }
         Text(micName)
-          .font(.system(size: 14)).multilineTextAlignment(.center)
+          .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
           .foregroundStyle(Palette.onDarkQuiet(contrast))
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
       .accessibilityElement(children: .ignore)
-      .accessibilityLabel("Microphone level")
-      .accessibilityValue(Self.readout(db))
-      .accessibilityHint(meter.isClipping ? "Input is clipping." : "Warning zones at minus 18 and minus 6 dBFS.")
+      .accessibilityLabel("Microphone level, \(micName), \(Self.readout(db))" + (clipLit ? ", Clipping" : ""))
+      .accessibilityValue(Self.readout(db) + (clipLit ? ", Clipping" : ""))
+      .accessibilityHint(clipLit ? "Input is clipping." : "Warning zones at minus 18 and minus 6 dBFS.")
+      }
       .onChange(of: meter.isClipping, initial: true) { _, clipping in
         if clipping { clipLatchUntil = ProcessInfo.processInfo.systemUptime + Self.clipLatchSeconds }
       }
