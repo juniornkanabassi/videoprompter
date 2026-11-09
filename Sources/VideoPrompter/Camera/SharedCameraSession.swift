@@ -126,6 +126,7 @@ struct CameraHolders {
   var holderCount: Int { holders.count }
   /// The camera actually attached.
   private(set) var attachedUID: String?
+  var measuredFrameRate: Double? { probe.measuredFrameRate }
   /// The picture's own size, before rotation, for the aspect-fit of a turned feed. First the
   /// device's active format, then the frame the input port really delivers: a DeckLink hands over
   /// whatever the signal is (UHD, not the camera's 3:2 open gate), and a signal change moves it.
@@ -343,8 +344,11 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     /// Presentation times of the first frames after a re-pin, while the rate is measured.
     var rateTimes: [Double] = []
     var measuresRate = false
+    var frameRate = CameraFrameRate()
+    var lastRateNotice = 0.0
   }
   private let shared = Mutex(Shared())
+  var measuredFrameRate: Double? { shared.withLock { $0.frameRate.value } }
   private let sessionQueue: DispatchQueue
   private let output = AVCaptureVideoDataOutput()
   private var current:
@@ -377,6 +381,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
     in session: AVCaptureSession
   ) {
     generation += 1
+    shared.withLock { $0.frameRate = CameraFrameRate() }
     current = nil
     signalSize = nil
     measuresRate = false
@@ -446,10 +451,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   /// first frame or latency is logged; after `watchdog` seconds with no frame, the device goes
   /// back to the format's default rate for the rest of the run.
   func watch(_ session: AVCaptureSession) {
-    guard let current, current.choice.wanted != current.choice.fallback || Self.logsLatency || measuresRate else {
-      detach(from: session)
-      return
-    }
+    guard let current else { return }
     generation += 1
     let generation = self.generation
     let host = CMClockGetTime(CMClockGetHostTimeClock()).seconds
@@ -504,7 +506,7 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
           return watch(session)
         }
       }
-      if !Self.logsLatency { detach(from: session) }
+      // Keep the existing probe attached to measure the live frame rate.
     }
     guard Self.logsLatency else { return }
     let pinned = current.choice.wanted.frameDuration
@@ -522,7 +524,6 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
           duration: measured > 0 ? measured : Self.logWindow, pinned: pinned),
         selected.map { "\($0.width)x\($0.height) \($0.subType)" } ?? "unknown",
         pinned.isValid ? String(format: "%.2f ms", pinned.seconds * 1000) : "default")
-      detach(from: session)
     }
   }
 
@@ -546,6 +547,14 @@ final class CameraFrameProbe: NSObject, AVCaptureVideoDataOutputSampleBufferDele
   ) {
     let delivered = CACurrentMediaTime()
     let presented = sampleBuffer.presentationTimeStamp.seconds
+    let notifyRate = shared.withLock { state -> Bool in
+      state.frameRate.add(presented)
+      if delivered - state.lastRateNotice >= 1 { state.lastRateNotice = delivered; return true }
+      return false
+    }
+    if notifyRate {
+      DispatchQueue.main.async { NotificationCenter.default.post(name: .cameraPictureSizeDidChange, object: nil) }
+    }
     shared.withLock {
       $0.frames += 1
       if $0.measuresRate, $0.rateTimes.count < 12 { $0.rateTimes.append(presented) }
