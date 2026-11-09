@@ -75,6 +75,43 @@ extension AppearanceSnapshotTests {
         }
       }
     }
+    // Exercise the minimum-height column and a landscape picture at narrow widths.
+    store.session.pause()
+    camera.setRotation(.none)
+    let landscape = NSImage(size: NSSize(width: 1600, height: 900))
+    landscape.lockFocus()
+    NSColor.darkGray.setFill()
+    NSRect(x: 0, y: 0, width: 1600, height: 900).fill()
+    picture.draw(in: NSRect(x: 500, y: 0, width: 600, height: 900))
+    landscape.unlockFocus()
+    for (size, zoom) in [(CGSize(width: 720, height: 520), 2.0),
+                         (CGSize(width: 1000, height: 700), 1.0),
+                         (CGSize(width: 1000, height: 700), 2.0),
+                         (CGSize(width: 1600, height: 1000), 1.0)] {
+      store.uiZoom = zoom
+      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record),
+        camera: camera, startsCamera: false, recorder: recorder, referencePicture: landscape,
+        sourceInfoOverride: CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25))
+      let (window, host) = await LibraryAX.host(view, size: size)
+      let nodes = LibraryAX.elements(host)
+      func frame(_ id: String) throws -> CGRect {
+        let node = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == id })
+        return try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+      }
+      if size.width == 720 {
+        XCTAssertFalse(try frame("presenter-exposure-legend").intersects(frame("presenter-source-status")))
+      } else {
+        let stage = try frame("presenter-visible-stage")
+        let region = try frame("presenter-picture-region")
+        let pictureWidth = min(region.width, region.height * 16 / 9)
+        XCTAssertGreaterThanOrEqual(pictureWidth, stage.width * 0.5 - 1)
+      }
+      XCTAssertFalse(window.isVisible)
+      LibraryAX.close(window)
+      if let output, size.width != 720 {
+        try await snapshot(view, name: "g1-landscape-\(Int(size.width))-\(Int(zoom * 100))", size: size, scheme: .dark, destination: URL(fileURLWithPath: output))
+      }
+    }
     store.session.pause()
     store.uiZoom = 1
     camera.guides.falseColour = true

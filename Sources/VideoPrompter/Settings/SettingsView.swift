@@ -412,7 +412,7 @@ private struct MicrophoneTestRow: View {
         else { session.startMicrophoneTest(deviceUID: deviceUID, gain: gain) }
       }.help("Check your microphone before presenting")
 
-      MicMeterView(meter: session.meter, micName: micName)
+      MicMeterView(meter: session.meter, micName: micName, showsHeading: false)
         .frame(height: 180).background(Color.black, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     }
     if deviceUID == nil { Text("System default: \(AudioCapture.resolvedInput(nil)?.name ?? "No microphone available")").font(.callout) }
@@ -669,16 +669,21 @@ struct CameraSettingsDetailSheet: View {
           case .zebras: ZebraAdjustView(model: camera)
           case .falseColour: FalseColourAdjustView(model: camera)
           case .guides: AlphaGuideSections(model: camera)
-          case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch).frame(minHeight: 44)
+          case .key:
+            HStack {
+              Text("Show exposure key"); Spacer()
+              Toggle("Show exposure key", isOn: $exposureKey).labelsHidden().toggleStyle(.switch)
+            }.frame(minHeight: AlphaStyle.minTarget)
           case .advanced:
             HStack {
               Text("Mirror camera preview"); Spacer()
               Toggle("Mirror camera preview", isOn: $camera.mirrored).labelsHidden().toggleStyle(.switch)
             }.frame(minHeight: AlphaStyle.minTarget)
             CameraAdjustView(model: camera, devicesOverride: [], advancedOnly: true)
-            AlphaGuideSections(model: camera, advancedExpanded: true)
-            ShootSetupSection(store: store, camera: camera, recorder: recorder)
-            PermissionSection()
+            Text("Guide look").font(.system(size: 17, weight: .semibold))
+            CameraGuideSections(model: camera, alphaStyle: true)
+            Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }
+              .formStyle(.grouped).scrollDisabled(true).frame(minHeight: 260)
           }
         }.frame(maxWidth: .infinity, alignment: .leading)
       }

@@ -23,6 +23,7 @@ struct AlphaGuideSections: View {
       if model.guides.axes || model.guides.bullseye {
         HStack {
           Text("Centre mark style").font(.system(size: 14)).foregroundStyle(.secondary)
+          HStack(spacing: 0) {
           ForEach([true, false], id: \.self) { dot in
             Button(dot ? "Dot" : "Cross") {
               model.chooseGuide { $0.axes = !dot; $0.bullseye = dot }
@@ -31,6 +32,7 @@ struct AlphaGuideSections: View {
               .background(model.guides.bullseye == dot ? AlphaStyle.accent : .clear, in: RoundedRectangle(cornerRadius: Space.sm))
               .accessibilityAddTraits(model.guides.bullseye == dot ? .isSelected : [])
           }
+          }.padding(4).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         }.opacity(model.framingIsVisible ? 1 : 0.5)
 
       }

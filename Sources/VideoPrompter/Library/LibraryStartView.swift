@@ -32,11 +32,9 @@ struct LibraryStartView: View {
           VStack(spacing: Space.md) { cards }
         }
         }
-        WrapLayout(spacing: Space.xs) {
+        WrapLayout(spacing: Space.md) {
           Button(action: practice) { Text("Practice with an example script").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
-          Text("·").foregroundStyle(.secondary)
           Button { store.showWelcomeScript(); guide() } label: { Text("Help").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
-          Text("·").foregroundStyle(.secondary)
           Button { importing = true } label: { Text("Import file…").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
         }.buttonStyle(.borderless).controlSize(.large).font(.system(size: 16)).foregroundStyle(.secondary)
       }.frame(maxWidth: 1000).frame(maxWidth: .infinity)

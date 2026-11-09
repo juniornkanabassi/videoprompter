@@ -77,9 +77,10 @@ struct PresenterView: View {
       let availableGutter = (geometry.size.width - pictureWidth) / 2
       let keyFits = setup && availableGutter >= (280 * controlZoom + Space.md * 2) && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom + Space.md * 2
       let columnWidth = (keyFits ? 280 : 144) * controlZoom + Space.md * 2
-      let gutterWidth = setup ? max(columnWidth, meterWidth) : 0
+      let gutterWidth = setup ? max(meterWidth, min(columnWidth, pictureAspect > 1 ? geometry.size.width * 0.25 : columnWidth)) : 0
       HStack(alignment: .top, spacing: 0) {
         if setup {
+          ScrollView(.vertical) {
           VStack(alignment: .leading, spacing: Space.md) {
             if keyVisible {
           Group {
@@ -90,13 +91,13 @@ struct PresenterView: View {
                   .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44)
               }.buttonStyle(.plain).uiZoom(controlZoom)
             }
-          }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")
+          }.fixedSize(horizontal: false, vertical: true).accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")
             }
             sourceStatus.fixedSize(horizontal: false, vertical: true)
-          }.frame(width: (keyFits ? 280 : 144) * controlZoom, alignment: .leading)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
+              .accessibilityIdentifier("presenter-source-status")
+          }.frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.md)
-            .frame(width: gutterWidth, alignment: .leading)
+          }.frame(width: gutterWidth, height: geometry.size.height, alignment: .topLeading)
         }
         ZStack(alignment: .top) {
           if camera.presentsWithVideo || camera.cleanView {
@@ -189,7 +190,8 @@ struct PresenterView: View {
   private func sourcePill(parts: [String], singleLine: Bool = false) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-        Text(part).fixedSize(horizontal: singleLine, vertical: true)
+        Text(part).lineLimit(singleLine ? 1 : nil).minimumScaleFactor(singleLine ? 0.6 : 1)
+          .fixedSize(horizontal: false, vertical: true)
       }
     }
       .padding(Space.sm)
@@ -439,8 +441,9 @@ struct PresenterView: View {
           if title == "Zebras" { PresenterZebraSwatch().frame(width: 24, height: 24) }
           else { Image(systemName: symbol).font(.system(size: 24)) }
         }.frame(height: 28)
-        Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-          .frame(height: 24)
+        Text(title).font(.system(size: 16, weight: .semibold)).lineLimit(2).minimumScaleFactor(0.8)
+          .multilineTextAlignment(.center).padding(.horizontal, Space.xs)
+          .frame(minHeight: 24)
       }.frame(width: barFit.tileWidth, height: barFit.tileHeight)
         .overlay(alignment: .topLeading) { if on == true { Image(systemName: "checkmark.circle.fill").font(.system(size: 18)).foregroundStyle(AlphaStyle.accent).padding(Space.sm) } }
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
