@@ -19,17 +19,14 @@ import XCTest
     return (store, camera, recorder, record)
   }
 
-  func testCameraJumpBarFitsOneRowAtEverySize() async throws {
+  func testCameraOverviewReplacesJumpBar() async throws {
     let (store, camera, recorder, _) = try await fixture()
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false).uiZoom(zoom), size: .init(width: 560, height: 640))
-      defer { LibraryAX.close(window) }
-      let segments = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXRadioButton" }
-      XCTAssertEqual(segments.count, Features.recording ? 4 : 3)
-      let rects = try segments.map { try XCTUnwrap($0.value(forKey: "accessibilityFrame") as? NSValue).rectValue }
-      for rect in rects { XCTAssertTrue(window.convertToScreen(host.bounds).insetBy(dx: -1, dy: -1).contains(rect), "Jump control clips at \(zoom): \(rect)") }
-      for rect in rects.dropFirst() { XCTAssertEqual(rect.midY, rects.first?.midY ?? 0, accuracy: 1) }
+    let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false), size: .init(width: 800, height: 1000))
+    defer { LibraryAX.close(window) }
+    let segments = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXRadioButton" }
+    XCTAssertTrue(segments.isEmpty)
+    for label in ["Camera", "Shot", "My skin reference", "Zebras", "False colour", "Guides", "Exposure key", "Advanced"] {
+      XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
   }
 
@@ -234,7 +231,7 @@ import XCTest
     var setup = try XCTUnwrap(store.shootSetups.first)
     setup.cameraUID = nil; setup.reading.audioDeviceUID = nil; setup.microphoneUID = nil
     undo.beginUndoGrouping(); store.deleteShootSetup(setup.id, undoManager: undo); undo.endUndoGrouping()
-    XCTAssertEqual(undo.undoActionName, "Delete Shoot Setup"); undo.undo(); XCTAssertEqual(store.shootSetups.first?.id, setup.id)
+    XCTAssertEqual(undo.undoActionName, "Delete shoot setup"); undo.undo(); XCTAssertEqual(store.shootSetups.first?.id, setup.id)
     store.settings.fontSize = 40
     undo.beginUndoGrouping(); XCTAssertTrue(store.applyShootSetup(setup, camera: camera, recorder: recorder, microphones: [], undoManager: undo)); undo.endUndoGrouping()
     undo.undo(); XCTAssertEqual(store.settings.fontSize, 40)
@@ -315,20 +312,14 @@ extension AppearanceSnapshotTests {
     }
   }
 
-  func testNativeSettingsButtonsAndAlertTitlesUseTitleCase() throws {
+  func testSettingsUseSentenceCase() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-    let expression = try NSRegularExpression(pattern: #"(?:Button|\.alert)\("([^"\\]+)""#)
-    let small: Set<String> = ["a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "with", "over"]
-    for file in ["SettingsView.swift", "ShootSetup.swift"] {
-      let text = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Settings/" + file), encoding: .utf8)
-      for match in expression.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-        let label = String(text[Range(match.range(at: 1), in: text)!])
-        for word in label.split(separator: " ").dropFirst() where !small.contains(String(word)) {
-          if let first = word.first, first.isLetter { XCTAssertTrue(first.isUppercase, "\(file): \(label)") }
-        }
-      }
+    let text = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Settings/SettingsView.swift"), encoding: .utf8)
+    for label in ["Test microphone", "Speech recognition", "Keep scripts in iCloud Drive for iPad", "Also connect over Wi-Fi"] {
+      XCTAssertTrue(text.contains(label), label)
     }
   }
+
 }
 
 /// Shared by the matrix and PNG capture, so a snapshot cannot silently accept clipped controls.

@@ -35,7 +35,7 @@ import XCTest
     XCTAssertEqual(store.presets[0].fontSize, before, "Undo restores the replaced look")
     let (window, host) = await LibraryAX.host(SettingsPage(store: store, tab: .presets), size: .init(width: 720, height: 600))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Save Reading Preset", in: host).isEmpty, "A new or empty name still saves")
+    XCTAssertFalse(LibraryAX.named("Save reading preset", in: host).isEmpty, "A new or empty name still saves")
   }
 
   func testStopRecordingHelpOnlyWhileLocked() async throws {

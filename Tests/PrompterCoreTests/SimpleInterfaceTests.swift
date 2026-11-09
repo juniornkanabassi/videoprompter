@@ -335,8 +335,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
       (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
       (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
       (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
-      (.camera, ["Camera", Features.recording ? "Camera and recording sections" : "Camera sections"]),
-      (.presets, ["Preset name", "Save Reading Preset", "Reading presets"])
+      (.camera, ["Camera", "Camera and monitor"]),
+      (.presets, ["Preset name", "Save reading preset", "Reading presets"])
     ]
     for (tab, pageLabels) in expected {
       host.rootView = AnyView(SettingsPage(store: store, tab: tab))
