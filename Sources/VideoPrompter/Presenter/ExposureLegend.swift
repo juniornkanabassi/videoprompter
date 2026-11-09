@@ -436,9 +436,11 @@ struct ZebraAdjustView: View {
       HStack { Text("Zebras").font(.title2.bold()); Spacer(); Toggle("Zebras", isOn: model?.exposureBinding(\.zebras) ?? $guides.manualExposure(\.zebras)).labelsHidden().toggleStyle(.switch).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget) }.frame(minHeight: AlphaStyle.minTarget)
       Text("Stripes show where the picture is at a brightness you choose.").foregroundStyle(.secondary)
       if guides.greyCardCheck { Text("Grey card check on · Zebra target 41 ±2 IRE").font(.callout.bold()) }
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 192), spacing: AlphaStyle.controlGap)], spacing: AlphaStyle.controlGap) {
+      Grid(horizontalSpacing: AlphaStyle.controlGap, verticalSpacing: AlphaStyle.controlGap) {
+        GridRow {
         preset("My skin", detail: "Range · \(guides.skinReference.level) ±\(guides.skinReference.range) IRE", description: "Is my face exposed right?", purpose: .faceReference)
         preset("Highlights", detail: "Limit · 95 IRE and up", description: "Is anything too bright?", purpose: .brightAreas)
+        }
       }
       HStack(spacing: 4) {
         ForEach([true, false], id: \.self) { range in
@@ -473,7 +475,7 @@ struct ZebraAdjustView: View {
         Text(title).font(.headline).padding(.trailing, Space.lg)
         Text(description).font(.callout)
         Text(detail).font(.callout).foregroundStyle(.secondary)
-      }.frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading).padding(12)
+      }.frame(maxWidth: .infinity, alignment: .topLeading).padding(12)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: 2))
         .overlay(alignment: .topTrailing) { if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent).padding(Space.sm) } }
@@ -608,7 +610,7 @@ struct FalseColourAdjustView: View {
               NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
             }.frame(minHeight: AlphaStyle.minTarget)
           }
-          Text("Hold an 18% grey card where your face will be. Adjust exposure until the card turns green (Mid grey, 41 IRE). Turn this off to go back to your skin settings.").font(.callout).foregroundStyle(.secondary)
+          Text("Hold an 18% grey card where your face will be. Adjust exposure until the card turns green (Mid grey, 41 IRE). " + (guides.greyCardCheck ? "Choose Finish grey card check to go back to your skin settings." : "Turn this off to go back to your skin settings.")).font(.callout).foregroundStyle(.secondary)
         }
       }.padding(12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
       FalseColourKey(settings: guides.exposure)

@@ -22,19 +22,19 @@ struct AlphaGuideSections: View {
       }
       if model.guides.axes || model.guides.bullseye {
         HStack {
-          Text("Centre mark")
+          Text("Centre mark style").font(.system(size: 14)).foregroundStyle(.secondary)
           ForEach([true, false], id: \.self) { dot in
             Button(dot ? "Dot" : "Cross") {
               model.chooseGuide { $0.axes = !dot; $0.bullseye = dot }
             }.buttonStyle(.plain).frame(maxWidth: .infinity, minHeight: AlphaStyle.minTarget)
-              .foregroundStyle(model.effectiveGuides.bullseye == dot && model.framingIsVisible ? AlphaStyle.onAccent : .primary)
-              .background(model.effectiveGuides.bullseye == dot && model.framingIsVisible ? AlphaStyle.accent : .clear, in: RoundedRectangle(cornerRadius: Space.sm))
-              .accessibilityAddTraits(model.effectiveGuides.bullseye == dot && model.framingIsVisible ? .isSelected : [])
+              .foregroundStyle(model.guides.bullseye == dot ? AlphaStyle.onAccent : .primary)
+              .background(model.guides.bullseye == dot ? AlphaStyle.accent : .clear, in: RoundedRectangle(cornerRadius: Space.sm))
+              .accessibilityAddTraits(model.guides.bullseye == dot ? .isSelected : [])
           }
-        }
+        }.opacity(model.framingIsVisible ? 1 : 0.5)
 
       }
-      DisclosureGroup(isExpanded: $advancedExpanded) { CameraGuideSections(model: model) } label: {
+      DisclosureGroup(isExpanded: $advancedExpanded) { CameraGuideSections(model: model, alphaStyle: true) } label: {
         Text("Advanced").font(.system(size: 17, weight: .semibold)).frame(minHeight: AlphaStyle.minTarget)
       }
     }.frame(maxWidth: .infinity, alignment: .leading)

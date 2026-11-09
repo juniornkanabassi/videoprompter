@@ -165,7 +165,6 @@ extension AppearanceSnapshotTests {
         recorder.phase = .idle
         try await snapshot(ReadingAppearancePreview(settings: store.settings, overVideo: true).padding().uiZoom(zoom), name: "a14-preview-\(Int(zoom * 100))-\(name)", size: .init(width: 380, height: 400), scheme: scheme, destination: URL(fileURLWithPath: output))
       }
-      try await snapshot(PresenterHelp(), name: "a14-help-\(name)", size: .init(width: 400, height: 400), scheme: scheme, destination: URL(fileURLWithPath: output))
     }
   }
 }

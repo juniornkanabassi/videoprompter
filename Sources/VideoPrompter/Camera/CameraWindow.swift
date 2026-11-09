@@ -157,6 +157,7 @@ struct CameraSettingsSections: View {
 /// The guide and frame marker sections, shared by both panels above.
 struct CameraGuideSections: View {
   @ObservedObject var model: CameraModel
+  var alphaStyle = false
   @State private var editingCustom = false
   @State private var invalidDimension = false
   private var shape: Binding<String> {
@@ -186,6 +187,44 @@ struct CameraGuideSections: View {
       set: { updateMarker(width: model.guides.marker?.width ?? 2.39, height: $0) })
   }
   var body: some View {
+    if alphaStyle { alphaContent } else { legacyContent }
+  }
+  private var alphaContent: some View {
+    VStack(alignment: .leading, spacing: Space.md) {
+      HStack {
+        Text("Colour").font(.system(size: 17, weight: .semibold))
+        Spacer()
+        ColorPicker("Colour", selection: guideColor, supportsOpacity: false).labelsHidden()
+      }.frame(minHeight: AlphaStyle.minTarget)
+      VStack(alignment: .leading, spacing: Space.sm) {
+        HStack { Text("Guide visibility").font(.system(size: 17, weight: .semibold)); Spacer(); Text("\(Int(model.guides.opacity * 100))%") }
+        ReadingSlider(value: $model.guides.opacity, range: 0...1, title: "Guide visibility", spokenValue: "\(Int(model.guides.opacity * 100)) percent")
+      }
+      VStack(alignment: .leading, spacing: Space.sm) {
+        Text("Frame shape").font(.system(size: 17, weight: .semibold))
+        Picker("Frame shape", selection: shape) {
+          Text("Off").tag("Off")
+          ForEach(CameraAspect.presets.filter { $0 != CameraAspect(width: 9, height: 16) }) { Text($0.label).tag($0.label) }
+          Text("Custom").tag("Custom")
+        }.labelsHidden().frame(minHeight: AlphaStyle.minTarget)
+        if let marker = model.guides.marker { Text("\(marker.label) guide only. The full camera frame stays visible.").font(.callout).foregroundStyle(.secondary) }
+        if shape.wrappedValue == "Custom" {
+          HStack {
+            TextField("Width", value: customWidth, format: .number)
+            Text(":")
+            TextField("Height", value: customHeight, format: .number)
+          }
+        }
+        if invalidDimension { Text("Enter a width and height greater than 0 and no more than 100.").font(.callout) }
+        if model.guides.marker != nil {
+          HStack { Text("Shade outside").font(.system(size: 17, weight: .semibold)); Spacer(); Text("\(Int(model.guides.shadeOpacity * 100))%") }
+          ReadingSlider(value: $model.guides.shadeOpacity, range: 0...1, title: "Shade outside", spokenValue: "\(Int(model.guides.shadeOpacity * 100)) percent")
+        }
+      }
+    }.padding(Space.md).frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Space.md))
+  }
+  private var legacyContent: some View {
     Group {
       Section("Framing guides") {
         ColorPicker("Colour", selection: guideColor, supportsOpacity: false).help("Choose the colour of framing guides")

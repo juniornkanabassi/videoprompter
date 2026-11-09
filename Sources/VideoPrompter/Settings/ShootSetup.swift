@@ -296,24 +296,3 @@ private struct ShootSetupRow: View {
 
   }
 }
-
-struct PresenterHelp: View {
-  var body: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: Space.md) {
-        Text("Help").font(.title2)
-        Text(Features.recording ? "Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately." : "Start reading moves the script. Use the camera as a reference monitor while you read.")
-        Text(Features.recording ? "Back to start returns to the first word without stopping a recording." : "Back to start returns to the first word.")
-        Text("The Picture row switches Zebras, False colour, Guides, Mic level and Clean on and off, and Camera opens the camera list. Switching an aid off preserves your choices.")
-        Text("Tools contains Text, Camera, Exposure and Microphone. Camera view shows the picture without a script. Script and camera puts your words over it.")
-        Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
-        Text(Features.recording ? "Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings." : "Mirror for teleprompter glass changes your reading text. Camera preview mirroring is a separate choice in Camera settings.")
-        Text("Keyboard and clicker").font(.headline)
-        Text("Space starts or pauses reading. Page Down or Right starts reading when paused, or moves to the next passage while reading. Page Up or Left moves to the previous passage. Home returns to the first word. These keys work when the presenter is active and you are not editing text.")
-        Text(Features.recording ? "To retake a line, press Pause, click the word, then Start reading. The recording keeps going. Shift-Command-R starts or stops recording. Escape closes the popover, exits Clean view or cancels editing." : "To repeat a line, press Pause, click the word, then Start reading. Escape closes the popover, exits Clean view or cancels editing.")
-        Button("Done") { dismiss() }.initialPopoverFocus()
-      }.font(.callout).padding(Space.md)
-    }.frame(width: 400, height: 400)
-  }
-  @Environment(\.dismiss) private var dismiss
-}

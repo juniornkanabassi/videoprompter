@@ -14,35 +14,35 @@ enum WelcomeScript {
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > Click **Open presenter**, then **Start reading**. To check your sound, open **Tools**, choose Microphone in **Tools section**, then **Check sound…**.
+    > Click **Open presenter**, then **Start reading**. Choose **Pause** when you need a break. **Back to start** returns to the first word.
 
-    Hello, and welcome. Pause whenever you like. [Look at the camera.]
+    Hello, and welcome. [Look at the camera.]
 
-    ## Choose how to read
+    ## Reading
 
-    Voice follow keeps your place as you speak. Open **Tools**, choose Text, then **Reading mode…** to choose Voice follow or Automatic scroll. Automatic scroll waits for your Start delay. Cancel stops the countdown. **Check reading…** offers help when reading needs attention.
+    Press **Space** to pause. Choose **Set up the shot** to return to the camera.
+    **Reading settings** under Pause changes the reading mode, font, size and spacing for your teleprompter. You can also find these in **Settings > Reading**.
 
-    ## Make yourself comfortable
+    ## Set up the shot
 
-    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. Reading settings also include Reading presets.
+    Choose **Camera** to select your camera. Under Shot, choose **Landscape**, **Vertical turned left** or **Vertical turned right**.
+    The bar has **Camera**, **Zebras**, **False colour**, **Guides**, **Mic**, **Adjust** and **Clean**.
+    Zebras, False colour, Guides and Mic switch their aids on or off. Choose **Adjust** to change settings. Right-click a tile to jump to its tab.
+    Choose **Adjust > Mic**, select your microphone, then speak and watch the meter. For a microphone test, choose **Settings > Microphone > Test microphone**.
 
-    Click a word to read from there. The arrow keys move between passages. When paused, choose **Back to start** to try again. Open **Tools**, then **Edit this script**. Choose **Save changes** when finished, or **Cancel editing** to keep the original.
+    ## Check exposure
 
-    ## Camera reference monitor
+    Choose your skin tone in **Adjust > False colour**. The **Exposure key** explains the colours.
+    For a **Grey card check**, hold a grey card where your face will be. Adjust exposure until it turns green. Choose **Finish grey card check** to return to your skin settings.
 
-    Choose **Show camera** if only your script is showing. Under **Tools**, choose Camera, then use **View** to choose Script only, Script and camera, or Camera view. **Choose camera…** selects your camera and **Framing guides…** helps compose the picture.
+    ## Clean view
 
-    **Zebras**, **False colour**, **Guides**, **Mic level** and **Legend** switch monitoring aids off and on without changing your saved choices. The arrow beside an aid opens its settings. **Camera** opens the camera list.
+    **Clean** shows only the picture and pauses reading. Move the pointer to see **Exit Clean**. Press **Escape** to leave Clean. Escape also returns from reading to **Set up the shot**.
 
-    **Clean** shows only the camera picture. Move the pointer to reveal controls, or press Option-Command-K to leave Clean view. Turning Clean off restores your monitoring aids. The Second monitor window keeps its overlays.
+    ## Your scripts
 
-    **More camera settings…** opens Camera settings. **Open Second Monitor Window** shows the camera in another window. **Shoot setups…** saves camera, framing, exposure and reading choices together. **Restore Previous Setup** returns to your previous choices.
-
-    ## Your own scripts
-
-    Choose **Paste Copied Text**, **New Script**, or **Import File…**. Imported Markdown stays linked to the original file. Changes in either place appear in the other.
-
-    Headings, bold and italics work. You can delete this guide and bring it back using **Getting Started Guide** in Help.
+    Choose **Paste script**, **New script** or **Import file…**. Your library saves edits automatically.
+    You can bring this guide back using **Getting Started Guide** in Help.
     """
   private static let recordingMarkdown = """
     # Welcome to Video Prompter
