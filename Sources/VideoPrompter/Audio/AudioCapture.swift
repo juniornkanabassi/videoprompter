@@ -129,7 +129,7 @@ public final class AudioCapture: @unchecked Sendable {
       running = true
       pendingBuffers = 0
     }
-    node.installTap(onBus: 0, bufferSize: 1024, format: native) { [weak self] buffer, time in
+    node.installTap(onBus: 0, bufferSize: 256, format: native) { [weak self] buffer, time in
       self?.enqueue(buffer, time: time)
     }
     do { try engine.start() } catch {
@@ -180,7 +180,8 @@ public final class AudioCapture: @unchecked Sendable {
 
   private func enqueue(_ source: AVAudioPCMBuffer, time: AVAudioTime) {
     let accepted = stateLock.withLock { () -> Bool in
-      guard running, pendingBuffers < 4 else { return false }
+      // 16 x 256-frame taps keeps the ~85 ms of backlog headroom the old 4 x 1024 cap had.
+      guard running, pendingBuffers < 16 else { return false }
       pendingBuffers += 1
       return true
     }
