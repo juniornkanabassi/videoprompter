@@ -152,12 +152,12 @@ struct CameraSettingsSections: View {
     Section {
       LabeledContent("Camera") { CameraPicker(model: model, zoom: zoom) }
         .disabled(model.recordingLocked).help("Stop recording to change this")
-      Picker("Camera and saved-video rotation", selection: model.rotationChoice) {
+      Picker(Features.recording ? "Camera and saved-video rotation" : "Shot", selection: model.rotationChoice) {
         ForEach(CameraModel.rotationOptions, id: \.0) { Text($0.0).tag($0.1) }
       }.disabled(model.recordingLocked).help("Stop recording to change this")
       if model.guides.automaticRotation { Text("Detected angle: \(model.guides.rotation.label)").font(.callout) }
       Toggle("Mirror camera preview", isOn: $model.mirrored)
-    } header: { Text("Device") } footer: { Text("Rotation changes both the camera preview and the saved take.").font(.callout) }
+    } header: { Text("Device") } footer: { Text(Features.recording ? "Rotation changes both the camera preview and the saved take." : "Rotation changes the camera picture.").font(.callout) }
   }
 }
 
@@ -509,7 +509,7 @@ struct CameraRecoveryView: View {
     if model.authorization == .denied || model.authorization == .restricted {
       return "Allow Video Prompter in System Settings > Privacy & Security > Camera."
     }
-    if model.authorization == .notDetermined { return "Allow camera access to see your picture. Reading does not record a video." }
+    if model.authorization == .notDetermined { return "Allow camera access to see your picture." }
     let name = model.devices.first { $0.uid == model.selectedUID }?.displayName
     return name.map { "Check \($0) is connected and switched on, then choose your camera." }
       ?? "Connect and switch on your camera, then choose it here."

@@ -134,7 +134,7 @@ import XCTest
     XCTAssertEqual(AppStore.pastedTitle("One two three four five six seven\nBody"), "One two three four five six")
     XCTAssertEqual(AppStore.pastedTitle("   "), "Pasted Script")
     XCTAssertEqual(AppStore.pastedTitle("\n\nA useful title"), "A useful title")
-    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Shoot setups", "Microphone", "Camera & Recording"])
+    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["Reading", "Camera & Recording", "Microphone", "General"])
     let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources")
     let banned = ["Set up this take", "following microphone", "Clean picture", "Dismiss receipt", "Paste as New Script", "Record camera", "Skin exposure check", "Separate Camera Monitor"]
     for case let file as URL in FileManager.default.enumerator(at: source, includingPropertiesForKeys: nil)! where file.pathExtension == "swift" {
