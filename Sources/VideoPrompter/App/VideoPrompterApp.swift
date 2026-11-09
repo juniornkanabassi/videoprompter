@@ -76,42 +76,42 @@ enum ScriptShortcuts {
           Button("Actual Size") { store.uiZoom = 1 }.keyboardShortcut("0", modifiers: .command)
             .disabled(store.uiZoom == 1)
           Divider()
-          Button("Make Text Bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
-          Button("Make Text Smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
+          Button("Make text bigger") { store.zoomFocusedText(in: true) }.keyboardShortcut(ScriptShortcuts.biggerText)
+          Button("Make text smaller") { store.zoomFocusedText(in: false) }.keyboardShortcut(ScriptShortcuts.smallerText)
           Divider()
           PresenterVideoItems()
           ExposureMenuItems()
-          Button("Presenter Full Screen") { PresenterController.shared.toggleFullScreen() }
+          Button("Presenter full screen") { PresenterController.shared.toggleFullScreen() }
             .keyboardShortcut("f", modifiers: [.shift, .control, .command])
         }
         CommandMenu("Format") {
           FormattingMenuItems()
         }
         CommandMenu("Prompter") {
-          Button("Present") { PresenterController.shared.present(store: store) }
+          Button("Open presenter") { PresenterController.shared.present(store: store) }
             .keyboardShortcut("p", modifiers: [.command, .option])
-            .help(store.selected == nil ? "Select a script to present" : "Present the selected script")
+            .help(store.selected == nil ? "Select a script to open in the presenter" : "Open the selected script in the presenter")
             .disabled(store.selected == nil)
-          Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
+          Button("Set up camera") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
             .help("Choose a camera or check framing. Second Monitor is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           ReadingMenuItem(store: store, session: store.session)
-          Button("Back to Start") { PresenterController.shared.moveReading { $0.restart() } }
+          Button("Back to start") { PresenterController.shared.moveReading { $0.restart() } }
             .keyboardShortcut("r", modifiers: [.command, .option])
-          Button("Previous Passage") { PresenterController.shared.moveReading { $0.previousPassage() } }
+          Button("Previous passage") { PresenterController.shared.moveReading { $0.previousPassage() } }
             .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-          Button("Next Passage") { PresenterController.shared.moveReading { $0.nextPassage() } }
+          Button("Next passage") { PresenterController.shared.moveReading { $0.nextPassage() } }
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
           RecordingMenuItems()
           Divider()
-          Button("Pin Selected Text over Camera") { PresenterController.shared.monitorSelection(store: store) }
+          Button("Pin selected text over camera") { PresenterController.shared.monitorSelection(store: store) }
             // Not Option-Command-M: that is Window > Minimise All.
             .keyboardShortcut("l", modifiers: [.command, .option])
             .help("Pin the selected passage over the camera picture, as a reference monitor")
             .disabled(!PresenterController.shared.hasSelectedText)
-          Button("Match Camera Size") { PresenterController.shared.matchCameraSize() }
+          Button("Match camera size") { PresenterController.shared.matchCameraSize() }
             .help("Resize the presenter window to the camera picture’s proportions")
         }
         CameraCommands()
@@ -168,19 +168,19 @@ struct PresenterVideoItems: View {
       set: { camera.displayMode = $0 ? mode : .prompterOnly })
   }
   var body: some View {
-    Toggle("Script Only", isOn: choice(.prompterOnly))
-    Toggle("Script and Camera", isOn: choice(.prompterWithVideo))
+    Toggle("Script only", isOn: choice(.prompterOnly))
+    Toggle("Script and camera", isOn: choice(.prompterWithVideo))
       .keyboardShortcut("v", modifiers: [.command, .shift])
-    Toggle("Camera View", isOn: choice(.videoOnly))
+    Toggle("Camera view", isOn: choice(.videoOnly))
   }
 }
 
 struct ExposureMenuItems: View {
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
-    Toggle("Clean Presenter View", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
-    Toggle(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose).capitalized, isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
-    Toggle("Check Brightness · False Colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
+    Toggle("Clean", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
+    Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
+    Toggle("False colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
   }
 }
 
@@ -263,7 +263,7 @@ private struct CameraCommands: Commands {
   }
   func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
     let menu = NSMenu()
-    for (title, action) in [("Present", #selector(dockPresent)), ("Camera Only", #selector(dockCamera)), ("New Script", #selector(dockNewScript))] {
+    for (title, action) in [("Open presenter", #selector(dockPresent)), ("Set up camera", #selector(dockCamera)), ("New script", #selector(dockNewScript))] {
       let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
       item.target = self; menu.addItem(item)
     }

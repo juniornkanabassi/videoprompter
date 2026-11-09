@@ -131,7 +131,7 @@ import XCTest
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(HStack { LibraryPresenterActions(store: store) }.uiZoom(zoom), size: .init(width: 1100, height: 180))
       defer { LibraryAX.close(window) }
-      let controls = try (Features.recording ? ["Recordings", "Camera Only", "Present"] : ["Camera Only", "Present"]).map { label in
+      let controls = try (Features.recording ? ["Recordings", "Set up camera", "Open presenter"] : ["Set up camera", "Open presenter"]).map { label in
         try XCTUnwrap(LibraryAX.named(label, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
       }
       let frames = try controls.map { try XCTUnwrap($0.value(forKey: "accessibilityFrame") as? NSValue).rectValue }
@@ -146,7 +146,7 @@ import XCTest
     XCTAssertFalse(library.contains(".inspector("))
     XCTAssertFalse(library.contains("ReadingSettingsSheet("))
     let toolbar = try XCTUnwrap(library.components(separatedBy: "struct LibraryPresenterActions: View").last)
-    let positions = try ["Button(\"Recordings\"", "Button(\"Camera Only\"", "Button(\"Present\""].map { text in try XCTUnwrap(toolbar.range(of: text)?.lowerBound) }
+    let positions = try ["Button(\"Recordings\"", "Button(\"Set up camera\"", "Button(\"Open presenter\""].map { text in try XCTUnwrap(toolbar.range(of: text)?.lowerBound) }
     XCTAssertTrue(positions[0] < positions[1] && positions[1] < positions[2])
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     for directory in ["Sources/VideoPrompter/Library", "Sources/VideoPrompter/Import", "Resources"] {

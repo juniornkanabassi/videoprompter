@@ -199,7 +199,7 @@ import XCTest
     store.uiZoom = 2
     let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}).uiZoom(2), size: .init(width: 840, height: 700))
     defer { LibraryAX.close(window) }
-    let practice = try XCTUnwrap(LibraryAX.named("Practice with an example script", in: host).first)
+    let practice = try XCTUnwrap(LibraryAX.named("Practice with an example script", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
     let frame = try XCTUnwrap(practice.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     XCTAssertGreaterThanOrEqual(frame.height, 44, "Practice remains a usable target at 200%")
   }

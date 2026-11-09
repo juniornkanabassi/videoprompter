@@ -215,8 +215,8 @@ import XCTest
     let store = await fixture()
     let (window, host) = await LibraryAX.host(HStack { LibraryPresenterActions(store: store) })
     defer { LibraryAX.close(window) }
-    for (label, help) in [("Present", "Open the presenter with this script (⌥⌘P)"),
-                          ("Camera Only", Features.recording ? "Check framing or record without a script (⌥⌘C)" : "Check framing without a script (⌥⌘C)"),
+    for (label, help) in [("Open presenter", "Open the presenter with this script (⌥⌘P)"),
+                          ("Set up camera", Features.recording ? "Check framing or record without a script (⌥⌘C)" : "Check framing without a script (⌥⌘C)"),
                           ("Recordings", "Show the Recordings folder in Finder")] {
       if label == "Recordings" && !Features.recording { continue }
       XCTAssertEqual(LibraryAX.value(try XCTUnwrap(LibraryAX.named(label, in: host).first), "accessibilityHelp"), help)
