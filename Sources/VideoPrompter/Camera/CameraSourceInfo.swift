@@ -36,21 +36,24 @@ struct CameraSourceInfo: Equatable {
     self.nominalFrameRate = nominalFrameRate; self.measuredFrameRate = measuredFrameRate
   }
 
-  init(device: AVCaptureDevice, displayName: String, measuredFrameRate: Double? = nil) {
+  init(device: AVCaptureDevice, displayName: String, measuredFrameRate: Double? = nil, useMaximumFrameRate: Bool = false) {
     let size = CMVideoFormatDescriptionGetDimensions(device.activeFormat.formatDescription)
     let duration = device.activeVideoMinFrameDuration.seconds
-    self.init(displayName: displayName, connection: .classify(deviceType: device.deviceType.rawValue, transportType: device.transportType, manufacturer: device.manufacturer, modelID: device.modelID, name: device.localizedName), width: Int(size.width), height: Int(size.height), nominalFrameRate: duration.isFinite && duration > 0 ? 1 / duration : nil, measuredFrameRate: measuredFrameRate)
+    self.init(displayName: displayName, connection: .classify(deviceType: device.deviceType.rawValue, transportType: device.transportType, manufacturer: device.manufacturer, modelID: device.modelID, name: device.localizedName), width: Int(size.width), height: Int(size.height), nominalFrameRate: useMaximumFrameRate ? device.activeFormat.videoSupportedFrameRateRanges.map(\.maxFrameRate).max() : (duration.isFinite && duration > 0 ? 1 / duration : nil), measuredFrameRate: measuredFrameRate)
     hardwareName = device.localizedName
   }
 
-  var formatDescription: String {
+  var videoFormat: String? {
     var parts: [String] = []
-    if let width, let height { parts.append("\(width) × \(height)") }
+    if let width, let height, width > 0, height > 0 { parts.append("\(width) × \(height)") }
     if let rate = measuredFrameRate ?? nominalFrameRate, rate.isFinite, rate > 0 {
       parts.append(String(format: abs(rate.rounded() - rate) < 0.01 ? "%.0fp" : "%.2fp", rate))
     }
-    parts.append(connectionDescription)
-    return parts.joined(separator: " · ")
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  var formatDescription: String {
+    [videoFormat, connectionDescription].compactMap { $0 }.joined(separator: " · ")
   }
 
   var summary: String {
