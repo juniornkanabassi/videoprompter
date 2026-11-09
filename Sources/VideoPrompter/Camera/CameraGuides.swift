@@ -50,7 +50,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     var level = 45
     var range = 2
   }
-  enum SkinTone: String, CaseIterable {
+  enum SkinTone: String, CaseIterable, Codable, Sendable {
     case deep = "Deep", brown = "Brown", medium = "Medium", light = "Light", fair = "Fair", custom = "Custom"
     var reference: SkinReference? {
       switch self {
@@ -63,9 +63,11 @@ struct CameraGuides: Codable, Equatable, Sendable {
       }
     }
   }
-  var skinTone: SkinTone { SkinTone.allCases.first { $0.reference == skinReference } ?? .custom }
+  var selectedSkinTone: SkinTone?
+  var skinTone: SkinTone { selectedSkinTone ?? (SkinTone.allCases.first { $0.reference == skinReference } ?? .custom) }
   var skinReference = SkinReference() {
     didSet {
+      if skinReference != oldValue { selectedSkinTone = nil }
       if skinReference != oldValue && zebraPurpose == .faceReference {
         zebraLevel = skinReference.level; zebraRange = skinReference.range; zebraPurpose = .faceReference
       }
@@ -213,6 +215,7 @@ struct CameraGuides: Codable, Equatable, Sendable {
     zebraRange = c.preference(.zebraRange, default: 0)
     zebraPurpose = c.preference(.zebraPurpose, default: Optional<ZebraPurpose>.none)
       ?? (zebraLevel == 95 && zebraRange == 0 ? .brightAreas : .custom)
+    selectedSkinTone = c.preference(.selectedSkinTone, default: Optional<SkinTone>.none)
     skinReference = c.preference(.skinReference, default: zebraRange > 0 ? SkinReference(level: zebraLevel, range: zebraRange) : SkinReference())
     savedRangeLevel = c.preference(.savedRangeLevel, default: zebraRange > 0 ? zebraLevel : 45)
     savedRangeWidth = c.preference(.savedRangeWidth, default: zebraRange > 0 ? zebraRange : 2)
