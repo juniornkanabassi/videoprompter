@@ -42,8 +42,8 @@ struct AdjustPanel: View {
       Group {
         switch selection {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
-        case .zebras: ZebraAdjustView(model: camera)
-        case .falseColour: FalseColourAdjustView(model: camera)
+        case .zebras: keyToggle; ZebraAdjustView(model: camera)
+        case .falseColour: keyToggle; FalseColourAdjustView(model: camera)
         case .guides: AlphaGuideSections(model: camera)
         case .mic: mic
         }
@@ -54,18 +54,38 @@ struct AdjustPanel: View {
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
       .environment(\.colorScheme, .dark).tint(AlphaStyle.accent).accentColor(AlphaStyle.accent)
   }
+  @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
+  private var keyToggle: some View {
+    Toggle("Show key", isOn: $keyExpanded).toggleStyle(.switch).frame(minHeight: AlphaStyle.minTarget)
+  }
   private var mic: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Picker("Microphone", selection: Binding(get: { store.settings.audioDeviceUID ?? "" }, set: { store.session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })) {
-        Text("System default").tag("")
-        if let uid = store.settings.audioDeviceUID, !microphones.contains(where: { $0.uid == uid }) { Text("Selected microphone unavailable").tag(uid) }
-        ForEach(microphones) { Text($0.name).tag($0.uid) }
-      }.frame(minHeight: AlphaStyle.minTarget)
-      HStack { Text("Show meter"); Spacer(); Toggle("Show meter", isOn: $showsMic).labelsHidden().toggleStyle(.switch) }.frame(minHeight: AlphaStyle.minTarget)
+      Text("Microphone").font(.title2.bold())
+      Toggle("Show mic meter", isOn: $showsMic).toggleStyle(.switch).accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter").frame(minHeight: AlphaStyle.minTarget)
+      microphoneChoice("System default", uid: nil)
+      ForEach(microphones) { device in microphoneChoice(device.name, uid: device.uid) }
+      if let uid = store.settings.audioDeviceUID, !microphones.contains(where: { $0.uid == uid }) {
+        microphoneChoice("Selected microphone unavailable", uid: uid)
+      }
       MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName, showsHeading: false).frame(height: 180)
       SettingsLink { Text("More in Settings") }.frame(minHeight: AlphaStyle.minTarget)
       Text("Speak to check your microphone level.").foregroundStyle(.secondary)
     }.onAppear { microphones = AudioCapture.inputDevices() }
+  }
+
+  private func microphoneChoice(_ name: String, uid: String?) -> some View {
+    Button {
+      guard store.settings.audioDeviceUID != uid else { return }
+      store.session.stopMicrophoneTest()
+      recorder.stopInputTest()
+      store.settings.audioDeviceUID = uid
+    } label: {
+      HStack {
+        Text(name).multilineTextAlignment(.leading)
+        Spacer()
+        if store.settings.audioDeviceUID == uid { Image(systemName: "checkmark").foregroundStyle(AlphaStyle.accent) }
+      }.frame(maxWidth: .infinity, minHeight: AlphaStyle.minTarget)
+    }.buttonStyle(.plain).accessibilityAddTraits(store.settings.audioDeviceUID == uid ? .isSelected : [])
   }
 
 }

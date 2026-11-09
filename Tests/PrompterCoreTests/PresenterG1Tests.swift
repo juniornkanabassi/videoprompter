@@ -53,12 +53,7 @@ extension AppearanceSnapshotTests {
             let key = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-exposure-legend" })
             let keyFrame = try XCTUnwrap(key.value(forKey: "accessibilityFrame") as? NSValue).rectValue
             XCTAssertTrue(stageFrame.contains(keyFrame), "Exposure key must remain visible")
-            if size.width == 1600 && zoom == 1.5 {
-              XCTAssertTrue(LibraryAX.named("Exposure key", in: host).isEmpty, "Full key should fit")
-            }
-            if size.width == 1000 && zoom == 2 {
-              XCTAssertFalse(LibraryAX.named("Exposure key", in: host).isEmpty, "Compact key should remain available")
-            }
+            XCTAssertFalse(LibraryAX.named("Hide key", in: host).isEmpty, "The compact key stays in place at every zoom")
           }
           if state == "editing" {
             let editor = try XCTUnwrap(nodes.compactMap { $0 as? NSTextView }.first { $0.isEditable })

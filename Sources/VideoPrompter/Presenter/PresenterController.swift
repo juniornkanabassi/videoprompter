@@ -47,6 +47,15 @@ import SwiftUI
     }
   }
 
+  /// Use the app-owned scene opener even when no library window has existed.
+  func openScript(store: AppStore, reveal: () -> Void = { Headless.shared.reveal() }) {
+    if let record = store.session.activeRecord, store.scripts.contains(where: { $0.id == record.id }) {
+      store.selectedID = record.id
+      store.editorScriptRequest = record.id
+    }
+    reveal()
+  }
+
   // A floating window in its own full-screen Space misbehaves, so it floats only outside one.
   func windowWillEnterFullScreen(_ notification: Notification) {
     (notification.object as? NSWindow)?.level = .normal

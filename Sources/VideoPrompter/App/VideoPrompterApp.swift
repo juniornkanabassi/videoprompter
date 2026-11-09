@@ -238,6 +238,8 @@ private struct CameraCommands: Commands {
   var body: some Commands {
     let _ = (Headless.shared.openLibrary = { [openWindow] in openWindow(id: "library") })
     CommandGroup(after: .windowList) {
+      Button("Script Editor") { PresenterController.shared.openScript(store: .shared) }
+        .keyboardShortcut("e", modifiers: [.command, .shift])
       Button("Open Second Monitor Window") { openWindow(id: "camera") }.keyboardShortcut(ScriptShortcuts.camera)
     }
   }

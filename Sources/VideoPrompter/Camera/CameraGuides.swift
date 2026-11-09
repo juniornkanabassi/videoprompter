@@ -322,11 +322,20 @@ struct CameraGuideStore {
     return path
   }
 
-  /// Diagonal stripes across the whole picture, for the zebra layer to mask down to the bright
-  /// parts. Spacing in points, so they look the same at any window size.
-  static func zebraPath(picture: CGRect, spacing: CGFloat = 8) -> CGPath {
+  /// Three to four times the old 3-point stroke on a 540 to 720-point picture.
+  /// Display geometry, never capture resolution or time, controls this fixed pattern.
+  static func zebraLineWidth(picture: CGRect) -> CGFloat {
+    max(9, min(picture.width, picture.height) / 60)
+  }
+  static func zebraSpacing(picture: CGRect) -> CGFloat {
+    zebraLineWidth(picture: picture) * 8 / 3
+  }
+
+  /// Anchored to the picture corner and rebuilt only on layout, so frames cannot move the stripes.
+  static func zebraPath(picture: CGRect) -> CGPath {
     let path = CGMutablePath()
     guard !picture.isEmpty else { return path }
+    let spacing = zebraSpacing(picture: picture)
     var x = picture.minX - picture.height
     while x < picture.maxX {
       path.move(to: CGPoint(x: x, y: picture.minY))

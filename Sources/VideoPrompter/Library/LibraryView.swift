@@ -124,9 +124,13 @@ struct LibraryView: View {
         await store.waitForInitialLoad()
         if !restoredScene {
           restoreScene()
+          applyEditorRequest()
           restoredScene = true
           selection = showsStart ? [] : store.selectedID.map { [$0] } ?? []
         }
+      }
+      .onChange(of: store.editorScriptRequest) { _, _ in
+        if restoredScene { applyEditorRequest() }
       }
       .onChange(of: selection) { _, value in
         store.selectedIDs = value
@@ -310,6 +314,18 @@ struct LibraryView: View {
       do { importPreview = try await DocumentImporter().preview(url: url) }
       catch { pendingImports = []; importError = error.localizedDescription }
     }
+  }
+
+  private func applyEditorRequest() {
+    guard let id = store.editorScriptRequest else { return }
+    store.editorScriptRequest = nil
+    guard store.scripts.contains(where: { $0.id == id }) else { return }
+    showsDeleted = false
+    showsPractice = true
+    store.selectedFolderID = nil
+    store.search = ""
+    store.selectedID = id
+    selection = [id]
   }
 
   private func restoreScene() {

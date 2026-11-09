@@ -320,10 +320,7 @@ struct ExposureKey: View {
         Text("EXPOSURE KEY").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
         if guides.zebras {
           HStack(spacing: 16) {
-            Canvas { context, size in
-              context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-              context.stroke(Path(CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))), with: .color(.black), lineWidth: 2)
-            }.frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
+            PresenterZebraSwatch().frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading) {
               Text("Zebras").font(.system(size: 19, weight: .semibold))
               Text((guides.validatedZebraPurpose == .faceReference ? "Skin, " : "") + guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 15)).foregroundStyle(.secondary)
@@ -381,10 +378,7 @@ struct ZebraAdjustView: View {
       ExposureNumberRow(title: "Level", subject: "zebra level", subtitle: "Centre of the stripes", value: (model?.zebraBinding(\.zebraLevel) ?? $guides.manualExposure(\.zebraLevel)), limits: 0...100, suffix: " IRE")
       if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", subject: "zebra range", subtitle: "How wide the band is", value: (model?.zebraBinding(\.zebraRange) ?? $guides.manualExposure(\.zebraRange)), limits: 1...10, prefix: "±") }
       HStack(spacing: 12) {
-        Canvas { context, size in
-          context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-          context.stroke(Path(CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))), with: .color(.black), lineWidth: 2)
-        }.frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
+        PresenterZebraSwatch().frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
         Text(effectiveExposure.exposure.zebraReadout).font(.system(size: 17, weight: .semibold))
       }.frame(maxWidth: .infinity, minHeight: 56, alignment: .leading).padding(.horizontal, 12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
       Text("Each mode keeps its own values, so switching to Limit and back does not lose your range. Your skin colour in false colour is set separately.").font(.system(size: 14)).foregroundStyle(.secondary)
@@ -544,5 +538,53 @@ struct FalseColourAdjustView: View {
       }.padding(12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
       FalseColourKey(settings: guides.exposure)
     }.frame(maxWidth: .infinity, alignment: .leading)
+  }
+}
+
+/// A bounded card in the setup gutter, so the key never covers the picture.
+struct PresenterExposureKey: View {
+  let guides: CameraGuides
+  @Binding var expanded: Bool
+  var zoom = 1.0
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      Button { expanded.toggle() } label: {
+        HStack {
+          Text(expanded ? "Hide key" : "Exposure key")
+          if expanded { Spacer(minLength: Space.xs) }
+          Image(systemName: expanded ? "chevron.up" : "chevron.down")
+        }.frame(minHeight: AlphaStyle.minTarget)
+      }.buttonStyle(.plain).accessibilityLabel(expanded ? "Hide key" : "Show key")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+      if expanded {
+        if guides.zebras {
+          HStack(spacing: Space.sm) {
+            PresenterZebraSwatch().frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: Space.xs) {
+              Text("Zebras").fontWeight(.semibold)
+              Text(guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 14))
+            }
+          }
+        }
+        if guides.falseColour {
+          ForEach(Array(guides.exposure.legendBands.enumerated()), id: \.offset) { _, band in
+            HStack(spacing: Space.sm) {
+              RoundedRectangle(cornerRadius: Space.xs)
+                .fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255))
+                .frame(width: 24, height: 24)
+              VStack(alignment: .leading, spacing: 0) {
+                Text(band.label).fontWeight(.semibold)
+                Text(band.range + " IRE").font(.system(size: 14)).foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+        Text("Measured from the incoming picture.").font(.system(size: 13)).foregroundStyle(.secondary)
+      }
+    }.font(.system(size: 16)).padding(Space.md)
+      .frame(maxWidth: expanded ? 280 : nil, alignment: .leading)
+      .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      .environment(\.colorScheme, .dark).uiZoom(zoom)
   }
 }

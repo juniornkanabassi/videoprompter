@@ -67,7 +67,7 @@ import XCTest
     for zoom in [1.0, 1.25, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 1600, height: 1200))
-      for title in ["Start reading", "Back to start", "Camera", "Zebras", "False colour", "Adjust", "Clean"] {
+      for title in ["Start reading", "Back to start", "Open script", "Camera", "Zebras", "False colour", "Adjust", "Clean"] {
         let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { ["AXButton", "AXCheckBox"].contains(LibraryAX.value($0, "accessibilityRole")) }, title)
         let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
         XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "\(title) at \(zoom): \(frame)")

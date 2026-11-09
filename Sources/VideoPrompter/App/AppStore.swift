@@ -29,6 +29,8 @@ private enum PresenterSaveError: LocalizedError {
   @Published var selectedFolderID: UUID?
   @Published var trash: [TrashEntry] = []
   @Published var selectedID: UUID?
+  /// An explicit presenter request wins over restored library scene selection.
+  @Published var editorScriptRequest: UUID?
   /// The sidebar's selection, which File > Move to Trash acts on as a whole.
   @Published var selectedIDs = Set<UUID>()
   @Published var search = ""

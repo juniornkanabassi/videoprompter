@@ -15,7 +15,7 @@ final class CameraStageView: NSView {
   private let shade = CAShapeLayer()
   /// Internal for the geometry test.
   let guideLayer = CAShapeLayer()
-  /// Dark stripes masked down to the over-bright parts of the picture.
+  /// Opaque black and white stripes masked to the chosen brightness band.
   private let zebraLayer = CAShapeLayer()
   /// The false colour picture, laid exactly over the live one.
   let falseColourLayer = CALayer()
@@ -37,8 +37,9 @@ final class CameraStageView: NSView {
     guideLayer.fillColor = nil
     guideLayer.lineWidth = 1
     zebraLayer.fillColor = nil
-    zebraLayer.strokeColor = NSColor.black.withAlphaComponent(0.8).cgColor
-    zebraLayer.lineWidth = 3
+    zebraLayer.strokeColor = NSColor.black.cgColor
+    zebraLayer.backgroundColor = NSColor.white.cgColor
+    zebraLayer.masksToBounds = true
     zebraLayer.mask = zebraMask
     layer?.addSublayer(pictureLayer)
     pictureLayer.addSublayer(preview)
@@ -110,6 +111,7 @@ final class CameraStageView: NSView {
     zebraLayer.frame = pictureLayer.bounds
     let scale = window?.backingScaleFactor ?? 1
     zebraLayer.contentsScale = scale
+    zebraLayer.lineWidth = CameraOverlay.zebraLineWidth(picture: pictureLayer.bounds)
     zebraLayer.path = guides.zebras ? CameraOverlay.zebraPath(picture: pictureLayer.bounds) : nil
     for shape in [shade, guideLayer] {
       shape.frame = bounds

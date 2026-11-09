@@ -48,7 +48,8 @@ struct PresenterView: View {
   private var showsChrome: Bool { !camera.cleanView }
   @AppStorage("presenterExposureKey") private var exposureKeyEnabled = true
   @State private var adjustOpener = "Adjust"
-  @AppStorage("presenterMicLevel") private var showsMicLevel = true
+  // A new key enables the meter once for existing installs, then remembers their choice.
+  @AppStorage("presenterMicLevel251") private var showsMicLevel = true
   @State private var settingsTab = SettingsTab.reading
   @FocusState private var cleanExitFocused: Bool
   static func backdropOpacity(saved: Double, reduceTransparency: Bool) -> Double { reduceTransparency ? 1 : saved }
@@ -57,7 +58,7 @@ struct PresenterView: View {
   private var controlZoom: Double { Self.controlZoom(store.uiZoom) }
   @State private var stageWidth: CGFloat = 1600
   @State private var viewport = CGSize(width: 1600, height: 1000)
-  @State private var showsExposureKey = false
+  @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
   private var barFit: PresenterBarFit { PresenterBarFit(size: viewport, zoom: controlZoom) }
   private var narrowReading: Bool { shell.reading && viewport.width / controlZoom < 480 }
   private var compactReading: Bool { shell.reading && stageWidth / controlZoom < 700 }
@@ -75,23 +76,16 @@ struct PresenterView: View {
         (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
       let pictureWidth = min(geometry.size.width, geometry.size.height * pictureAspect)
       let availableGutter = (geometry.size.width - pictureWidth) / 2
-      let keyFits = setup && availableGutter >= (280 * controlZoom + Space.md * 2) && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom + Space.md * 2
-      let columnWidth = (keyFits ? 280 : 144) * controlZoom + Space.md * 2
+      let roomyGutter = availableGutter >= (280 * controlZoom + Space.md * 2)
+      let columnWidth = (roomyGutter ? 280 : 144) * controlZoom + Space.md * 2
       let gutterWidth = setup ? max(meterWidth, min(columnWidth, pictureAspect > 1 ? geometry.size.width * 0.25 : columnWidth)) : 0
       HStack(alignment: .top, spacing: 0) {
         if setup {
           ScrollView(.vertical) {
           VStack(alignment: .leading, spacing: Space.md) {
             if keyVisible {
-          Group {
-            if keyFits { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).fixedSize(horizontal: false, vertical: true) }
-            else {
-              Button { showsExposureKey = true } label: {
-                Label("Exposure key", systemImage: "list.bullet.rectangle")
-                  .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44 / controlZoom) // uiZoom scales it back to a 44 pt target
-              }.buttonStyle(.plain).uiZoom(controlZoom)
-            }
-          }.fixedSize(horizontal: false, vertical: true).accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")
+          PresenterExposureKey(guides: camera.guides, expanded: $keyExpanded, zoom: controlZoom)
+            .accessibilityIdentifier("presenter-exposure-legend")
             }
             sourceStatus.fixedSize(horizontal: false, vertical: true)
               .accessibilityIdentifier("presenter-source-status")
@@ -129,15 +123,21 @@ struct PresenterView: View {
             GuideLine(settings: store.settings).offset(y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
           }
           if keyVisible && shell.reading && !draft.isEditing {
-            HStack(spacing: Space.sm) {
-              if camera.guides.falseColour {
-                HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
-              } else { PresenterZebraSwatch().frame(width: 24, height: 16) }
-              Text(camera.guides.falseColour ? "False colour on" : "Zebras on")
-            }
-              .font(.system(size: 15, weight: .semibold)).padding(Space.sm)
-              .background(.black.opacity(0.8), in: Capsule()).uiZoom(controlZoom)
-              .frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
+            Button { keyExpanded.toggle() } label: {
+              HStack(spacing: Space.sm) {
+                if keyExpanded {
+                  if camera.guides.falseColour {
+                    HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
+                  } else { PresenterZebraSwatch().frame(width: 24, height: 16) }
+                  Text(camera.guides.falseColour ? "False colour on" : "Zebras on")
+                } else { Text("Exposure key") }
+                Image(systemName: keyExpanded ? "chevron.up" : "chevron.down")
+              }.font(.system(size: 15, weight: .semibold))
+                .frame(minHeight: ceil(AlphaStyle.minTarget / controlZoom)).padding(.horizontal, Space.sm)
+                .background(.black.opacity(0.8), in: Capsule())
+            }.buttonStyle(.plain).help(keyExpanded ? "Hide key" : "Show key")
+              .accessibilityLabel(keyExpanded ? "Hide key" : "Show key")
+              .uiZoom(controlZoom).frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
               .accessibilityIdentifier("presenter-exposure-legend")
           }
           if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
@@ -160,11 +160,7 @@ struct PresenterView: View {
       }.foregroundStyle(.white)
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
     }.background(camera.cleanView ? Color.black : Color(white: 0.035))
-      .onChange(of: exposureKeyEnabled) { _, enabled in if !enabled { showsExposureKey = false } }
-      .popover(isPresented: $showsExposureKey) {
-        ScrollView { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).padding(Space.md) }
-          .frame(width: min(viewport.width, 360 * controlZoom), height: min(viewport.height * 0.8, 640 * controlZoom)) // grid: ok Keep the popover within the available height.
-      }
+
   }
 
   static func usesAdjustSheet(width: CGFloat, zoom: Double) -> Bool { width < 470 * zoom + 400 }
@@ -222,9 +218,13 @@ struct PresenterView: View {
     stage
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stageWidth = $0 }
     // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
-    .task(id: [micLevelVisible && startsCamera, recorder.isRecording || recorder.isBusy]) {
-      guard micLevelVisible && startsCamera else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
-      if !recorder.isRecording && !recorder.isBusy { await recorder.startInputTest() }
+    .task(id: "\(showsMicLevel && !camera.cleanView && startsCamera)-\(recorder.isRecording || recorder.isBusy)-\(store.settings.audioDeviceUID ?? "")") {
+      guard showsMicLevel && !camera.cleanView && startsCamera else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
+      if !recorder.isRecording && !recorder.isBusy {
+        recorder.stopInputTest()
+        recorder.useSettings(store.settings)
+        await recorder.startInputTest()
+      }
     }
     .onChange(of: store.settings) { _, value in
       session.updateSettings(value)
@@ -237,7 +237,7 @@ struct PresenterView: View {
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
     .onDisappear { quietTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
-      if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false; showsExposureKey = false }
+      if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false }
       cleanControlsRevealed = false
       if clean { quietTask?.cancel() }
       announce("Clean view " + (clean ? "on" : "off"))
@@ -363,8 +363,8 @@ struct PresenterView: View {
           HStack(spacing: Space.md) { Spacer(minLength: 0); readingTransport; Spacer(minLength: 0) }
         }
         ViewThatFits(in: .horizontal) {
-          HStack { readingStatus; readingSettings; keyboardHint }
-          VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings }; keyboardHint }
+          HStack { readingStatus; readingSettings; scriptButton; keyboardHint }
+          VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings; scriptButton }; keyboardHint }
         }
       } else if barFit.twoRows {
         HStack(spacing: Space.sm) { setupTransport }
@@ -378,9 +378,26 @@ struct PresenterView: View {
       .buttonStyle(PresenterButtonStyle()).accessibilityIdentifier("presenter-control-bar")
   }
 
+  private var scriptButton: some View {
+    Button { controller.openScript(store: store) } label: {
+      Label("Script", systemImage: "doc.text")
+        .font(.system(size: 14, weight: .semibold))
+        .padding(.horizontal, Space.sm)
+        .frame(minHeight: ceil(AlphaStyle.minTarget / controlZoom))
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }.buttonStyle(.plain).accessibilityLabel("Open script")
+  }
+
   @ViewBuilder private var setupTransport: some View {
     transportButton("Start reading", icon: "play.fill", primary: true) { shell.reading = true; session.startReading() }.disabled(!hasScript || draft.isEditing)
-    transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }.disabled(!hasScript)
+    VStack(spacing: 0) {
+      Button { session.restart() } label: {
+        Text("Back to start").font(.system(size: 16, weight: .semibold))
+          .frame(minWidth: barFit.transportWidth, minHeight: ceil(AlphaStyle.minTarget / controlZoom))
+          .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+      }.buttonStyle(.plain).disabled(!hasScript)
+      scriptButton
+    }
   }
   @ViewBuilder private var readingTransport: some View {
     transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }
@@ -405,7 +422,7 @@ struct PresenterView: View {
     shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.effectiveFalseColour) { toggleExposure(\.falseColour) }
     if !barFit.movesTools {
       shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
-      shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { showsMicLevel.toggle() }
+      shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { shell.adjustTab = .mic }
       Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 72)
     }
     shellTile("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, value: barFit.movesTools ? "2 more" : nil) { shell.adjustTab = shell.adjustTab == nil ? .camera : nil }
@@ -449,8 +466,8 @@ struct PresenterView: View {
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(on == true ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
     }.buttonStyle(.plain).restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)").accessibilityLabel(title)
-      .accessibilityValue(title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? "\(sourceInfo?.displayName ?? "No camera chosen"), \(shotLabel)" : value ?? ""))
-      .accessibilityAddTraits(on != nil && title != "Adjust" ? .isToggle : [])
+      .accessibilityValue(title == "Mic" ? recorder.microphoneName : title == "Adjust" ? (shell.adjustTab == nil ? "Collapsed" : "Expanded") : on.map { $0 ? "On" : "Off" } ?? (title == "Camera" ? "\(sourceInfo?.displayName ?? "No camera chosen"), \(shotLabel)" : value ?? ""))
+      .accessibilityAddTraits(on != nil && title != "Adjust" && title != "Mic" ? .isToggle : [])
       .contextMenu { if title != "Clean" && title != "Adjust" { Button("Adjust \(title)") { adjustOpener = title; shell.adjustTab = tab } } }
       .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if title != "Clean" && title != "Adjust" { adjustOpener = title; shell.adjustTab = tab } })
   }
@@ -781,15 +798,13 @@ struct PresenterBarFit {
   }
 }
 
-private struct PresenterZebraSwatch: View {
+struct PresenterZebraSwatch: View {
   var body: some View {
     Canvas { context, size in
-      var stripes = Path()
-      for x in stride(from: -size.height, through: size.width, by: 8) {
-        stripes.move(to: CGPoint(x: x, y: 0))
-        stripes.addLine(to: CGPoint(x: x + size.height, y: size.height))
-      }
-      context.stroke(stripes, with: .color(.white), lineWidth: 4)
+      let picture = CGRect(origin: .zero, size: size)
+      context.fill(Path(picture), with: .color(.white))
+      context.stroke(Path(CameraOverlay.zebraPath(picture: picture)), with: .color(.black),
+                     lineWidth: CameraOverlay.zebraLineWidth(picture: picture))
     }.clipShape(RoundedRectangle(cornerRadius: 4))
       .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.6)))
   }
