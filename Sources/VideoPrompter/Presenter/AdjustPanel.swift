@@ -7,6 +7,7 @@ enum AdjustTab: String, CaseIterable {
 struct AdjustPanel: View {
   @Binding var selection: AdjustTab
   @Binding var showsMic: Bool
+  @State private var microphones: [AudioInputDevice] = []
   @ObservedObject var camera: CameraModel
   @ObservedObject var store: AppStore
   let startsMeter: Bool
@@ -15,35 +16,47 @@ struct AdjustPanel: View {
   let recorder: CameraRecorder
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
+    ScrollView {
+    VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
+      Text("Adjust").font(.title2.bold()).accessibilityAddTraits(.isHeader).initialPopoverFocus()
+      Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
       Group {
         WrapLayout(spacing: 4) {
           ForEach(AdjustTab.allCases, id: \.self) { tab in
             Button { selection = tab } label: {
-              Text(tab.rawValue).font(.system(size: 13, weight: .semibold))
+              Text(tab.rawValue).font(.system(size: 16, weight: .semibold))
                 .padding(.horizontal, Space.sm).frame(minHeight: 44)
-                .foregroundStyle(selection == tab ? .black : .white)
-                .background(selection == tab ? Color.white : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            }.buttonStyle(.plain).accessibilityValue(selection == tab ? "Selected" : "")
+                .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white)
+                .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+            }.buttonStyle(.plain).accessibilityAddTraits(selection == tab ? .isSelected : [])
           }
-        }
+        }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
       }
-      ScrollView {
+      Group {
         switch selection {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
         case .zebras: ZebraAdjustView(guides: $camera.guides)
         case .falseColour: FalseColourAdjustView(guides: $camera.guides)
         case .guides: guides
-        case .mic:
-          VStack(alignment: .leading) {
-            Toggle("Show mic meter", isOn: $showsMic)
-            MicrophonePage(store: store, compact: true, startsMeter: startsMeter, recorder: recorder)
-          }
+        case .mic: mic
         }
       }
-    }.padding(24).uiZoom(zoom).frame(width: 470).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
+    }.padding(AlphaStyle.panelInset)
+    }.uiZoom(zoom).frame(width: 470).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
-      .environment(\.colorScheme, .dark).tint(.yellow).accentColor(.yellow)
+      .environment(\.colorScheme, .dark).tint(AlphaStyle.accent).accentColor(AlphaStyle.accent)
+  }
+  private var mic: some View {
+    VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
+      Text("Mic").font(.title2.bold())
+      Picker("Input", selection: Binding(get: { store.settings.audioDeviceUID ?? "" }, set: { store.session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })) {
+        Text("System default").tag("")
+        if let uid = store.settings.audioDeviceUID, !microphones.contains(where: { $0.uid == uid }) { Text("Selected microphone unavailable").tag(uid) }
+        ForEach(microphones) { Text($0.name).tag($0.uid) }
+      }.frame(minHeight: AlphaStyle.minTarget)
+      Toggle("Show meter", isOn: $showsMic).toggleStyle(.switch).frame(minHeight: AlphaStyle.minTarget)
+      Text("Speak to check your microphone level.").foregroundStyle(.secondary)
+    }.onAppear { microphones = AudioCapture.inputDevices() }
   }
   private var guides: some View {
     VStack(alignment: .leading, spacing: Space.md) {
@@ -54,7 +67,7 @@ struct AdjustPanel: View {
       DisclosureGroup("Advanced") {
         CameraGuideSettings(model: camera).frame(height: 600)
       }
-    }.frame(maxWidth: .infinity, alignment: .leading)
+    }.toggleStyle(.switch).frame(maxWidth: .infinity, alignment: .leading)
   }
 
 }
