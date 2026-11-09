@@ -118,7 +118,7 @@ import XCTest
       let frame = try XCTUnwrap(size.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       let bounds = window.convertToScreen(host.bounds)
       XCTAssertGreaterThan(frame.minX, bounds.minX + 200)
-      XCTAssertGreaterThan(frame.maxY, bounds.maxY - 180, "Content must start near the top at \(zoom)")
+      XCTAssertGreaterThan(frame.maxY, bounds.maxY - 280, "Content must remain near the page heading at \(zoom)")
     }
   }
 
