@@ -35,7 +35,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
       zebraRange > 0 ? "\(max(0, zebraLevel - zebraRange)) to \(min(100, zebraLevel + zebraRange))" : "\(zebraLevel)+"
     }
     var zebraReadout: String {
-      zebraRange > 0 ? "Stripes on \(zebraRangeLabel) IRE" : "Stripes on \(zebraLevel) IRE and above"
+      !zebras ? "Zebras off · Target \(zebraRangeLabel) IRE" : zebraRange > 0 ? "Stripes on \(zebraRangeLabel) IRE" : "Stripes on \(zebraLevel) IRE and above"
     }
     var zebraLegend: String {
       zebraRange > 0 ? "Zebras: Range \(zebraRangeLabel) IRE" : "Zebras: Limit \(zebraLevel) IRE and above"
@@ -67,7 +67,10 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         } else {
           range = "\(band.range.lowerBound.formatted()) to \(band.range.upperBound.formatted())"
         }
-        return LegendBand(label: index == 3 && skinCodes == nil ? "Brighter mid-tones" : labels[index], range: range, colour: colour)
+        return LegendBand(label: labels[index], range: range, colour: colour)
+      }.sorted { a, b in
+        let order = ["My skin", "Signal white", "Near white", "Mid grey", "Very dark", "Near black"]
+        return (order.firstIndex(of: a.label) ?? 99) < (order.firstIndex(of: b.label) ?? 99)
       }
     }
     private static func ireLabel(_ code: Int) -> String {
@@ -132,6 +135,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
       let percent = Double(value) / 255 * 100
       var band = bands.last { $0.range.contains(percent) }
       if let skin { band = skin.contains(UInt8(value)) ? pink : band?.name == pink.name ? nil : band }
+      else if band?.name == pink.name { band = nil }
       let (r, g, b) = band?.rgb ?? (UInt8(value), UInt8(value), UInt8(value))
       return UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16 | 0xFF00_0000
     }

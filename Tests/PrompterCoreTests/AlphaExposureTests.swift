@@ -31,6 +31,17 @@ import XCTest
     XCTAssertEqual(store.guides(for: "two").skinReference, .init(level: 45, range: 2))
   }
 
+  func testCustomChoiceAndZebraStatusPersist() throws {
+    var guides = CameraGuides.firstUse
+    guides.selectedSkinTone = .custom
+    guides.zebras = false
+    let decoded = try JSONDecoder().decode(CameraGuides.self, from: JSONEncoder().encode(guides))
+    XCTAssertEqual(decoded.skinTone, .custom)
+    XCTAssertEqual(decoded.exposure.zebraReadout, "Zebras off · Target 43 to 47 IRE")
+    guides.zebras = true
+    XCTAssertEqual(guides.exposure.zebraReadout, "Stripes on 43 to 47 IRE")
+  }
+
   func testGreyCardRestoresSettingsAfterPersistence() throws {
     var guides = CameraGuides.firstUse
     guides.useZebraPreset(.brightAreas)
@@ -43,6 +54,7 @@ import XCTest
     XCTAssertEqual(guides.zebraRange, 2)
     XCTAssertTrue(guides.zebras && guides.falseColour)
     XCTAssertEqual(guides.exposure.colourTable[Int(CameraExposure.code(ire: 41))], 0xFF00_C800)
+    XCTAssertFalse(guides.exposure.legendBands.contains { $0.label == "My skin" })
     guides = try JSONDecoder().decode(CameraGuides.self, from: JSONEncoder().encode(guides))
     guides.greyCardCheck = false
     XCTAssertEqual(guides, original)
@@ -54,7 +66,7 @@ import XCTest
     let limit = try JSONDecoder().decode(CameraGuides.self, from: Data(#"{"zebraLevel":95,"zebraRange":0}"#.utf8))
     XCTAssertEqual(limit.skinReference, .init(level: 45, range: 2))
     let settings = old.exposure
-    XCTAssertEqual(settings.legendBands.map(\.label), ["Near black", "Very dark", "Mid grey", "My skin", "Near white", "Signal white"])
+    XCTAssertEqual(settings.legendBands.map(\.label), ["My skin", "Signal white", "Near white", "Mid grey", "Very dark", "Near black"])
     let pink = try XCTUnwrap(settings.legendBands.first { $0.label == "My skin" })
     XCTAssertEqual(pink.range, "57 to 63")
     XCTAssertEqual(settings.colourTable[Int(CameraExposure.code(ire: 60))], pink.colour)
@@ -66,15 +78,17 @@ extension AppearanceSnapshotTests {
   func testAlphaExposureSnapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let destination = URL(fileURLWithPath: output)
-    var guides = CameraGuides.firstUse
-    guides.falseColour = true
-    try await snapshot(ExposureKey(guides: guides), name: "alpha-exposure-key", size: .init(width: 400, height: 650), scheme: .dark, destination: destination)
-    try await snapshot(ExposureKey(guides: guides, compact: true), name: "alpha-exposure-chip", size: .init(width: 300, height: 100), scheme: .dark, destination: destination)
-    try await snapshot(ZebraAdjustView(guides: .constant(guides)).padding(), name: "alpha-zebra-adjust", size: .init(width: 470, height: 600), scheme: .dark, destination: destination)
-    try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding(), name: "alpha-false-colour-deep", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
-    guides.skinReference = .init(level: 60, range: 4)
-    try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding(), name: "alpha-false-colour-custom", size: .init(width: 470, height: 1000), scheme: .dark, destination: destination)
-    guides.greyCardCheck = true
-    try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding(), name: "alpha-false-colour-grey-card", size: .init(width: 470, height: 1000), scheme: .dark, destination: destination)
+    for zoom in [1.0, 2.0] {
+      let scale = Int(zoom * 100)
+      var guides = CameraGuides.firstUse
+      guides.falseColour = true
+      try await snapshot(ExposureKey(guides: guides, zoom: zoom), name: "f3-setup-key-\(scale)", size: .init(width: 400 * zoom, height: 650 * zoom), scheme: .dark, destination: destination)
+      try await snapshot(ZebraAdjustView(guides: .constant(guides)).padding().uiZoom(zoom), name: "f3-zebra-\(scale)", size: .init(width: 500 * zoom, height: 850 * zoom), scheme: .dark, destination: destination)
+      try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding().uiZoom(zoom), name: "f3-false-deep-\(scale)", size: .init(width: 500 * zoom, height: 1200 * zoom), scheme: .dark, destination: destination)
+      guides.selectedSkinTone = .custom
+      try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding().uiZoom(zoom), name: "f3-false-custom-\(scale)", size: .init(width: 500 * zoom, height: 1350 * zoom), scheme: .dark, destination: destination)
+      guides.greyCardCheck = true
+      try await snapshot(FalseColourAdjustView(guides: .constant(guides)).padding().uiZoom(zoom), name: "f3-false-grey-\(scale)", size: .init(width: 500 * zoom, height: 1450 * zoom), scheme: .dark, destination: destination)
+    }
   }
 }

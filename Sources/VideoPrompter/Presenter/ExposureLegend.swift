@@ -20,7 +20,7 @@ struct ExposureGuidance: View {
     "Purple: almost black. Detail may be lost in shadows.",
     "Blue: very dark. Brighten important shadow areas if you need to see detail.",
     "Green: medium brightness. Check important areas still have detail.",
-    "Pink: brighter mid-tones. Check important areas still have detail.",
+    "Pink: my skin reference. Check important areas still have detail.",
     "Yellow: nearly white. Check that bright areas still show detail.",
     "Red: the received picture is at or near white. Check for lost detail on your camera."
   ]
@@ -70,14 +70,24 @@ struct ExposureGuidance: View {
 struct ExposureToolToggles: View {
   @ObservedObject var model: CameraModel
   var presenter = true
+  private func binding(_ key: WritableKeyPath<CameraGuides, Bool>) -> Binding<Bool> {
+    let base = model.exposureBinding(key, presenter: presenter)
+    return Binding(get: { base.wrappedValue }, set: { value in
+      if model.guides.greyCardCheck {
+        model.guides.greyCardCheck = false
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      }
+      base.wrappedValue = value
+    })
+  }
   var body: some View {
-    Toggle(isOn: model.exposureBinding(\.zebras, presenter: presenter)) {
+    Toggle(isOn: binding(\.zebras)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).fontWeight(.semibold)
         Text(ExposureGuidance.zebraPurpose(model.guides)).font(.callout)
       }
     }.initialPopoverFocus().accessibilityLabel(ExposureLegend.zebraTitle(for: model.guides.validatedZebraPurpose)).accessibilityHint(ExposureGuidance.zebraPurpose(model.guides))
-    Toggle(isOn: model.exposureBinding(\.falseColour, presenter: presenter)) {
+    Toggle(isOn: binding(\.falseColour)) {
       VStack(alignment: .leading, spacing: Space.xs) {
         Text("False colour").fontWeight(.semibold)
         Text(ExposureGuidance.colourPurpose).font(.callout)
@@ -253,10 +263,10 @@ struct FalseColourKey: View {
       Text("False colour").fontWeight(.semibold)
       ForEach(Array(settings.legendBands.enumerated()), id: \.offset) { _, band in
         HStack {
-          Rectangle().fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255)).frame(width: Space.md, height: Space.md)
-          Text(band.label)
+          Rectangle().fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255)).frame(width: 32, height: 24)
+          Text(band.label).font(.system(size: 16, weight: .semibold))
           Spacer()
-          Text(band.range + " IRE").monospacedDigit()
+          Text(band.range + " IRE").font(.system(size: 14)).monospacedDigit()
         }.accessibilityElement(children: .ignore)
           .accessibilityLabel(band.label).accessibilityValue(band.range + " IRE")
       }
@@ -392,12 +402,12 @@ struct ExposureKey: View {
             }.frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
             VStack(alignment: .leading) {
               Text("Zebras").font(.system(size: 19, weight: .semibold))
-              Text(guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 15)).foregroundStyle(.secondary)
+              Text((guides.validatedZebraPurpose == .faceReference ? "Skin, " : "") + guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 15)).foregroundStyle(.secondary)
             }
           }
         }
         if guides.falseColour {
-          ForEach(Array(guides.exposure.legendBands.reversed().sorted { ($0.label == "My skin" ? 0 : 1) < ($1.label == "My skin" ? 0 : 1) }.enumerated()), id: \.offset) { _, band in
+          ForEach(Array(guides.exposure.legendBands.enumerated()), id: \.offset) { _, band in
             HStack(spacing: 16) {
               RoundedRectangle(cornerRadius: 4).fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255)).frame(width: 44, height: 28)
               VStack(alignment: .leading) {
@@ -416,46 +426,85 @@ struct ExposureKey: View {
 
 struct ZebraAdjustView: View {
   @Binding var guides: CameraGuides
+  private var manualGuides: Binding<CameraGuides> {
+    Binding(get: { guides }, set: { value in
+      if guides.greyCardCheck {
+        var restored = guides
+        restored.greyCardCheck = false
+        // Apply the control's requested change to the restored settings.
+        if value.zebraRangeMode != guides.zebraRangeMode { restored.zebraRangeMode = value.zebraRangeMode }
+        else if value.zebraLevel != guides.zebraLevel { restored.zebraLevel = value.zebraLevel }
+        else if value.zebraRange != guides.zebraRange { restored.zebraRange = value.zebraRange }
+        else { restored.useZebraPreset(value.zebraPurpose) }
+        guides = restored
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      } else { guides = value }
+    })
+  }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Zebras").font(.title2.bold())
       Text("Stripes show where the picture is at a brightness you choose.").foregroundStyle(.secondary)
+      if guides.greyCardCheck { Text("Grey card check on · Zebra target 41 ±2 IRE").font(.callout.bold()) }
       HStack(spacing: 12) {
-        preset("My skin", detail: "Range · \(guides.skinReference.level) ±\(guides.skinReference.range) IRE", purpose: .faceReference)
-        preset("Highlights", detail: "Limit · 95 IRE and up", purpose: .brightAreas)
+        preset("My skin", detail: "Range · \(guides.skinReference.level) ±\(guides.skinReference.range) IRE", description: "Is my face exposed right?", purpose: .faceReference)
+        preset("Highlights", detail: "Limit · 95 IRE and up", description: "Is anything too bright?", purpose: .brightAreas)
       }
-      Picker("Mode", selection: $guides.zebraRangeMode) { Text("Range").tag(true); Text("Limit").tag(false) }.pickerStyle(.segmented)
-      ExposureNumberRow(title: "Level", value: $guides.zebraLevel, limits: 0...100, suffix: " IRE")
-      if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", value: $guides.zebraRange, limits: 1...10, prefix: "±") }
-      Text(guides.exposure.zebraReadout).fontWeight(.semibold)
-      Text("Each mode keeps its own values. Skin in false colour is set separately.").foregroundStyle(.secondary)
+      HStack(spacing: 4) {
+        ForEach([true, false], id: \.self) { range in
+          Button(range ? "Range" : "Limit") { manualGuides.zebraRangeMode.wrappedValue = range }
+            .buttonStyle(.plain).font(.system(size: 15, weight: .semibold)).frame(maxWidth: .infinity, minHeight: 44)
+            .background(guides.zebraRangeMode == range ? Color.primary.opacity(0.16) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            .accessibilityAddTraits(guides.zebraRangeMode == range ? .isSelected : [])
+        }
+      }.padding(4).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+      ExposureNumberRow(title: "Level", subtitle: "Centre of the stripes", value: manualGuides.zebraLevel, limits: 0...100, suffix: " IRE")
+      if guides.zebraRangeMode { ExposureNumberRow(title: "Plus or minus", subtitle: "How wide the band is", value: manualGuides.zebraRange, limits: 1...10, prefix: "±") }
+      HStack(spacing: 12) {
+        Canvas { context, size in
+          context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+          context.stroke(Path(CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))), with: .color(.black), lineWidth: 2)
+        }.frame(width: 44, height: 28).clipShape(RoundedRectangle(cornerRadius: 4))
+        Text(guides.exposure.zebraReadout).font(.system(size: 17, weight: .semibold))
+      }.frame(maxWidth: .infinity, minHeight: 56, alignment: .leading).padding(.horizontal, 12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+      Text("Each mode keeps its own values, so switching to Limit and back does not lose your range. Your skin colour in false colour is set separately.").font(.system(size: 14)).foregroundStyle(.secondary)
+      Text("IRE measures brightness in the incoming picture, from 0 (black) to 100 (white).").font(.system(size: 14)).foregroundStyle(.secondary)
     }.frame(maxWidth: .infinity, alignment: .leading)
   }
-  private func preset(_ title: String, detail: String, purpose: CameraGuides.ZebraPurpose) -> some View {
-    Button { guides.useZebraPreset(purpose) } label: {
+  private func preset(_ title: String, detail: String, description: String, purpose: CameraGuides.ZebraPurpose) -> some View {
+    let selected = guides.validatedZebraPurpose == purpose && !guides.greyCardCheck
+    return Button {
+      if guides.greyCardCheck {
+        guides.greyCardCheck = false
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+      }
+      guides.useZebraPreset(purpose)
+    } label: {
       VStack(alignment: .leading, spacing: 8) {
-        Text(title).font(.headline)
+        HStack { Text(title).font(.headline); Spacer(); if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }
+        Text(description).font(.callout)
         Text(detail).font(.callout).foregroundStyle(.secondary)
-      }.frame(maxWidth: .infinity, minHeight: 76, alignment: .leading).padding(12)
+      }.frame(maxWidth: .infinity, minHeight: 92, alignment: .leading).padding(12)
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(guides.validatedZebraPurpose == purpose ? Color.accentColor : .clear, lineWidth: 2))
-    }.buttonStyle(.plain)
-      .accessibilityValue(guides.validatedZebraPurpose == purpose ? "Selected" : "")
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: 2))
+    }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
 
 private struct ExposureNumberRow: View {
   let title: String
+  var subtitle = ""
   @Binding var value: Int
   let limits: ClosedRange<Int>
   var prefix = ""
   var suffix = ""
   var body: some View {
     HStack {
-      Text(title); Spacer()
-      Button { value = max(limits.lowerBound, value - 1) } label: { Text("−").frame(minWidth: 46, minHeight: 46).contentShape(Rectangle()) }.accessibilityLabel("Decrease \(title)") // grid: ok specified target
-      Text("\(prefix)\(value)\(suffix)").font(.title2.bold()).monospacedDigit().frame(minWidth: 88)
-      Button { value = min(limits.upperBound, value + 1) } label: { Text("+").frame(minWidth: 46, minHeight: 46).contentShape(Rectangle()) }.accessibilityLabel("Increase \(title)") // grid: ok specified target
+      VStack(alignment: .leading) { Text(title).font(.system(size: 17, weight: .semibold)); if !subtitle.isEmpty { Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary) } }
+      Spacer()
+      Button { value = max(limits.lowerBound, value - 1) } label: { Image(systemName: "minus").font(.system(size: 20)).frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }.accessibilityLabel("Decrease zebra \(title.lowercased()), currently \(value) IRE")
+      HStack(alignment: .firstTextBaseline, spacing: 4) { Text("\(prefix)\(value)").font(.system(size: 30, weight: .semibold)); Text("IRE").font(.system(size: 15)).foregroundStyle(.secondary) }.monospacedDigit().frame(minWidth: 100)
+      Button { value = min(limits.upperBound, value + 1) } label: { Image(systemName: "plus").font(.system(size: 20)).frame(minWidth: 48, minHeight: 48).contentShape(Rectangle()) }.accessibilityLabel("Increase zebra \(title.lowercased()), currently \(value) IRE")
     }
   }
 }
@@ -476,42 +525,42 @@ private struct TonePicture: View {
 
 struct SkinTonePicker: View {
   @Binding var guides: CameraGuides
-  @State private var customSelected = false
+
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text("Skin tone").font(.headline)
-      Text("Pick the face closest to yours. Pink in false colour and the My skin zebras show where your skin should sit.").foregroundStyle(.secondary)
-      LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: 8)], spacing: 8) {
+      Text("Choose the face closest to your skin tone. Turn on False colour to check your skin in pink.").foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], spacing: 8) {
         ForEach(CameraGuides.SkinTone.allCases, id: \.self) { tone in
-          let selected = tone == .custom ? customSelected || guides.skinTone == .custom : !customSelected && guides.skinTone == tone
+          let selected = guides.skinTone == tone
           Button {
-            customSelected = tone == .custom
             if let reference = tone.reference { guides.skinReference = reference }
+            guides.selectedSkinTone = tone
           } label: {
             VStack(spacing: 4) {
               Group {
                 if tone == .custom {
                   Image(systemName: "slider.horizontal.3").frame(maxWidth: .infinity, maxHeight: .infinity).background(Color.gray.opacity(0.2))
                 } else { TonePicture(name: tone.rawValue.lowercased()) }
-              }.aspectRatio(1, contentMode: .fit).clipShape(RoundedRectangle(cornerRadius: 8))
-              Text(tone.rawValue).font(.callout.bold()).lineLimit(1).minimumScaleFactor(0.8)
-              if let ref = tone.reference { Text("\(ref.level) ±\(ref.range) IRE").font(.caption2).lineLimit(1).minimumScaleFactor(0.7) }
-              else { Text("Set your own").font(.caption2) }
-            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .top).padding(8)
+              }.frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 8))
+              Text(tone.rawValue).font(.system(size: 16, weight: .bold))
+              if let ref = tone.reference { Text("\(ref.level) ±\(ref.range) IRE").font(.system(size: 14)) }
+              else { Text("Set your own").font(.system(size: 14)) }
+            }.frame(maxWidth: .infinity, minHeight: 112, alignment: .top).overlay(alignment: .topTrailing) { if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent) } }.padding(8)
               .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-              .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.accentColor : .clear, lineWidth: 2))
+              .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: 2))
           }.buttonStyle(.plain)
             .accessibilityLabel(tone.reference.map { "\(tone.rawValue) skin tone, \($0.level) plus or minus \($0.range) IRE" } ?? "Custom skin tone")
-            .accessibilityValue(selected ? "Selected" : "")
+            .accessibilityAddTraits(selected ? .isSelected : [])
         }
       }
-      if customSelected || guides.skinTone == .custom {
-        ExposureNumberRow(title: "Level", value: $guides.skinReference.level, limits: 0...100, suffix: " IRE")
-        ExposureNumberRow(title: "Plus or minus", value: $guides.skinReference.range, limits: 1...10, prefix: "±")
+      if guides.skinTone == .custom {
+        ExposureNumberRow(title: "Level", value: Binding(get: { guides.skinReference.level }, set: { guides.skinReference.level = $0; guides.selectedSkinTone = .custom }), limits: 0...100, suffix: " IRE")
+        ExposureNumberRow(title: "Plus or minus", value: Binding(get: { guides.skinReference.range }, set: { guides.skinReference.range = $0; guides.selectedSkinTone = .custom }), limits: 1...10, prefix: "±")
       }
-      Text(guides.greyCardCheck ? "Green shows the grey card at 39 to 43 IRE" : "Pink shows skin at \(max(0, guides.skinReference.level - guides.skinReference.range)) to \(min(100, guides.skinReference.level + guides.skinReference.range)) IRE")
+      Text(guides.greyCardCheck ? "Green shows 38 to 43 IRE" : "Pink shows skin at \(max(0, guides.skinReference.level - guides.skinReference.range)) to \(min(100, guides.skinReference.level + guides.skinReference.range)) IRE")
         .font(.callout.bold()).frame(maxWidth: .infinity, alignment: .leading).padding(12)
-        .background(Color.pink.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }.disabled(guides.greyCardCheck)
   }
 }
@@ -520,12 +569,28 @@ struct FalseColourAdjustView: View {
   @Binding var guides: CameraGuides
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Toggle("False colour", isOn: $guides.falseColour).disabled(guides.greyCardCheck)
+      Toggle("False colour", isOn: Binding(get: { guides.falseColour }, set: { value in
+        if guides.greyCardCheck {
+          guides.greyCardCheck = false
+          NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        }
+        guides.falseColour = value
+      })).toggleStyle(.switch).font(.title2.bold()).frame(minHeight: 44)
       SkinTonePicker(guides: $guides)
       HStack(alignment: .top, spacing: 12) {
         TonePicture(name: "greycard").frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 8))
         VStack(alignment: .leading, spacing: 8) {
-          Toggle("Grey card check", isOn: $guides.greyCardCheck).font(.headline)
+          Toggle("Grey card check", isOn: Binding(get: { guides.greyCardCheck }, set: { value in
+            guides.greyCardCheck = value
+            if !value { NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue]) }
+          })).toggleStyle(.switch).font(.headline)
+          if guides.greyCardCheck {
+            Text("Grey card check on · Zebra target 41 ±2 IRE").font(.callout.bold())
+            Button("Finish grey card check") {
+              guides.greyCardCheck = false
+              NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            }
+          }
           Text("Hold an 18% grey card where your face will be. Adjust exposure until the card turns green (Mid grey, 41 IRE). Turn this off to go back to your skin settings.").font(.callout).foregroundStyle(.secondary)
         }
       }.padding(12).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
