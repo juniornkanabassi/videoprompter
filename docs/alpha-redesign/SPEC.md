@@ -57,5 +57,9 @@ Files: `Presenter/PresenterView.swift`, `Presenter/PresenterController.swift`, n
 5. Labels never drop at 125 to 200%: the bar wraps to two rows or moves Guides and Mic into Adjust before any name is hidden.
 6. VoiceOver: tiles that toggle report On/Off; openers (Camera, Adjust) are buttons with the selected camera as value.
 
+### A2. Skin tone pictures and grey card (added 9 Nov 2026, after A)
+1. Five tone presets, each with a small generated portrait of a fictional person (Resources/SkinTones/*-256.png, from `Outputs/2026-11-09 Alpha UX redesign/SkinTones/`): **Deep** 45 ±2 (Junior's default), **Brown** 50 ±3, **Medium** 55 ±3, **Light** 62 ±3, **Fair** 68 ±3, plus **Custom**. Shown as a row of portrait cards (picture, name, range) in `FalseColourAdjustView` and Settings; the selected one has the accent border.
+2. **Grey card**: a preset and a short guided check. Hold an 18% grey card to the camera; the zebra target becomes Range 41 ±2 IRE and false colour shows the card in Mid grey (green). The card says "Hold a grey card where your face will be. Adjust exposure until the card is green." with the greycard picture. Turning it off restores the previous zebra and skin settings.
+
 ## Review loop (after E)
 Fresh offscreen snapshots of every screen go to two independent reviewers (GPT-6.1 Sol and Claude Opus 5.5). Each grades these areas out of 10: first launch, library, editor, set up the shot, reading, Clean, bar and tiles, Adjust panel, zebras, false colour and key, mic meter, camera and shot, guides, settings, wording, accessibility, responsiveness. Anything below 9 gets a fix package. Repeat until every area is 9 or above from both reviewers.
