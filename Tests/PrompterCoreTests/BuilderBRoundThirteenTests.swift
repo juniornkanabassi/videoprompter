@@ -31,41 +31,6 @@ import XCTest
     }
   }
 
-  func testHighlightBandsStayAboveTransportInTheMinimumPresenter() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
-    let defaults = freshDefaults("BuilderBThirteenPresenter")
-    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
-    let script = try await store.createScript(title: "Exposure check", markdown: "Read these words at your own pace.")
-    store.settings.mode = "Manual"
-    store.session.present(record: script, settings: store.settings)
-    let camera = CameraModel(defaults: defaults)
-    camera.displayMode = .prompterWithVideo
-    camera.recordingReadyOverride = true
-    camera.guides.zebras = true; camera.guides.falseColour = true
-    let recorder = CameraRecorder(defaults: defaults)
-    for zoom in [1.0, 1.5, 2.0] {
-      store.uiZoom = zoom
-      let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session,
-        draft: PresenterDraft(record: script), camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 720, height: 520))
-      defer { LibraryAX.close(window) }
-      host.sizingOptions = []
-      window.setContentSize(.init(width: 720, height: 520))
-      host.frame = .init(x: 0, y: 0, width: 720, height: 520)
-      host.layoutSubtreeIfNeeded()
-      try await Task.sleep(for: .milliseconds(100))
-      let record = try XCTUnwrap(LibraryAX.named(Features.recording ? "Record" : "Start reading", in: host).first)
-      let transportFrame = try XCTUnwrap(record.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      let legend = try XCTUnwrap(LibraryAX.named("Legend", in: host).first)
-      let legendFrame = try XCTUnwrap(legend.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      XCTAssertLessThanOrEqual(legendFrame.maxY, transportFrame.minY, "The legend toggle stays in the Picture row")
-      for band in camera.guides.exposure.legendBands {
-        let node = try XCTUnwrap(LibraryAX.named("\(band.label), \(band.range) IRE", in: host).first)
-        let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertGreaterThan(frame.minY, transportFrame.maxY, "\(band.label) overlaps transport at \(zoom): \(frame), \(transportFrame)")
-      }
-    }
-  }
 
   func testVisibleFolderActionsUseSelectedFolderAndKeepItsScripts() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

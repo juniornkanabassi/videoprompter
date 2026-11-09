@@ -157,7 +157,7 @@ final class ExposureOrientationRegressionTests: XCTestCase {
     XCTAssertEqual(camera.guides.validatedZebraPurpose, .faceReference)
   }
 
-  @MainActor func testLegendTogglePersistsAndCleanViewHidesIt() async throws {
+  @MainActor func testExposureKeyFollowsEnabledAidsAndCleanView() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent("ExposureLegend-\(UUID())")
     addTeardownBlock { try? FileManager.default.removeItem(at: root) }
     let defaults = freshDefaults("ExposureLegend")
@@ -174,20 +174,19 @@ final class ExposureOrientationRegressionTests: XCTestCase {
       for _ in 0..<3 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
     }
     try await settle()
-    XCTAssertFalse(LibraryAX.named("Zebras: Range 43 to 47 IRE", in: host).isEmpty)
-    let toggle = try XCTUnwrap(LibraryAX.named("Legend", in: host).first)
-    XCTAssertTrue(LibraryAX.bool(toggle, "accessibilityPerformPress"))
-    try await settle()
-    XCTAssertEqual(defaults.object(forKey: "presenterExposureLegend") as? Bool, false)
-    XCTAssertTrue(LibraryAX.named("Zebras: Range 43 to 47 IRE", in: host).isEmpty)
-    XCTAssertTrue(LibraryAX.bool(toggle, "accessibilityPerformPress"))
-    try await settle()
-    XCTAssertEqual(defaults.object(forKey: "presenterExposureLegend") as? Bool, true)
+    func hasKey() -> Bool {
+      LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-exposure-legend" }
+    }
+    XCTAssertTrue(hasKey())
+    XCTAssertTrue(LibraryAX.named("Legend", in: host).isEmpty)
     camera.cleanView = true
     try await settle()
-    XCTAssertTrue(LibraryAX.named("Zebras: Range 43 to 47 IRE", in: host).isEmpty)
-    camera.cleanView = false; camera.guides.zebras = false; camera.guides.falseColour = false
+    XCTAssertFalse(hasKey())
+    camera.cleanView = false
     try await settle()
-    XCTAssertTrue(LibraryAX.named("Zebras: Range 43 to 47 IRE", in: host).isEmpty)
+    XCTAssertTrue(hasKey())
+    camera.guides.zebras = false; camera.guides.falseColour = false
+    try await settle()
+    XCTAssertFalse(hasKey())
   }
 }

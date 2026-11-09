@@ -35,18 +35,7 @@ import XCTest
 
   func testStateTableAndTakeNaming() async throws {
     let (store, camera, recorder, record) = try await fixture()
-    func view() -> PresenterView { PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder) }
     XCTAssertEqual(store.session.visibleReadingState, "Ready")
-    XCTAssertTrue(view().recordingStateTitle.hasPrefix("Ready · Portrait"))
-    camera.pictureSizeOverride = nil
-    XCTAssertEqual(view().recordingStateTitle, "Waiting for picture")
-    camera.recordingReadyOverride = false
-    XCTAssertEqual(view().recordingStateTitle, "Camera unavailable")
-    recorder.phase = .preparing; XCTAssertEqual(view().recordingStateTitle, "Starting…")
-    recorder.phase = .recording; recorder.recordedDuration = 84
-    XCTAssertEqual(view().recordingStateTitle, "REC 01:24")
-    recorder.phase = .saving; XCTAssertEqual(view().recordingStateTitle, "Saving…")
-    recorder.phase = .idle
     store.session.pause(); XCTAssertEqual(store.session.visibleReadingState, "Paused")
     let folder = FileManager.default.temporaryDirectory
     XCTAssertTrue(CameraRecorder.fileURL(in: folder, defaultLabel: record.metadata.title).lastPathComponent.hasPrefix("My Script "))
@@ -165,76 +154,7 @@ import XCTest
     }
   }
 
-  func testCameraAndExposureKeepSixtyPercentClearAtDoubleSize() async throws {
-    let (store, camera, _, record) = try await fixture()
-    store.uiZoom = 2
-    camera.guides.falseColour = true
-    let size = NSSize(width: 720, height: 520)
-    var evidence: [[String: Any]] = []
-    for state in ["waiting", "ready", "recording", "saved"] {
-      let recorder = CameraRecorder(defaults: freshDefaults("CombinedFooter"))
-      camera.recorder = recorder
-      camera.pictureSizeOverride = state == "waiting" ? nil : .init(width: 1080, height: 1920)
-      if state == "recording" { recorder.phase = .recording }
-      if state == "saved" { recorder.savedTake = URL(fileURLWithPath: "/tmp/My Script.mov"); recorder.lastTakeDuration = 84 }
-      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      let (window, host) = await LibraryAX.host(view, size: size)
-      host.sizingOptions = []; host.frame = .init(origin: .zero, size: size)
-      for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
-      func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
-      let scroll = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
-      for band in camera.guides.exposure.legendBands {
-        XCTAssertFalse(LibraryAX.named("\(band.label), \(band.range) IRE", in: host).isEmpty, "Exposure legend must be present")
-      }
-      try assertFrozenFooter(host, size: size, zoom: 2, readingFloor: 0.60)
-      let transport = ["Start reading", "Back to start"] + (Features.recording ? [state == "recording" ? "Stop recording" : "Record"] : [])
-      let frames = try transport.map { label in
-        try XCTUnwrap(LibraryAX.named(label, in: host).first?.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      }
-      for frame in frames.dropFirst() { XCTAssertEqual(frame.midY, frames[0].midY, accuracy: 1) }
-      let reading = try XCTUnwrap(LibraryAX.named("Reading status", in: host).first)
-      XCTAssertTrue(LibraryAX.value(reading, "accessibilityValue").contains("Automatic scroll"))
-      let geometry = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXButton" }.map {
-        "\(LibraryAX.value($0, "accessibilityLabel")): \($0.value(forKey: "accessibilityFrame") ?? "none")"
-      }
-      evidence.append(["state": state, "clearHeight": scroll.frame.height, "clearPercent": scroll.frame.height / size.height * 100, "controls": geometry])
-      LibraryAX.close(window)
-    }
-    if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {
-      try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys])
-        .write(to: URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("combined-footer-layout.json"))
-    }
-  }
 
-  func testReadyOutputStaysOnOneLineAtDoubleSize() async throws {
-    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
-    let (store, camera, recorder, record) = try await fixture()
-    store.uiZoom = 2
-    camera.guides.falseColour = true
-    let size = NSSize(width: 720, height: 520)
-    for picture in [CGSize(width: 1080, height: 1920), CGSize(width: 1920, height: 1080)] {
-      camera.pictureSizeOverride = picture
-      let orientation = picture.width < picture.height ? "Portrait" : "Landscape"
-      let resolution = "\(Int(picture.width))×\(Int(picture.height))"
-      for saved in [false, true] {
-        recorder.savedTake = saved ? URL(fileURLWithPath: "/tmp/My Script.mov") : nil
-        let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-        XCTAssertEqual(view.recordingStateDisplayTitle, "\(orientation) · \(resolution)")
-        let (window, host) = await LibraryAX.host(view, size: size)
-        host.sizingOptions = []; host.frame = .init(origin: .zero, size: size)
-        for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
-        let status = try XCTUnwrap(LibraryAX.named("Recording status", in: host).first)
-        let frame = try XCTUnwrap(status.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertLessThanOrEqual(frame.height, 48 + 1, "Output must remain a single line")
-        let textWidth = (view.recordingStateDisplayTitle as NSString).size(withAttributes: [.font: NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)]).width * 2
-        XCTAssertGreaterThanOrEqual(frame.width, textWidth, "The complete resolution must fit without truncation")
-        XCTAssertTrue(LibraryAX.value(status, "accessibilityValue").contains("Ready · \(orientation) · \(Int(picture.width)) × \(Int(picture.height))"))
-        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Reading status", in: host).first), "accessibilityValue").contains("Automatic scroll"))
-        try assertFrozenFooter(host, size: size, zoom: 2, readingFloor: 0.60)
-        LibraryAX.close(window)
-      }
-    }
-  }
 
   func testFileActionsUndoWithoutLosingContents() async throws {
     let (store, _, _, record) = try await fixture()
@@ -357,7 +277,6 @@ extension AppearanceSnapshotTests {
       recorder.phase = .idle; recorder.errorMessage = nil; store.session.pause(); camera.displayMode = .prompterWithVideo
       camera.recorder = recorder
       let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      if Features.recording { try await snapshot(view.outputControls, name: "fable-precheck-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output)) }
       try await snapshot(CameraRecoveryView(model: camera) {}, name: "fable-recovery-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
     }
   }
@@ -367,8 +286,8 @@ extension AppearanceSnapshotTests {
   func testFrozenSectionSevenMatchesOwnedUI() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let spec = try String(contentsOf: root.appendingPathComponent("DESIGN-SPEC.md"), encoding: .utf8)
-    let section = try XCTUnwrap(spec.components(separatedBy: "## 7. Frozen vocabulary").last?.components(separatedBy: "## 8.").first)
-    let labels = ["Start reading", "Back to start", "Read again", "Voice follow", "Automatic scroll", "Clean view", "Exit clean view", "Tools", "Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Waiting for picture", "Camera unavailable", "Starting…", "Saving…", "Last take", "Check microphone", "Show in Finder", "Hide"]
+    let section = try XCTUnwrap(spec.components(separatedBy: "### 2.2 Presenter").last?.components(separatedBy: "### 2.3").first)
+    let labels = ["Start reading", "Back to start", "Pause", "Set up the shot", "Camera", "Zebras", "False colour", "Guides", "Mic", "Adjust", "Clean"]
     let presenter = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterController.swift"), encoding: .utf8)
       + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterView.swift"), encoding: .utf8)
     let camera = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/CameraWindow.swift"), encoding: .utf8)
@@ -379,7 +298,7 @@ extension AppearanceSnapshotTests {
     }
     let exposure = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/ExposureLegend.swift"), encoding: .utf8)
     for label in PresenterDisplayMode.allCases.map(\.label) {
-      XCTAssertTrue(section.contains(label), "Undocumented camera vocabulary: \(label)")
+      XCTAssertTrue(spec.contains(label), "Undocumented camera vocabulary: \(label)")
       XCTAssertTrue((camera + exposure).contains("\"\(label)\""), "Missing camera vocabulary: \(label)")
     }
     let alphaSpec = try String(contentsOf: root.appendingPathComponent("docs/alpha-redesign/SPEC.md"), encoding: .utf8)

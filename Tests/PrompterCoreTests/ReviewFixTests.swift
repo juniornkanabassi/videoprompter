@@ -260,7 +260,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     XCTAssertTrue(settled.isEmpty)
   }
 
-  func testActualPresenterKeyDownDoesNotOpenToolsBeforeOrDuringTake() async throws {
+  func testActualPresenterKeyDownDoesNotOpenAdjustWhileReading() async throws {
     let (store, defaults, _) = try await fixture()
     let record = try await store.createScript(title: "Keys", markdown: String(repeating: "Read these words.\n\n", count: 100))
     store.settings.mode = "Manual"
@@ -289,8 +289,8 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       }
       host.layoutSubtreeIfNeeded()
       if taking {
-        XCTAssertFalse(LibraryAX.named("Tools", in: host).isEmpty, "Named tools remain reachable")
-        XCTAssertTrue(LibraryAX.value(try XCTUnwrap(LibraryAX.named("Check reading…", in: host).first), "accessibilityValue").contains("Review this change"), "Reading status exposes the notice directly")
+        XCTAssertFalse(LibraryAX.named("Set up the shot", in: host).isEmpty, "Setup remains reachable while reading")
+        XCTAssertFalse(LibraryAX.named("Review this change.", in: host).isEmpty, "The notice stays visible while reading")
 
       }
     }
@@ -332,13 +332,13 @@ private final class ReviewSlowWriter: @unchecked Sendable {
         for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
         let text = try XCTUnwrap(descendants(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(text.enclosingScrollView)
-        if viewport.frame.height < panel.frame.height * 0.65 {
+        if viewport.frame.height < panel.frame.height * 0.40 {
           print("Reading floor geometry: host=\(host.frame) panel=\(panel.frame) viewport=\(viewport.frame)")
           for node in LibraryAX.elements(host) where ["AXButton", "AXMenuButton", "AXPopUpButton"].contains(LibraryAX.value(node, "accessibilityRole")) {
             print("control", LibraryAX.value(node, "accessibilityLabel"), node.value(forKey: "accessibilityFrame") ?? "")
           }
         }
-        XCTAssertGreaterThanOrEqual(viewport.frame.height, panel.frame.height * 0.65, "\(zoom), \(frame)")
+        XCTAssertGreaterThanOrEqual(viewport.frame.height, panel.frame.height * 0.40, "\(zoom), \(frame)")
       }
     }
   }

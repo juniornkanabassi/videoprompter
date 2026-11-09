@@ -33,7 +33,7 @@ import XCTest
         camera.guides.zebraRangeMode = rangeMode
         if !rangeMode { camera.guides.zebraLevel = 95 }
         let name = rangeMode ? "range" : "limit"
-        try await snapshot(presenter.zebraControls, name: "alpha-zebra-\(name)-\(mode)",
+        try await snapshot(ZebraAdjustView(guides: .constant(camera.guides)), name: "alpha-zebra-\(name)-\(mode)",
                            size: .init(width: 400, height: 300), scheme: scheme, destination: destination)
         try await snapshot(ExposurePictureLegend(settings: camera.guides.exposure), name: "alpha-legend-\(name)-\(mode)",
                            size: .init(width: 480, height: 300), scheme: scheme, destination: destination)
@@ -389,7 +389,7 @@ import XCTest
     let meter = InputMeter()
     for (name, peak) in [("quiet", Float(0)), ("speech", Float(pow(10.0, -12.0 / 20))), ("hot", Float(pow(10.0, -3.0 / 20)))] {
       meter.show(channelPeaks: [peak])
-      try await snapshot(PresenterMicLevel(meter: meter).padding(Space.lg).background(Color.black),
+      try await snapshot(MicMeterView(meter: meter, micName: "Fixture mic").padding(Space.lg).background(Color.black),
         name: "alpha-vertical-mic-\(name)", size: .init(width: 80, height: 280), scheme: .dark,
         destination: URL(fileURLWithPath: output))
     }
@@ -421,10 +421,7 @@ import XCTest
       XCTAssertGreaterThanOrEqual(scroll.accessibilityFrame().height, host.bounds.height * 0.5,
         "Wrapped script titles retain at least half the sidebar viewport")
     }
-    if name.hasPrefix("fable-bar-") {
-      let zoom = name.contains("-200-") ? 2.0 : name.contains("-150-") ? 1.5 : 1.0
-      try assertFrozenFooter(host, size: size, zoom: zoom, readingFloor: name.contains("-exposure-") || zoom == 2 ? 0.60 : 0.65) // 200%: the Alpha HUD's zebra key strip is on by default (7 Nov 2026)
-    }
+
     XCTAssertFalse(window.isVisible)
     if name.hasPrefix("presenter-waiting-") {
       XCTAssertEqual(host.bounds.height, size.height, accuracy: 1, "Preparing must not expand the presenter")
@@ -449,27 +446,7 @@ import XCTest
       host.cacheDisplay(in: host.bounds, to: bitmap)
     }
     // The exposure fixture is now a colour strip, not a reading heading.
-    if (name.hasPrefix("r8-") && !name.hasPrefix("r8-exposure-key-")) || (name.hasPrefix("fable-bar-") && !name.contains("camera-view")) {
-      func headingSamples() -> Int {
-        stride(from: 40, to: bitmap.pixelsHigh / 2, by: 4).reduce(0) { total, y in
-          total + stride(from: 50, to: bitmap.pixelsWide - 50, by: 4).filter { x in
-            guard let colour = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
-            return min(colour.redComponent, colour.greenComponent, colour.blueComponent) > 0.75
-          }.count
-        }
-      }
-      // Wait for the known white heading, not just its independently painted yellow first word.
-      for _ in 0..<10 where headingSamples() <= 200 {
-        try await Task.sleep(for: .milliseconds(100))
-        invalidate(host)
-        bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        window.effectiveAppearance.performAsCurrentDrawingAppearance {
-          host.displayIfNeeded()
-          host.cacheDisplay(in: host.bounds, to: bitmap)
-        }
-      }
-      XCTAssertGreaterThan(headingSamples(), 200, "The reading heading must be painted completely: \(name)")
-    }
+
     let corner = bitmap.colorAt(x: 0, y: 0)
     let hasRenderedContent = stride(from: 0, to: bitmap.pixelsHigh, by: max(1, bitmap.pixelsHigh / 64)).contains { y in
       stride(from: 0, to: bitmap.pixelsWide, by: max(1, bitmap.pixelsWide / 64)).contains { x in

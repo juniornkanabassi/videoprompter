@@ -96,30 +96,7 @@ import PrompterCore
     XCTAssertTrue(ControlProtocol.command(action: "resume")?.summary.contains("countdown") == true, "MCP and CLI share this description")
   }
 
-  func testHiddenScriptCancelsCountdownButCleanViewPreservesActiveReading() async throws {
-    let (store, defaults, record) = try await fixture()
-    let camera = CameraModel(defaults: defaults)
-    let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: CameraRecorder(defaults: defaults)))
-    defer { store.session.stop(); LibraryAX.close(window) }
-    store.session.countdownTick = .milliseconds(30)
-    for clean in [false, true] {
-      camera.displayMode = .prompterWithVideo; camera.cleanView = false
-      try await settle(host)
-      store.session.startReading()
-      XCTAssertTrue(store.session.isCountingDown)
-      if clean { camera.cleanView = true } else { camera.displayMode = .videoOnly }
-      try await Task.sleep(for: .milliseconds(200))
-      XCTAssertFalse(store.session.isCountingDown)
-      XCTAssertFalse(store.session.isActivelyRunning)
-      XCTAssertEqual(store.session.tokenIndex, 0)
-    }
-    camera.cleanView = false
-    try await settle(host)
-    store.session.play(captureAudio: false)
-    camera.cleanView = true
-    try await settle(host)
-    XCTAssertTrue(store.session.isActivelyRunning, "Existing Clean view reading must continue")
-  }
+
 
   func testRecordingBarLevelUsesLiveRecordingSamples() async throws {
     guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
@@ -166,48 +143,7 @@ import PrompterCore
     }
   }
 
-  func testStateBandToolsRemainVisibleThroughIdleAndInteraction() async throws {
-    let (store, defaults, record) = try await fixture()
-    let host = NSHostingView(rootView: PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: CameraModel(defaults: defaults), startsCamera: false, recorder: CameraRecorder(defaults: defaults)).environment(\.offscreenRendering, true))
-    let panel = PresenterPanel(captureVisible: false)
-    panel.contentView = host; panel.makeKeyAndOrderFront(nil)
-    defer { store.session.stop(); LibraryAX.close(panel) }
-    func pixels(_ title: String) throws -> Data {
-      let node = try named(title, in: host)
-      let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      let rect = host.convert(panel.convertFromScreen(frame), from: nil)
-      let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: rect))
-      func invalidate(_ view: NSView) { view.needsDisplay = true; view.subviews.forEach(invalidate) }
-      invalidate(host)
-      panel.effectiveAppearance.performAsCurrentDrawingAppearance {
-        host.displayIfNeeded(); host.cacheDisplay(in: rect, to: bitmap)
-      }
-      return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-    }
-    store.session.play(captureAudio: false)
-    try await settle(host)
-    // Warm the layer cache, then compare the actual button pixels, not a state flag.
-    _ = try pixels("Tools"); _ = try pixels("Pause")
-    try await settle(host)
-    let visibleTools = try pixels("Tools")
-    let visibleTransport = try pixels("Pause")
-    try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertEqual(try pixels("Tools"), visibleTools)
-    XCTAssertEqual(try pixels("Pause"), visibleTransport, "Transport never fades")
-    let event = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
-      windowNumber: panel.windowNumber, context: nil, characters: "a", charactersIgnoringModifiers: "a", isARepeat: false, keyCode: 0))
-    let previousWindows = Set(NSApp.windows.filter(\.isVisible).map(ObjectIdentifier.init))
-    panel.sendEvent(event)
-    try await settle(host)
-    XCTAssertEqual(try pixels("Tools"), visibleTools, "A real local key reveals the tools")
-    XCTAssertTrue(NSApp.windows.filter { $0 !== panel && $0.isVisible && !previousWindows.contains(ObjectIdentifier($0)) }.isEmpty,
-      "Revealing the tools cannot open any window or popover")
-    try await Task.sleep(for: .milliseconds(3200))
-    XCTAssertEqual(try pixels("Tools"), visibleTools, "The state band never fades")
-    store.session.pause()
-    try await settle(host)
-    XCTAssertEqual(try pixels("Tools"), visibleTools, "Pausing restores full contrast")
-  }
+
 }
 
 @MainActor extension AppearanceSnapshotTests {

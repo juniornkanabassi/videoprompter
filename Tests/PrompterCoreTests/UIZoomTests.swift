@@ -226,6 +226,12 @@ final class UIZoomTests: XCTestCase {
     (panel.contentView as? OffscreenHostingSizing)?.holdWindowSize()
     panel.contentMinSize = NSSize(width: 360, height: 220)
     store.session.resolveAudioInput = { _ in nil }
+    NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
+    await settle(panel)
+    let start = try XCTUnwrap(LibraryAX.named("Start reading", in: try XCTUnwrap(panel.contentView)).first)
+    XCTAssertTrue(LibraryAX.bool(start, "accessibilityPerformPress"))
+    await settle(panel)
+    store.session.pause()
     store.session.seek(to: 48)
     let anchor = store.session.anchor
     let token = store.session.activeToken!
