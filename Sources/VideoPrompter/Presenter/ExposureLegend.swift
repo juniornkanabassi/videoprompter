@@ -306,79 +306,6 @@ struct ZebraSettings: View {
   }
 }
 
-/// A persistent corner key using the same skin-aware lookup table as the camera overlay.
-struct ExposurePictureLegend: View {
-  let settings: CameraExposure.Settings
-
-  var body: some View {
-    VStack(alignment: .leading, spacing: Space.sm) {
-      if settings.zebras {
-        HStack(spacing: Space.xs) {
-          Canvas { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-            let path = CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))
-            context.stroke(Path(path), with: .color(.black), lineWidth: 2)
-          }
-          .frame(width: Space.lg * 2, height: Space.lg)
-          .clipped()
-          .accessibilityHidden(true)
-          Text(settings.zebraLegend)
-        }
-      }
-      if settings.falseColour {
-        ViewThatFits(in: .horizontal) {
-          Grid(alignment: .leading, horizontalSpacing: Space.md, verticalSpacing: Space.sm) {
-            ForEach(0..<2) { row in
-              GridRow {
-                ForEach(0..<3) { column in
-                  let index = row * 3 + column
-                  if index < settings.legendBands.count { bandView(settings.legendBands[index], stacked: true) }
-                }
-              }
-            }
-          }.fixedSize(horizontal: true, vertical: false)
-          VStack(alignment: .leading, spacing: Space.sm) {
-            ForEach(Array(settings.legendBands.enumerated()), id: \.offset) { _, band in
-              bandView(band)
-            }
-          }
-        }
-      }
-    }
-    .font(.system(size: 16, weight: .semibold))
-    .foregroundStyle(.white)
-    .fixedSize(horizontal: false, vertical: true)
-    .padding(Space.md)
-    .background(.black.opacity(0.94), in: .rect(cornerRadius: Space.sm))
-    .overlay(RoundedRectangle(cornerRadius: Space.sm).strokeBorder(.white.opacity(0.25), lineWidth: 1))
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Exposure legend")
-    .allowsHitTesting(false)
-  }
-
-  private func bandView(_ band: CameraExposure.LegendBand, stacked: Bool = false) -> some View {
-    let swatch = Rectangle()
-      .fill(Color(red: Double(band.colour & 255) / 255,
-                  green: Double((band.colour >> 8) & 255) / 255,
-                  blue: Double((band.colour >> 16) & 255) / 255))
-      .frame(width: Space.lg * 2, height: Space.lg)
-      .accessibilityHidden(true)
-    let label = VStack(alignment: .leading, spacing: Space.xs) {
-      Text(band.label)
-      Text(band.range + " IRE").monospacedDigit()
-    }
-    return Group {
-      if stacked {
-        VStack(alignment: .leading, spacing: Space.xs) { swatch; label }
-      } else {
-        HStack(spacing: Space.sm) { swatch; label }
-      }
-    }.fixedSize(horizontal: true, vertical: true)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("\(band.label), \(band.range) IRE")
-  }
-}
-
 /// The setup card and the smaller indicator used while reading.
 struct ExposureKey: View {
   let guides: CameraGuides
@@ -503,15 +430,17 @@ struct ExposureNumberRow: View {
   private var controls: some View {
     HStack {
       Button { value = max(limits.lowerBound, value - 1) } label: {
-        Image(systemName: "minus").font(.system(size: 20)).frame(minWidth: 48, minHeight: 48)
-      }.accessibilityLabel(accessibilityLabel(increasing: false))
+        Image(systemName: "minus").font(.system(size: 20)).frame(width: 46, height: 46) // grid: ok Match the 46 pt Adjust controls.
+          .background(.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      }.buttonStyle(.plain).accessibilityLabel(accessibilityLabel(increasing: false))
       HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
         Text("\(prefix)\(value)").font(.system(size: 30, weight: .semibold))
         Text("IRE").font(.system(size: 15)).foregroundStyle(.secondary)
       }.monospacedDigit().frame(minWidth: 100)
       Button { value = min(limits.upperBound, value + 1) } label: {
-        Image(systemName: "plus").font(.system(size: 20)).frame(minWidth: 48, minHeight: 48)
-      }.accessibilityLabel(accessibilityLabel(increasing: true))
+        Image(systemName: "plus").font(.system(size: 20)).frame(width: 46, height: 46) // grid: ok Match the 46 pt Adjust controls.
+          .background(.primary.opacity(0.1), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      }.buttonStyle(.plain).accessibilityLabel(accessibilityLabel(increasing: true))
     }
   }
   var body: some View {

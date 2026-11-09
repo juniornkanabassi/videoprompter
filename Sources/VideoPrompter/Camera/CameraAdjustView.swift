@@ -9,6 +9,7 @@ struct CameraAdjustView: View {
   var initiallyAdvanced = false
   var advancedOnly = false
   var showsShotHeading = true
+  var shotOnly = false
   @State private var advancedOpen = false
   @State private var renaming: CameraDevice?
   @State private var nickname = ""
@@ -17,6 +18,7 @@ struct CameraAdjustView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
       if advancedOnly { advancedControls } else {
+        if !shotOnly {
         Text("Camera").font(.title2.bold())
         Text("Pick the camera, then make the picture upright. Remembered for each camera.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -51,7 +53,8 @@ struct CameraAdjustView: View {
             .overlay(alignment: .topTrailing) { selectionBadge(selected) }
         }
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
-        if showsShotHeading { Text("Shot").font(.headline) }
+        }
+        if showsShotHeading { Text("Shot").font(.system(size: 17, weight: .semibold)) }
         ViewThatFits(in: .horizontal) {
           HStack(spacing: AlphaStyle.controlGap) { shotCards }
           VStack(spacing: AlphaStyle.controlGap) { shotCards }
@@ -59,7 +62,7 @@ struct CameraAdjustView: View {
         Text("If you are on your side, pick the other Vertical.").font(.callout).foregroundStyle(.secondary)
         DisclosureGroup(isExpanded: $advancedOpen) {
           advancedControls
-        } label: { Text("Advanced").font(.headline) }
+        } label: { Text("Advanced").font(.system(size: 17, weight: .semibold)).frame(minHeight: AlphaStyle.minTarget) }
       }
     }
     .onAppear { advancedOpen = initiallyAdvanced; if devicesOverride == nil { model.refreshDevices() } }

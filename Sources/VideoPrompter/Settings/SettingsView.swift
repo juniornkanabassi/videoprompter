@@ -657,28 +657,33 @@ struct CameraSettingsDetailSheet: View {
           Text(item.rawValue).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
         }
         Spacer()
-        Button("Done", action: done).frame(minHeight: 44)
+        Button(action: done) { Text("Done").padding(.horizontal, Space.md).frame(minHeight: AlphaStyle.minTarget) }
+          .buttonStyle(.plain).foregroundStyle(AlphaStyle.onAccent)
+          .background(AlphaStyle.accent, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       }
       ScrollView {
         VStack(alignment: .leading, spacing: Space.md) {
           switch item {
-          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [], showsShotHeading: item != .shot)
+          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [], showsShotHeading: item != .shot, shotOnly: item == .shot)
           case .skin: SkinTonePicker(model: camera)
           case .zebras: ZebraAdjustView(model: camera)
           case .falseColour: FalseColourAdjustView(model: camera)
           case .guides: AlphaGuideSections(model: camera)
           case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch).frame(minHeight: 44)
           case .advanced:
-            Toggle("Mirror camera preview", isOn: $camera.mirrored).toggleStyle(.switch).frame(minHeight: 44)
+            HStack {
+              Text("Mirror camera preview"); Spacer()
+              Toggle("Mirror camera preview", isOn: $camera.mirrored).labelsHidden().toggleStyle(.switch)
+            }.frame(minHeight: AlphaStyle.minTarget)
             CameraAdjustView(model: camera, devicesOverride: [], advancedOnly: true)
-            CameraGuideSections(model: camera)
+            AlphaGuideSections(model: camera, advancedExpanded: true)
             ShootSetupSection(store: store, camera: camera, recorder: recorder)
             PermissionSection()
           }
         }.frame(maxWidth: .infinity, alignment: .leading)
       }
     }.padding(AlphaStyle.panelInset)
-      .buttonStyle(SettingsDetailButtonStyle())
+      .buttonStyle(SettingsFormButtonStyle())
       .uiZoom(store.uiZoom)
       .frame(width: availableSize.width, height: availableSize.height)
       .tint(AlphaStyle.accent)
@@ -692,14 +697,6 @@ private struct SettingsFormButtonStyle: ButtonStyle {
       .background(.primary.opacity(configuration.isPressed ? 0.16 : 0.08), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
   }
 }
-
-private struct SettingsDetailButtonStyle: ButtonStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
-      .opacity(configuration.isPressed ? 0.7 : 1)
-  }
-}
-
 
 struct ReadingAppearancePreview: View {
   let settings: PrompterSettings
