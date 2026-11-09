@@ -81,7 +81,7 @@ enum ScriptShortcuts {
           Divider()
           PresenterVideoItems()
           ExposureMenuItems()
-          Button("Presenter full screen") { PresenterController.shared.toggleFullScreen() }
+          Button("Full screen") { PresenterController.shared.toggleFullScreen() }
             .keyboardShortcut("f", modifiers: [.shift, .control, .command])
         }
         CommandMenu("Format") {
