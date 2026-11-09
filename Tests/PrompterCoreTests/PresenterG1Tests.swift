@@ -43,7 +43,7 @@ extension AppearanceSnapshotTests {
           }
           if state == "setup" {
             let cameraButton = try XCTUnwrap(LibraryAX.named("Camera", in: host).first)
-            XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Vertical turned right")
+            XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Turned right for vertical")
           }
           if state == "editing" {
             let editor = try XCTUnwrap(nodes.compactMap { $0 as? NSTextView }.first { $0.isEditable })
