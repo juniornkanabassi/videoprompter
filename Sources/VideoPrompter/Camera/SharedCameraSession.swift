@@ -4,6 +4,7 @@ import QuartzCore
 import Synchronization
 
 extension Notification.Name {
+  static let cameraConnectionsDidChange = Notification.Name("VideoPrompter.cameraConnectionsDidChange")
   static let cameraPictureSizeDidChange = Notification.Name("VideoPrompter.cameraPictureSizeDidChange")
 }
 
@@ -176,6 +177,7 @@ struct CameraHolders {
     // the input fails, and remembering it anyway left the picture black until relaunch.
     attachedUID = input != nil && AVCaptureDevice.authorizationStatus(for: .video) == .authorized ? uid : nil
     let running = holders.count > 0
+    let exposure = self.exposure, auto = self.auto
     let probe = self.probe
     queue.async {
       // Before the session touches the device: this is the mode the card detected.
@@ -184,7 +186,10 @@ struct CameraHolders {
       session.inputs.forEach(session.removeInput)
       if let input, session.canAddInput(input) { session.addInput(input) }
       session.commitConfiguration()
+      exposure?.restoreConnectionOrientation()
+      auto?.restoreConnectionOrientation()
       probe.pin(signal, in: session)
+      Task { @MainActor in NotificationCenter.default.post(name: .cameraConnectionsDidChange, object: nil) }
       if input == nil || !running {
         session.stopRunning()
       } else {
@@ -214,15 +219,13 @@ struct CameraHolders {
   ) {
     let id = ObjectIdentifier(owner)
     if enabled { autoWanters.insert(id) } else { autoWanters.remove(id) }
-    let session = self.session
-    let probe = self.probe
     if !autoWanters.isEmpty, auto == nil {
       let detector = CameraAutoOrientation(onRotation: onRotation)
       auto = detector
-      queue.async { probe.holdingFormat(session) { detector.attach(to: session) } }
+      reconfigure { detector.attach(to: $0) }
     } else if autoWanters.isEmpty, let detector = auto {
       auto = nil
-      queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
+      reconfigure { detector.detach(from: $0) }
     }
   }
   /// Zebras and false colour, held the same way as auto orientation: one detector for every
@@ -230,8 +233,6 @@ struct CameraHolders {
   func setExposure(_ settings: CameraExposure.Settings, for owner: AnyObject) {
     let id = ObjectIdentifier(owner)
     if settings.isOn { exposureWanters.insert(id) } else { exposureWanters.remove(id) }
-    let session = self.session
-    let probe = self.probe
     if settings.isOn { exposure?.update(settings) }
     if !exposureWanters.isEmpty, exposure == nil {
       let detector = CameraExposure(settings: settings) { frame in
@@ -243,10 +244,10 @@ struct CameraHolders {
         }
       }
       exposure = detector
-      queue.async { probe.holdingFormat(session) { detector.attach(to: session) } }
+      reconfigure { detector.attach(to: $0) }
     } else if exposureWanters.isEmpty, let detector = exposure {
       exposure = nil
-      queue.async { probe.holdingFormat(session) { detector.detach(from: session) } }
+      reconfigure { detector.detach(from: $0) }
     }
   }
 
@@ -258,8 +259,14 @@ struct CameraHolders {
   func reconfigure(_ change: @escaping @Sendable (AVCaptureSession) -> Void) {
     let session = self.session
     let probe = self.probe
+    let exposure = self.exposure, auto = self.auto
     // Held like every other reconfiguration, or adding a preview connection resets the format.
-    queue.async { probe.holdingFormat(session) { change(session) } }
+    queue.async {
+      probe.holdingFormat(session) { change(session) }
+      exposure?.restoreConnectionOrientation()
+      auto?.restoreConnectionOrientation()
+      Task { @MainActor in NotificationCenter.default.post(name: .cameraConnectionsDidChange, object: nil) }
+    }
   }
 
   private func setRunning(_ on: Bool) {

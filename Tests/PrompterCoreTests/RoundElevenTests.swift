@@ -21,6 +21,7 @@ import PrompterCore
   }
 
   func testRecoveryCannotOverlapScriptAtAnySize() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let defaults = freshDefaults("RoundEleven")

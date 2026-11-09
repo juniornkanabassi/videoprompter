@@ -46,12 +46,16 @@ struct PresenterView: View {
   @State private var showsCameraControls = false
   @State private var showsCameraRecovery = false
   @State private var showsRecordingStatus = false
+  @State private var cleanControlsRevealed = false
+  private var showsChrome: Bool { !camera.cleanView || cleanControlsRevealed }
   @State private var showsLastTake = false
   @State private var showsTools = false
   @State private var selectedToolSection: String?
   @State private var openedFromPicture = false
   @State private var showsHelp = false
   @State private var overflowTool: String?
+  @AppStorage("presenterMicLevel") private var showsMicLevel = true
+  @AppStorage("presenterExposureLegend") private var showsExposureLegend = true
   @Environment(\.openWindow) private var openWindow
   @State private var settingsTab = SettingsTab.reading
   @FocusState private var focusedTool: String?
@@ -70,21 +74,12 @@ struct PresenterView: View {
   static let cameraPickerWidth: CGFloat = 120
   /// False in Video only, unless a draft was already open: it must stay reachable to finish or cancel.
   private var showsScript: Bool { !camera.cleanView && hasScript && (camera.displayMode != .videoOnly || draft.isEditing) }
-  private var stage: some View {
-    VStack(spacing: 0) {
-      readingStage
-      if camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed {
-        ExposureLegend(model: camera, zoom: controlZoom)
-          .frame(maxWidth: .infinity).background(Surfaces.presenterPanel)
-          .accessibilityIdentifier("presenter-exposure-strip")
-      }
-    }
-  }
+  private var stage: some View { readingStage }
   private var readingStage: some View {
     GeometryReader { geometry in
       let sideInset = ScriptTextView.sideInset(width: geometry.size.width, textWidth: store.settings.textWidth)
       ZStack(alignment: .top) {
-        if camera.presentsWithVideo {
+        if camera.presentsWithVideo || camera.cleanView {
           // The live picture is the bottom layer only. The background colour above it is the
           // script's backdrop, so colour, opacity, guide line, mirror, rotation and in-place
           // editing all keep working exactly as they do without video.
@@ -114,10 +109,30 @@ struct PresenterView: View {
         GuideLine(settings: store.settings).offset(
           y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
         }
-        if camera.presentsWithVideo && camera.needsRecovery && !showsScript {
+        if camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
           CameraRecoveryView(model: camera) { showsCameraControls = true }
             .uiZoom(controlZoom).padding(Space.md)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .environment(\.colorScheme, .dark)
+        }
+        if showsExposureLegend && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed {
+          let picture = camera.guides.rotation.fittedRect(
+            aspect: SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9),
+            in: CGRect(origin: .zero, size: geometry.size))
+          ExposurePictureLegend(settings: camera.guides.exposure)
+            .frame(width: min(480, max(Space.section, picture.width - Space.xxl)))
+            .padding(Space.md)
+            .padding(.top, Space.lg * 2 * controlZoom) // Clear the top drag handle, as 2.0.7 does.
+            .frame(width: picture.width, height: picture.height, alignment: .topLeading)
+            .position(x: picture.midX, y: picture.midY)
+            .accessibilityIdentifier("presenter-exposure-legend")
+        }
+        if micLevelVisible {
+          PresenterMicLevel(meter: recorder.inputMeter)
+            .frame(height: min(260, geometry.size.height * 0.45)) // grid: ok The meter is capped at 260 points and 45% of the picture height.
+            .padding(Space.sm).background(.black.opacity(0.45), in: .rect(cornerRadius: 12))
+            .padding(.trailing, Space.md)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
             .environment(\.colorScheme, .dark)
         }
         if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
@@ -131,8 +146,14 @@ struct PresenterView: View {
     }.background(Color.clear)
   }
 
+  private var micLevelVisible: Bool { showsMicLevel && camera.presentsWithVideo && !camera.cleanView }
   private var trackedStage: some View {
     stage
+    // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
+    .task(id: [micLevelVisible && startsCamera, recorder.isRecording || recorder.isBusy]) {
+      guard micLevelVisible && startsCamera else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
+      if !recorder.isRecording && !recorder.isBusy { await recorder.startInputTest() }
+    }
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presenterWidth = $0 }
     .onChange(of: store.settings) { _, value in
       session.updateSettings(value)
@@ -150,12 +171,14 @@ struct PresenterView: View {
     .onDisappear { quietTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
       if clean && session.isCountingDown { session.pause() }
+      cleanControlsRevealed = false
+      if clean { dismissPopover(); showsTools = false; showsHelp = false }
       announce("Clean view " + (clean ? "on" : "off"))
     }
   }
   var body: some View {
     trackedStage
-    .onAppear { recorder.useSettings(store.settings); camera.recorder = recorder; revealControls() }
+    .onAppear { recorder.useSettings(store.settings); camera.recorder = recorder; if !camera.cleanView { revealControls() } }
     .onExitCommand {
       if showsLastTake { showsLastTake = false }
       else if showsHelp { showsHelp = false }
@@ -173,7 +196,7 @@ struct PresenterView: View {
       if mode == .videoOnly { session.pause() }
     }
     .overlay(alignment: .top) {
-      if showsSetup {
+      if showsSetup && showsChrome {
       HStack(spacing: Space.sm) {
       ZStack {
         Capsule().frame(width: 24, height: 4)
@@ -205,7 +228,7 @@ struct PresenterView: View {
       }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      controlBar.environment(\.colorScheme, .dark)
+      if showsChrome { controlBar.environment(\.colorScheme, .dark) }
     }
     .confirmationDialog("Close while a take is active?", isPresented: $controller.asksToCloseRecording) {
       Button("Stop and save, then close") { controller.stopAndClose() }
@@ -253,6 +276,7 @@ struct PresenterView: View {
           } else if showsCameraControls { cameraControls }
           else if overflowTool == "Microphone" { microphoneControls }
           else if overflowTool == "Guides" { guideControls }
+          else if overflowTool == "Zebras" { zebraControls }
           else if overflowTool == "Camera" { cameraControls }
           else { toolsSurface }
         }.popoverEntryFocus()
@@ -276,6 +300,7 @@ struct PresenterView: View {
       || showsTools || showsHelp
   }
   private func revealControls() {
+    cleanControlsRevealed = true
     controlsQuiet = false
     quietTask?.cancel()
     guard isTaking else { return }
@@ -288,7 +313,7 @@ struct PresenterView: View {
   private var secondaryOpacity: Double {
     controlsQuiet && !pointerOverControls && focusedTool == nil && !hasOpenPopover ? Palette.quietOpacity(contrast) : 1
   }
-  private var showsReceipt: Bool { !recorder.receiptHidden && !recorder.isRecording && !recorder.isBusy && (recorder.savedTake != nil || recorder.takeFailure != nil) }
+  private var showsReceipt: Bool { Features.recording && !recorder.receiptHidden && !recorder.isRecording && !recorder.isBusy && (recorder.savedTake != nil || recorder.takeFailure != nil) }
   /// A clean saved take keeps the Picture row and opens its receipt from a compact opener; problems stay prominent.
   private var showsCompactReceipt: Bool { showsReceipt && camera.presentsWithVideo && recorder.savedTake != nil && recorder.qualityWarning == nil }
   private var barContent: some View {
@@ -310,7 +335,7 @@ struct PresenterView: View {
         }
         if !hasScript || camera.displayMode == .videoOnly { Text("Camera view").fontWeight(.semibold) }
         Spacer(minLength: Space.sm)
-        if camera.presentsWithVideo || recorder.isRecording || recorder.isBusy { recordingStateControl }
+        if Features.recording && (camera.presentsWithVideo || recorder.isRecording || recorder.isBusy) { recordingStateControl }
         moreMenu
       }.font(.body)
         .accessibilityIdentifier("presenter-state-band")
@@ -438,9 +463,7 @@ struct PresenterView: View {
 
   private var transport: some View {
     HStack(spacing: Space.sm) {
-      if !hasScript || camera.displayMode == .videoOnly {
-        Spacer()
-      }
+      HStack(spacing: Space.sm) {
       if draft.isEditing {
         Button("Save changes") { Task { await draft.confirm(store: store) } }
           .keyboardShortcut(.return, modifiers: .command).disabled(draft.isSaving)
@@ -455,19 +478,20 @@ struct PresenterView: View {
           .help(session.isActivelyRunning && !session.reachedEnd ? "Pause reading (⌥⌘S)" : "Start reading (⌥⌘S)")
         Button("Back to start", action: session.restart)
           .disabled(session.isActivelyRunning || (!awayFromStart && !session.isCountingDown))
-          .help("Return to the first word without stopping the recording")
-
+          .help(Features.recording ? "Return to the first word without stopping the recording" : "Return to the first word")
       }
-      Spacer(minLength: Space.sm)
+      }.fixedSize(horizontal: true, vertical: false).frame(maxWidth: Features.recording ? .infinity : nil, alignment: .leading)
+      // Record sits in the middle of the bar; the clear column balances the reading buttons.
       Group {
-        if camera.presentsWithVideo {
+        if Features.recording && camera.presentsWithVideo {
           PresenterRecordButton(recorder: recorder, camera: camera, compact: true, showsStatus: false, defaultLabel: hasScript && camera.displayMode != .videoOnly ? session.activeRecord?.metadata.title ?? "" : "", secondary: !hasScript || camera.displayMode == .videoOnly)
             .help(recordHelp)
-        } else {
+        } else if !camera.presentsWithVideo {
           Button("Show camera") { camera.displayMode = .prompterWithVideo }.help("Show the camera beside the script (⇧⌘V)")
         }
       }
-    }.lineLimit(1)
+      if Features.recording { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
+    }.frame(maxWidth: .infinity).lineLimit(1)
       .accessibilityIdentifier("presenter-transport")
   }
 
@@ -497,6 +521,7 @@ struct PresenterView: View {
 
   var outputControls: some View {
     Form {
+      if Features.recording {
       Section("Before recording") {
         LabeledContent("Picture", value: recorder.compactOutputConfirmation(camera: camera))
         if camera.pictureSize == nil { Text("Resolution unknown until a picture arrives.").font(.callout) }
@@ -508,6 +533,7 @@ struct PresenterView: View {
       }
       RecordingSettingsSections(defaultLabel: hasScript && camera.displayMode != .videoOnly ? session.activeRecord?.metadata.title ?? "" : "", recorder: recorder, camera: camera, zoom: controlZoom)
       RecordingFolderSection(recorder: recorder)
+      }
     }.formStyle(.grouped).environment(\.popoverEntryRequested, false)
       .frame(width: min(480, 640 / controlZoom), height: popoverHeight / controlZoom).uiZoom(controlZoom)
   }
@@ -553,7 +579,7 @@ struct PresenterView: View {
 
   private var cameraControls: some View {
     VStack(alignment: .leading, spacing: Space.sm) {
-      Text(recorder.inputAndFormatConfirmation).font(.callout).fixedSize(horizontal: false, vertical: true)
+      if Features.recording { Text(recorder.inputAndFormatConfirmation).font(.callout).fixedSize(horizontal: false, vertical: true) }
       // Builder B contract: the picker suppresses its recovery; this is the single owner.
       if camera.needsRecovery {
         CameraRecoveryView(model: camera) { showsCameraOptions = true }
@@ -565,15 +591,13 @@ struct PresenterView: View {
         CameraPickerList(model: camera, zoom: controlZoom, startsPreview: startsCamera, showsRecovery: false) { showsCameraControls = false; if overflowTool == "Camera" { overflowTool = nil } }
       }
       DisclosureGroup("Camera options", isExpanded: $showsCameraOptions) {
-        Picker("Rotation", selection: Binding(get: { camera.guides.rotation }, set: { camera.setRotation($0) })) {
-          ForEach(CameraRotation.allCases, id: \.self) { Text($0.label).tag($0) }
-        }.disabled(camera.recordingLocked)
-        Text("Rotation changes the preview and saved video.").font(.callout)
+        if Features.recording {
         Text(recorder.outputSummary(camera: camera)).font(.callout).fixedSize(horizontal: false, vertical: true)
         Button("Recording settings…") { showsCameraControls = false; overflowTool = nil; settingsTab = .camera; cameraSection = "Recording"; showsSettings = true }
         Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
+        }
         Button("Open Second monitor window") { openWindow(id: "camera") }
-        Text("An optional second window showing the same camera and recording.").font(.callout)
+        Text(Features.recording ? "An optional second window showing the same camera and recording." : "An optional second window showing the same camera.").font(.callout)
       }
     }.padding(Space.md).modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom))
       .uiZoom(controlZoom).popoverEntryFocus()
@@ -595,26 +619,15 @@ struct PresenterView: View {
       } }), identifier: "presenter-tools")
   }
 
-  // The small row is for checking the picture. Configuration stays in Tools.
+  // The heads-up row: big labelled toggles; the arrow beside a tool opens its settings.
   var pictureRow: some View {
-    HStack(spacing: Space.sm) {
-      Button { camera.toggleFramingGuides() } label: { HStack(spacing: Space.xs) { if camera.framingIsVisible { Image(systemName: "checkmark").imageScale(.small) }; Text("Guides") }.fixedSize().frame(minHeight: 24).contentShape(Rectangle()) }
-        .accessibilityLabel("Guides").accessibilityValue(camera.framingIsVisible ? "On" : "Off")
-        .help("Show or hide framing guides. Choose the guides in Tools.")
-        .tint(camera.framingIsVisible ? .accentColor : nil)
-        .contextMenu { Button("Choose guides…") { overflowTool = "Guides" } }
-        .onLongPressGesture { overflowTool = "Guides" }
-      Button { camera.togglePictureExposureCheck() } label: { HStack(spacing: Space.xs) { if camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView { Image(systemName: "checkmark").imageScale(.small) }; Text("Exposure check") }.fixedSize().frame(minHeight: 24).contentShape(Rectangle()) }
-        .accessibilityLabel("Exposure check").accessibilityValue(camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView ? "On" : "Off")
-        .help("Show or hide exposure aids. With no aids selected, shows brightness colours.")
-        .tint(camera.exposureIsConfigured && !camera.exposureBypassed && !camera.cleanView ? .accentColor : nil)
-        .contextMenu { Button("Exposure settings…") { selectedToolSection = "Exposure"; showsTools = true } }
-        .onLongPressGesture { selectedToolSection = "Exposure"; showsTools = true }
-      Button { openedFromPicture = true; overflowTool = "Camera" } label: { Text("Switch camera").frame(minHeight: 24).contentShape(Rectangle()) }.layoutPriority(1)
-        .disabled(camera.recordingLocked)
-        .accessibilityValue(camera.devices.first(where: { $0.uid == camera.selectedUID })?.name ?? "No camera")
-        .help(camera.recordingLocked ? "Stop recording to change camera" : "Choose a camera")
-        .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && overflowTool == "Camera" }, set: { if !$0 { overflowTool = nil } }), identifier: "picture-camera")
+    let zebras = camera.exposureBinding(\.zebras), falseColour = camera.exposureBinding(\.falseColour)
+    return HStack(spacing: Space.xs) {
+      // Labels drop to icons only when the row would not fit (enlarged text in a narrow window).
+      ViewThatFits(in: .horizontal) {
+        hudTools(zebras: zebras, falseColour: falseColour, iconOnly: false)
+        hudTools(zebras: zebras, falseColour: falseColour, iconOnly: true)
+      }
       Spacer(minLength: 0)
       if showsCompactReceipt, let file = recorder.savedTake {
         let duration = CameraRecorder.durationText(recorder.lastTakeDuration)
@@ -629,11 +642,70 @@ struct PresenterView: View {
           .restoringPopoverFocus(isPresented: Binding(get: { openedFromPicture && showsLastTake }, set: { if !$0 { showsLastTake = false } }), identifier: "picture-last-take")
       }
     }.font(.callout).foregroundStyle(Palette.onDarkQuiet(contrast)).buttonStyle(.plain).frame(minHeight: 24)
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .center)
       .accessibilityElement(children: .contain).accessibilityLabel("Picture")
       .accessibilityIdentifier("presenter-picture-row")
   }
 
+  private func hudTools(zebras: Binding<Bool>, falseColour: Binding<Bool>, iconOnly: Bool) -> some View {
+    HStack(spacing: Space.xs) {
+      hudTool("Zebras", "circle.lefthalf.striped.horizontal", detail: zebraDetail, on: zebras.wrappedValue, settings: "Zebras", iconOnly: iconOnly) { zebras.wrappedValue.toggle() }
+      hudTool("False colour", "paintpalette", on: falseColour.wrappedValue, iconOnly: iconOnly) { falseColour.wrappedValue.toggle() }
+      hudTool("Guides", "squareshape.split.3x3", on: camera.framingIsVisible, settings: "Guides", iconOnly: iconOnly) { camera.toggleFramingGuides() }
+      hudTool("Mic level", "mic", on: showsMicLevel, settings: "Microphone", iconOnly: iconOnly) { showsMicLevel.toggle() }
+      hudTool("Legend", "list.bullet.rectangle", on: showsExposureLegend, iconOnly: iconOnly) { showsExposureLegend.toggle() }
+      hudTool("Camera", "video", on: false, iconOnly: iconOnly) { openedFromPicture = true; overflowTool = "Camera" }
+        .disabled(camera.recordingLocked)
+        .help(camera.recordingLocked ? "Stop recording to change camera" : "Choose a camera")
+      hudTool("Clean", "rectangle", on: camera.cleanView, iconOnly: iconOnly) { camera.cleanView.toggle() }
+        .help("Hide the script and every aid, leaving just the camera (⌥⌘K)")
+    }
+  }
+  private var hudIsLarge: Bool { !compactControls && controlZoom < 1.25 }
+  private var zebraDetail: String {
+    camera.guides.zebraRange == 0 ? "\(camera.guides.zebraLevel)+" : "\(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)"
+  }
+  private func hudTool(_ title: String, _ symbol: String, detail: String? = nil, on: Bool, settings: String? = nil, iconOnly: Bool = false,
+                       action: @escaping () -> Void) -> some View {
+    HStack(spacing: 0) {
+      Button(action: action) {
+        // Big stacked buttons at normal size; one line when enlarged or narrow, so the script keeps its room.
+        if iconOnly {
+          Image(systemName: symbol).fixedSize().frame(minHeight: 24).padding(.horizontal, Space.xs).contentShape(Rectangle())
+        } else if hudIsLarge {
+          VStack(spacing: 2) {
+            Image(systemName: symbol).font(.title2).frame(height: 26) // grid: ok The icon box keeps the stacked tools the same height with or without a detail line.
+            Text(title)
+            if let detail { Text(detail).font(.caption).monospacedDigit() }
+          }.fixedSize().frame(minWidth: 64, minHeight: 52).padding(.horizontal, Space.xs).contentShape(Rectangle())
+        } else {
+          HStack(spacing: Space.xs) {
+            Image(systemName: symbol)
+            Text(detail.map { "\(title) \($0)" } ?? title).monospacedDigit()
+          }.fixedSize().frame(minHeight: 24).padding(.horizontal, Space.xs).contentShape(Rectangle())
+        }
+      }.accessibilityLabel(title).accessibilityValue(on ? "On" + (detail.map { ", " + $0 } ?? "") : "Off").help(title)
+      if let settings {
+        Button { openedFromPicture = true; overflowTool = settings } label: {
+          Image(systemName: "chevron.down").imageScale(.small).frame(width: 22, height: hudIsLarge ? 52 : 24).contentShape(Rectangle()) // grid: ok The settings arrow is a narrow target beside its tool.
+        }.accessibilityLabel("\(title) settings").help("Set \(title.lowercased())")
+      }
+    }.foregroundStyle(on ? Color.yellow : Palette.onDarkQuiet(contrast))
+      .background(on ? Color.yellow.opacity(0.16) : .clear, in: .rect(cornerRadius: 12))
+  }
+
+  var zebraControls: some View {
+    VStack(alignment: .leading, spacing: Space.md) {
+      Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).toggleStyle(.switch).font(.headline).initialPopoverFocus()
+      ZebraSettings(guides: $camera.guides) {
+        camera.guides.zebras = true
+        camera.exposureBypassed = false; camera.cleanView = false
+      }
+      if camera.guides.zebraRange > 0 {
+        Text("False colour shows this band in pink.").font(.callout)
+      }
+    }.padding(Space.md).frame(width: 360).uiZoom(controlZoom)
+  }
   private func receiptOpenerLabel(_ title: String) -> some View {
     HStack(spacing: Space.xs) {
       Image(systemName: "checkmark.circle.fill")
@@ -660,12 +732,16 @@ struct PresenterView: View {
       toolContents(toolSection)
       // Each remaining job is named directly; a generic More menu hid the pre-record check.
       Section {
-        Button("Before recording check…") { showsTools = false; overflowTool = "Output" }
-          .help("Check picture, microphone, format, take name and folder before you record")
+        if Features.recording {
+          Button("Before recording check…") { showsTools = false; overflowTool = "Output" }
+            .help("Check picture, microphone, format, take name and folder before you record")
+        }
         Button("Shoot setups…") { showsTools = false; openPresenterSettings(.shootSetups) }
         Button("Presenter help…") { showsTools = false; showsHelp = true }
-        Button("Last take") { showsTools = false; openedFromPicture = false; showsLastTake = true }
-          .disabled(recorder.savedTake == nil && recorder.takeFailure == nil && recorder.lastFile == nil)
+        if Features.recording {
+          Button("Last take") { showsTools = false; openedFromPicture = false; showsLastTake = true }
+            .disabled(recorder.savedTake == nil && recorder.takeFailure == nil && recorder.lastFile == nil)
+        }
       }
     }.formStyle(.grouped).frame(width: min(520, 640 / controlZoom)).fixedSize(horizontal: false, vertical: true)
       .modifier(PresenterControlViewport(maxHeight: popoverHeight / controlZoom)).uiZoom(controlZoom)
@@ -1024,6 +1100,44 @@ private struct RecordingBarLevel: View {
         .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel("Recording microphone level")
         .accessibilityValue(meter.isFresh() ? String(format: "%.1f dBFS", meter.peakDBFS) : "No recent audio")
+    }
+  }
+}
+
+/// Vertical peak meter with shared microphone zones and a decaying peak marker.
+struct PresenterMicLevel: View {
+  @ObservedObject var meter: InputMeter
+  @State private var peakHold = PeakHold()
+  var body: some View {
+    TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+      let db = meter.isFresh() ? meter.peakDBFS : -.infinity
+      let fill = InputLevelMeter.position(db)
+      VStack(spacing: Space.xs) {
+        GeometryReader { geometry in
+          ZStack(alignment: .bottom) {
+            InputLevelMeter.zoneTrack(vertical: true).opacity(0.2)
+            InputLevelMeter.zoneTrack(vertical: true).mask(alignment: .bottom) {
+              Rectangle().frame(height: geometry.size.height * fill)
+            }
+            ForEach([-18, -6], id: \.self) { boundary in
+              Rectangle().fill(.white.opacity(0.65)).frame(height: 1)
+                .offset(y: -geometry.size.height * InputLevelMeter.position(Float(boundary)))
+            }
+            if let peak = peakHold.value(at: ProcessInfo.processInfo.systemUptime) {
+              Rectangle().fill(.white).frame(height: 2)
+                .offset(y: -geometry.size.height * InputLevelMeter.position(peak))
+            }
+          }
+        }.frame(width: 12)
+        Text(db.isFinite ? String(format: "%.0f", db) : "–").font(.caption2).monospacedDigit().foregroundStyle(.white)
+      }
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("Microphone level")
+      .accessibilityValue(db.isFinite ? String(format: "%.0f dBFS", db) : "No recent audio")
+      .accessibilityHint(meter.isClipping ? "Input is clipping." : "Warning zones at minus 18 and minus 6 dBFS.")
+      .onChange(of: db, initial: true) { _, value in
+        peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime)
+      }
     }
   }
 }

@@ -33,12 +33,12 @@ struct LibraryStartView: View {
         }
         VStack(alignment: .leading, spacing: Space.md) {
           Button(action: camera) { Text("Camera Only") }
-          Text("Check your framing or record without a script.")
+          Text(Features.recording ? "Check your framing or record without a script." : "Check your framing without a script.")
             .fixedSize(horizontal: false, vertical: true)
         }
         VStack(alignment: .leading, spacing: Space.sm) {
           Button("Getting Started Guide") { store.showWelcomeScript(); guide() }
-          Text("Read the full guide to writing, reading and recording.").font(.callout)
+          Text(Features.recording ? "Read the full guide to writing, reading and recording." : "Read the full guide to writing, reading and camera monitoring.").font(.callout)
         }
         ViewThatFits(in: .horizontal) {
           HStack(spacing: Space.lg) { otherScriptActions }
@@ -80,7 +80,7 @@ struct ReadingWorkflowExample: View {
               .frame(maxWidth: .infinity, minHeight: 24)
           }.buttonStyle(.bordered)
             .accessibilityValue(step == item ? "Selected" : "")
-            .accessibilityHint("Shows an example of this step. Does not start reading or recording.")
+            .accessibilityHint(Features.recording ? "Shows an example of this step. Does not start reading or recording." : "Shows an example of this step. Does not start reading.")
         }
       }
       VStack(alignment: .leading, spacing: Space.xs) {

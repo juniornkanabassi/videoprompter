@@ -72,6 +72,7 @@ import XCTest
   }
 
   func testTransportMatrixAtEveryZoomAndState() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     _ = NSApplication.shared
     NSApp.accessibilitySetValue(true, forAttribute: NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface"))
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -212,7 +213,7 @@ import XCTest
     var baseSize = NSSize.zero
     for zoom in AppStore.uiZoomSteps {
       store.uiZoom = zoom
-      for state in ["idle", "countdown", "reading", "waiting", "recording", "warning", "warning-both", "warning-and-notice"] {
+      for state in Features.recording ? ["idle", "countdown", "reading", "waiting", "recording", "warning", "warning-both", "warning-and-notice"] : ["idle", "countdown", "reading"] {
         store.session.pause(); recorder.phase = .idle; recorder.savedTake = nil; recorder.droppedAudioBuffers = 0; draft.noticeMessage = nil
         if state == "countdown" { store.session.countdownTick = .seconds(60); store.session.startReading() }
         if state == "reading" { store.session.play(captureAudio: false) }
@@ -227,7 +228,8 @@ import XCTest
         await settle()
         let script = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first)
         let viewport = try XCTUnwrap(script.enclosingScrollView)
-        XCTAssertGreaterThanOrEqual(viewport.frame.height, 338, "\(zoom) \(state): script viewport \(viewport.frame)")
+        // The Alpha HUD adds the zebra key strip below the script by default, so at 200% the floor is 60% (7 Nov 2026).
+        XCTAssertGreaterThanOrEqual(viewport.frame.height, zoom == 2 ? 312 : 338, "\(zoom) \(state): script viewport \(viewport.frame)")
         let bar = try XCTUnwrap(elements(host).first { label($0, "accessibilityIdentifier") == "presenter-control-bar" })
         XCTAssertLessThanOrEqual(try frame(bar).height, 182, "\(zoom) \(state)")
         _ = try button("Tools", in: host)
@@ -252,7 +254,9 @@ import XCTest
         }
         recorder.droppedFrames = 0
       }
+      if Features.recording {
       // A paused mid-script retake is one press and never changes recording state.
+      store.session.pause()
       store.session.seek(to: 10); recorder.phase = .recording
       await settle()
       if let reset = LibraryAX.named("Back to start", in: host).first {
@@ -264,10 +268,11 @@ import XCTest
       await settle()
       XCTAssertEqual(store.session.tokenIndex, 0)
       XCTAssertEqual(recorder.phase, .recording)
+      }
     }
     recorder.phase = .idle; camera.recordingReadyOverride = false
     await settle()
-    XCTAssertFalse(try isEnabled(button("Record", in: host)))
+    if Features.recording { XCTAssertFalse(try isEnabled(button("Record", in: host))) }
     _ = try button("Tools", in: host)
     XCTAssertEqual(PresenterView.controlZoom(2), 2)
     if let path = ProcessInfo.processInfo.environment["VIDEOPROMPTER_LAYOUT_EVIDENCE"] {

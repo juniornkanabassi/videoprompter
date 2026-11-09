@@ -144,7 +144,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     cleanView = false; exposureBypassed = false
     announceExposure("Exposure aids restored", on: true)
   }
-  static let cleanViewExplanation = "Hides the script, framing guides and exposure aids in the presenter only. The Second monitor window keeps its overlays."
+  static let cleanViewExplanation = "Shows only the camera picture in the presenter. Move the pointer to reveal controls, or press Option-Command-K to leave Clean view. Your monitoring aids are restored when Clean is off. The Second monitor window keeps its overlays."
 
   private func announceExposure(_ name: String, on: Bool) {
     NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,

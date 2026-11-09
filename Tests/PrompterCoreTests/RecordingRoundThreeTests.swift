@@ -1,3 +1,4 @@
+import PrompterCore
 import AppKit
 import SwiftUI
 import XCTest
@@ -21,12 +22,13 @@ import XCTest
     XCTAssertEqual(CameraModel(defaults: defaults).guides, saved)
     camera.applySkinExposurePreset()
     XCTAssertEqual(camera.guides.zebraLevel, 45)
-    XCTAssertEqual(camera.guides.zebraRange, 5)
+    XCTAssertEqual(camera.guides.zebraRange, 2)
     XCTAssertTrue(camera.previewGuides.zebras)
     XCTAssertFalse(camera.previewGuides.falseColour)
   }
 
-  func testNewFailedAttemptNeverShowsOlderTakeAsItsReceipt() async {
+  func testNewFailedAttemptNeverShowsOlderTakeAsItsReceipt() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let defaults = freshDefaults("RecordingReceipt")
     let recorder = CameraRecorder(defaults: defaults)
     recorder.savedTake = URL(fileURLWithPath: "/tmp/previous-take.mov")

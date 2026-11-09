@@ -51,6 +51,17 @@ final class CameraExposureTests: XCTestCase {
     XCTAssertEqual(colour(54), 0xFFBE_78FF, "one stop over is pink")
     XCTAssertEqual(colour(100), 0xFF00_00E6, "clipped is red")
     XCTAssertEqual(CameraExposure.falseColourTable[128], grey(128), "everything else stays grey")
+    let skin = CameraExposure.falseColourTable(skin: CameraExposure.zebraCodes(level: 45, range: 2))
+    XCTAssertEqual(skin[Int(CameraExposure.code(ire: 45))], 0xFFBE_78FF, "the zebra skin band is pink")
+    XCTAssertEqual(skin[Int(CameraExposure.code(ire: 54))], grey(UInt32(CameraExposure.code(ire: 54))), "ARRI's pink band steps aside")
+    XCTAssertEqual(skin[Int(CameraExposure.code(ire: 40))], 0xFF00_C800, "middle grey stays green")
+  }
+
+  func testNewCameraStartsWithSkinZebras() {
+    let guides = CameraGuides.firstUse
+    XCTAssertTrue(guides.zebras)
+    XCTAssertEqual([guides.zebraLevel, guides.zebraRange], [45, 2])
+    XCTAssertEqual(guides.validatedZebraPurpose, .faceReference)
   }
 
   func testOlderSavedGuidesDecodeWithZebrasOff() throws {
@@ -65,7 +76,7 @@ final class FaceReferenceBandTests: XCTestCase {
   func testFaceReferenceKeepsAnySkinBandAndDefaultsToTheOwnersLevel() {
     var guides = CameraGuides()
     guides.useZebraPreset(.faceReference)
-    XCTAssertEqual([guides.zebraLevel, guides.zebraRange], [45, 5])
+    XCTAssertEqual([guides.zebraLevel, guides.zebraRange], [45, 2])
     guides.zebraLevel = 62; guides.zebraPurpose = .faceReference
     guides.useZebraPreset(.faceReference)
     XCTAssertEqual(guides.zebraLevel, 62, "a face band already set stays as it is")

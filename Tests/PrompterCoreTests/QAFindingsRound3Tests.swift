@@ -8,6 +8,7 @@ import XCTest
 /// No camera, audio capture, playback or visible windows are started.
 @MainActor final class QAFindingsRound3Tests: XCTestCase {
   func testVoiceMicrophoneChangedDuringSeparateTakeIsUsedAfterReturningToSharedInput() throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     for phase in [CameraRecorder.Phase.preparing, .waitingForFrames, .recording, .saving] {
       let defaults = freshDefaults("QA3Microphone")
       var settings = PrompterSettings()

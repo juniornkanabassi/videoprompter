@@ -26,7 +26,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false).uiZoom(zoom), size: .init(width: 560, height: 640))
       defer { LibraryAX.close(window) }
       let segments = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXRadioButton" }
-      XCTAssertEqual(segments.count, 4)
+      XCTAssertEqual(segments.count, Features.recording ? 4 : 3)
       let rects = try segments.map { try XCTUnwrap($0.value(forKey: "accessibilityFrame") as? NSValue).rectValue }
       for rect in rects { XCTAssertTrue(window.convertToScreen(host.bounds).insetBy(dx: -1, dy: -1).contains(rect), "Jump control clips at \(zoom): \(rect)") }
       for rect in rects.dropFirst() { XCTAssertEqual(rect.midY, rects.first?.midY ?? 0, accuracy: 1) }
@@ -86,6 +86,7 @@ import XCTest
   }
 
   func testFooterGeometryAndUntruncatedActionsAcrossStateMatrix() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, record) = try await fixture()
     var evidence: [[String: Any]] = []
     for zoom in [1.0, 1.5, 2.0] {
@@ -108,12 +109,14 @@ import XCTest
           for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
           func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
           let scroll = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
-          XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * 0.65 - 1, "\(state), \(zoom), \(size)")
-          try assertFrozenFooter(host, size: size, zoom: zoom)
+          // The Alpha HUD adds the zebra key strip below the script by default, so at 200% the floor is 60% (7 Nov 2026).
+          let floor = zoom == 2 ? 0.60 : 0.65
+          XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * floor - 1, "\(state), \(zoom), \(size)")
+          try assertFrozenFooter(host, size: size, zoom: zoom, readingFloor: floor)
           // SwiftUI may forward a container identifier to a child AX node. Measure the
           // space actually reserved below the reading viewport, including footer padding.
           let footerHeight = size.height - scroll.frame.height
-          XCTAssertLessThanOrEqual(footerHeight, size.height * 0.35, "Footer budget: \(state), \(zoom)")
+          XCTAssertLessThanOrEqual(footerHeight, size.height * (1 - floor) + 1, "Footer budget: \(state), \(zoom)")
           evidence.append(["zoom": zoom, "state": state, "width": size.width, "height": size.height,
                            "readingHeight": scroll.frame.height, "readingFraction": scroll.frame.height / size.height,
                            "footerHeight": footerHeight])
@@ -139,7 +142,7 @@ import XCTest
           }
           if state == "saved" {
             // Round 19: a clean take keeps the quick picture checks; its receipt opens from Last take.
-            for name in ["Guides", "Exposure check", "Switch camera", "Last take"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
+            for name in ["Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Clean", "Last take"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
             let opener = try XCTUnwrap(LibraryAX.named("Last take", in: host).first)
             XCTAssertEqual(LibraryAX.value(opener, "accessibilityValue"), "Saved My Script 2026-11-06 14-03-22.mov · 1:24")
             XCTAssertTrue(LibraryAX.named("Hide receipt", in: host).isEmpty)
@@ -180,9 +183,11 @@ import XCTest
       for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(20)) }
       func views(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(views) }
       let scroll = try XCTUnwrap(views(host).compactMap { $0 as? NSTextView }.first?.enclosingScrollView)
-      XCTAssertFalse(LibraryAX.named("Key", in: host).isEmpty, "Exposure strip must be present")
+      for band in camera.guides.exposure.legendBands {
+        XCTAssertFalse(LibraryAX.named("\(band.label), \(band.range) IRE", in: host).isEmpty, "Exposure legend must be present")
+      }
       try assertFrozenFooter(host, size: size, zoom: 2, readingFloor: 0.60)
-      let transport = ["Start reading", "Back to start", state == "recording" ? "Stop recording" : "Record"]
+      let transport = ["Start reading", "Back to start"] + (Features.recording ? [state == "recording" ? "Stop recording" : "Record"] : [])
       let frames = try transport.map { label in
         try XCTUnwrap(LibraryAX.named(label, in: host).first?.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       }
@@ -202,6 +207,7 @@ import XCTest
   }
 
   func testReadyOutputStaysOnOneLineAtDoubleSize() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, record) = try await fixture()
     store.uiZoom = 2
     camera.guides.falseColour = true
@@ -317,6 +323,7 @@ import XCTest
 
 extension AppearanceSnapshotTests {
   func testFinalFooter() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let (store, camera, recorder, record) = try await FinalFooterTests().fixture()
     let scheme: ColorScheme = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
@@ -350,7 +357,7 @@ extension AppearanceSnapshotTests {
       recorder.phase = .idle; recorder.errorMessage = nil; store.session.pause(); camera.displayMode = .prompterWithVideo
       camera.recorder = recorder
       let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
-      try await snapshot(view.outputControls, name: "fable-precheck-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output))
+      if Features.recording { try await snapshot(view.outputControls, name: "fable-precheck-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 700), scheme: scheme, destination: URL(fileURLWithPath: output)) }
       try await snapshot(CameraRecoveryView(model: camera) {}, name: "fable-recovery-\(Int(zoom * 100))-\(appearance)", size: .init(width: 640, height: 600), scheme: scheme, destination: URL(fileURLWithPath: output))
     }
   }
@@ -361,7 +368,7 @@ extension AppearanceSnapshotTests {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let spec = try String(contentsOf: root.appendingPathComponent("DESIGN-SPEC.md"), encoding: .utf8)
     let section = try XCTUnwrap(spec.components(separatedBy: "## 7. Frozen vocabulary").last?.components(separatedBy: "## 8.").first)
-    let labels = ["Start reading", "Back to start", "Read again", "Voice follow", "Automatic scroll", "Clean view", "Exit clean view", "Tools", "Guides", "Exposure check", "Switch camera", "Waiting for picture", "Camera unavailable", "Starting…", "Saving…", "Last take", "Check microphone", "Show in Finder", "Hide"]
+    let labels = ["Start reading", "Back to start", "Read again", "Voice follow", "Automatic scroll", "Clean view", "Exit clean view", "Tools", "Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Waiting for picture", "Camera unavailable", "Starting…", "Saving…", "Last take", "Check microphone", "Show in Finder", "Hide"]
     let presenter = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterController.swift"), encoding: .utf8)
       + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterView.swift"), encoding: .utf8)
     let camera = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/CameraWindow.swift"), encoding: .utf8)
@@ -371,7 +378,7 @@ extension AppearanceSnapshotTests {
       XCTAssertTrue((presenter + camera).contains("\"\(label)\""), "Missing UI vocabulary: \(label)")
     }
     let exposure = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/ExposureLegend.swift"), encoding: .utf8)
-    for label in PresenterDisplayMode.allCases.map(\.label) + CameraGuides.ZebraPurpose.allCases.map(ExposureLegend.zebraTitle) + FalseColourStrip.captions + ["Check brightness · False colour", "Face reference"] {
+    for label in PresenterDisplayMode.allCases.map(\.label) + CameraGuides.ZebraPurpose.allCases.map(ExposureLegend.zebraTitle) + FalseColourStrip.captions + ["Check brightness · False colour", "Skin 45 ±2", "Clipping 95+", "Limit", "Range"] {
       XCTAssertTrue(section.contains(label), "Undocumented camera or exposure vocabulary: \(label)")
       XCTAssertTrue((camera + exposure).contains("\"\(label)\""), "Missing camera or exposure vocabulary: \(label)")
     }
@@ -407,10 +414,11 @@ extension AppearanceSnapshotTests {
   if let scroll = views(host).compactMap({ $0 as? NSTextView }).first?.enclosingScrollView {
     XCTAssertGreaterThanOrEqual(scroll.frame.height, size.height * readingFloor, "Reading floor", file: file, line: line)
   }
-  for label in ["Start reading", "Back to start", "Pause", "Read again", "Stop recording", "Show camera", "Tools", "Guides", "Exposure check", "Switch camera", "Play", "Show in Finder"] {
+  // The Alpha HUD tools may shrink to icons when the row would not fit, so only the text buttons are measured (7 Nov 2026).
+  for label in ["Start reading", "Back to start", "Pause", "Read again", "Stop recording", "Show camera", "Tools", "Play", "Show in Finder"] {
     for node in LibraryAX.named(label, in: host) where LibraryAX.value(node, "accessibilityRole") == "AXButton" {
       let rect = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue, file: file, line: line).rectValue
-      let width = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: (["Guides", "Exposure check", "Switch camera", "Play", "Show in Finder"].contains(label) ? 12 : 13) * zoom)]).width
+      let width = (label as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: (["Play", "Show in Finder"].contains(label) ? 12 : 13) * zoom)]).width
       XCTAssertGreaterThanOrEqual(rect.width + 1, width, "Truncated \(label)", file: file, line: line)
     }
   }

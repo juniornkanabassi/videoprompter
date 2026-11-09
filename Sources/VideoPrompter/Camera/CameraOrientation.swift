@@ -25,6 +25,23 @@ enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
     }
   }
 
+  /// Mirror horizontally in displayed coordinates, after rotating the raw camera pixels.
+  func displayTransform(mirrored: Bool) -> CGAffineTransform {
+    CGAffineTransform(rotationAngle: radians)
+      .concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1))
+  }
+
+  /// Analysis buffers stay in sensor coordinates. Preview rotation and mirroring belong to
+  /// each stage, never to a data output's device-dependent defaults.
+  static func keepSensorOrientation(_ connection: AVCaptureConnection?) {
+    guard let connection else { return }
+    if connection.videoRotationAngle != 0, connection.isVideoRotationAngleSupported(0) { connection.videoRotationAngle = 0 }
+    if connection.isVideoMirroringSupported {
+      connection.automaticallyAdjustsVideoMirroring = false
+      connection.isVideoMirrored = false
+    }
+  }
+
   /// Aspect-fit rectangle for a picture of `aspect` turned by this rotation inside `bounds`.
   /// Nothing is cropped: a rotated 16:9 feed shows as 9:16 with bars down the sides, and the
   /// composition guides are drawn on this rectangle so they turn with the picture.
@@ -111,8 +128,14 @@ final class CameraAutoOrientation: NSObject, AVCaptureVideoDataOutputSampleBuffe
   func attach(to session: AVCaptureSession) {
     guard !session.outputs.contains(output) else { return }
     session.beginConfiguration()
-    if session.canAddOutput(output) { session.addOutput(output) }
+    if session.canAddOutput(output) {
+      session.addOutput(output)
+      CameraRotation.keepSensorOrientation(output.connection(with: .video))
+    }
     session.commitConfiguration()
+  }
+  func restoreConnectionOrientation() {
+    CameraRotation.keepSensorOrientation(output.connection(with: .video))
   }
   func detach(from session: AVCaptureSession) {
     guard session.outputs.contains(output) else { return }

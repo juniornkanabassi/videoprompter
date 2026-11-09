@@ -15,6 +15,7 @@ import XCTest
 
   func testComparisonNeverEnablesAnAidAndRestoresConfiguredChoices() {
     let (_, camera, _) = fixture()
+    camera.guides = CameraGuides() // a new camera now starts with skin zebras on (Alpha, 7 Nov 2026); this test is about no aid configured
     camera.toggleExposureCheck()
     XCTAssertFalse(camera.exposureIsConfigured)
     camera.guides.falseColour = true
@@ -42,7 +43,7 @@ import XCTest
       let name = String(WelcomeScript.markdown[Range(match.range(at: 1), in: WelcomeScript.markdown)!])
       // Exact literal at a control or label declaration, never the guide's own text.
       let escaped = NSRegularExpression.escapedPattern(for: name)
-      let control = try NSRegularExpression(pattern: #"(?:Button|Toggle|Picker|Menu|Text|Label|accessibilityLabel)\s*\([^\n]*""# + escaped + #"""#)
+      let control = try NSRegularExpression(pattern: #"(?:Button|Toggle|Picker|Menu|Text|Label|accessibilityLabel|hudTool)\s*\([^\n]*""# + escaped + #"""#)
       XCTAssertNotNil(control.firstMatch(in: source, range: NSRange(source.startIndex..., in: source)), "Guide names a missing control: \(name)")
     }
     XCTAssertFalse(WelcomeScript.markdown.contains("More →"))
@@ -65,6 +66,7 @@ import XCTest
   }
 
   func testPermissionRecoveryAndOutputNameTheActualPrerequisites() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder) = fixture()
     let record = try await store.createScript(title: "Recovery", markdown: "Read these words.")
     store.settings.mode = "Manual"; store.session.present(record: record, settings: store.settings)

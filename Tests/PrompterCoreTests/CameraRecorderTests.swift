@@ -1,9 +1,11 @@
+import PrompterCore
 import Foundation
 import XCTest
 @testable import VideoPrompter
 
 @MainActor final class CameraRecorderTests: XCTestCase {
-  func testNewPreparationFailureRevealsPreviouslyHiddenReceipt() async {
+  func testNewPreparationFailureRevealsPreviouslyHiddenReceipt() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let defaults = freshDefaults("NewTakeReceipt")
     let recorder = CameraRecorder(defaults: defaults)
     let camera = CameraModel(defaults: defaults)

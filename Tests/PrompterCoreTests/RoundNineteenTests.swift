@@ -39,6 +39,7 @@ import XCTest
   }
 
   func testStopRecordingHelpOnlyWhileLocked() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (_, camera, recorder, _) = try await fixture()
     for locked in [false, true] {
       recorder.phase = locked ? .recording : .idle
@@ -61,10 +62,10 @@ import XCTest
       let (window, host) = await LibraryAX.host(view.toolsSurface, size: .init(width: 640, height: 900))
       defer { LibraryAX.close(window) }
       XCTAssertTrue(LibraryAX.named("More", in: host).isEmpty, "The generic More menu is gone at \(zoom)")
-      for label in ["Before recording check…", "Shoot setups…", "Presenter help…", "Last take"] {
+      for label in Features.recording ? ["Before recording check…", "Shoot setups…", "Presenter help…", "Last take"] : ["Shoot setups…", "Presenter help…"] {
         XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "\(label) at \(zoom)")
       }
-      XCTAssertFalse(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Last take", in: host).first), "isAccessibilityEnabled"), "Nothing to review yet")
+      if Features.recording { XCTAssertFalse(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Last take", in: host).first), "isAccessibilityEnabled"), "Nothing to review yet") }
       let fitting = host.fittingSize.height
       XCTAssertLessThan(fitting, 620 * zoom, "Text tools size to their content at \(zoom): \(fitting)")
       XCTAssertGreaterThan(fitting, 200, "Tools still show their sections at \(zoom): \(fitting)")
@@ -72,6 +73,7 @@ import XCTest
   }
 
   func testCleanTakeKeepsPictureChecksAndOpensItsReceipt() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, record) = try await fixture()
     recorder.savedTake = URL(fileURLWithPath: "/tmp/Round 19 2026-11-07 10-00-00.mov"); recorder.lastTakeDuration = 61
     let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder)
@@ -79,7 +81,7 @@ import XCTest
     defer { LibraryAX.close(window) }
     host.sizingOptions = []; host.frame = .init(x: 0, y: 0, width: 720, height: 520)
     for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-    for name in ["Guides", "Exposure check", "Switch camera", "Last take"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
+    for name in ["Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Clean", "Last take"] { XCTAssertFalse(LibraryAX.named(name, in: host).isEmpty, name) }
     let opener = try XCTUnwrap(LibraryAX.named("Last take", in: host).first)
     XCTAssertEqual(LibraryAX.value(opener, "accessibilityValue"), "Saved Round 19 2026-11-07 10-00-00.mov · 1:01")
     let frame = try XCTUnwrap(opener.value(forKey: "accessibilityFrame") as? NSValue).rectValue

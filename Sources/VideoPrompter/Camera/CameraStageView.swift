@@ -5,25 +5,24 @@ import AppKit
 /// background. Both take their frames from `SharedCameraSession`, so the device is opened once;
 /// each one has its own preview layer, which is what AVFoundation expects.
 ///
-/// Three layers, all of them `CAShapeLayer` or `AVCaptureVideoPreviewLayer`: rotation is a layer
-/// transform or a connection angle, guides and the frame marker are stroked paths, and the
-/// shading outside the marker is one even-odd fill. Only opt-in latency logging runs per frame.
+/// A shared picture layer rotates the preview and exposure aids together. Guides and the frame
+/// marker are stroked paths, and the shading outside the marker is one even-odd fill.
+/// Only opt-in latency logging runs per frame.
 final class CameraStageView: NSView {
   private let preview = AVCaptureVideoPreviewLayer()
+  /// AVFoundation owns the preview layer; display rotation belongs to this shared parent.
+  let pictureLayer = CALayer()
   private let shade = CAShapeLayer()
   /// Internal for the geometry test.
   let guideLayer = CAShapeLayer()
   /// Dark stripes masked down to the over-bright parts of the picture.
   private let zebraLayer = CAShapeLayer()
   /// The false colour picture, laid exactly over the live one.
-  private let falseColourLayer = CALayer()
-  private let zebraMask = CALayer()
+  let falseColourLayer = CALayer()
+  let zebraMask = CALayer()
   private var guides = CameraGuides()
   private var mirrored = false
   private var uid: String?
-  /// True while the connection turns the picture itself; otherwise the layer transform does.
-  /// Internal so the geometry test can stand in for a camera connection.
-  var rotatesInConnection = false
   private var holding = false
   private var visibility: NSKeyValueObservation?
 
@@ -41,11 +40,16 @@ final class CameraStageView: NSView {
     zebraLayer.strokeColor = NSColor.black.withAlphaComponent(0.8).cgColor
     zebraLayer.lineWidth = 3
     zebraLayer.mask = zebraMask
-    layer?.addSublayer(preview)
-    layer?.addSublayer(falseColourLayer)
-    layer?.addSublayer(zebraLayer)
+    layer?.addSublayer(pictureLayer)
+    pictureLayer.addSublayer(preview)
+    pictureLayer.addSublayer(falseColourLayer)
+    pictureLayer.addSublayer(zebraLayer)
+    falseColourLayer.contentsGravity = .resizeAspect
+    zebraMask.contentsGravity = .resizeAspect
     layer?.addSublayer(shade)
     layer?.addSublayer(guideLayer)
+    NotificationCenter.default.addObserver(
+      self, selector: #selector(connectionsChanged), name: .cameraConnectionsDidChange, object: nil)
     // Removed by AppKit when the view goes; the picture's shape follows the delivered frame.
     NotificationCenter.default.addObserver(
       self, selector: #selector(pictureSizeChanged), name: .cameraPictureSizeDidChange, object: nil)
@@ -53,6 +57,10 @@ final class CameraStageView: NSView {
       self, selector: #selector(exposureChanged), name: .cameraExposureDidChange, object: nil)
   }
   required init?(coder: NSCoder) { nil }
+  @objc private func connectionsChanged() {
+    applyConnection()
+    needsLayout = true
+  }
   @objc private func pictureSizeChanged() { needsLayout = true }
   @objc private func exposureChanged() {
     CATransaction.begin()
@@ -79,22 +87,9 @@ final class CameraStageView: NSView {
     needsLayout = true
   }
 
-  /// Mirroring and, where this macOS offers it, the rotation itself both belong to the
-  /// connection. The layer transform is the fallback for a connection that will not take the
-  /// angle, or that does not exist yet: the first view is made before the camera is attached.
+  /// Keep capture pixels unchanged. The preview and both aids share the display transform.
   private func applyConnection() {
-    var rotates = false
-    if let connection = preview.connection {
-      connection.automaticallyAdjustsVideoMirroring = false
-      connection.isVideoMirrored = mirrored
-      let angle = CGFloat(guides.rotation.rawValue)
-      rotates = connection.isVideoRotationAngleSupported(angle)
-      connection.videoRotationAngle = rotates ? angle : 0
-    }
-    // A connection that starts turning after the last layout would turn the picture twice.
-    guard rotates != rotatesInConnection else { return }
-    rotatesInConnection = rotates
-    needsLayout = true
+    CameraRotation.keepSensorOrientation(preview.connection)
   }
 
   override func layout() {
@@ -106,21 +101,17 @@ final class CameraStageView: NSView {
     // which left 0.8.1's guides spread over the whole window.
     let aspect = SharedCameraSession.shared.pictureSize ?? CGSize(width: 16, height: 9)
     let picture = guides.rotation.fittedRect(aspect: aspect, in: bounds)
-    if rotatesInConnection {
-      preview.setAffineTransform(.identity)
-      preview.frame = bounds
-    } else {
-      Self.place(preview, on: picture, turnedBy: guides.rotation)
+    applyConnection()
+    Self.place(pictureLayer, on: picture, turnedBy: guides.rotation, mirrored: mirrored)
+    for image in [preview, falseColourLayer, zebraMask] {
+      image.setAffineTransform(.identity)
+      image.frame = pictureLayer.bounds
     }
-    // Sublayers do not inherit the window's scale: at 1x a hairline on a Retina screen blurs.
+    zebraLayer.frame = pictureLayer.bounds
     let scale = window?.backingScaleFactor ?? 1
-    // The data output is never mirrored; the preview's connection is.
-    for overlay in [zebraMask, falseColourLayer] {
-      Self.place(overlay, on: picture, turnedBy: guides.rotation)
-      if mirrored { overlay.setAffineTransform(overlay.affineTransform().concatenating(CGAffineTransform(scaleX: -1, y: 1))) }
-    }
-    zebraLayer.path = guides.zebras ? CameraOverlay.zebraPath(picture: picture) : nil
-    for shape in [zebraLayer, shade, guideLayer] {
+    zebraLayer.contentsScale = scale
+    zebraLayer.path = guides.zebras ? CameraOverlay.zebraPath(picture: pictureLayer.bounds) : nil
+    for shape in [shade, guideLayer] {
       shape.frame = bounds
       shape.contentsScale = scale
     }
@@ -134,12 +125,12 @@ final class CameraStageView: NSView {
   /// Lays the layer out unturned, then turns it about its own centre: it lands exactly on the
   /// aspect-fitted `picture`, so a turned 16:9 feed shows as 9:16 with nothing cropped. The
   /// camera picker's thumbnail uses it too.
-  static func place(_ layer: CALayer, on picture: CGRect, turnedBy rotation: CameraRotation) {
+  static func place(_ layer: CALayer, on picture: CGRect, turnedBy rotation: CameraRotation, mirrored: Bool = false) {
     layer.bounds = CGRect(
       origin: .zero,
       size: rotation.swapsAxes ? CGSize(width: picture.height, height: picture.width) : picture.size)
     layer.position = CGPoint(x: picture.midX, y: picture.midY)
-    layer.setAffineTransform(CGAffineTransform(rotationAngle: rotation.radians))
+    layer.setAffineTransform(rotation.displayTransform(mirrored: mirrored))
   }
 
   override func viewDidChangeBackingProperties() {

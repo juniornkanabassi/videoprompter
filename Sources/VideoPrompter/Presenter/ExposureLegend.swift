@@ -101,24 +101,7 @@ struct ExposureSettingsContent: View {
         Button("Show exposure aids") { if presenter { model.cleanView = false }; model.exposureBypassed = false }
       }
       DisclosureGroup("Custom levels", isExpanded: $showsCustom) {
-      Picker("Zebra reference", selection: Binding(
-        get: { model.guides.validatedZebraPurpose },
-        set: { model.guides.useZebraPreset($0) }
-      )) {
-        VStack(alignment: .leading, spacing: Space.xs) {
-          Text("Face reference").fontWeight(.semibold)
-          Text(ExposureGuidance.facePurpose).font(.callout)
-        }.tag(CameraGuides.ZebraPurpose.faceReference)
-        VStack(alignment: .leading, spacing: Space.xs) {
-          Text("Bright areas").fontWeight(.semibold)
-          Text("Stripes mark the brightest parts of the picture.").font(.callout)
-        }.tag(CameraGuides.ZebraPurpose.brightAreas)
-        if model.guides.validatedZebraPurpose == .custom {
-          Text("Custom levels").tag(CameraGuides.ZebraPurpose.custom)
-        }
-      }.pickerStyle(.radioGroup).fixedSize(horizontal: false, vertical: true)
-        Stepper("Level: \(model.guides.zebraLevel) IRE", value: $model.guides.zebraLevel, in: 0...100)
-        Stepper("Range: ±\(model.guides.zebraRange) IRE", value: $model.guides.zebraRange, in: 0...10)
+        ZebraSettings(guides: $model.guides)
         Text("Custom levels measure brightness; they are not a face target.")
       }.accessibilityIdentifier("exposure-custom-levels")
         .accessibilityValue(showsCustom ? "Expanded" : "Collapsed")
@@ -126,7 +109,7 @@ struct ExposureSettingsContent: View {
       DisclosureGroup("How exposure aids work") {
         ExposureKeyHelp(model: model)
       }
-      Text("Exposure aids only change the preview, not your camera or saved video.")
+      Text("Exposure aids only change the preview, not your camera.")
     }.font(.callout)
   }
 }
@@ -256,7 +239,7 @@ struct ExposureKeyHelp: View {
         ForEach(ExposureGuidance.colourMeanings, id: \.self) { Text($0) }
         Text("Near white marks 99–100% brightness in the received picture, not proof of camera sensor clipping. Check important detail on your camera, especially with a flat picture setting.")
       }
-      Text("These guides show the received picture. They do not change your camera or saved video.")
+      Text("These guides show the received picture. They do not change your camera.")
     }.font(.callout).foregroundStyle(.primary)
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -288,5 +271,112 @@ struct FalseColourKey: View {
       }
       Text("Grey shows brightness between these bands.")
     }.font(.callout).fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+
+/// Shared by the HUD popover and Tools; zero width is the persisted Limit mode.
+struct ZebraSettings: View {
+  @Binding var guides: CameraGuides
+  var onPreset: () -> Void = {}
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      Picker("Zebra mode", selection: $guides.zebraRangeMode) {
+        Text("Limit").tag(false)
+        Text("Range").tag(true)
+      }.pickerStyle(.segmented)
+      Stepper(value: $guides.zebraLevel, in: 0...100) {
+        HStack {
+          Text("Level")
+          Spacer(minLength: Space.sm)
+          Text("\(guides.zebraLevel) IRE").font(.title2.weight(.semibold)).monospacedDigit()
+        }
+      }
+      if guides.zebraRangeMode {
+        Stepper("Plus or minus: \(guides.zebraRange) IRE", value: $guides.zebraRange, in: 1...10)
+      }
+      HStack(spacing: Space.sm) {
+        Button("Skin 45 ±2") {
+          guides.zebraLevel = 45; guides.zebraRange = 2; guides.zebraPurpose = .faceReference
+          onPreset()
+        }
+        Button("Clipping 95+") { guides.useZebraPreset(.brightAreas); onPreset() }
+      }
+      Text(guides.exposure.zebraReadout).font(.callout)
+    }
+  }
+}
+
+/// A persistent corner key using the same skin-aware lookup table as the camera overlay.
+struct ExposurePictureLegend: View {
+  let settings: CameraExposure.Settings
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      if settings.zebras {
+        HStack(spacing: Space.xs) {
+          Canvas { context, size in
+            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            let path = CameraOverlay.zebraPath(picture: CGRect(origin: .zero, size: size))
+            context.stroke(Path(path), with: .color(.black), lineWidth: 2)
+          }
+          .frame(width: Space.lg * 2, height: Space.lg)
+          .clipped()
+          .accessibilityHidden(true)
+          Text(settings.zebraLegend)
+        }
+      }
+      if settings.falseColour {
+        ViewThatFits(in: .horizontal) {
+          Grid(alignment: .leading, horizontalSpacing: Space.md, verticalSpacing: Space.sm) {
+            ForEach(0..<2) { row in
+              GridRow {
+                ForEach(0..<3) { column in
+                  let index = row * 3 + column
+                  if index < settings.legendBands.count { bandView(settings.legendBands[index], stacked: true) }
+                }
+              }
+            }
+          }.fixedSize(horizontal: true, vertical: false)
+          VStack(alignment: .leading, spacing: Space.sm) {
+            ForEach(Array(settings.legendBands.enumerated()), id: \.offset) { _, band in
+              bandView(band)
+            }
+          }
+        }
+      }
+    }
+    .font(.system(size: 16, weight: .semibold))
+    .foregroundStyle(.white)
+    .fixedSize(horizontal: false, vertical: true)
+    .padding(Space.md)
+    .background(.black.opacity(0.94), in: .rect(cornerRadius: Space.sm))
+    .overlay(RoundedRectangle(cornerRadius: Space.sm).strokeBorder(.white.opacity(0.25), lineWidth: 1))
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Exposure legend")
+    .allowsHitTesting(false)
+  }
+
+  private func bandView(_ band: CameraExposure.LegendBand, stacked: Bool = false) -> some View {
+    let swatch = Rectangle()
+      .fill(Color(red: Double(band.colour & 255) / 255,
+                  green: Double((band.colour >> 8) & 255) / 255,
+                  blue: Double((band.colour >> 16) & 255) / 255))
+      .frame(width: Space.lg * 2, height: Space.lg)
+      .accessibilityHidden(true)
+    let label = VStack(alignment: .leading, spacing: Space.xs) {
+      Text(band.label)
+      Text(band.range + " IRE").monospacedDigit()
+    }
+    return Group {
+      if stacked {
+        VStack(alignment: .leading, spacing: Space.xs) { swatch; label }
+      } else {
+        HStack(spacing: Space.sm) { swatch; label }
+      }
+    }.fixedSize(horizontal: true, vertical: true)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("\(band.label), \(band.range) IRE")
   }
 }

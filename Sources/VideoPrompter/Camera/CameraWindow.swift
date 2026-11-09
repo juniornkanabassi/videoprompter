@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import AppKit
 import SwiftUI
+import PrompterCore
 
 struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
@@ -58,11 +59,11 @@ struct CameraView: View {
       ToolbarItem {
         Button("Exposure Settings", systemImage: "sun.max") { showsExposureSettings = true }.help("Choose zebras, false colour and their levels")
       }
-      ToolbarItemGroup { RecordingControls(recorder: recorder, camera: model, zoom: zoom) }
+      ToolbarItemGroup { if Features.recording { RecordingControls(recorder: recorder, camera: model, zoom: zoom) } }
       ToolbarItem {
         Menu {
-          Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip only the monitor picture. Saved video has its own mirroring setting.")
-          Button("Camera & Recording Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
+          Toggle("Mirror Camera Preview", isOn: $model.mirrored).help("Flip the monitor picture.")
+          Button(Features.recording ? "Camera & Recording Settings…" : "Camera Settings…") { AppSettingsView.requestTab(.camera); openSettings() }
           Toggle("Always on Top", isOn: $model.alwaysOnTop).help("Keep the Second monitor window above other windows")
         } label: { Label("Options", systemImage: "ellipsis.circle") }
           .accessibilityLabel("Options").help("Mirror the preview, open camera settings or keep the window on top")
@@ -81,7 +82,7 @@ struct CameraChoiceItems: ToolbarContent {
     // The picker previews each camera on hover, so choosing one is never blind.
     ToolbarItem { CameraPicker(model: model).disabled(recording) }
     ToolbarItem {
-      ToolbarPopUp(title: "Rotation", help: "Rotate the preview and saved video, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation).disabled(recording)
+      ToolbarPopUp(title: "Rotation", help: "Rotate the camera picture, or choose Automatic", options: CameraModel.rotationOptions, selection: $rotation).disabled(recording)
     }
   }
 }
@@ -205,8 +206,8 @@ struct CameraGuideSections: View {
           Text("Off").tag("Off")
           ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
           Text("Custom").tag("Custom")
-        }.help("Mark the shape of your intended output without cropping the recording")
-        if let marker = model.guides.marker { Text("\(marker.label) guide only. The full frame is recorded.").font(.callout) }
+        }.help("Mark the shape of your intended picture without cropping it")
+        if let marker = model.guides.marker { Text("\(marker.label) guide only. The full camera frame stays visible.").font(.callout) }
         if shape.wrappedValue == "Custom" {
           HStack {
             VStack(alignment: .leading) {
@@ -293,6 +294,7 @@ struct PresenterRecordButton: View {
   var defaultLabel = ""
   var secondary = false
   var body: some View {
+    if Features.recording {
     Group {
       if recorder.phase == .preparing || recorder.phase == .waitingForFrames {
         Button { Task { await recorder.stop() } } label: {
@@ -324,6 +326,7 @@ struct PresenterRecordButton: View {
           .accessibilityHint(camera.isReadyToRecord ? "Reading starts separately" : camera.recordingBlockReason)
       }
     }
+      }
   }
 }
 
@@ -335,9 +338,11 @@ struct RecordingControls: View {
   var showsHealth = true
   var zoom = 1.0
   var body: some View {
+    if Features.recording {
     PresenterRecordButton(recorder: recorder, camera: camera)
     if showsHealth && (recorder.isCapturing || recorder.phase == .saving) { RecordingAudioHealth(recorder: recorder) }
     if recorder.phase == .idle { RecordingReceipt(recorder: recorder, camera: camera, zoom: zoom).uiZoom(zoom) }
+      }
   }
 }
 
@@ -370,6 +375,7 @@ struct RecordingRecoveryActions: View {
 struct RecordingMicrophoneSection: View {
   @ObservedObject var recorder: CameraRecorder
   var body: some View {
+    if Features.recording {
       Section("Recording microphone") {
 
         Menu {
@@ -389,6 +395,7 @@ struct RecordingMicrophoneSection: View {
         Toggle("32-bit float audio", isOn: $recorder.floatAudio).disabled(recorder.isRecording || recorder.isBusy)
         Text("Uncompressed sound gives more room for volume changes in an editor. It cannot repair distortion at the microphone.").font(.callout)
       }
+      }
   }
 }
 
@@ -398,6 +405,7 @@ struct RecordingSettingsSections: View {
   @ObservedObject var camera: CameraModel
   var zoom = 1.0
   var body: some View {
+    if Features.recording {
     Section {
       LabeledContent("Picture", value: recorder.compactOutputConfirmation(camera: camera))
       LabeledContent("Rotation", value: camera.guides.rotation.label)
@@ -423,15 +431,18 @@ struct RecordingSettingsSections: View {
     } header: { Text("Recording setup") } footer: {
       Text("Leave empty to use the script title. Next file: " + CameraRecorder.fileURL(in: CameraRecorder.recordingsFolder(), label: recorder.takeLabel, defaultLabel: defaultLabel).lastPathComponent).font(.callout)
     }.disabled(recorder.settingsLocked).help(recorder.settingsLocked ? "Stop recording to change this" : "")
+      }
   }
 }
 struct RecordingFolderSection: View {
   @ObservedObject var recorder: CameraRecorder
   var body: some View {
+    if Features.recording {
     Section("Recordings") {
       Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
       if let file = recorder.lastFile { Button("Show Last Take in Finder") { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
     }
+      }
   }
 }
 
@@ -723,6 +734,7 @@ struct RecordingReceipt: View {
     return detail.components(separatedBy: ". ").first ?? detail
   }
   var body: some View {
+    if Features.recording {
     if compact, recorder.savedTake != nil || recorder.takeFailure != nil {
       let file = recorder.savedTake
       let title = file.map { "Saved " + $0.lastPathComponent } ?? "Take not saved"
@@ -788,6 +800,7 @@ struct RecordingReceipt: View {
       }.frame(maxWidth: .infinity, alignment: .leading)
         .padding(compact ? Space.xs : Space.md).background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: 12)).environment(\.colorScheme, .dark)
     }
+      }
   }
 }
 
@@ -797,6 +810,7 @@ struct RecordingStatusPanel: View {
   var zoom = 1.0
   var dismiss: () -> Void
   var body: some View {
+    if Features.recording {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.sm) {
         if recorder.phase != .idle {
@@ -811,5 +825,6 @@ struct RecordingStatusPanel: View {
         }
       }.padding(Space.md).frame(maxWidth: .infinity, alignment: .leading)
     }.uiZoom(zoom)
+      }
   }
 }

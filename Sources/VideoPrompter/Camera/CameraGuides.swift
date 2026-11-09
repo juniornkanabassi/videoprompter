@@ -57,8 +57,15 @@ struct CameraGuides: Codable, Equatable, Sendable {
     }
   }
   /// Lit-cheek bands: about 40 IRE for deep brown skin up to about 70 for light skin. The preset is
-  /// 45 ± 5, the owner's own researched level for a dark complexion (6 Nov 2026).
-  static let faceLevels = 40...70, faceRanges = 2...10, faceDefault = (level: 45, range: 5)
+  /// 45 ± 2, the owner's own level for a dark complexion (6 Nov 2026, tightened from ± 5 on 7 Nov).
+  static let faceLevels = 40...70, faceRanges = 2...10, faceDefault = (level: 45, range: 2)
+  /// A camera seen for the first time starts with the owner's skin zebras on.
+  static var firstUse: CameraGuides {
+    var guides = CameraGuides()
+    guides.zebras = true
+    guides.useZebraPreset(.faceReference)
+    return guides
+  }
   var isFaceBand: Bool { Self.faceLevels.contains(zebraLevel) && Self.faceRanges.contains(zebraRange) }
   // Never infer a face reference merely from the shape of a numerical band.
   var validatedZebraPurpose: ZebraPurpose {
@@ -72,6 +79,10 @@ struct CameraGuides: Codable, Equatable, Sendable {
     if purpose == .faceReference, !isFaceBand { zebraLevel = Self.faceDefault.level; zebraRange = Self.faceDefault.range }
     if purpose == .brightAreas { zebraLevel = 95; zebraRange = 0 }
     zebraPurpose = purpose
+  }
+  var zebraRangeMode: Bool {
+    get { zebraRange > 0 }
+    set { zebraRange = newValue ? 2 : 0 }
   }
   var zebraMeasurement: String {
     zebraRange == 0 ? "Stripes mark \(zebraLevel) IRE and above in the received picture."
@@ -145,7 +156,7 @@ struct CameraGuideStore {
   init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
   func guides(for uid: String?) -> CameraGuides {
-    savedGuides(for: uid) ?? CameraGuides()
+    savedGuides(for: uid) ?? .firstUse
   }
   func savedGuides(for uid: String?) -> CameraGuides? {
     let stored = uid.flatMap { defaults.dictionary(forKey: Self.key)?[$0] as? Data }

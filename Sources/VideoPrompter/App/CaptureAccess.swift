@@ -6,10 +6,12 @@ import PrompterCore
 /// interactive app. Agent copies are re-identified or pass --agent-screen; bare debug builds have no ID.
 enum AgentMode {
   static let realBundleID = ControlProtocol.bundleID
+  /// The Alpha build (build.sh with VIDEOPROMPTER_ALPHA) is a real app too, used beside the release.
+  static let alphaBundleID = ControlProtocol.bundleID + ".alpha"
   static let isOn = rule(arguments: CommandLine.arguments, bundleID: Bundle.main.bundleIdentifier,
     underTest: NSClassFromString("XCTestCase") != nil)
   static func rule(arguments: [String], bundleID: String?, underTest: Bool) -> Bool {
-    !underTest && (arguments.contains("--agent-screen") || bundleID != realBundleID)
+    !underTest && (arguments.contains("--agent-screen") || (bundleID != realBundleID && bundleID != alphaBundleID))
   }
 }
 

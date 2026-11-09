@@ -1,3 +1,4 @@
+import PrompterCore
 import AppKit
 import SwiftUI
 import XCTest
@@ -53,16 +54,15 @@ import XCTest
       host.frame = .init(x: 0, y: 0, width: 720, height: 520)
       host.layoutSubtreeIfNeeded()
       try await Task.sleep(for: .milliseconds(100))
-      let record = try XCTUnwrap(LibraryAX.named("Record", in: host).first)
+      let record = try XCTUnwrap(LibraryAX.named(Features.recording ? "Record" : "Start reading", in: host).first)
       let transportFrame = try XCTUnwrap(record.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      let help = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
-      let helpFrame = try XCTUnwrap(help.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-      // The compact strip may meet the transport edge, but their hit targets must not overlap.
-      XCTAssertGreaterThanOrEqual(helpFrame.minY, transportFrame.maxY, "Help must stay above the transport at \(zoom)")
-      for (index, band) in CameraExposure.bands.enumerated() {
-        let node = try XCTUnwrap(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).first)
+      let legend = try XCTUnwrap(LibraryAX.named("Legend", in: host).first)
+      let legendFrame = try XCTUnwrap(legend.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+      XCTAssertLessThanOrEqual(legendFrame.maxY, transportFrame.minY, "The legend toggle stays in the Picture row")
+      for band in camera.guides.exposure.legendBands {
+        let node = try XCTUnwrap(LibraryAX.named("\(band.label), \(band.range) IRE", in: host).first)
         let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertGreaterThan(frame.minY, transportFrame.maxY, "\(band.name) overlaps transport at \(zoom): \(frame), \(transportFrame)")
+        XCTAssertGreaterThan(frame.minY, transportFrame.maxY, "\(band.label) overlaps transport at \(zoom): \(frame), \(transportFrame)")
       }
     }
   }

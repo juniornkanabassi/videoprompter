@@ -36,6 +36,7 @@ import XCTest
   }
 
   func testFormatRecoveryDestinationExposesRecordingFormat() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, _) = try await fixture()
     // Format recovery selects the Recording section inside Camera & Recording.
     XCTAssertEqual(CameraRecorder.recovery(for: CocoaError(.featureUnsupported)), .format)

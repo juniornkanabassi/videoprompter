@@ -1451,14 +1451,14 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     XCTAssertEqual(position(-30), 0.5, accuracy: 0.0001)
     XCTAssertEqual(position(-12), 0.8, accuracy: 0.0001)
     XCTAssertEqual(position(-6), 0.9, accuracy: 0.0001)
-    XCTAssertEqual(position(-20), 2.0 / 3.0, accuracy: 0.0001, "green ends at −20 dBFS")
-    XCTAssertEqual(position(-9), 0.85, accuracy: 0.0001, "yellow ends at −9 dBFS")
+    XCTAssertEqual(position(-18), 0.7, accuracy: 0.0001, "green ends at −18 dBFS")
+    XCTAssertEqual(position(-6), 0.9, accuracy: 0.0001, "yellow ends at −6 dBFS")
     XCTAssertEqual(position(-90), 0, "below the scale pins to the left")
     XCTAssertEqual(position(4), 1, "over full scale pins to the right")
     XCTAssertEqual(position(-.infinity), 0, "silence")
     XCTAssertEqual(position(.nan), 0)
     let marks = InputLevelMeter.ticks.map(\.0)
-    for mark: Float in [-12, -6, 0] { XCTAssertTrue(marks.contains(mark), "\(mark) dBFS mark") }
+    for mark: Float in [-18, -6, 0] { XCTAssertTrue(marks.contains(mark), "\(mark) dBFS mark") }
     XCTAssertEqual(marks, marks.sorted(), "marks run left to right")
     XCTAssertEqual(AudioCapture.decibels(fullScalePeak: 0.25), -12.041, accuracy: 0.001)
 

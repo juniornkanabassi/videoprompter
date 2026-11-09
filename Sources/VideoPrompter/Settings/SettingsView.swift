@@ -1,3 +1,4 @@
+import PrompterCore
 import SwiftUI
 import Combine
 import Speech
@@ -8,6 +9,7 @@ import CoreText
 
 enum SettingsTab: String, CaseIterable {
   case general = "General", reading = "Reading", presets = "Reading presets", shootSetups = "Shoot setups", microphone = "Microphone", camera = "Camera & Recording"
+  var label: String { self == .camera && !Features.recording ? "Camera" : rawValue }
   var symbol: String {
     switch self {
     case .general: "gearshape"
@@ -44,7 +46,7 @@ struct AppSettingsView: View {
   private func navigationLabel(_ tab: SettingsTab, width: CGFloat) -> some View {
     HStack(spacing: Space.sm) {
       Image(systemName: tab.symbol).frame(width: 20)
-      Text(tab.rawValue).lineLimit(nil).frame(width: max(60, width - 64), alignment: .leading)
+      Text(tab.label).lineLimit(nil).frame(width: max(60, width - 64), alignment: .leading)
         .fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -257,7 +259,7 @@ struct MicrophonePage: View {
 
   @ViewBuilder private var sections: some View {
     Section("Microphone") {
-      if !compact { Text("Video Prompter listens to this microphone to follow your words, and records it with your video.").font(.callout) }
+      if !compact { Text(Features.recording ? "Video Prompter listens to this microphone to follow your words, and records it with your video." : "Video Prompter listens to this microphone to follow your words.").font(.callout) }
       LabeledContent("Microphone") {
       Menu {
         Picker("Microphone", selection: Binding(
@@ -294,6 +296,7 @@ struct MicrophonePage: View {
         .help("Allow the reading position to move back when you repeat a passage")
     }
     PermissionSection()
+    if Features.recording {
     Section {
       DisclosureGroup("Advanced", isExpanded: $advanced) {
         Toggle("Record from a different microphone", isOn: $recorder.usesSeparateMicrophone)
@@ -302,6 +305,7 @@ struct MicrophonePage: View {
       }
     }
     }
+  }
   }
   private var microphoneName: String {
     devices.first(where: { $0.uid == store.settings.audioDeviceUID })?.name ?? (store.settings.audioDeviceUID == nil ? "System default" : "Selected microphone unavailable")
@@ -424,7 +428,7 @@ struct InputLevelMeter: View {
   let isClipping: Bool
   var showsScale = true
   @State private var peakHold = PeakHold()
-  static let ticks: [(Float, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-20, "−20"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
+  static let ticks: [(Float, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-18, "−18"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
   private static let labelFont = NSFont.monospacedDigitSystemFont(
     ofSize: NSFont.preferredFont(forTextStyle: .caption2).pointSize, weight: .regular)
   static let labelWidths = ticks.map { ($0.1 as NSString).size(withAttributes: [.font: labelFont]).width }
@@ -456,19 +460,21 @@ struct InputLevelMeter: View {
     return start...(start + width)
   }
 
+  static func zoneTrack(vertical: Bool = false) -> some View {
+    LinearGradient(stops: [
+      .init(color: .green, location: 0), .init(color: .green, location: position(-18)),
+      .init(color: .yellow, location: position(-18)), .init(color: .yellow, location: position(-6)),
+      .init(color: .red, location: position(-6)), .init(color: .red, location: 1)
+    ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
+  }
+
   var body: some View {
     GeometryReader { geometry in
       let positions = Self.ticks.map { Self.position($0.0) }
       ZStack(alignment: .topLeading) {
         ZStack(alignment: .leading) {
-          Capsule().fill(.quaternary)
-          LinearGradient(
-            stops: [
-              .init(color: .green, location: 0), .init(color: .green, location: 2.0 / 3.0),
-              .init(color: .yellow, location: 2.0 / 3.0), .init(color: .yellow, location: 0.85),
-              .init(color: .red, location: 0.85)
-            ], startPoint: .leading, endPoint: .trailing
-          ).mask(alignment: .leading) {
+          Self.zoneTrack().opacity(0.2)
+          Self.zoneTrack().mask(alignment: .leading) {
             Rectangle().frame(width: geometry.size.width * Self.position(peakDBFS))
           }
           ForEach(positions, id: \.self) { position in
@@ -535,7 +541,7 @@ struct PresenterSettingsPopover: View {
   var body: some View {
     VStack(spacing: Space.sm) {
       Picker("Settings page", selection: $tab) {
-        ForEach(SettingsTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+        ForEach(SettingsTab.allCases, id: \.self) { Text($0.label).tag($0) }
       }.pickerStyle(.menu).fixedSize().padding(Space.sm).initialPopoverFocus()
       SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
     }.uiZoom(store.uiZoom).frame(width: 560, height: 600).popoverEntryFocus()
@@ -553,9 +559,9 @@ struct CameraRecordingPage: View {
   var body: some View {
     ScrollViewReader { proxy in
       VStack(spacing: Space.sm) {
-        Picker("Camera and recording sections", selection: $section) {
+        Picker(Features.recording ? "Camera and recording sections" : "Camera sections", selection: $section) {
           Text("Camera").tag("Camera")
-          Text("Recording").tag("Recording")
+          if Features.recording { Text("Recording").tag("Recording") }
           Text("Guides").tag("Framing guides")
           Text("Exposure").tag("Exposure")
         }.pickerStyle(.segmented).labelsHidden().controlSize(.small).padding(.horizontal, Space.md)

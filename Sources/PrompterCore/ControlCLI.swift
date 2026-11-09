@@ -51,6 +51,9 @@ public enum ControlCLI {
     }
     if words == ["mcp-manifest"], flags.isEmpty, !show { return Invocation(action: "mcp-manifest", params: [:], json: true, dataDirectory: directory) }
     guard let command = ControlProtocol.commands.first(where: { words.starts(with: $0.words) }) else { throw UsageError(description: "Unknown command. Use videoprompter --help.") }
+    if !Features.recording && command.action.hasPrefix("record_") {
+      throw UsageError(description: "Recording is not available in this build")
+    }
     let values = Array(words.dropFirst(command.words.count)); let positional = command.params.filter(\.positional)
     guard values.count <= positional.count else { throw UsageError(description: "Too many arguments for \(command.words.joined(separator: " "))") }
     for (param, value) in zip(positional, values) {

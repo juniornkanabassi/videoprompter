@@ -55,6 +55,7 @@ private final class QA2HeldEditor: NSObject, NSFilePresenter, @unchecked Sendabl
   }
 
   func testLegacyRecordingMicrophoneSurvivesSystemDefaultVoiceMicrophone() throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let defaults = freshDefaults("QA2MicrophoneMigration")
     var settings = PrompterSettings()
     settings.audioDeviceUID = nil // The legacy Voice choice was System default.

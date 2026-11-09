@@ -40,6 +40,7 @@ import XCTest
 
   func testExposureExplanationsArePresentBeforeChoosingAnAid() async throws {
     let camera = CameraModel(defaults: freshDefaults("BuilderBFifteenExposure"))
+    camera.guides = CameraGuides() // choosing an aid starts from none; a new camera's first-use zebras are tested elsewhere
     for zoom in [1.0, 1.5, 2.0] {
       let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped).uiZoom(zoom), size: .init(width: 700, height: 1100))
       defer { LibraryAX.close(window) }

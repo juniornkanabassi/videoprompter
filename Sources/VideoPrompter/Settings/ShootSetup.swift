@@ -172,13 +172,13 @@ extension AppStore {
       return false
     }
     guard !recorder.settingsLocked, !session.isActivelyRunning else {
-      return reject("Stop reading and recording before applying a shoot setup.")
+      return reject(Features.recording ? "Stop reading and recording before applying a shoot setup." : "Stop reading before applying a shoot setup.")
     }
     camera.refreshDevices()
     if let uid = setup.cameraUID, !camera.devices.contains(where: { $0.uid == uid }) {
       return reject("The camera for \(setup.name) is unavailable. Connect it before applying this setup.")
     }
-    let required = [setup.reading.audioDeviceUID, setup.separateMicrophone ? setup.microphoneUID : nil].compactMap { $0 }
+    let required = [setup.reading.audioDeviceUID, Features.recording && setup.separateMicrophone ? setup.microphoneUID : nil].compactMap { $0 }
     guard required.allSatisfy({ uid in microphones.contains { $0.uid == uid } }) else {
       return reject("A microphone for \(setup.name) is unavailable. Connect it before applying this setup.")
     }
@@ -218,11 +218,13 @@ extension AppStore {
     camera.guides = setup.guides
     camera.mirrored = setup.mirrored
     camera.displayMode = setup.displayMode
+    if Features.recording {
     recorder.preset = setup.format
     recorder.mirrorSavedVideo = setup.mirrorSavedVideo
     recorder.usesSeparateMicrophone = setup.separateMicrophone
     recorder.microphoneUID = setup.microphoneUID
     recorder.floatAudio = setup.floatAudio
+    }
     var reading = setup.reading
     reading.id = settings.id; reading.name = settings.name
     settings = reading
@@ -239,7 +241,7 @@ struct ShootSetupSection: View {
   @State private var name = ""
   var body: some View {
     Section("Saved shoot setups") {
-      Text("Save camera, framing, exposure, reading text, recording format and microphones together. Applying a setup keeps your script's words.")
+      Text(Features.recording ? "Save camera, framing, exposure, reading text, recording format and microphones together. Applying a setup keeps your script's words." : "Save camera, framing, exposure, reading text and microphone together. Applying a setup keeps your script's words.")
         .font(.callout).fixedSize(horizontal: false, vertical: true)
       if let applied = store.appliedShootSetupName {
         Text("Applied \(applied)").font(.callout)
@@ -259,7 +261,7 @@ struct ShootSetupSection: View {
       if let error = store.shootSetupError {
         Label(error, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.primary).fixedSize(horizontal: false, vertical: true)
       }
-      if locked { Text("Stop reading and recording to change a shoot setup.").font(.callout) }
+      if locked { Text(Features.recording ? "Stop reading and recording to change a shoot setup." : "Stop reading to change a shoot setup.").font(.callout) }
     }
   }
   private var locked: Bool { recorder.settingsLocked || store.session.isActivelyRunning }
@@ -300,15 +302,15 @@ struct PresenterHelp: View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.md) {
         Text("Presenter help").font(.title2)
-        Text("Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately.")
-        Text("Back to start returns to the first word without stopping a recording.")
-        Text("The Picture row offers Guides, Exposure check and Switch camera. Exposure check uses brightness colours on first use and preserves your choices when switched off.")
+        Text(Features.recording ? "Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately." : "Start reading moves the script. Use the camera as a reference monitor while you read.")
+        Text(Features.recording ? "Back to start returns to the first word without stopping a recording." : "Back to start returns to the first word.")
+        Text("The Picture row switches Zebras, False colour, Guides, Mic level and Clean on and off, and Camera opens the camera list. Switching an aid off preserves your choices.")
         Text("Tools contains Text, Camera, Exposure and Microphone. Camera view shows the picture without a script. Script and camera puts your words over it.")
         Text("Clean presenter view: " + CameraModel.cleanViewExplanation)
-        Text("Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings.")
+        Text(Features.recording ? "Mirror for teleprompter glass changes your reading text. Camera preview mirroring and saved-video mirroring are separate choices in Camera settings." : "Mirror for teleprompter glass changes your reading text. Camera preview mirroring is a separate choice in Camera settings.")
         Text("Keyboard and clicker").font(.headline)
         Text("Space starts or pauses reading. Page Down or Right starts reading when paused, or moves to the next passage while reading. Page Up or Left moves to the previous passage. Home returns to the first word. These keys work when the presenter is active and you are not editing text.")
-        Text("To retake a line, press Pause, click the word, then Start reading. The recording keeps going. Shift-Command-R starts or stops recording. Escape closes the popover, exits Clean view or cancels editing.")
+        Text(Features.recording ? "To retake a line, press Pause, click the word, then Start reading. The recording keeps going. Shift-Command-R starts or stops recording. Escape closes the popover, exits Clean view or cancels editing." : "To repeat a line, press Pause, click the word, then Start reading. Escape closes the popover, exits Clean view or cancels editing.")
         Button("Done") { dismiss() }.initialPopoverFocus()
       }.font(.callout).padding(Space.md)
     }.frame(width: 400, height: 400)

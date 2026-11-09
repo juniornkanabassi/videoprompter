@@ -12,6 +12,7 @@ import XCTest
     return (flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)), CameraModel(defaults: defaults), CameraRecorder(defaults: defaults), defaults)
   }
   func testRetakeTransportIsOneRowAndStaysInsideMinimumWindow() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, _) = fixture()
     let record = try await store.createScript(title: "Retake", markdown: String(repeating: "Read these words. ", count: 100))
     store.settings.mode = "Manual"; store.session.present(record: record, settings: store.settings)
@@ -64,6 +65,7 @@ import XCTest
     XCTAssertEqual(AccessibleInputLevel.description(peakDBFS: -.infinity, isClipping: false), "No sound")
   }
   func testShootSetupRestoresAllChoicesAndRefusesActiveTakeOrMissingDevice() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, defaults) = fixture()
     let microphones = [AudioInputDevice(id: 1, uid: "voice", name: "Voice"), AudioInputDevice(id: 2, uid: "record", name: "Record")]
     store.settings.audioDeviceUID = "voice"; store.settings.fontSize = 68

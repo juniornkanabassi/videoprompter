@@ -154,23 +154,22 @@ final class CameraStageTests: XCTestCase {
 
   /// 0.8.1 took the guides from the preview layer's own idea of the video rectangle, which lags a
   /// resize and is empty before the first frame. They follow the fitted picture instead, at 0°
-  /// and 90°, whether the connection or the layer turns the picture.
+  /// and 90°, with or without mirroring.
   func testGuidesFollowTheFittedPictureThroughAResize() throws {
     let aspect = session.pictureSize ?? CGSize(width: 16, height: 9)
     for rotation in [CameraRotation.none, .quarter] {
-      for turnedByConnection in [false, true] {
-        let label = "\(rotation.label), turned by \(turnedByConnection ? "connection" : "layer")"
+      for mirrored in [false, true] {
+        let label = "\(rotation.label), mirrored \(mirrored)"
         var guides = CameraGuides()
         guides.rotation = rotation
         guides.thirds = true
         guides.axes = true
         let host = window()
         let view = stage(guides)
-        // Stands in for a camera connection that accepts the angle; none exists in a test.
-        view.rotatesInConnection = turnedByConnection
+        view.apply(uid: nil, guides: guides, mirrored: mirrored)
         host.contentView?.addSubview(view)
         let preview = try XCTUnwrap(
-          view.layer?.sublayers?.first { $0 is AVCaptureVideoPreviewLayer }, label)
+          view.pictureLayer.sublayers?.first { $0 is AVCaptureVideoPreviewLayer }, label)
         for size in [
           NSSize(width: 760, height: 520), NSSize(width: 1395, height: 1024),
           NSSize(width: 400, height: 900),
@@ -182,7 +181,8 @@ final class CameraStageTests: XCTestCase {
           let where_ = "\(label) at \(Int(size.width))x\(Int(size.height))"
           assertEqual(drawn, fitted, where_)
           XCTAssertEqual(view.guideLayer.frame, view.bounds, where_)
-          assertEqual(preview.frame, turnedByConnection ? view.bounds : fitted, where_)
+          assertEqual(view.pictureLayer.frame, fitted, where_)
+          assertEqual(preview.frame, view.pictureLayer.bounds, where_)
         }
         XCTAssertEqual(view.guideLayer.contentsScale, host.backingScaleFactor, "\(label): sharp lines")
         dismantle(view)
@@ -222,20 +222,20 @@ final class CameraStageTests: XCTestCase {
     session.pictureSize = uhd
     let ninebysixteen = CameraAspect(width: 9, height: 16)
     for rotation in [CameraRotation.none, .quarter, .threeQuarters] {
-      for turnedByConnection in [false, true] {
-        let label = "\(rotation.label), turned by \(turnedByConnection ? "connection" : "layer")"
+      for mirrored in [false, true] {
+        let label = "\(rotation.label), mirrored \(mirrored)"
         var guides = CameraGuides()
         guides.rotation = rotation
         guides.axes = true
         guides.marker = ninebysixteen
         let host = window()
         let view = stage(guides)
-        view.rotatesInConnection = turnedByConnection
+        view.apply(uid: nil, guides: guides, mirrored: mirrored)
         host.contentView?.addSubview(view)
         view.setFrameSize(NSSize(width: 760, height: 520))
         view.layoutSubtreeIfNeeded()
         let preview = try XCTUnwrap(
-          view.layer?.sublayers?.first { $0 is AVCaptureVideoPreviewLayer } as? AVCaptureVideoPreviewLayer)
+          view.pictureLayer.sublayers?.first { $0 is AVCaptureVideoPreviewLayer } as? AVCaptureVideoPreviewLayer)
         XCTAssertEqual(preview.videoGravity, .resizeAspect, label)
         let picture = rotation.fittedRect(aspect: uhd, in: view.bounds)
         XCTAssertEqual(picture.width / picture.height, rotation.swapsAxes ? 2160.0 / 3840 : 3840.0 / 2160,
@@ -251,14 +251,9 @@ final class CameraStageTests: XCTestCase {
         }
         XCTAssertEqual(picture.midX, view.bounds.midX, accuracy: 0.001, label)
         XCTAssertEqual(picture.midY, view.bounds.midY, accuracy: 0.001, label)
-        if turnedByConnection {
-          // The connection delivers the turned frame; aspect-fit places it within the bounds.
-          assertEqual(preview.frame, view.bounds, label)
-        } else {
-          assertEqual(preview.frame, picture, label)
-          // Laid out in the delivered frame's own shape before the turn, so aspect-fit fills it exactly.
-          XCTAssertEqual(preview.bounds.width / preview.bounds.height, 3840.0 / 2160, accuracy: 0.001, label)
-        }
+        assertEqual(view.pictureLayer.frame, picture, label)
+        assertEqual(preview.frame, view.pictureLayer.bounds, label)
+        XCTAssertEqual(preview.bounds.width / preview.bounds.height, 3840.0 / 2160, accuracy: 0.001, label)
         XCTAssertEqual(view.layer?.backgroundColor, NSColor.black.cgColor, label)
         let marker = ninebysixteen.fitted(in: picture)
         XCTAssertTrue(picture.insetBy(dx: -0.001, dy: -0.001).contains(marker), label)

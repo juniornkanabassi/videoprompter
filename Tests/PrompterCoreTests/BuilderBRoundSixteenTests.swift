@@ -36,6 +36,7 @@ import XCTest
 
   func testSharedExposureSwitchesLeadWithTheJobAndRetainReferenceQualifications() async throws {
     let camera = CameraModel(defaults: freshDefaults("BuilderBSixteenExposure"))
+    camera.guides = CameraGuides() // the bright-areas wording is checked before the face preset; first use starts on the face preset
     XCTAssertEqual(ExposureLegend.zebraTitle(for: .brightAreas), "Check bright areas · Zebras")
     XCTAssertTrue(ExposureGuidance.zebraLookFor(camera.guides).contains("do not prove"))
     camera.guides.useZebraPreset(.faceReference)

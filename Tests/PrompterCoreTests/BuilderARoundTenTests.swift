@@ -19,6 +19,7 @@ import XCTest
   }
 
   func testReadingStatusAndNamedToolsSurviveCameraAndRecordingAtEveryZoom() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, record, camera, recorder) = try await fixture()
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom

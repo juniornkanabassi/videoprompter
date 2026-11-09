@@ -17,6 +17,7 @@ import SwiftUI
   private weak var presentationStore: AppStore?
   private var keepsRecordingOnClose = false
   private var videoObserver: AnyCancellable?
+  private var cleanObserver: AnyCancellable?
   /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
   private(set) var closesAfterFullScreen = false
   private var isFullScreen: Bool { panel?.isInFullScreen == true }
@@ -34,6 +35,9 @@ import SwiftUI
     self.recorder = recorder
     self.frameDefaults = frameDefaults
     super.init()
+    cleanObserver = camera.$cleanView.removeDuplicates().sink { [weak self] clean in
+      self?.panel?.setWindowControlsHidden(clean)
+    }
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
     // property. `dropFirst` skips the value the presenter opens with.
     videoObserver = camera.$displayMode.dropFirst().map { $0 != .prompterOnly }.removeDuplicates().sink { [weak self] on in
@@ -137,7 +141,7 @@ import SwiftUI
   }
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     if let draft, draft.isEditing { draft.requestClose(); return false }
-    if recorder.isRecording || recorder.isBusy { asksToCloseRecording = true; return false }
+    if Features.recording && (recorder.isRecording || recorder.isBusy) { asksToCloseRecording = true; return false }
     // The red button or Cmd-W in full screen: leave the Space first, then close.
     if isFullScreen { closeNow(); return false }
     activeSession?.pause()
@@ -282,7 +286,7 @@ import SwiftUI
     draft.requestClose()
   }
   func closeNow() {
-    if recorder.isRecording || recorder.isBusy { asksToCloseRecording = true; return }
+    if Features.recording && (recorder.isRecording || recorder.isBusy) { asksToCloseRecording = true; return }
     closeWithoutRecordingPrompt()
   }
   func stopAndClose() {
@@ -298,14 +302,15 @@ import SwiftUI
     closeWithoutRecordingPrompt()
   }
   func windowDidMiniaturize(_ notification: Notification) {
-    if recorder.isRecording || recorder.isBusy { showRecordingStatus() }
+    if Features.recording && (recorder.isRecording || recorder.isBusy) { showRecordingStatus() }
   }
   func preserveRecordingStatus() {
-    if recorder.isRecording || recorder.isBusy { showRecordingStatus() }
+    if Features.recording && (recorder.isRecording || recorder.isBusy) { showRecordingStatus() }
   }
   func observeInterfaceSettings(_ store: AppStore) { presentationStore = store }
 
   private func showRecordingStatus() {
+    guard Features.recording else { return }
     if recordingWindow == nil {
       let window = NSPanel(contentRect: NSRect(x: 160, y: 160, width: 640, height: 400),
         styleMask: [.titled, .resizable, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -350,6 +355,7 @@ import SwiftUI
   private func makePanel() -> PresenterPanel {
     let value = PresenterPanel(captureVisible: CommandLine.arguments.contains("--capture-visible"))
     value.delegate = self
+    value.setWindowControlsHidden(camera.cleanView)
     if let frame = PresenterFrameMemory.restored(from: frameDefaults, screens: NSScreen.screens.map(PresenterFrameMemory.Screen.init)) {
       value.setFrame(frame, display: false)
     }
@@ -490,8 +496,14 @@ class PresenterPanel: NSPanel {
     if let field = firstResponder as? NSTextField, field.isEditable { return false }
     return onPassageKey?(event.keyCode) == true
   }
+  func setWindowControlsHidden(_ hidden: Bool) {
+    for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+      standardWindowButton(button)?.isHidden = hidden
+    }
+  }
   override func sendEvent(_ event: NSEvent) {
-    if event.type == .keyDown || event.type == .leftMouseDown {
+    if event.type == .keyDown || event.type == .leftMouseDown || event.type == .mouseMoved {
+      setWindowControlsHidden(false)
       NotificationCenter.default.post(name: .init("VideoPrompter.presenterInteraction"), object: self)
     }
     super.sendEvent(event)
@@ -507,6 +519,7 @@ class PresenterPanel: NSPanel {
       styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel],
       backing: .buffered, defer: false)
     sharingType = captureVisible ? .readOnly : .none
+    acceptsMouseMovedEvents = true
     hidesOnDeactivate = false
     isMovableByWindowBackground = true
     isReleasedWhenClosed = false

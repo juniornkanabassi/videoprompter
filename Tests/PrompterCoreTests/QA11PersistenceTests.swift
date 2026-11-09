@@ -37,7 +37,7 @@ import XCTest
     afterTransfer.selectedUID = "other"
     XCTAssertEqual(afterTransfer.guides, other)
     afterTransfer.selectedUID = "new"
-    XCTAssertEqual(afterTransfer.guides, CameraGuides())
+    XCTAssertEqual(afterTransfer.guides, CameraGuides.firstUse)
     afterTransfer.selectedUID = "first"
     XCTAssertEqual(afterTransfer.guides, pending)
   }
@@ -140,6 +140,7 @@ import XCTest
   }
 
   func testOutputCheckFollowsPortraitAndMissingSignal() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let defaults = freshDefaults("QA11Signal"), store = makeStore(defaults)
     let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
     let shared = SharedCameraSession.shared, previousSize = SharedCameraSession.shared.pictureSize

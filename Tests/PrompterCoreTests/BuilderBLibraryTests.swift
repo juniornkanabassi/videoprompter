@@ -131,12 +131,12 @@ import XCTest
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(HStack { LibraryPresenterActions(store: store) }.uiZoom(zoom), size: .init(width: 1100, height: 180))
       defer { LibraryAX.close(window) }
-      let controls = try ["Recordings", "Camera Only", "Present"].map { label in
+      let controls = try (Features.recording ? ["Recordings", "Camera Only", "Present"] : ["Camera Only", "Present"]).map { label in
         try XCTUnwrap(LibraryAX.named(label, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
       }
       let frames = try controls.map { try XCTUnwrap($0.value(forKey: "accessibilityFrame") as? NSValue).rectValue }
       XCTAssertLessThan(frames[0].midX, frames[1].midX)
-      XCTAssertLessThan(frames[1].midX, frames[2].midX)
+      if Features.recording { XCTAssertLessThan(frames[1].midX, frames[2].midX) }
       XCTAssertTrue(frames.allSatisfy { window.convertToScreen(host.bounds).contains($0) })
     }
   }

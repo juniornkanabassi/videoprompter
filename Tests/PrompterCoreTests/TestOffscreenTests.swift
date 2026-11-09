@@ -50,6 +50,8 @@ final class AgentModeTests: XCTestCase {
     XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: real, underTest: false))
     XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: "com.example.vp-check-1", underTest: false), "a re-identified copy is hidden")
     XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, underTest: false), "a bare debug build is hidden")
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.alphaBundleID, underTest: false), "the Alpha runs normally")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: AgentMode.alphaBundleID, underTest: false))
     XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, underTest: true))
   }
 }

@@ -21,7 +21,7 @@ struct AccessibleInputLevel: NSViewRepresentable {
   func updateNSView(_ view: NSLevelIndicator, context: Context) {
     view.doubleValue = peakDBFS.isFinite ? min(0, max(-60, Double(peakDBFS))) : -60
     view.setAccessibilityValueDescription(Self.description(peakDBFS: peakDBFS, isClipping: isClipping))
-    view.setAccessibilityHelp("Live microphone level. Check for sound before recording.")
+    view.setAccessibilityHelp("Live microphone level. Speak to check for sound.")
     view.isHidden = false
     view.alphaValue = 0.01
   }

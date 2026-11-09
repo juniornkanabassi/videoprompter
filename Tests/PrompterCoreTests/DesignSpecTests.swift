@@ -1,3 +1,4 @@
+import PrompterCore
 import AppKit
 import AVFoundation
 import SwiftUI
@@ -21,7 +22,7 @@ import XCTest
       defaults.set(recording, forKey: "recordingMicrophoneUID")
       let recorder = CameraRecorder(defaults: defaults)
       XCTAssertEqual(recorder.usesSeparateMicrophone, separate)
-      XCTAssertEqual(recorder.resolvedMicrophoneUID, separate ? recording : following)
+      XCTAssertEqual(recorder.resolvedMicrophoneUID, Features.recording && separate ? recording : following)
       recorder.usesSeparateMicrophone = false
       settings.audioDeviceUID = "changed"
       recorder.useSettings(settings)

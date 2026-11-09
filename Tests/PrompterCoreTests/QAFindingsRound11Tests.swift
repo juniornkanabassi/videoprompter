@@ -59,6 +59,7 @@ import XCTest
   }
 
   func testPresenterOutputCheckUpdatesWhenDeliveredResolutionChanges() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, camera, recorder, _) = fixture()
     let shared = SharedCameraSession.shared
     let previousSize = shared.pictureSize

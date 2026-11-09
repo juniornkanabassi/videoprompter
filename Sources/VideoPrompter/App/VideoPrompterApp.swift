@@ -94,7 +94,7 @@ enum ScriptShortcuts {
             .disabled(store.selected == nil)
           Button("Camera Only") { PresenterController.shared.presentCamera(store: store) }
             .keyboardShortcut("c", modifiers: [.command, .option])
-            .help("Choose a camera, check framing or record. Second Monitor is an optional second view.")
+            .help("Choose a camera or check framing. Second Monitor is an optional second view.")
           // Option-Command-Space is macOS's own Show Finder Search Window (and Shift-Command-Space
           // asks Siri), so the app never received it. Option-Command-S is VoicePrompter's.
           ReadingMenuItem(store: store, session: store.session)
@@ -436,6 +436,7 @@ struct RecordingMenuItems: View {
   @ObservedObject private var recorder = CameraRecorder.shared
   @ObservedObject private var camera = CameraModel.shared
   var body: some View {
+    if Features.recording {
     Button(recorder.isRecording ? "Stop Recording" : "Record") {
       Task { if recorder.isRecording { await recorder.stop() } else { await recorder.start(camera: camera, defaultLabel: PresenterController.shared.isShowingWithoutScript || camera.displayMode == .videoOnly ? "" : AppStore.shared.session.activeRecord?.metadata.title ?? "") } }
     }.keyboardShortcut("r", modifiers: [.command, .shift]).disabled(recorder.isBusy || (!recorder.isRecording && !camera.isReadyToRecord))
@@ -444,5 +445,6 @@ struct RecordingMenuItems: View {
     Button("Show Recordings Folder") { recorder.openRecordingsFolder() }
     Button("Last Take") { if let file = recorder.lastFile { NSWorkspace.shared.activateFileViewerSelecting([file]) } }
       .disabled(recorder.lastFile == nil)
+      }
   }
 }

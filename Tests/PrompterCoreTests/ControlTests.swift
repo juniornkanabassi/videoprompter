@@ -235,6 +235,7 @@ import XCTest
     _ = await actions.handle("camera_guides", ["marker": "off"])
     XCTAssertNil(camera.guides.marker)
 
+    if Features.recording {
     // Recording needs --yes and a showing camera; it never raises a permission prompt.
     let reply19 = await actions.handle("record_start", [:])
     XCTAssertEqual(code(reply19), "invalid_params")
@@ -253,6 +254,7 @@ import XCTest
     let status = value(statusReply)
     XCTAssertEqual((status["recording"] as? [String: Any])?["quality"] as? String, "high")
     XCTAssertEqual((status["camera"] as? [String: Any])?["view"] as? String, "off")
+    }
   }
   func testCreateInFolderIsRetrySafeAndPersists() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpc-\(UUID().uuidString.prefix(8))")

@@ -110,7 +110,7 @@ final class CameraOrientationTests: XCTestCase {
 
   func testGuidesAreRememberedForEachCamera() {
     let store = CameraGuideStore(defaults: defaults())
-    XCTAssertEqual(store.guides(for: "uid-decklink"), CameraGuides())
+    XCTAssertEqual(store.guides(for: "uid-decklink"), CameraGuides.firstUse)
     var deckLink = CameraGuides()
     deckLink.rotation = .quarter
     deckLink.thirds = true
@@ -125,15 +125,15 @@ final class CameraOrientationTests: XCTestCase {
     store.set(builtIn, for: "uid-built-in")
     XCTAssertEqual(store.guides(for: "uid-decklink"), deckLink)
     XCTAssertEqual(store.guides(for: "uid-built-in"), builtIn)
-    // An unknown camera, and no camera at all, get the blue defaults and no marker.
+    // An unknown camera, and no camera at all, get the blue defaults, the first-use skin zebras and no marker.
     let fresh = store.guides(for: "uid-obs")
-    XCTAssertEqual(fresh, CameraGuides())
+    XCTAssertEqual(fresh, CameraGuides.firstUse)
     XCTAssertEqual(fresh.rotation, CameraRotation.none)
     XCTAssertEqual(fresh.colorHex, "#3F8CFF")
     XCTAssertEqual(fresh.opacity, 0.85)
     XCTAssertEqual(fresh.shadeOpacity, 0.5)
     XCTAssertNil(fresh.marker)
-    XCTAssertEqual(store.guides(for: nil), CameraGuides())
+    XCTAssertEqual(store.guides(for: nil), CameraGuides.firstUse)
   }
 
   /// 0.12.0 saved an input aspect; it is read past, and the rest of the guides survive.

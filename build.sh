@@ -7,11 +7,15 @@ OUTPUT_ROOT="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}"
 mkdir -p "$BUILD_ROOT"
 [[ ! -L "$BUILD_ROOT" && -O "$BUILD_ROOT" ]] || { print -u2 "Unsafe build cache $BUILD_ROOT"; exit 1; }
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$ROOT/Resources/Info.plist")
-ARCHIVE="$OUTPUT_ROOT/Video Prompter $VERSION.zip"
+# VIDEOPROMPTER_ALPHA=1 builds "Video Prompter Alpha": its own identity, settings, data folder and icon,
+# installed beside the real app rather than over it.
+NAME="Video Prompter"; ICON="VideoPrompter"
+[[ -z ${VIDEOPROMPTER_ALPHA:-} ]] || { NAME="Video Prompter Alpha"; ICON="VideoPrompterAlpha"; }
+ARCHIVE="$OUTPUT_ROOT/$NAME $VERSION.zip"
 WORK=$(mktemp -d "$BUILD_ROOT/videoprompter-package.XXXXXX")
-APP="$WORK/Video Prompter.app"
-TMP_ARCHIVE="$WORK/Video Prompter $VERSION.zip"
-OUTPUT_TMP="$OUTPUT_ROOT/.Video Prompter $VERSION.zip.$$"
+APP="$WORK/$NAME.app"
+TMP_ARCHIVE="$WORK/$NAME $VERSION.zip"
+OUTPUT_TMP="$OUTPUT_ROOT/.$NAME $VERSION.zip.$$"
 KEEP_WORK=0
 cleanup() { (( KEEP_WORK )) || rm -rf "$WORK"; rm -f "$OUTPUT_TMP"; }
 trap cleanup EXIT
@@ -35,6 +39,10 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+if [[ -n ${VIDEOPROMPTER_ALPHA:-} ]]; then
+  REAL_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.alpha" -c "Set :CFBundleName $NAME" -c "Set :CFBundleDisplayName $NAME" "$APP/Contents/Info.plist"
+fi
 # Local/ad-hoc builds are development copies, never another instance of the installed TCC identity.
 # install.sh deliberately refuses this identifier, so a local build cannot replace the real app.
 if (( ! DEVELOPER_ID_AVAILABLE )); then
@@ -43,7 +51,7 @@ if (( ! DEVELOPER_ID_AVAILABLE )); then
 fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
 # Everything taken from the source tree is copied before the commit is stamped below.
-if [[ -f "$ROOT/Resources/AppIcon/VideoPrompter.icns" ]]; then cp "$ROOT/Resources/AppIcon/VideoPrompter.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
+if [[ -f "$ROOT/Resources/AppIcon/$ICON.icns" ]]; then cp "$ROOT/Resources/AppIcon/$ICON.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/Fonts" ]]; then cp -R "$ROOT/Resources/Fonts" "$APP/Contents/Resources/Fonts"; fi
 ENTITLEMENTS="$WORK/Entitlements.plist"   # signed from this copy, so a later edit to the source cannot reach the app
 cp "$ROOT/Resources/Entitlements.plist" "$ENTITLEMENTS"

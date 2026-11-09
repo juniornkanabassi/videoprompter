@@ -49,7 +49,7 @@ import XCTest
       let (window, host) = await LibraryAX.host(view, size: .init(width: 720, height: 520))
       host.sizingOptions = []; host.frame = .init(x: 0, y: 0, width: 720, height: 520)
       for _ in 0..<4 { host.layoutSubtreeIfNeeded(); try await Task.sleep(for: .milliseconds(30)) }
-      for name in ["Guides", "Exposure check", "Switch camera", "Tools"] {
+      for name in ["Zebras", "False colour", "Guides", "Mic level", "Legend", "Camera", "Clean", "Tools"] {
         let action = try XCTUnwrap(LibraryAX.named(name, in: host).first, name)
         XCTAssertTrue(LibraryAX.bool(action, "isAccessibilityEnabled"))
         let frame = try XCTUnwrap(action.value(forKey: "accessibilityFrame") as? NSValue).rectValue
@@ -62,7 +62,7 @@ import XCTest
       let before = camera.framingIsVisible
       XCTAssertTrue(LibraryAX.bool(guide, "accessibilityPerformPress"))
       XCTAssertNotEqual(camera.framingIsVisible, before)
-      let exposureButton = try XCTUnwrap(LibraryAX.named("Exposure check", in: host).first)
+      let exposureButton = try XCTUnwrap(LibraryAX.named("False colour", in: host).first)
       let exposureBefore = camera.previewGuides.falseColour
       XCTAssertTrue(LibraryAX.bool(exposureButton, "accessibilityPerformPress"))
       XCTAssertNotEqual(camera.previewGuides.falseColour, exposureBefore)

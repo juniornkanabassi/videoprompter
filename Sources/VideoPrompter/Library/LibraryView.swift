@@ -516,7 +516,7 @@ private struct EditorView: View {
       if script.metadata.title == WelcomeScript.title {
         VStack(alignment: .leading, spacing: Space.xs) {
           Text("Getting Started Guide").fontWeight(.semibold)
-          Text("The full guide to writing, reading and recording.")
+          Text(Features.recording ? "The full guide to writing, reading and recording." : "The full guide to writing, reading and camera monitoring.")
           Button("Quick Reading Practice") { Task { await PracticeReading.present(store: store) } }
             .help("Try reading for 30 seconds")
         }.font(.callout).padding(.horizontal, Space.xxl).padding(.vertical, Space.sm)
@@ -572,11 +572,13 @@ struct LibraryPresenterActions: View {
   @ObservedObject var store: AppStore
   var showsDeleted = false
   var body: some View {
-        Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
-          .labelStyle(.titleAndIcon).help("Show the Recordings folder in Finder")
+        if Features.recording {
+          Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
+            .labelStyle(.titleAndIcon).help("Show the Recordings folder in Finder")
+        }
         Button("Camera Only", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
           .labelStyle(.titleAndIcon)
-          .help("Check framing or record without a script (⌥⌘C)")
+          .help(Features.recording ? "Check framing or record without a script (⌥⌘C)" : "Check framing without a script (⌥⌘C)")
         Button("Present", systemImage: "play.rectangle") { PresenterController.shared.presentFromLibrary(store: store) }
           .labelStyle(.titleAndIcon)
           .buttonStyle(.borderedProminent)

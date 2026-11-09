@@ -1,3 +1,5 @@
+> Alpha ships as a camera reference monitor and prompter, with recording switched off by `Features.recording`. Recording code and the future-build layouts below are retained for a later build. With recording off, the reading transport is centred. Clean shows only the camera picture, with controls returning on pointer interaction or the existing shortcut.
+
 # Video Prompter design spec
 
 Written 6 November 2026 against branch `claude/2.1.1` at `64f5e6d`. It replaces patch lists from earlier review rounds. When a later finding seems to conflict with this spec, change the spec first, then the code. Do not move a control without updating the table in section 2.
@@ -13,23 +15,23 @@ This is the lead-authorised final footer. It supersedes every earlier footer and
 ┌─────────────────────────────────────────────────────────────────────┐
 │ [Start reading] [Back to start]                      [● Record]     │ Transport
 │ Automatic scroll · Ready ⌄      Ready · Portrait 1080 × 1920 › Tools⌄│ State
-│ ✓ Guides       Exposure check       Switch camera                  │ Context
+│ Zebras ▾  False colour  Guides ▾  Mic level ▾  Legend  Camera  Clean      │ Context (Alpha HUD, 7 Nov 2026)
 └─────────────────────────────────────────────────────────────────────┘
 
 Recording: [Pause] [Back to start]             [Stop recording]
            Automatic scroll · Scrolling ⌄    ● REC 01:24 ▮▮  ›  Tools⌄
                                              Receiving sound
-           ✓ Guides  Exposure check  Switch camera (disabled)
+           Zebras ▾  False colour  Guides ▾  Mic level ▾  Legend  Camera (disabled)  Clean
 
 Saved:     same transport and state bands
-           ✓ Guides       Exposure check       Switch camera        ✓ Saved 1:24 ›
+           Zebras ▾  False colour  Guides ▾  Mic level ▾  Legend  Camera  Clean   ✓ Saved 1:24 ›
            (Last take opens the receipt: file, Play, Show in Finder, Hide)
 
 Problem:   same transport and state bands
            Saved with problems My Script … .mov · 1:24 [Review] [Show in Finder] [×]
 ```
 
-A clean saved take keeps the Picture row (round 19) and adds a Last take opener at its trailing edge: a checkmark, Saved and the duration. The duration is dropped first when the row is short of width; the three picture checks never shrink. The opener's popover holds the full receipt. Saved with problems and a failed take keep the full receipt row in place of the Picture row until Hide, so the warning stays prominent. The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions, receipt state and duration never truncate. Saved with problems keeps its full state label; its complete diagnosis is in Review, help and the accessible description. Hide restores the Picture row. Last take in Tools opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
+A clean saved take keeps the Picture row (round 19) and adds a Last take opener at its trailing edge: a checkmark, Saved and the duration. The duration is dropped first when the row is short of width; the picture tools drop to icons only (names stay as accessible labels) when the row is short of width. The opener's popover holds the full receipt. Saved with problems and a failed take keep the full receipt row in place of the Picture row until Hide, so the warning stays prominent. The receipt stays in one row at the minimum width, instead of the proposed second action line, to honour the 65% reading floor. Only its filename may middle-truncate; its full path is the help and accessible value. Actions, receipt state and duration never truncate. Saved with problems keeps its full state label; its complete diagnosis is in Review, help and the accessible description. Hide restores the Picture row. Last take in Tools opens details; Prompter > Last Take reveals the most recent file. A new recording shows the Picture row and retains the prior receipt in Last take until the new result replaces it.
 
 | Budget at 720 × 520 | 100% | 150% | 200% |
 |---|---:|---:|---:|
@@ -124,7 +126,7 @@ Current placement, superseding the older arrangements below (round 13 Builder A)
 | Start/Pause and Record/Stop | Fixed transport with whole labels; Save/Cancel while editing |
 | Back to start | Beside Start whenever applicable; transport wraps whole controls in place |
 | State and countdown | Primary reading mode, pace and state control opens mode/speed; recording state aligns beside it; draft state is Editing · not saved yet |
-| Camera monitoring | Picture row whenever camera is shown: Guides on/off, Exposure check on/off, Switch camera. Detailed choices stay in the selected Tools section. |
+| Camera monitoring | Alpha heads-up Picture row whenever camera is shown: big On/Off toggles for Zebras (with its level, such as 45 ±2), False colour, Guides, Mic level, Legend, Camera (opens the picker) and Clean; the arrow beside Zebras, Guides and Mic level opens that tool's settings. Mic level shows a vertical meter at the picture's right edge. Legend defaults to on and persists; it shows a readable near-opaque dark key with a subtle border in the picture's bottom leading corner while either exposure aid is on, including during reading, and hides in Clean view. Zebras show the active IRE range; false colour shows the active table's swatches with Crushed, Very dark, Mid grey, Skin, Near white and Clipped labels and IRE ranges. Skin follows the configured zebra band; without a skin range the ARRI 52 to 56 band is labelled Brighter mid-tones. The key uses 16 pt semibold white text, swatches at least 16 pt tall, and a two-row grid with band name and range on separate lines. Its zebra line names Limit or Range and the stripe swatch is clipped. It stays clear of the face and the trailing mic meter. The zebra popover and Tools custom exposure levels share a segmented Limit / Range picker, a large 0 to 100 IRE Level value, and a 1 to 10 IRE Plus or minus stepper visible only in Range. Switching to Range starts at ±2; Limit sets width to zero. Skin 45 ±2 and Clipping 95+ presets sit above a one-line Stripes on readout. New cameras retain the Alpha default of 45 ±2 and settings remain per-camera. At 125% and above, or in a narrow window, the row is one line. |
 | Secondary adjustments | Tools has a named section picker at every size: Text, Camera, Exposure, Microphone. Below the section, Before recording check…, Shoot setups…, Presenter help… and Last take are listed by name (round 19 retired the generic More menu). |
 | Narrow Script only | Text, Camera and Microphone remain in the same wrapping tools region |
 | Take receipt | A clean take keeps the Picture row with a Last take opener; a take with problems replaces the row with the full receipt until Hide |
@@ -293,9 +295,9 @@ One name per concept. These are the allowed words on the presenter; native butto
 | Microphones | Microphone, Recording microphone | following microphone |
 | Exposure switches | Check bright areas · Zebras, Check brightness · Zebras, Check custom brightness · Zebras, Check brightness · False colour | Find blown highlights, Clipping as a caption |
 | Exposure key | Very dark, Mid-tones, Bright, Near white, Key | Face target |
-| Qualified preset, custom disclosure only | Face reference | Skin exposure check |
+| Zebra modes and presets, popover and custom disclosure | Limit, Range, Skin 45 ±2, Clipping 95+ | Skin exposure check |
 | Clean picture toggle | Clean presenter view; Clean view as state; Exit clean view | Clean picture, Hide exposure aids |
-| Picture row | Guides, Exposure check, Switch camera | More controls |
+| Picture row | Zebras, False colour, Guides, Mic level, Legend, Camera, Clean | More controls |
 | Other presenter controls | Tools, View, Edit this script, Save changes, Cancel editing | Finish editing |
 | Settings | Reading presets, Shoot setups, Reading text size, Editor text size, Interface size | Saved settings |
 | Clipboard action | Paste Copied Text | Paste as New Script |
@@ -721,7 +723,7 @@ Round 17 recording/receipt refinement: recording health and its live meter sit b
 
 | Finding | Placement and behaviour |
 |---|---|
-| Quick picture controls during a receipt (creator) | A clean saved take keeps Guides, Exposure check and Switch camera and adds a Last take opener (checkmark, Saved, duration) at the row's trailing edge; its popover is the full receipt. Saved with problems and failed takes keep the full receipt row until Hide. The transport is not displaced. |
+| Quick picture controls during a receipt (creator) | A clean saved take keeps the Picture row tools (Zebras, False colour, Guides, Mic level, Legend, Camera, Clean) and adds a Last take opener (checkmark, Saved, duration) at the row's trailing edge; its popover is the full receipt. Saved with problems and failed takes keep the full receipt row until Hide. The transport is not displaced. |
 | Save Reading Preset silently replacing (UX) | When the entered name matches an existing preset the button reads Replace “Name”, a line says the saved look will change, and after activation Replaced “Name” shows with an Undo button. A new name keeps Save Reading Preset. |
 | Idle controls say Stop recording (first-time user) | The recording setup section carries "Stop recording to change this" only while `settingsLocked` is true. |
 | Generic More menu (first-time user) | Tools lists Before recording check…, Shoot setups…, Presenter help… and Last take directly under the selected section. |

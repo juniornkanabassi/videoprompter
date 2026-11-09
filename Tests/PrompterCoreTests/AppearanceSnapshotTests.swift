@@ -6,6 +6,34 @@ import XCTest
 
 /// Offscreen snapshots, run automatically by test.sh. No window is ordered, camera requested or account connected.
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
+  func testAlphaZebraControlsAndLegend() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let destination = URL(fileURLWithPath: output)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("AlphaZebraSnapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let camera = CameraModel(defaults: defaults)
+    let recorder = CameraRecorder(defaults: defaults)
+    camera.guides = .firstUse
+    camera.guides.falseColour = true
+    let presenter = PresenterView(store: store, session: store.session, draft: PresenterDraft(), hasScript: false,
+                                  camera: camera, startsCamera: false, recorder: recorder)
+    for (mode, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
+      if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != mode { continue }
+      for rangeMode in [true, false] {
+        camera.guides.zebraRangeMode = rangeMode
+        if !rangeMode { camera.guides.zebraLevel = 95 }
+        let name = rangeMode ? "range" : "limit"
+        try await snapshot(presenter.zebraControls, name: "alpha-zebra-\(name)-\(mode)",
+                           size: .init(width: 400, height: 300), scheme: scheme, destination: destination)
+        try await snapshot(ExposurePictureLegend(settings: camera.guides.exposure), name: "alpha-legend-\(name)-\(mode)",
+                           size: .init(width: 480, height: 300), scheme: scheme, destination: destination)
+        camera.guides = .firstUse; camera.guides.falseColour = true
+      }
+    }
+  }
+
   func testRoundNineCountdownAndCameraSections() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -85,7 +113,7 @@ import XCTest
         now = 100; store.session.syncManualFrontier()
         try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r7-end-\(Int(zoom * 100))-\(mode)", size: .init(width: 760, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
         store.session.restart(); recorder.phase = .recording
-        try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r7-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 760, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output))
+        if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder), name: "r7-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 760, height: 520), scheme: scheme, destination: URL(fileURLWithPath: output)) }
         recorder.phase = .idle
       }
     }
@@ -187,40 +215,40 @@ import XCTest
       camera.displayMode = .prompterWithVideo
       recorder.phase = .recording
       recorder.inputMeter.show(channelPeaks: [0.1, 0.5])
-      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-recording-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
-      try await snapshot(RecordingInputLevel(meter: recorder.inputMeter).padding().uiZoom(2), name: "recording-meter-200-\(mode)", size: .init(width: 700, height: 320), scheme: scheme, destination: destination)
+      if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-recording-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
+      if Features.recording { try await snapshot(RecordingInputLevel(meter: recorder.inputMeter).padding().uiZoom(2), name: "recording-meter-200-\(mode)", size: .init(width: 700, height: 320), scheme: scheme, destination: destination) }
       for zoom in [1.0, 1.5, 2.0] {
         for phase in [CameraRecorder.Phase.preparing, .waitingForFrames, .recording, .saving, .idle] {
           recorder.phase = phase
           recorder.savedTake = phase == .idle ? URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov") : nil
-          try await snapshot(RecordingStatusPanel(recorder: recorder, camera: camera, zoom: zoom, dismiss: {}), name: "recording-status-\(phase.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination)
+          if Features.recording { try await snapshot(RecordingStatusPanel(recorder: recorder, camera: camera, zoom: zoom, dismiss: {}), name: "recording-status-\(phase.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination) }
         }
       }
       let failedRecorder = CameraRecorder(defaults: defaults)
       let disconnectedCamera = CameraModel(defaults: defaults)
       disconnectedCamera.selectedUID = nil
-      await failedRecorder.start(camera: disconnectedCamera)
+      if Features.recording { await failedRecorder.start(camera: disconnectedCamera) }
       failedRecorder.errorMessage = nil
       for zoom in [1.0, 1.5, 2.0] {
-        try await snapshot(RecordingStatusPanel(recorder: failedRecorder, camera: disconnectedCamera, zoom: zoom, dismiss: {}), name: "recording-status-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination)
+        if Features.recording { try await snapshot(RecordingStatusPanel(recorder: failedRecorder, camera: disconnectedCamera, zoom: zoom, dismiss: {}), name: "recording-status-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 640, height: 400), scheme: scheme, destination: destination) }
       }
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
         recorder.phase = .waitingForFrames
-        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-waiting-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-waiting-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
         recorder.phase = .idle
         recorder.savedTake = URL(fileURLWithPath: "/tmp/A long take name for checking a completed recording with a warning.mov")
         recorder.droppedFrames = 7
-        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-warning-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-warning-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
         recorder.savedTake = nil; recorder.droppedFrames = 0
-        try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: disconnectedCamera, monitor: monitor, startsCamera: false, recorder: failedRecorder), name: "presenter-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+        if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: disconnectedCamera, monitor: monitor, startsCamera: false, recorder: failedRecorder), name: "presenter-failed-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
       }
       store.uiZoom = 2
       recorder.savedTake = URL(fileURLWithPath: "/tmp/Studio take 2026-11-06.mov")
       store.settings.mode = "Manual"
       store.session.updateSettings(store.settings)
       store.session.play()
-      try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-saved-reading-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+      if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-saved-reading-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
       store.session.pause()
       recorder.savedTake = nil
       recorder.phase = .idle
@@ -232,7 +260,7 @@ import XCTest
       camera.guides.zebras = true; camera.guides.falseColour = true
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-active-\(mode)", size: .init(width: 480, height: 900), scheme: scheme, destination: destination)
       camera.guides.zebras = false; camera.guides.falseColour = false
-      try await snapshot(Form { CameraSettingsSections(model: camera); RecordingSettingsSections(recorder: recorder, camera: camera); RecordingFolderSection(recorder: recorder) }.formStyle(.grouped), name: "recording-settings-\(mode)", size: .init(width: 500, height: 850), scheme: scheme, destination: destination)
+      if Features.recording { try await snapshot(Form { CameraSettingsSections(model: camera); RecordingSettingsSections(recorder: recorder, camera: camera); RecordingFolderSection(recorder: recorder) }.formStyle(.grouped), name: "recording-settings-\(mode)", size: .init(width: 500, height: 850), scheme: scheme, destination: destination) }
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-tools-\(mode)", size: .init(width: 480, height: 640), scheme: scheme, destination: destination)
       store.settings.mode = "Manual"
       store.session.updateSettings(store.settings)
@@ -329,7 +357,7 @@ import XCTest
         try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-idle-camera-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
         if zoom != 1.5 {
           recorder.phase = .recording; recorder.inputMeter.show(channelPeaks: [0.2, 0.4])
-          try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
+          if Features.recording { try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-taking-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination) }
           recorder.phase = .idle
           for tab in SettingsTab.allCases {
             try await snapshot(SettingsPage(store: store, tab: tab).uiZoom(zoom), name: "settings-\(tab.rawValue)-\(Int(zoom * 100))-\(mode)", size: .init(width: 560, height: 640), scheme: scheme, destination: destination)
@@ -345,6 +373,17 @@ import XCTest
       store.uiZoom = 1; recorder.usesSeparateMicrophone = true
       try await snapshot(MicrophonePage(store: store, recorder: recorder), name: "microphone-separate-\(mode)", size: .init(width: 560, height: 750), scheme: scheme, destination: destination)
       try await snapshot(CameraExposureSettings(model: camera), name: "exposure-panel-\(mode)", size: .init(width: 560, height: 600), scheme: scheme, destination: destination)
+    }
+  }
+
+  @MainActor func testVerticalMicrophoneZones() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let meter = InputMeter()
+    for (name, peak) in [("quiet", Float(0)), ("speech", Float(pow(10.0, -12.0 / 20))), ("hot", Float(pow(10.0, -3.0 / 20)))] {
+      meter.show(channelPeaks: [peak])
+      try await snapshot(PresenterMicLevel(meter: meter).padding(Space.lg).background(Color.black),
+        name: "alpha-vertical-mic-\(name)", size: .init(width: 80, height: 280), scheme: .dark,
+        destination: URL(fileURLWithPath: output))
     }
   }
 
@@ -376,7 +415,7 @@ import XCTest
     }
     if name.hasPrefix("fable-bar-") {
       let zoom = name.contains("-200-") ? 2.0 : name.contains("-150-") ? 1.5 : 1.0
-      try assertFrozenFooter(host, size: size, zoom: zoom, readingFloor: name.contains("-exposure-") ? 0.60 : 0.65)
+      try assertFrozenFooter(host, size: size, zoom: zoom, readingFloor: name.contains("-exposure-") || zoom == 2 ? 0.60 : 0.65) // 200%: the Alpha HUD's zebra key strip is on by default (7 Nov 2026)
     }
     XCTAssertFalse(window.isVisible)
     if name.hasPrefix("presenter-waiting-") {
@@ -429,7 +468,15 @@ import XCTest
         bitmap.colorAt(x: x, y: y) != corner
       }
     }
-    XCTAssertTrue(hasRenderedContent, "The snapshot must not be a blank compositor surface: \(name)")
+    if name.contains("-clean-") {
+      // No camera is opened in tests, so an unobstructed Clean picture is opaque black.
+      XCTAssertFalse(hasRenderedContent, "Clean must contain only the camera surface")
+      let colour = try XCTUnwrap(corner?.usingColorSpace(.deviceRGB))
+      XCTAssertLessThanOrEqual(max(colour.redComponent, colour.greenComponent, colour.blueComponent), 0.01)
+      XCTAssertEqual(colour.alphaComponent, 1, accuracy: 0.01)
+    } else {
+      XCTAssertTrue(hasRenderedContent, "The snapshot must not be a blank compositor surface: \(name)")
+    }
     let data = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
     try data.write(to: destination.appendingPathComponent(name + ".png"))
     XCTAssertGreaterThan(data.count, 2_000, "A page must contain rendered content")

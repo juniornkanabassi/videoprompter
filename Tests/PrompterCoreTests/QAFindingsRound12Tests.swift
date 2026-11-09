@@ -162,6 +162,7 @@ import XCTest
   }
 
   func testExportAndTakeNamesStayVisibleForExtremeTitles() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, _, _) = try await fixture()
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("qa12-names-\(UUID())")
     defer { try? FileManager.default.removeItem(at: folder) }

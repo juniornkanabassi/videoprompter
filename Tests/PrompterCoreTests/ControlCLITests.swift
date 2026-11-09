@@ -29,6 +29,12 @@ final class ControlCLITests: XCTestCase {
       return "example"
     }
     for command in ControlProtocol.commands {
+      if !Features.recording && command.action.hasPrefix("record_") {
+        XCTAssertThrowsError(try ControlCLI.parse(command.words)) {
+          XCTAssertEqual(String(describing: $0), "Recording is not available in this build")
+        }
+        continue
+      }
       let required = command.params.filter(\.required)
       let values = required.filter(\.positional).map(sample)
       let named = required.filter { !$0.positional }.flatMap { [$0.flag, sample($0)] }
@@ -51,14 +57,14 @@ final class ControlCLITests: XCTestCase {
     XCTAssertEqual(try ControlCLI.parse(["settings", "set", "--text-size", "60", "--textWidth=80"]).params, ["textSize": "60", "textWidth": "80"])
     XCTAssertEqual(try ControlCLI.parse(["script", "delete", "--yes", "My Script"]).params, ["yes": "true", "script": "My Script"])
     XCTAssertEqual(try ControlCLI.parse(["script", "delete", "My Script", "--yes", "true"]).params["yes"], "true")
-    XCTAssertEqual(try ControlCLI.parse(["record", "start", "--yes", "--request-id", "take1"]).params, ["yes": "true", "requestId": "take1"])
-    XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--recording", "take1"]).params, ["recording": "take1"])
-    XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--force"]).params, ["force": "true"])
+    if Features.recording { XCTAssertEqual(try ControlCLI.parse(["record", "start", "--yes", "--request-id", "take1"]).params, ["yes": "true", "requestId": "take1"]) }
+    if Features.recording { XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--recording", "take1"]).params, ["recording": "take1"]) }
+    if Features.recording { XCTAssertEqual(try ControlCLI.parse(["record", "stop", "--force"]).params, ["force": "true"]) }
     XCTAssertEqual(try ControlCLI.parse(["script", "export", "Intro", "--path", "/tmp/export.md", "--replace", "--yes"]).params["yes"], "true")
     for command in ["next-passage", "previous-passage"] {
       XCTAssertEqual(try ControlCLI.parse([command, "--request-id", "step1"]).params, ["requestId": "step1"])
     }
-    for args in [["script", "delete", "Read", "--yes"], ["record", "stop", "--force"]] {
+    for args in (Features.recording ? [["script", "delete", "Read", "--yes"], ["record", "stop", "--force"]] : [["script", "delete", "Read", "--yes"]]) {
       XCTAssertEqual(try ControlCLI.parse(args + ["--request-id", "retry"]).params["requestId"], "retry")
     }
     XCTAssertEqual(try ControlCLI.parse(["script", "create", "--text", "-"]).params["text"], "-")
@@ -81,6 +87,7 @@ final class ControlCLITests: XCTestCase {
     defer { try? FileManager.default.removeItem(at: support) }
     XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter").path)
     XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: nil, arguments: ["videoprompter", "--data-directory", "/tmp/check"], applicationSupport: support).path, "/tmp/check")
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID + ".alpha", arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter Alpha").path, "the Alpha keeps its own library")
     XCTAssertEqual(ControlCLI.manifest()["serverInfo"] as? [String: String], ["name": "videoprompter", "version": "dev"])
     let tools = try XCTUnwrap(ControlCLI.manifest()["tools"] as? [[String: Any]])
     XCTAssertEqual(tools.count, ControlProtocol.commands.count)

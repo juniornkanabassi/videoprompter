@@ -37,7 +37,7 @@ import PrompterCore
       draft.begin(session: store.session)
       await Task.yield()
       try await settle(host)
-      for title in ["Save changes", "Cancel editing", "Record"] {
+      for title in Features.recording ? ["Save changes", "Cancel editing", "Record"] : ["Save changes", "Cancel editing"] {
         let action = try named(title, in: host)
         if ["Save changes", "Cancel editing"].contains(title) {
           XCTAssertTrue(LibraryAX.bool(action, "isAccessibilityEnabled"), title)
@@ -53,7 +53,7 @@ import PrompterCore
     recorder.phase = .recording
     draft.begin(session: store.session)
     try await settle(host)
-    for title in ["Save changes", "Cancel editing", "Stop recording"] {
+    for title in Features.recording ? ["Save changes", "Cancel editing", "Stop recording"] : ["Save changes", "Cancel editing"] {
       let action = try named(title, in: host)
       let frame = try XCTUnwrap(action.value(forKey: "accessibilityFrame") as? NSValue).rectValue
       XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), title)
@@ -122,6 +122,7 @@ import PrompterCore
   }
 
   func testRecordingBarLevelUsesLiveRecordingSamples() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, defaults, record) = try await fixture()
     let camera = CameraModel(defaults: defaults)
     let recorder = CameraRecorder(defaults: defaults)
@@ -145,6 +146,7 @@ import PrompterCore
   }
 
   func testSettingsDefaultCameraAndRecordingRecoveryHaveDistinctSections() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     let (store, _, _) = try await fixture()
     for section in ["Recording", "Camera"] {
       let (window, host) = await LibraryAX.host(PresenterSettingsPopover(store: store, initialTab: .camera, initialCameraSection: section))

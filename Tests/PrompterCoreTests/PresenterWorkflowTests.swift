@@ -1,3 +1,4 @@
+import PrompterCore
 import AppKit
 import AVFoundation
 import SwiftUI
@@ -58,7 +59,8 @@ import XCTest
     XCTAssertTrue(recorder.mirrorSavedVideo)
   }
 
-  func testPreparingNeverSaysSavingAndMissingCameraCannotRecord() async {
+  func testPreparingNeverSaysSavingAndMissingCameraCannotRecord() async throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     XCTAssertEqual(CameraRecorder.Phase.preparing.message, "Preparing camera and microphone…")
     XCTAssertEqual(CameraRecorder.Phase.saving.message, "Saving recording…")
     let defaults = freshDefaults("RecordingReadiness")
@@ -92,7 +94,8 @@ import XCTest
     XCTAssertEqual(PresenterView.backdropOpacity(saved: 0.25, reduceTransparency: false), 0.25)
   }
 
-  func testBothCloseRoutesKeepAnActiveTakeVisibleUntilAChoice() {
+  func testBothCloseRoutesKeepAnActiveTakeVisibleUntilAChoice() throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     _ = NSApplication.shared
     let defaults = freshDefaults("CloseActiveTake")
     let camera = CameraModel(defaults: defaults)
@@ -113,7 +116,8 @@ import XCTest
     }
   }
 
-  func testKeepingRecordingAndMinimisingRetainAStopSurface() {
+  func testKeepingRecordingAndMinimisingRetainAStopSurface() throws {
+    guard Features.recording else { throw XCTSkip("Recording is not available in this build") }
     _ = NSApplication.shared
     let defaults = freshDefaults("RecordingStopSurface")
     let camera = CameraModel(defaults: defaults)

@@ -18,3 +18,9 @@ Use case: logo-brand. Create ONE finished minimalist macOS app icon for VidPromp
 ## Testing variant approved 12 September 2026
 
 Junior approved an amber tile retaining the dark microphone and white script as a testing variant. It was retired with the Alpha channel on 1 October 2026; builds use the white icon. Generated preview exterior checkerboard was replaced with real alpha before packaging.
+
+## Alpha variant (7 Nov 2026)
+
+Created `VideoPrompterAlpha.png` at 1254 x 1254 in RGBA using Python/Pillow pixel recolouring of `VideoPrompter.png`. Foreground masks retain the original microphone, script page and coral marker; the tile is warm amber/orange, with the original shading and composition preserved. The source's baked-black exterior was converted to real transparency with an antialiased tile edge. No text or badges were added.
+
+Resized with `sips` to 16, 32, 128, 256 and 512 point icons at 1x and 2x. `iconutil` rejected ICNS creation with “Invalid Iconset”, including a round-trip of the existing stable icon, so the ten representations were packed directly into standard lossless ICNS chunks (legacy RGB plus alpha masks for 16/32 pixels, PNG for the remaining sizes). Successfully extracted the finished `VideoPrompterAlpha.icns` with `iconutil` and verified all ten images pixel-for-pixel against the resized originals, including transparent corners. Checked the master alpha channel and visually compared the variant beside the stable icon at 32 pixels.

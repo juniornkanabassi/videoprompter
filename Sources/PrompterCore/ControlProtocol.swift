@@ -166,6 +166,8 @@ public enum ControlProtocol {
   public static func dataRoot(bundleIdentifier: String?, arguments: [String],
                               applicationSupport: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]) -> URL {
     if let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count { return URL(fileURLWithPath: arguments[i + 1]) }
+    // The Alpha keeps its own library and control socket, so it never edits the release app's data.
+    if bundleIdentifier == bundleID + ".alpha" { return applicationSupport.appendingPathComponent("Video Prompter Alpha", isDirectory: true) }
     return migrateLegacyFolder(in: applicationSupport)
   }
   /// The app was called VidPrompt before 2.0. Moves `<parent>/VidPrompt` to `<parent>/Video Prompter`

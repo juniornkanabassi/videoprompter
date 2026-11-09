@@ -105,7 +105,7 @@ import PrompterCore
     }
   }
   var followingMicrophoneUID: String?
-  var resolvedMicrophoneUID: String? { usesSeparateMicrophone ? microphoneUID : followingMicrophoneUID }
+  var resolvedMicrophoneUID: String? { Features.recording && usesSeparateMicrophone ? microphoneUID : followingMicrophoneUID }
   func useSettings(_ settings: PrompterSettings) {
     // A separate recording input stays locked, while the Voice choice remains editable.
     if !settingsLocked || usesSeparateMicrophone { followingMicrophoneUID = settings.audioDeviceUID }
@@ -192,6 +192,7 @@ import PrompterCore
     now.timeIntervalSince(lastFrameAt ?? attachedAt) > 5
   }
   func start(camera: CameraModel, defaultLabel: String = "") async {
+    guard Features.recording else { errorMessage = "Recording is not available in this build"; return }
     guard !isBusy, !isRecording else { return }
     stopInputTest()
     takeDefaultLabel = defaultLabel

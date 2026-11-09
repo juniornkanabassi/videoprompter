@@ -57,6 +57,7 @@ import PrompterCore
   }
   func testWelcomeUsesCurrentNavigation() {
     for label in ["Tools", "Reading mode…", "Smaller text", "Camera", "Framing guides…", "Open Second Monitor Window", "Show in Finder", "countdown"] {
+      if label == "Show in Finder" && !Features.recording { continue }
       XCTAssertTrue(WelcomeScript.markdown.contains(label), label)
     }
     for obsolete in ["**Setup**", "Open second camera monitor"] {

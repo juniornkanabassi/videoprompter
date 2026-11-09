@@ -67,7 +67,9 @@ import XCTest
     try await Task.sleep(for: .milliseconds(80))
     XCTAssertFalse(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)
     XCTAssertEqual(camera.guides, original)
-    XCTAssertFalse(LibraryAX.named("Zebra reference", in: host).isEmpty, "Reference presets remain available one level down")
+    for label in ["Zebra mode", "Skin 45 ±2", "Clipping 95+"] {
+      XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "Modes and presets remain available one level down")
+    }
   }
 
   func testTeachingRoutesHaveSeparatePurposesAndGuideOpensWithoutARecording() async throws {
@@ -77,7 +79,7 @@ import XCTest
     var guides = 0
     let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}, guide: { guides += 1 }))
     defer { LibraryAX.close(window) }
-    for label in ["Quick Reading Practice", "Try reading for 30 seconds.", "Getting Started Guide", "Read the full guide to writing, reading and recording."] {
+    for label in ["Quick Reading Practice", "Try reading for 30 seconds.", "Getting Started Guide", (Features.recording ? "Read the full guide to writing, reading and recording." : "Read the full guide to writing, reading and camera monitoring.")] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty)
     }
     XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Getting Started Guide", in: host).first), "accessibilityPerformPress"))

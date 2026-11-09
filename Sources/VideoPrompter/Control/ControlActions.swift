@@ -91,6 +91,9 @@ import Speech
   }
 
   func handle(_ action: String, _ params: [String: String]) async -> ControlResult {
+    if !Features.recording && action.hasPrefix("record_") {
+      return .error("recording_unavailable", "Recording is not available in this build")
+    }
     Headless.shared.begin(); defer { Headless.shared.end() }
     let result = await perform(action, params)
     // Any successful action may have changed settings; an idle flush costs one queue hop.
