@@ -6,7 +6,7 @@ import os
 extension CameraDevice {
   /// What the button and the list show: a device with an empty name still reads as something.
   var displayName: String {
-    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unnamed camera" : name
+    nickname ?? (name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Unnamed camera" : name)
   }
 }
 

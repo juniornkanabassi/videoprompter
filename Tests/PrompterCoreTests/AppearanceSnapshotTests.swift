@@ -6,6 +6,14 @@ import XCTest
 
 /// Offscreen snapshots, run automatically by test.sh. No window is ordered, camera requested or account connected.
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
+  func testCameraAdjust() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let model = CameraModel(defaults: freshDefaults("CameraAdjustSnapshot"))
+    model.selectedUID = "one"
+    let devices = [CameraDevice(uid: "one", name: "Cam Link 4K", nickname: "Sony FX3"), CameraDevice(uid: "two", name: "MacBook Pro Camera")]
+    try await snapshot(CameraAdjustView(model: model, devicesOverride: devices), name: "alpha-camera-adjust-dark", size: .init(width: 470, height: 700), scheme: .dark, destination: URL(fileURLWithPath: output))
+  }
+
   func testAlphaZebraControlsAndLegend() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let destination = URL(fileURLWithPath: output)

@@ -6,8 +6,13 @@ import SwiftUI
 /// gets remembered: names repeat across identical cameras, unique IDs do not.
 struct CameraDevice: Identifiable, Hashable, Sendable {
   let uid: String
-  let name: String
+  let originalName: String
   var isPhysical = true
+  var nickname: String? = nil
+  var name: String { nickname ?? originalName }
+  init(uid: String, name: String, isPhysical: Bool = true, nickname: String? = nil) {
+    self.uid = uid; self.originalName = name; self.isPhysical = isPhysical; self.nickname = nickname
+  }
   var id: String { uid }
 }
 
@@ -192,6 +197,28 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   @Published var authorization = AVCaptureDevice.authorizationStatus(for: .video)
   var pictureSizeOverride: CGSize?
   var pictureSize: CGSize? { pictureSizeOverride ?? SharedCameraSession.shared.pictureSize }
+  @Published private(set) var nicknames: [String: String] = [:]
+  func renameCamera(_ uid: String, to name: String) {
+    let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    nicknames[uid] = value.isEmpty ? nil : value
+    defaults.set(nicknames, forKey: "cameraNicknames")
+    devices = devices.map { device in var d = device; d.nickname = nicknames[d.uid]; return d }
+  }
+  var sourceInfo: CameraSourceInfo? {
+    guard let uid = SharedCameraSession.shared.attachedUID, let device = AVCaptureDevice(uniqueID: uid) else { return nil }
+    var info = CameraSourceInfo(device: device, displayName: nicknames[uid] ?? device.localizedName, measuredFrameRate: SharedCameraSession.shared.measuredFrameRate)
+    info.shotSummary = shotSummary
+    return info
+  }
+  var shotSummary: String {
+    if guides.automaticRotation { return "Automatic" }
+    switch guides.rotation {
+    case .none: return "Landscape"
+    case .quarter: return "Turned left for vertical"
+    case .threeQuarters: return "Turned right for vertical"
+    case .half: return "Upside down"
+    }
+  }
   private let defaults: UserDefaults
   private let guideStore: CameraGuideStore
   private var loadingGuides = false
@@ -202,6 +229,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    nicknames = defaults.dictionary(forKey: "cameraNicknames") as? [String: String] ?? [:]
     guideStore = CameraGuideStore(defaults: defaults)
     let uid = defaults.string(forKey: "cameraDeviceUID")
     storedSelectedUID = uid
@@ -227,7 +255,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   /// A rotation chosen by hand turns Auto back off; one Vision picked leaves it on.
   func setRotation(_ rotation: CameraRotation, automatic: Bool = false) {
     guard !recordingLocked else { return }
-    guard guides.rotation != rotation || guides.automaticRotation == automatic,
+    guard guides.rotation != rotation || (!automatic && guides.automaticRotation),
       !automatic || guides.automaticRotation else { return }
     guides.rotation = rotation
     if !automatic { guides.automaticRotation = false }
@@ -250,7 +278,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   /// Preserve saved choices. A new setup must never silently choose a virtual camera.
   static func resolve(_ savedUID: String?, in devices: [CameraDevice]) -> CameraDevice? {
     if let savedUID { return devices.first { $0.uid == savedUID } }
-    return devices.first { $0.isPhysical && !$0.name.localizedCaseInsensitiveContains("virtual") }
+    return devices.first { $0.isPhysical && !$0.originalName.localizedCaseInsensitiveContains("virtual") }
   }
 
   func start() {
@@ -280,7 +308,7 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   }
 
   /// Inventory only: validating a setup must not select a camera or open capture.
-  func refreshDevices() { devices = Self.discovered() }
+  func refreshDevices() { devices = Self.discovered().map { device in var d = device; d.nickname = nicknames[d.uid]; return d } }
 
   func refresh() {
     let previousMessage = unavailableMessage
