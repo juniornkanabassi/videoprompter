@@ -68,10 +68,10 @@ struct PresenterView: View {
   private var readingStage: some View {
     GeometryReader { geometry in
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed
-      let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 800 * controlZoom
+      let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 1100 * controlZoom
       let meterWidth = micLevelVisible ? 120 * controlZoom : 0
       HStack(alignment: .top, spacing: 0) {
-        if !shell.reading && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo && !keyFits {
+        if !shell.reading && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo {
           VStack(alignment: .leading, spacing: Space.md) {
             sourceStatus.fixedSize(horizontal: false, vertical: true)
             if keyVisible {
@@ -117,21 +117,6 @@ struct PresenterView: View {
             }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
               .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
             GuideLine(settings: store.settings).offset(y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: store.settings.guideFraction))
-          }
-          if keyFits && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo {
-            HStack(alignment: .top) {
-              if keyVisible {
-                ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom)
-                  .frame(width: 280 * controlZoom)
-                  .accessibilityIdentifier("presenter-exposure-legend")
-              }
-              Spacer(minLength: 0)
-            }.padding(Space.md)
-            HStack(alignment: .top, spacing: Space.md) {
-              if keyVisible { Color.clear.frame(width: 280 * controlZoom) }
-              sourceStatus.frame(maxWidth: 480 * controlZoom)
-              Spacer(minLength: 0)
-            }.padding(Space.md)
           }
           if keyVisible && shell.reading && !draft.isEditing {
             HStack(spacing: Space.sm) {
@@ -185,15 +170,18 @@ struct PresenterView: View {
     Button { adjustOpener = "Camera"; shell.adjustTab = .camera } label: {
       VStack(alignment: .leading, spacing: Space.xs) {
         sourcePill(parts: sourceInfo.map { [$0.displayName, $0.connectionDescription] } ?? ["No camera chosen"])
-        sourcePill(parts: (sourceInfo.map { Array($0.summary.components(separatedBy: " · ").dropFirst(2)) } ?? []) + [shotLabel])
+        if let format = sourceInfo?.videoFormat { sourcePill(parts: format.components(separatedBy: " · ")) }
+        sourcePill(parts: [shotLabel])
       }.font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
     }.buttonStyle(.plain).uiZoom(controlZoom)
   }
   private func sourcePill(parts: [String]) -> some View {
-    // Keep each separator attached to the preceding text when the pill wraps.
-    Text(parts.joined(separator: "\u{00a0}· "))
-      .fixedSize(horizontal: false, vertical: true)
+    VStack(alignment: .leading, spacing: 0) {
+      ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+        Text(part).fixedSize(horizontal: false, vertical: true)
+      }
+    }
       .padding(Space.sm)
       .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: Space.md))
   }
@@ -204,15 +192,15 @@ struct PresenterView: View {
     case .none: return "Landscape"
     case .quarter: return "↺ Vertical"
     case .threeQuarters: return "↻ Vertical"
-    case .half: return "↻ Inverted"
+    case .half: return "Upside down"
     }
   }
   private var shotLabel: String {
     if camera.guides.automaticRotation { return "Automatic" }
     switch camera.guides.rotation {
     case .none: return "Landscape"
-    case .quarter: return "Vertical turned left"
-    case .threeQuarters: return "Vertical turned right"
+    case .quarter: return "Turned left for vertical"
+    case .threeQuarters: return "Turned right for vertical"
     case .half: return "Upside down"
     }
   }
@@ -607,6 +595,7 @@ extension NSTextAlignment {
 struct WrapLayout: Layout {
   var spacing: CGFloat = 8
   var distributeAfter: Int? = nil
+  var leading = false
   func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let rows = rows(for: proposal.width ?? .infinity, subviews: subviews)
     let width = rows.map(\.width).max() ?? 0
@@ -618,7 +607,7 @@ struct WrapLayout: Layout {
     let rows = rows(for: bounds.width, subviews: subviews)
     for row in rows {
       let distribute = rows.count == 1 && distributeAfter != nil
-      var x = distribute ? bounds.minX : bounds.midX - row.width / 2
+      var x = (distribute || leading) ? bounds.minX : bounds.midX - row.width / 2
       for index in row.indices {
         if distribute, index == distributeAfter { x += max(0, bounds.width - row.width) }
         let size = subviews[index].sizeThatFits(.unspecified)

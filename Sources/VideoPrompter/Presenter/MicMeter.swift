@@ -5,6 +5,7 @@ import SwiftUI
 struct MicMeterView: View {
   @ObservedObject var meter: InputMeter
   let micName: String
+  var showsHeading = true
   @Environment(\.colorSchemeContrast) private var contrast
   @State private var peakHold = PeakHold()
   @State private var clipLatchUntil: TimeInterval = 0
@@ -37,7 +38,7 @@ struct MicMeterView: View {
       GeometryReader { available in
       let horizontal = available.size.height < 360
       VStack(spacing: horizontal ? Space.xs : Space.sm) {
-        Text("MIC").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.onDarkQuiet(contrast))
+        if showsHeading { Text("MIC").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.onDarkQuiet(contrast)) }
         Text("CLIP")
           .font(.system(size: 11, weight: .bold))
           .foregroundStyle(.white.opacity(clipLit ? 1 : 0))
