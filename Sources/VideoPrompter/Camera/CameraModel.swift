@@ -105,6 +105,46 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
   @Published var framingGuidesBypassed = false
   var framingIsConfigured: Bool { guides.thirds || guides.axes || guides.bullseye || guides.marker != nil }
   var framingIsVisible: Bool { framingIsConfigured && !framingGuidesBypassed && !cleanView }
+  /// Presenter-effective state: includes both temporary bypass and Clean view.
+  var effectiveFalseColour: Bool { previewGuides.falseColour }
+  var effectiveZebras: Bool { previewGuides.zebras }
+  var effectiveGuides: CameraGuides { previewGuides }
+
+  /// Shared controls retain stored settings while explicit choices restore visibility.
+  var exposureControls: Binding<CameraGuides> {
+    Binding(get: { self.guides }, set: { value in
+      let disabling = (self.guides.falseColour && !value.falseColour)
+        || (self.guides.zebras && !value.zebras)
+      self.guides = value
+      if !disabling { self.exposureBypassed = false; self.cleanView = false }
+    })
+  }
+  func changeExposure(_ change: (inout CameraGuides) -> Void) {
+    var value = guides
+    value.changeExposure(change)
+    guides = value
+    exposureBypassed = false; cleanView = false
+  }
+  func zebraBinding<T>(_ key: WritableKeyPath<CameraGuides, T>) -> Binding<T> {
+    Binding(get: { self.guides[keyPath: key] }, set: { value in
+      self.changeExposure { $0[keyPath: key] = value; $0.zebras = true }
+    })
+  }
+  func chooseZebraPreset(_ purpose: CameraGuides.ZebraPurpose) {
+    changeExposure { $0.useZebraPreset(purpose); $0.zebras = true }
+  }
+  func setGreyCardCheck(_ enabled: Bool) {
+    guides.greyCardCheck = enabled
+    if enabled { exposureBypassed = false; cleanView = false }
+  }
+  func chooseGuide(_ change: (inout CameraGuides) -> Void) {
+    change(&guides)
+    framingGuidesBypassed = false; cleanView = false
+  }
+  func chooseFrameMarker(_ marker: CameraAspect?) {
+    guard marker?.isValid != false else { return }
+    chooseGuide { $0.marker = marker }
+  }
   func toggleFramingGuides() {
     if framingIsVisible { framingGuidesBypassed = true }
     else {
@@ -156,8 +196,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       userInfo: [.announcement: name + (on ? " on" : " off"), .priority: NSAccessibilityPriorityLevel.medium.rawValue])
   }
   func applySkinExposurePreset() {
-    guides.zebras = true; guides.useZebraPreset(.faceReference)
-    guides.falseColour = false; exposureBypassed = false
+    chooseZebraPreset(.faceReference)
+    guides.falseColour = false
   }
   @Published var alwaysOnTop: Bool { didSet { defaults.set(alwaysOnTop, forKey: "cameraAlwaysOnTop") } }
   /// Script only, script over the live picture, or the live picture alone. The presenter's own

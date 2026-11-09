@@ -19,30 +19,31 @@ struct AdjustPanel: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      Button(action: close) {
-        Label("Close Adjust", systemImage: "xmark").frame(maxWidth: .infinity, minHeight: AlphaStyle.minTarget)
-      }.buttonStyle(.plain).initialPopoverFocus().padding(.horizontal, AlphaStyle.panelInset)
-      ScrollView {
-    VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Text("Adjust").font(.title2.bold()).accessibilityAddTraits(.isHeader)
-      Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
+      HStack(alignment: .top, spacing: Space.sm) {
       Group {
         WrapLayout(spacing: 4) {
           ForEach(AdjustTab.allCases, id: \.self) { tab in
             Button { selection = tab } label: {
               Text(tab.rawValue).font(.system(size: 16, weight: .semibold))
-                .padding(.horizontal, Space.sm).frame(minHeight: 44)
+                .padding(.horizontal, Space.xs).frame(minHeight: AlphaStyle.minTarget)
                 .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white)
                 .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
             }.buttonStyle(.plain).accessibilityAddTraits(selection == tab ? .isSelected : [])
           }
         }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
       }
+        Button(action: close) {
+          Image(systemName: "xmark").frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget)
+        }.buttonStyle(.plain).accessibilityLabel("Close Adjust").initialPopoverFocus()
+      }.padding(.horizontal, AlphaStyle.panelInset)
+      ScrollView {
+      VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
+      Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
       Group {
         switch selection {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
-        case .zebras: ZebraAdjustView(guides: $camera.guides)
-        case .falseColour: FalseColourAdjustView(guides: $camera.guides)
+        case .zebras: ZebraAdjustView(guides: camera.exposureControls, model: camera)
+        case .falseColour: FalseColourAdjustView(guides: camera.exposureControls, model: camera)
         case .guides: AlphaGuideSections(model: camera)
         case .mic: mic
         }
@@ -55,13 +56,14 @@ struct AdjustPanel: View {
   }
   private var mic: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Text("Mic").font(.title2.bold())
-      Picker("Input", selection: Binding(get: { store.settings.audioDeviceUID ?? "" }, set: { store.session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })) {
+      Picker("Microphone", selection: Binding(get: { store.settings.audioDeviceUID ?? "" }, set: { store.session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })) {
         Text("System default").tag("")
         if let uid = store.settings.audioDeviceUID, !microphones.contains(where: { $0.uid == uid }) { Text("Selected microphone unavailable").tag(uid) }
         ForEach(microphones) { Text($0.name).tag($0.uid) }
       }.frame(minHeight: AlphaStyle.minTarget)
-      Toggle("Show meter", isOn: $showsMic).toggleStyle(.switch).frame(minHeight: AlphaStyle.minTarget)
+      HStack { Text("Show meter"); Spacer(); Toggle("Show meter", isOn: $showsMic).labelsHidden().toggleStyle(.switch) }.frame(minHeight: AlphaStyle.minTarget)
+      MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName).frame(height: 180)
+      SettingsLink { Text("More in Settings") }.frame(minHeight: AlphaStyle.minTarget)
       Text("Speak to check your microphone level.").foregroundStyle(.secondary)
     }.onAppear { microphones = AudioCapture.inputDevices() }
   }

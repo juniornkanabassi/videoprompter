@@ -23,3 +23,33 @@ extension AppearanceSnapshotTests {
     }
   }
 }
+
+extension AppearanceSnapshotTests {
+  func testG2AdjustSnapshots() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("G2Snapshots")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
+    let destination = URL(fileURLWithPath: output)
+    for zoom in [1.0, 2.0] {
+      for tab in AdjustTab.allCases {
+        camera.guides = .firstUse
+        camera.chooseGuide { $0.thirds = true; $0.axes = true }
+        let view = AdjustPanel(selection: .constant(tab), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: 470 * zoom, devicesOverride: [], recorder: recorder)
+        try await snapshot(view, name: "g2-\(tab.rawValue)-\(Int(zoom * 100))", size: .init(width: 470 * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
+        if tab == .guides {
+          try await snapshot(AlphaGuideSections(model: camera, advancedExpanded: true).padding(AlphaStyle.panelInset).uiZoom(zoom), name: "g2-guides-advanced-\(Int(zoom * 100))", size: .init(width: 470 * zoom, height: 1000 * zoom), scheme: .dark, destination: destination)
+          camera.framingGuidesBypassed = true
+          try await snapshot(view, name: "g2-guides-bypassed-\(Int(zoom * 100))", size: .init(width: 470 * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
+        }
+        if tab == .falseColour {
+          camera.exposureBypassed = true
+          camera.setGreyCardCheck(true)
+          try await snapshot(view, name: "g2-grey-card-\(Int(zoom * 100))", size: .init(width: 470 * zoom, height: 1200 * zoom), scheme: .dark, destination: destination)
+        }
+      }
+    }
+  }
+}
