@@ -19,8 +19,6 @@ struct AdjustPanel: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack(alignment: .top, spacing: Space.sm) {
-      Group {
         WrapLayout(spacing: 4, leading: true) {
           ForEach(AdjustTab.allCases, id: \.self) { tab in
             Button { selection = tab } label: {
@@ -31,14 +29,16 @@ struct AdjustPanel: View {
             }.buttonStyle(.plain).accessibilityAddTraits(selection == tab ? .isSelected : [])
           }
         }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
-      }
+        .padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
+      HStack {
+        Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
+        Spacer(minLength: 0)
         Button(action: close) {
           Image(systemName: "xmark").frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget)
         }.buttonStyle(.plain).accessibilityLabel("Close Adjust").initialPopoverFocus()
-      }.padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
+      }.padding(.horizontal, AlphaStyle.panelInset)
       ScrollView {
       VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
       Group {
         switch selection {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))

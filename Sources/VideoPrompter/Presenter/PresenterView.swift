@@ -68,12 +68,19 @@ struct PresenterView: View {
   private var readingStage: some View {
     GeometryReader { geometry in
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed
-      let keyFits = !shell.reading && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom && geometry.size.width >= 1100 * controlZoom
       let meterWidth = micLevelVisible ? 120 * controlZoom : 0
+      let setup = !shell.reading && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo
+      let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
+      let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
+        (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
+      let pictureWidth = min(geometry.size.width, geometry.size.height * pictureAspect)
+      let availableGutter = (geometry.size.width - pictureWidth) / 2
+      let keyFits = setup && availableGutter >= (280 * controlZoom + Space.md * 2) && geometry.size.height >= (camera.guides.falseColour ? 520 : 180) * controlZoom + Space.md * 2
+      let columnWidth = (keyFits ? 280 : 144) * controlZoom + Space.md * 2
+      let gutterWidth = setup ? max(columnWidth, meterWidth) : 0
       HStack(alignment: .top, spacing: 0) {
-        if !shell.reading && !draft.isEditing && !camera.cleanView && camera.presentsWithVideo {
+        if setup {
           VStack(alignment: .leading, spacing: Space.md) {
-            sourceStatus.fixedSize(horizontal: false, vertical: true)
             if keyVisible {
           Group {
             if keyFits { ExposureKey(guides: camera.guides, compact: false, zoom: controlZoom).fixedSize(horizontal: false, vertical: true) }
@@ -85,9 +92,11 @@ struct PresenterView: View {
             }
           }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")
             }
+            sourceStatus.fixedSize(horizontal: false, vertical: true)
           }.frame(width: (keyFits ? 280 : 144) * controlZoom, alignment: .leading)
             .frame(maxHeight: .infinity, alignment: .topLeading)
             .padding(Space.md)
+            .frame(width: gutterWidth, alignment: .leading)
         }
         ZStack(alignment: .top) {
           if camera.presentsWithVideo || camera.cleanView {
@@ -141,6 +150,7 @@ struct PresenterView: View {
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
           .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
+        if setup { Color.clear.frame(width: max(0, gutterWidth - meterWidth)) }
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName)
             .frame(width: 120, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
@@ -170,16 +180,16 @@ struct PresenterView: View {
     Button { adjustOpener = "Camera"; shell.adjustTab = .camera } label: {
       VStack(alignment: .leading, spacing: Space.xs) {
         sourcePill(parts: sourceInfo.map { [$0.displayName, $0.connectionDescription] } ?? ["No camera chosen"])
-        if let format = sourceInfo?.videoFormat { sourcePill(parts: format.components(separatedBy: " · ")) }
+        if let format = sourceInfo?.videoFormat { sourcePill(parts: [format], singleLine: true) }
         sourcePill(parts: [shotLabel])
       }.font(.system(size: 14, weight: .semibold)).multilineTextAlignment(.leading)
         .fixedSize(horizontal: false, vertical: true)
     }.buttonStyle(.plain).uiZoom(controlZoom)
   }
-  private func sourcePill(parts: [String]) -> some View {
+  private func sourcePill(parts: [String], singleLine: Bool = false) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
-        Text(part).fixedSize(horizontal: false, vertical: true)
+        Text(part).fixedSize(horizontal: singleLine, vertical: true)
       }
     }
       .padding(Space.sm)

@@ -44,6 +44,21 @@ extension AppearanceSnapshotTests {
           if state == "setup" {
             let cameraButton = try XCTUnwrap(LibraryAX.named("Camera", in: host).first)
             XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Turned right for vertical")
+            let stage = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-visible-stage" })
+            let pictureRegion = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-picture-region" })
+            let stageFrame = try XCTUnwrap(stage.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+            let pictureFrame = try XCTUnwrap(pictureRegion.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+            let windowCentre = window.convertToScreen(host.convert(host.bounds, to: nil)).midX
+            XCTAssertEqual(pictureFrame.midX, windowCentre, accuracy: 2, "Setup picture must be centred")
+            let key = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-exposure-legend" })
+            let keyFrame = try XCTUnwrap(key.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+            XCTAssertTrue(stageFrame.contains(keyFrame), "Exposure key must remain visible")
+            if size.width == 1600 && zoom == 1.5 {
+              XCTAssertTrue(LibraryAX.named("Exposure key", in: host).isEmpty, "Full key should fit")
+            }
+            if size.width == 1000 && zoom == 2 {
+              XCTAssertFalse(LibraryAX.named("Exposure key", in: host).isEmpty, "Compact key should remain available")
+            }
           }
           if state == "editing" {
             let editor = try XCTUnwrap(nodes.compactMap { $0 as? NSTextView }.first { $0.isEditable })

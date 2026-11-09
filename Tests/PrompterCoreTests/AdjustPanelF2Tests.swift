@@ -3,6 +3,23 @@ import XCTest
 @testable import VideoPrompter
 
 extension AppearanceSnapshotTests {
+  func testAdjustTabsStayOnOneRow() async throws {
+    let defaults = freshDefaults("AdjustTabsRow")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let view = AdjustPanel(selection: .constant(.zebras), showsMic: .constant(true), camera: CameraModel(defaults: defaults), store: store, startsMeter: false, devicesOverride: [], recorder: CameraRecorder(defaults: defaults))
+    let (window, host) = await LibraryAX.host(view, size: .init(width: 470, height: 900))
+    defer { LibraryAX.close(window) }
+    let frames = try AdjustTab.allCases.map { tab in
+      let button = try XCTUnwrap(LibraryAX.named(tab.rawValue, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
+      return try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
+    }
+    for frame in frames { XCTAssertEqual(frame.midY, frames[0].midY, accuracy: 1) }
+    XCTAssertFalse(LibraryAX.named("Close Adjust", in: host).isEmpty)
+    XCTAssertFalse(window.isVisible)
+  }
+
   func testAdjustF2Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
