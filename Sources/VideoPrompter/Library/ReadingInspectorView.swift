@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import PrompterCore
+import Speech
 
 /// Shared by Settings and the presenter's Reading segment.
 struct ReadingSettingsPage: View {
@@ -20,6 +21,7 @@ struct ReadingSettingsPage: View {
         Text("Reading settings apply to all scripts. Save a reading preset to reuse a look.")
           .font(.callout).foregroundStyle(.primary)
           .fixedSize(horizontal: false, vertical: true)
+        ScriptLanguageRow(store: store)
         if store.settings.mode == "Manual" { AutomaticScrollDelay(session: store.session) }
         ReadingChoice(title: "Mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode, zoom: store.uiZoom)
         if store.settings.mode == "Manual" {
@@ -149,5 +151,39 @@ struct ReadingChoiceOption: View {
   let isSelected: Bool
   var body: some View {
     Text(name).accessibilityAddTraits(isSelected ? .isSelected : [])
+  }
+}
+
+struct ScriptLanguageRow: View {
+  @ObservedObject var store: AppStore
+  @State private var availability = ""
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      ReadingChoice(title: "Script language",
+        values: ["Automatic"] + ScriptLanguage.allCases.map(\.rawValue),
+        names: ["Automatic"] + ScriptLanguage.allCases.map(\.label),
+        selection: $store.settings.speechLanguage, zoom: store.uiZoom)
+        .frame(minHeight: 44)
+      let language = ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)
+      Text(store.settings.speechLanguage == "Automatic" ? "Automatic: \(language.rawValue)" : "Voice: \(language.rawValue)")
+        .font(.callout).foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+      if !availability.isEmpty {
+        Text(availability).font(.callout).foregroundStyle(.secondary)
+          .fixedSize(horizontal: false, vertical: true)
+      }
+    }.task(id: ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)) {
+      let language = ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)
+      let supported = await DictationTranscriber.supportedLocales
+      guard let locale = language.preferredLocale(supported: supported) else {
+        availability = "Voice following is unavailable for this language on this Mac."
+        return
+      }
+      let installed = await DictationTranscriber.installedLocales
+      guard !Task.isCancelled else { return }
+      availability = installed.contains(locale)
+        ? "On-device speech is ready."
+        : "Speech files need a download. Start Voice following while connected to the internet."
+    }
   }
 }

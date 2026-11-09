@@ -34,7 +34,8 @@ public struct PhraseMatcher: Sendable {
     self.forwardWindow = forwardWindow
     self.minimumBackwardTokens = minimumBackwardTokens
   }
-  private let common = commonWords
+  public var language: ScriptLanguage = .english
+  fileprivate var common: Set<String> { language == .english ? commonWords : language.commonWords }
   public func match(recognised: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
   {
@@ -291,23 +292,24 @@ public struct PhraseMatcher: Sendable {
   private func coverage(of word: String, in target: [String], at index: Int) -> Int? {
     guard index < target.count else { return nil }
     if same(word, target[index]) { return 1 }
-    if word == "percent", index > 0, target[index - 1].allSatisfy(\.isNumber) { return 0 }
+    if language == .english, word == "percent", index > 0, target[index - 1].allSatisfy(\.isNumber) { return 0 }
     let expanded = contractionComponents(word)
     return expanded.count > 1 && target[index...].starts(with: expanded) ? expanded.count : nil
   }
   /// The form words are compared in: a spelled number is its digits ("five" is "5", "second" is
   /// "2nd"), so dictation and the script match whichever way each writes it. Without it every
   /// "five" against a "5" broke the run.
-  private func key(_ word: String) -> String { spelledNumbers[word] ?? word }
+  private func key(_ word: String) -> String { language == .english ? (spelledNumbers[word] ?? word) : word }
   /// Whether a recognised word next to the reader is this script token: the same key, or a year
   /// for its short form ("2025" for the "25" of "2024-25").
   private func same(_ word: String, _ token: String) -> Bool {
     sameKey(key(word), key(token))
   }
   private func sameKey(_ word: String, _ token: String) -> Bool {
-    word == token || word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
+    word == token || language == .english && word.count == 4 && token.count == 2 && word.hasSuffix(token) && word.allSatisfy(\.isNumber)
   }
   private func contractionComponents(_ word: String) -> [String] {
+    guard language == .english else { return [word] }
     switch word {
     case "i'm": return ["i", "am"]
     case "he's": return ["he", "is"]
@@ -380,7 +382,7 @@ public struct RecognitionTracker: Sendable {
     var sawFresh = false
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
-      let words = PrompterDocument(markdown: event.text).spokenTokens.map(\.normalised)
+      let words = PrompterDocument(markdown: event.text, language: matcher.language).spokenTokens.map(\.normalised)
       let old = revisions[key]
       if old?.words == words && old?.isFinal == event.isFinal { continue }
       var wordsToMatch = words
@@ -420,7 +422,7 @@ public struct RecognitionTracker: Sendable {
         !(match.direction == .backward && old?.advanced == true && !appended)
           && !(match.direction == .forward && old?.advanced == true
             && appendedWords?.isEmpty == false
-            && appendedWords?.allSatisfy { commonWords.contains($0) } == true
+            && appendedWords?.allSatisfy { matcher.common.contains($0) } == true
             && match.tokenIndex - tokenIndex > (appendedWords?.count ?? 0))
       {
         candidates.append((event, match))

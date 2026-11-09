@@ -36,7 +36,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
   public var markdown: String
   public var blocks: [MarkdownBlock]
   public var spokenTokens: [DocumentToken] { blocks.flatMap(\.spokenTokens) }
-  public init(markdown: String, previous: PrompterDocument? = nil) {
+  public init(markdown: String, previous: PrompterDocument? = nil, language: ScriptLanguage = .english) {
     self.markdown = markdown
     let drafts = Self.blockDrafts(markdown)
     let ids = Self.reusedIDs(drafts: drafts, previous: previous?.blocks ?? [])
@@ -48,7 +48,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
       return MarkdownBlock(
         id: id, kind: draft.kind, sourceRange: draft.range, rawMarkdown: draft.text,
         spokenTokens: Self.tokens(
-          in: draft.text, base: draft.range.location, excluding: excluded.ranges, blockID: id),
+          in: draft.text, base: draft.range.location, excluding: excluded.ranges, blockID: id, language: language),
         stageDirections: excluded.cues.map { StageDirection(text: $0.text, sourceRange: $0.range) })
     }
   }
@@ -164,14 +164,49 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
       (ns, $0.range)
     }
   }
-  private static func tokens(in text: String, base: Int, excluding: [NSRange], blockID: UUID) -> [DocumentToken] {
-    tokenMatches(text).compactMap { ns, range in
-      guard !excluding.contains(where: { NSIntersectionRange($0, range).length > 0 }) else { return nil }
+  private static func tokens(in text: String, base: Int, excluding: [NSRange], blockID: UUID,
+    language: ScriptLanguage) -> [DocumentToken] {
+    let tokens = tokenMatches(text).flatMap { ns, range -> [DocumentToken] in
+      guard !excluding.contains(where: { NSIntersectionRange($0, range).length > 0 }) else { return [] }
       let value = ns.substring(with: range)
-      return DocumentToken(
-        text: value, normalised: normalise(value),
-        sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)
+      if language == .english {
+        return [DocumentToken(text: value, normalised: normalise(value),
+          sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)]
+      }
+      // A written number can represent several spoken words, all highlighting the same source.
+      if let spelled = language.spellOut(value) {
+        return tokenMatches(spelled).map { source, wordRange in
+          DocumentToken(text: value, normalised: normalise(source.substring(with: wordRange)),
+            sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)
+        }
+      }
+      return [DocumentToken(text: value, normalised: normalise(value),
+        sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)]
     }
+    guard language == .french || language == .italian else { return tokens }
+    // Dictation may separate an elided prefix. Keep written apostrophes and word indices intact.
+    let prefixes: Set<String> = language == .french ? ["c", "d", "j", "l", "m", "n", "qu", "s", "t"] : ["l", "d"]
+    var result: [DocumentToken] = []
+    var index = 0
+    while index < tokens.count {
+      let token = tokens[index]
+      if prefixes.contains(token.normalised), index + 1 < tokens.count {
+        let next = tokens[index + 1]
+        let end = token.sourceRange.location + token.sourceRange.length
+        let gap = NSRange(location: end - base, length: max(0, next.sourceRange.location - end))
+        if gap.length > 0, (text as NSString).substring(with: gap).allSatisfy(\.isWhitespace) {
+          let range = UTF16SourceRange(location: token.sourceRange.location,
+            length: next.sourceRange.location + next.sourceRange.length - token.sourceRange.location)
+          result.append(DocumentToken(text: (text as NSString).substring(with: NSRange(location: range.location - base, length: range.length)),
+            normalised: token.normalised + "'" + next.normalised, sourceRange: range, blockID: blockID))
+          index += 2
+          continue
+        }
+      }
+      result.append(token)
+      index += 1
+    }
+    return result
   }
   private static func excludedRanges(in text: String, base: Int) -> (
     ranges: [NSRange], cues: [(text: String, range: UTF16SourceRange)]

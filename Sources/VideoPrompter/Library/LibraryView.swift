@@ -492,7 +492,7 @@ private struct EditorView: View {
         VStack(alignment: .leading, spacing: Space.xs) {
           LibraryTitleField(title: $title)
           HStack(alignment: .firstTextBaseline, spacing: Space.sm) {
-            Text("\(saver.message) · \(PrompterDocument(markdown: text).spokenTokens.count) words")
+            Text("\(saver.message) · \(PrompterDocument(markdown: text, language: ScriptLanguage.resolve(store.settings.speechLanguage, text: text)).spokenTokens.count) words")
               .font(UIType.secondary).foregroundStyle(LibraryAppearance.color(.labelColor, scheme: colorScheme).opacity(0.75))
               .fixedSize(horizontal: false, vertical: true)
             if saver.failed { Button("Retry Save") { scheduleSave() } }

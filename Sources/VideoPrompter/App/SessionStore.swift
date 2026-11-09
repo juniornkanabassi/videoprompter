@@ -6,7 +6,6 @@ import Combine
 import Foundation
 import PrompterCore
 import Speech
-import NaturalLanguage
 
 @MainActor
 final class SessionStore: ObservableObject {
@@ -18,7 +17,10 @@ final class SessionStore: ObservableObject {
   @Published private(set) var activeRecord: ScriptRecord?
   @Published private(set) var document = PrompterDocument(markdown: "") {
     // `spokenTokens` flattens the whole script; the positions read this on every display frame.
-    didSet { lastToken = Double(max(0, document.spokenTokens.count - 1)) }
+    didSet {
+      lastToken = Double(max(0, document.spokenTokens.count - 1))
+      scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: document.markdown)
+    }
   }
   private var lastToken = 0.0
   @Published private(set) var anchor: ReadingAnchor?
@@ -81,6 +83,12 @@ final class SessionStore: ObservableObject {
     if isManual { return "Scrolling" }
     if case .uncertain = state, hasLiveRecognition { return "Matching words" }
     return hasLiveRecognition ? "Following" : "Listening"
+  }
+  @Published private(set) var scriptLanguage: ScriptLanguage = .english
+  private func languageMatcher() -> PhraseMatcher {
+    var matcher = PhraseMatcher()
+    matcher.language = scriptLanguage
+    return matcher
   }
   var readingDetail: String? {
     if case .uncertain(let message) = state { return message }
@@ -194,9 +202,9 @@ final class SessionStore: ObservableObject {
       self.settings = settings
       activeRecord = record
       hasStartedReading = false
-      document = PrompterDocument(markdown: record.markdown)
+      document = PrompterDocument(markdown: record.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown))
       let saved = savedAnchors[record.metadata.id]
-      let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown) }
+      let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: $0.markdown)) }
       var remapped: Int?
       if let saved, let oldDocument, let anchor = saved.anchor,
         anchor.revision != record.metadata.revision
@@ -216,7 +224,7 @@ final class SessionStore: ObservableObject {
       anchor = ReadingAnchorRemapper.makeAnchor(
         scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
         globalTokenIndex: start, guideFraction: settings.guideFraction)
-      tracker = RecognitionTracker(generation: 0, tokenIndex: start)
+      tracker = RecognitionTracker(generation: 0, tokenIndex: start, matcher: languageMatcher())
       speechGeneration = nil
       minimumSpeechGeneration = 0
       pendingSpeechCandidate = nil
@@ -243,9 +251,23 @@ final class SessionStore: ObservableObject {
     if isManual, state == .running { syncManualFrontier(at: now) }
     let position = rawManualPosition(at: now)
     let modeSwitched = settings.mode != value.mode
+    let languageChanged = settings.speechLanguage != value.speechLanguage
     settings = value
-    if modeSwitched {
-      rebaseManual(to: Double(tokenIndex), at: now)
+    if languageChanged {
+      let old = document
+      document = PrompterDocument(markdown: old.markdown, previous: old, language: ScriptLanguage.resolve(settings.speechLanguage, text: old.markdown))
+      if let source = old.spokenTokens.indices.contains(tokenIndex) ? old.spokenTokens[tokenIndex].sourceRange.location : nil {
+        tokenIndex = document.spokenTokens.lastIndex { $0.sourceRange.location <= source } ?? 0
+      } else { tokenIndex = 0 }
+      if let record = activeRecord {
+        anchor = ReadingAnchorRemapper.makeAnchor(scriptID: record.id, revision: record.metadata.revision,
+          document: document, globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
+      }
+      tracker = RecognitionTracker(generation: tracker.generation, tokenIndex: tokenIndex, matcher: languageMatcher())
+    }
+    if modeSwitched || languageChanged {
+      let fraction = modeSwitched ? 0 : position - floor(position)
+      rebaseManual(to: Double(tokenIndex) + fraction, at: now)
     } else if speedChanged, isManual {
       manualBase = position
       manualStart = now
@@ -275,7 +297,7 @@ final class SessionStore: ObservableObject {
     let wasRunning = state == .running
     pause()
     let old = document
-    let new = PrompterDocument(markdown: record.markdown, previous: old)
+    let new = PrompterDocument(markdown: record.markdown, previous: old, language: ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown))
     if let anchor {
       let result = ReadingAnchorRemapper.remap(
         anchor, from: old, to: new, newRevision: record.metadata.revision)
@@ -291,6 +313,7 @@ final class SessionStore: ObservableObject {
         globalTokenIndex: 0, guideFraction: settings.guideFraction)
     }
     document = new
+    tracker = RecognitionTracker(generation: tracker.generation, tokenIndex: tokenIndex, matcher: languageMatcher())
     activeRecord = record
     rebaseManual(to: Double(tokenIndex))
     lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
@@ -568,7 +591,7 @@ final class SessionStore: ObservableObject {
     let tokens = document.spokenTokens
     if speechGeneration != candidate.generation {
       speechGeneration = candidate.generation
-      tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex)
+      tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex, matcher: languageMatcher())
     }
     let event = RecognitionEvent(
       replacementID: candidate.replacementID, generation: candidate.generation, text: candidate.text,
@@ -750,7 +773,7 @@ final class SessionStore: ObservableObject {
       }
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
-        self.state = .uncertain("Preparing speech recognition. The first time, this downloads Apple's speech files.")
+        self.state = .uncertain("Preparing \(self.scriptLanguage.rawValue) speech recognition. Missing speech files will download before listening.")
         let format = try await self.speechProvider.prepare(
           locales: try await self.speechLocales(),
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
@@ -810,29 +833,13 @@ final class SessionStore: ObservableObject {
   }
 
   private func speechLocales() async throws -> [Locale] {
-    if settings.speechLanguage == "Automatic" {
-      let language = NLLanguageRecognizer.dominantLanguage(for: document.markdown)
-      guard let language else { throw SpeechProvider.Error.unavailable }
-      // With the user's region first: asked for plain "en", the recogniser answers en_GB, en_AU,
-      // en_NZ or en_SG from one call to the next, while "en-GB" is always en_GB.
-      let regional = Locale.current.region.map { Locale(identifier: "\(language.rawValue)-\($0.identifier)") }
-      var supported: Locale?
-      if let regional { supported = await DictationTranscriber.supportedLocale(equivalentTo: regional) }
-      // Then the main variant, and only then whatever the recogniser offers for the bare language.
-      let main = ["en": "en-GB", "fr": "fr-FR", "es": "es-ES", "pt": "pt-PT", "de": "de-DE"][language.rawValue]
-      for fallback in [main, language.rawValue].compactMap({ $0 }) where supported == nil {
-        supported = await DictationTranscriber.supportedLocale(equivalentTo: Locale(identifier: fallback))
-      }
-      guard let supported else { throw SpeechProvider.Error.unavailable }
-      return [supported]
+    let supported = await DictationTranscriber.supportedLocales
+    guard let locale = scriptLanguage.preferredLocale(supported: supported) else {
+      throw SpeechProvider.Error.analysisFailed("\(scriptLanguage.rawValue) is unavailable on this Mac. Choose another Script language in Settings > Reading.")
     }
-    switch settings.speechLanguage {
-    case "English": return [Locale(identifier: "en-GB")]
-    case "French": return [Locale(identifier: "fr-FR")]
-    case "Mixed": return [Locale(identifier: "en-GB"), Locale(identifier: "fr-FR")]
-    default: return [Locale(identifier: settings.speechLanguage)]
-    }
+    return [locale]
   }
+
 }
 
 /// The microphone readout the Settings meters draw. It publishes only what changed, so a reset

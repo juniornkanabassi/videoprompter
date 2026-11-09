@@ -334,8 +334,8 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     // Builder A owns the other pages; this test covers Reading and General's shared writing controls.
     let expected: [(SettingsTab, [String])] = [
       (.general, ["Editor font", "Interface size", "Align presenter to screen edges"]),
-      (.reading, ["Mode", "Reading text size", "Mirror for teleprompter glass"]),
-      (.microphone, ["Microphone", "Spoken language", "Microphone volume", "Loudest sound"]),
+      (.reading, ["Mode", "Script language", "Reading text size", "Mirror for teleprompter glass"]),
+      (.microphone, ["Microphone", "Microphone volume", "Loudest sound"]),
       (.camera, ["Camera", "Camera and monitor"]),
       (.presets, ["Preset name", "Save reading preset", "Reading presets"])
     ]

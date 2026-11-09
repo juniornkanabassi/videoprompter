@@ -405,7 +405,7 @@ struct PresenterView: View {
     transportButton("Set up the shot", icon: "display") { session.pause(); shell.reading = false }
   }
   private var readingStatus: some View {
-    Text(store.settings.mode == "Voice" ? "Voice follow · \(session.isActivelyRunning ? "Listening" : "Paused")" : "Automatic scroll · \(Int(store.settings.speed)) wpm · \(session.isActivelyRunning ? "Running" : "Paused")")
+    Text(store.settings.mode == "Voice" ? "Voice follow · \(session.scriptLanguage.rawValue) · \(session.isActivelyRunning ? "Listening" : "Paused")" : "Automatic scroll · \(Int(store.settings.speed)) wpm · \(session.isActivelyRunning ? "Running" : "Paused")")
       .font(.system(size: 14)).foregroundStyle(.white.opacity(0.75))
   }
   private var keyboardHint: some View {

@@ -56,7 +56,7 @@ public enum InputValidation {
   public static let frameDimension = NumberRule(Double.leastNonzeroMagnitude...100, fallback: 1)
 
   public static func language(_ value: String) -> String {
-    if ["Automatic", "Mixed", "English", "French"].contains(value) { return value }
+    if (["Automatic", "Mixed"] + ScriptLanguage.allCases.map(\.rawValue)).contains(value) { return value }
     let parts = value.replacingOccurrences(of: "_", with: "-").split(separator: "-", omittingEmptySubsequences: false)
     let letters = { (byte: UInt8) in (65...90).contains(byte) || (97...122).contains(byte) }
     guard value.utf8.count <= 64, let first = parts.first, (2...8).contains(first.utf8.count),

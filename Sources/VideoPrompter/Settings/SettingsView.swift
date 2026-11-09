@@ -241,7 +241,6 @@ struct MicrophonePage: View {
   var startsMeter = true
   @State private var devices: [AudioInputDevice] = []
   @State private var deviceObserver: AudioInputDeviceObserver?
-  @State private var supportedSpeechLocales: [Locale] = []
   @State private var gainDraft: Double?
   @State private var advanced = false
   @ObservedObject var recorder = CameraRecorder.shared
@@ -252,7 +251,6 @@ struct MicrophonePage: View {
       if !compact { Text("Microphone").font(.system(size: 28, weight: .bold)).padding(.horizontal, AlphaStyle.panelInset).padding(.top, AlphaStyle.panelInset).padding(.bottom, Space.xxl) }
       Form { sections }.formStyle(.grouped).font(.system(size: 15)).controlSize(.large).buttonStyle(SettingsFormButtonStyle())
     }
-    .task { supportedSpeechLocales = await SpeechTranscriber.supportedLocales }
     .task(id: gainDraft) {
       guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
       commitGain()
@@ -305,14 +303,7 @@ struct MicrophonePage: View {
     }
     if !compact {
     Section("Listening") {
-      Picker("Spoken language", selection: $store.settings.speechLanguage) {
-        Text("Mixed English & French").tag("Mixed")
-        Text("Automatic (script language)").tag("Automatic")
-        Text("English").tag("English"); Text("French").tag("French")
-        ForEach(supportedSpeechLocales.filter { !["en-GB", "fr-FR"].contains($0.identifier) }, id: \.identifier) { locale in
-          Text(Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier).tag(locale.identifier)
-        }
-      }.help("Choose the language you will speak; Automatic uses the script language")
+      Text("Choose Script language in Settings > Reading.").font(.callout)
       Toggle("Follow me when I repeat earlier words", isOn: $store.settings.allowsBackwardVoiceTracking)
         .help("Allow the reading position to move back when you repeat a passage")
     }
