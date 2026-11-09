@@ -27,7 +27,7 @@ import XCTest
                        "Script commands must not collide with each other, Show Colors, Camera Only or interface zoom")
       }
     }
-    XCTAssertEqual(SettingsTab.allCases.map(\.rawValue), ["General", "Reading", "Reading presets", "Shoot setups", "Microphone", "Camera & Recording"])
+    XCTAssertEqual(SettingsTab.allCases.map(\.label), ["Reading", "Camera and monitor", "Microphone", "App"])
   }
 
   func testPresetDeletionSupportsRepeatedUndoAndRedoWithoutLosingOrder() async throws {

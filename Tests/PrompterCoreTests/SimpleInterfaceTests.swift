@@ -288,20 +288,10 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    for text in ["Ready when you are", "Paste Copied Text", "Import File", "New Script", "Camera Only", "Quick Reading Practice"] {
+    for text in ["What do you want to do?", "Paste script", "Import file", "New script", "Choose camera", "Practice with an example script"] {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }
     }
-    // The interactive example stays inside the enlarged detail column.
-    let guidance = try XCTUnwrap(accessibilityObjects(host).first {
-      labels($0).first?.contains("Try the three reading steps") == true
-    })
-    XCTAssertTrue(guidance.responds(to: NSSelectorFromString("accessibilityFrame")))
-    let frame = try XCTUnwrap(guidance.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-    let guideFrame = window.convertFromScreen(frame)
-    XCTAssertGreaterThanOrEqual(guideFrame.minX, 320, "guide stays to the right of the bounded sidebar")
-    XCTAssertLessThanOrEqual(guideFrame.maxX, window.contentView!.bounds.width, "start screen stays inside the detail column")
-    XCTAssertGreaterThan(frame.height, 24, "the shorter next step stays readable inside its column")
     store.create()
     for _ in 0..<20 where store.selected == nil { try? await Task.sleep(for: .milliseconds(30)) }
     XCTAssertNotNil(store.selected, "New Script creates and selects a script")

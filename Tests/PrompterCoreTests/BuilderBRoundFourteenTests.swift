@@ -79,10 +79,10 @@ import XCTest
     var guides = 0
     let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}, guide: { guides += 1 }))
     defer { LibraryAX.close(window) }
-    for label in ["Quick Reading Practice", "Try reading for 30 seconds.", "Getting Started Guide", (Features.recording ? "Read the full guide to writing, reading and recording." : "Read the full guide to writing, reading and camera monitoring.")] {
+    for label in ["Practice with an example script", "Help"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty)
     }
-    XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Getting Started Guide", in: host).first), "accessibilityPerformPress"))
+    XCTAssertTrue(LibraryAX.bool(try XCTUnwrap(LibraryAX.named("Help", in: host).first), "accessibilityPerformPress"))
     XCTAssertEqual(guides, 1)
     for _ in 0..<20 where store.selected?.metadata.title != WelcomeScript.title { try await Task.sleep(for: .milliseconds(50)) }
     XCTAssertEqual(store.selected?.metadata.title, WelcomeScript.title)

@@ -9,7 +9,8 @@ import CoreText
 
 enum SettingsTab: String, CaseIterable {
   case general = "General", reading = "Reading", presets = "Reading presets", shootSetups = "Shoot setups", microphone = "Microphone", camera = "Camera & Recording"
-  var label: String { self == .camera && !Features.recording ? "Camera" : rawValue }
+  static var allCases: [SettingsTab] { [.reading, .camera, .microphone, .general] }
+  var label: String { self == .camera ? "Camera and monitor" : self == .general ? "App" : rawValue }
   var symbol: String {
     switch self {
     case .general: "gearshape"
@@ -101,8 +102,18 @@ struct SettingsPage: View {
   var body: some View {
     // Voice owns its Form so its lifecycle hangs on the page, not on a lazily loaded section.
     Group {
-      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { ReadingSettingsPage(store: store) } else if tab == .camera { CameraRecordingPage(store: store, section: cameraSection) } else { form }
+      if tab == .microphone { MicrophonePage(store: store) } else if tab == .reading { readingPage } else if tab == .camera { CameraRecordingPage(store: store, section: cameraSection) } else { form }
     }.foregroundStyle(LibraryAppearance.color(.labelColor, scheme: scheme))
+  }
+
+  @State private var readingSection = "Reading"
+  private var readingPage: some View {
+    VStack {
+      Picker("Reading section", selection: $readingSection) { Text("Reading").tag("Reading"); Text("Reading presets").tag("Reading presets") }
+        .pickerStyle(.segmented).padding(Space.md)
+      if readingSection == "Reading" { ReadingSettingsPage(store: store) }
+      else { SettingsPage(store: store, tab: .presets) }
+    }
   }
 
   private var form: some View {
@@ -342,7 +353,7 @@ struct MicrophoneVolumeControl: View {
         Button("Reset to 100%") { value = 1 }
           .accessibilityLabel("Reset microphone volume to 100 percent").disabled(value == 1)
       }
-      Text("Changes voice following and its test level only. Saved audio and speaker volume stay unchanged.")
+      Text(Features.recording ? "Changes voice following and its test level only. Saved audio and speaker volume stay unchanged." : "Changes voice following and its test level only. Speaker volume stays unchanged.")
         .font(.callout).fixedSize(horizontal: false, vertical: true)
     }
   }
@@ -568,11 +579,13 @@ struct CameraRecordingPage: View {
           .onChange(of: section) { _, value in proxy.scrollTo(value, anchor: .top) }
 
         Form {
+          // Package E: replace these existing controls with the shared Camera, Zebra and False colour adjust views.
           CameraSettingsSections(model: camera, zoom: store.uiZoom).id("Camera")
           RecordingSettingsSections(recorder: recorder, camera: camera, zoom: store.uiZoom).id("Recording")
           RecordingFolderSection(recorder: recorder)
-          CameraGuideSections(model: camera).id("Framing guides")
+          AlphaGuideSections(model: camera).id("Framing guides")
           CameraExposureSections(model: camera).id("Exposure")
+          ShootSetupSection(store: store, camera: camera, recorder: recorder)
           PermissionSection()
         }.formStyle(.grouped)
           .environment(\.popoverEntryRequested, false)

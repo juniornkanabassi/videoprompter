@@ -24,7 +24,7 @@ enum WelcomeScript {
 
     ## Make yourself comfortable
 
-    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. The Settings sidebar also has Reading presets.
+    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. Reading settings also include Reading presets.
 
     Click a word to read from there. The arrow keys move between passages. When paused, choose **Back to start** to try again. Open **Tools**, then **Edit this script**. Choose **Save changes** when finished, or **Cancel editing** to keep the original.
 
@@ -58,7 +58,7 @@ enum WelcomeScript {
 
     ## Make yourself comfortable
 
-    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. The Settings sidebar also has Reading presets.
+    Open **Tools** for **Smaller text** and **Larger text**. **More text settings…** opens Reading settings for fonts, spacing, colours and teleprompter mirroring. Changes apply to all scripts. Reading settings also include Reading presets.
 
     Click a word to read from there. The arrow keys move between passages when the script has focus. When paused, choose **Back to start** beside **Start reading** to try again without stopping a recording. Open **Tools**, then **Edit this script**. Choose **Save changes** when finished, or **Cancel editing** to keep the original.
 

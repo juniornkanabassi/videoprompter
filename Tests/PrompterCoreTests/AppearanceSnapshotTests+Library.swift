@@ -6,6 +6,22 @@ import XCTest
 @testable import VideoPrompter
 
 extension AppearanceSnapshotTests {
+  func testAlphaSettingsAndFirstLaunch() async throws {
+    let env = ProcessInfo.processInfo.environment
+    guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }
+    let destination = URL(fileURLWithPath: output)
+    try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: freshDefaults("AlphaD")))
+    let scheme: ColorScheme = env["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
+    let mode = scheme == .dark ? "dark" : "light"
+    try await snapshot(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}), name: "alpha-first-launch-\(mode)", size: .init(width: 1200, height: 800), scheme: scheme, destination: destination)
+    for tab in SettingsTab.allCases {
+      try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "alpha-settings-\(tab.label)-\(mode)", size: .init(width: 1000, height: 800), scheme: scheme, destination: destination)
+    }
+  }
+
   func testBuilderBLibraryDesign() async throws {
     let env = ProcessInfo.processInfo.environment
     guard let output = env["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Run checks/check-snapshots.sh") }

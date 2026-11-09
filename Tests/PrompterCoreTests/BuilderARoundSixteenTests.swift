@@ -92,7 +92,7 @@ import XCTest
     }
     let (window, host) = await LibraryAX.host(CameraRecordingPage(store: store, camera: camera, recorder: recorder, startsCamera: false), size: .init(width: 700, height: 800))
     defer { LibraryAX.close(window) }
-    for label in Features.recording ? ["Camera", "Recording", "Framing guides", "Exposure"] : ["Camera", "Framing guides", "Exposure"] {
+    for label in Features.recording ? ["Camera", "Recording", "Guides", "Exposure"] : ["Camera", "Guides", "Exposure"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
     XCTAssertTrue(LibraryAX.named("Camera & Recording section", in: host).isEmpty)

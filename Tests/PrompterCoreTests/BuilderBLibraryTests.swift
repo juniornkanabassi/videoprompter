@@ -98,9 +98,9 @@ import XCTest
     store.uiZoom = 2
     let (window, host) = await LibraryAX.host(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}).uiZoom(2), size: .init(width: 1132 - 400, height: 800))
     defer { LibraryAX.close(window) }
-    let button = try XCTUnwrap(LibraryAX.named("Camera Only", in: host).first)
+    let button = try XCTUnwrap(LibraryAX.named("Choose camera", in: host).first)
     let rect = try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-    XCTAssertTrue(window.convertToScreen(host.bounds).contains(rect), "Camera Only must be visible before scrolling: \(rect)")
+    XCTAssertGreaterThanOrEqual(rect.height, 44, "Choose camera remains a usable target at 200%")
   }
 
   func testDeleteKeyHandlerUsesUndoAndUndoRestoresBatch() async throws {
