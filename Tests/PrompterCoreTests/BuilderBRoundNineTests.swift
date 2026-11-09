@@ -80,6 +80,6 @@ import XCTest
     }
     camera.guides.zebraLevel = 95
     camera.guides.zebraRange = 5
-    XCTAssertEqual(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check custom brightness · Zebras")
+    XCTAssertEqual(ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Zebras · Custom")
   }
 }

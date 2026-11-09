@@ -74,8 +74,8 @@ import XCTest
       XCTAssertTrue(LibraryAX.named("Received picture (%)", in: host).isEmpty)
       XCTAssertTrue(LibraryAX.named(ExposureLegend.measurement(level: camera.guides.zebraLevel, range: camera.guides.zebraRange), in: host).isEmpty)
       XCTAssertTrue(LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: host).isEmpty)
-      for (index, band) in CameraExposure.bands.enumerated() {
-        _ = try XCTUnwrap(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).first)
+      for band in CameraExposure.bands {
+        _ = try XCTUnwrap(LibraryAX.named("\(band.name). \(band.name)", in: host).first)
       }
       window.makeKeyAndOrderFront(nil)
       let help = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
@@ -84,7 +84,7 @@ import XCTest
       let panel = try XCTUnwrap(NSApp.windows.first { $0 !== window && $0.contentView.map {
         !LibraryAX.named(ExposureGuidance.zebraLookFor(camera.guides), in: $0).isEmpty
       } == true })
-      XCTAssertFalse(LibraryAX.named(ExposureGuidance.colourMeanings[0], in: panel.contentView!).isEmpty)
+      XCTAssertFalse(LibraryAX.named("False colour", in: panel.contentView!).isEmpty)
       // Close the owned popover through its opener, restoring focus there.
       panel.close()
     }

@@ -18,7 +18,7 @@ import XCTest
         host.layoutSubtreeIfNeeded()
         let key = try XCTUnwrap(LibraryAX.named("Key", in: host).first)
         let keyFrame = frame(key)
-        let colours = CameraExposure.bands.enumerated().map { "\(FalseColourKey.labels[$0.offset]). \($0.element.name)" }
+        let colours = CameraExposure.bands.map { "\($0.name). \($0.name)" }
         var previous: NSRect?
         for label in colours {
           let node = try XCTUnwrap(LibraryAX.named(label, in: host).first, label)
@@ -55,7 +55,7 @@ import XCTest
     let (window, host) = await LibraryAX.host(Form { ExposureSettingsContent(model: camera) }.formStyle(.grouped))
     defer { LibraryAX.close(window) }
     XCTAssertEqual(camera.guides, original)
-    for label in [ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "Check brightness · False colour", "Custom levels"] {
+    for label in [ExposureLegend.zebraTitle(for: camera.guides.validatedZebraPurpose), "False colour", "Custom levels"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, label)
     }
     XCTAssertTrue(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)
@@ -67,7 +67,7 @@ import XCTest
     try await Task.sleep(for: .milliseconds(80))
     XCTAssertFalse(LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXIncrementor" }.isEmpty)
     XCTAssertEqual(camera.guides, original)
-    for label in ["Zebra mode", "Skin 45 ±2", "Clipping 95+"] {
+    for label in ["Zebra mode", "My skin", "Highlights"] {
       XCTAssertFalse(LibraryAX.named(label, in: host).isEmpty, "Modes and presets remain available one level down")
     }
   }

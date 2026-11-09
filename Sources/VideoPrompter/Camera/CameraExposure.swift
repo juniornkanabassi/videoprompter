@@ -17,9 +17,11 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var zebraLevel = 95
     var zebraRange = 0
     var falseColour = false
+    var skinLevel = 45
+    var skinRange = 2
     var isOn: Bool { zebras || falseColour }
     var skinCodes: ClosedRange<UInt8>? {
-      zebraRange > 0 ? CameraExposure.zebraCodes(level: zebraLevel, range: zebraRange) : nil
+      CameraExposure.zebraCodes(level: skinLevel, range: skinRange)
     }
     var colourTable: [UInt32] { CameraExposure.falseColourTable(skin: skinCodes) }
     var zebraRangeLabel: String {
@@ -33,7 +35,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
     var legendBands: [LegendBand] {
       let table = colourTable
-      let labels = ["Crushed", "Very dark", "Mid grey", "Skin", "Near white", "Clipped"]
+      let labels = CameraExposure.bands.map(\.name)
       return CameraExposure.bands.enumerated().compactMap { index, band in
         let (r, g, b) = band.rgb
         let colour = UInt32(r) | UInt32(g) << 8 | UInt32(b) << 16 | 0xFF00_0000
@@ -41,7 +43,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         guard !codes.isEmpty else { return nil }
         let range: String
         if index == 3, skinCodes != nil {
-          range = zebraRangeLabel
+          range = "\(max(0, skinLevel - skinRange)) to \(min(100, skinLevel + skinRange))"
         } else if skinCodes.map({ CameraExposure.codesForBand(band.range).overlaps($0) }) == true {
           // A skin band can split a colour in two. Do not label the missing middle as coloured.
           var runs: [ClosedRange<Int>] = []
@@ -104,18 +106,17 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
   /// ARRI's false colour bands, in percent of full scale; everything else shows as grey.
   static let bands: [(range: ClosedRange<Double>, name: String, rgb: (UInt8, UInt8, UInt8))] = [
-    (0...2.5, "Purple: 0–2.5% brightness", (128, 0, 160)),
-    (2.5...4, "Blue: 2.5–4% brightness", (0, 80, 255)),
-    (38...42, "Green: 38–42% brightness", (0, 200, 0)),
-    (52...56, "Pink: 52–56% brightness", (255, 120, 190)),
-    (97...99, "Yellow: 97–99% brightness", (255, 230, 0)),
-    (99...100, "Red: 99–100% brightness", (230, 0, 0)),
+    (0...2.5, "Near black", (128, 0, 160)),
+    (2.5...4, "Very dark", (0, 80, 255)),
+    (38...42, "Mid grey", (0, 200, 0)),
+    (43...47, "My skin", (255, 120, 190)),
+    (97...99, "Near white", (255, 230, 0)),
+    (99...100, "Signal white", (230, 0, 0)),
   ]
 
   /// Luma byte to an RGBA pixel as laid out in memory (R first), for every possible byte.
-  static let falseColourTable = falseColourTable(skin: nil)
-  /// With a zebra band set (± range), the pink band moves from ARRI's 52–56% onto those codes,
-  /// so false colour and zebras agree on where skin should sit.
+  static let falseColourTable = falseColourTable(skin: zebraCodes(level: 45, range: 2))
+  /// Pink follows the independent skin reference, regardless of zebra settings.
   static func falseColourTable(skin: ClosedRange<UInt8>?) -> [UInt32] {
     let pink = bands[3]
     return (0...255).map { value in
@@ -250,6 +251,6 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 /// Here rather than in CameraGuides.swift, which the iPad app compiles without this file.
 extension CameraGuides {
   var exposure: CameraExposure.Settings {
-    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour)
+    CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour, skinLevel: skinReference.level, skinRange: skinReference.range)
   }
 }

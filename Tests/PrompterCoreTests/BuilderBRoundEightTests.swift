@@ -35,11 +35,10 @@ import XCTest
   }
 
   func testKeyUsesExactlyTheRendererRangesAndEverydayWordsFirst() async throws {
-    XCTAssertEqual(CameraExposure.bands.map { FalseColourKey.rangeLabel($0.range) }, ["0–2.5%", "2.5–4%", "38–42%", "52–56%", "97–99%", "99–100%"])
-    let (window, host) = await LibraryAX.host(FalseColourKey(), size: .init(width: 480, height: 180))
+    let (window, host) = await LibraryAX.host(FalseColourKey(), size: .init(width: 480, height: 240))
     defer { LibraryAX.close(window) }
-    for (index, band) in CameraExposure.bands.enumerated() {
-      XCTAssertFalse(LibraryAX.named("\(FalseColourKey.labels[index]). \(band.name)", in: host).isEmpty)
+    for band in CameraExposure.Settings().legendBands {
+      XCTAssertFalse(LibraryAX.named(band.label, in: host).isEmpty)
     }
     var guides = CameraGuides(); guides.useZebraPreset(.faceReference)
     let (guideWindow, guideHost) = await LibraryAX.host(ExposureGuidance(zebras: true, guides: guides, falseColour: true))

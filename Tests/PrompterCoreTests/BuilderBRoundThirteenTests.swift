@@ -19,7 +19,7 @@ import XCTest
       try await Task.sleep(for: .milliseconds(100))
       let bounds = host.convert(host.bounds, to: nil)
       let screenBounds = window.convertToScreen(bounds)
-      let labels = CameraExposure.bands.enumerated().map { "\(FalseColourKey.labels[$0.offset]). \($0.element.name)" }
+      let labels = CameraExposure.bands.map { "\($0.name). \($0.name)" }
       for label in labels {
         let element = try XCTUnwrap(LibraryAX.named(label, in: host).first, label)
         let frame = try XCTUnwrap(element.value(forKey: "accessibilityFrame") as? NSValue).rectValue

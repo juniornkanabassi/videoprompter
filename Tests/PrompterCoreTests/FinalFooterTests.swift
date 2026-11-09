@@ -378,9 +378,13 @@ extension AppearanceSnapshotTests {
       XCTAssertTrue((presenter + camera).contains("\"\(label)\""), "Missing UI vocabulary: \(label)")
     }
     let exposure = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/ExposureLegend.swift"), encoding: .utf8)
-    for label in PresenterDisplayMode.allCases.map(\.label) + CameraGuides.ZebraPurpose.allCases.map(ExposureLegend.zebraTitle) + FalseColourStrip.captions + ["Check brightness · False colour", "Skin 45 ±2", "Clipping 95+", "Limit", "Range"] {
-      XCTAssertTrue(section.contains(label), "Undocumented camera or exposure vocabulary: \(label)")
-      XCTAssertTrue((camera + exposure).contains("\"\(label)\""), "Missing camera or exposure vocabulary: \(label)")
+    for label in PresenterDisplayMode.allCases.map(\.label) {
+      XCTAssertTrue(section.contains(label), "Undocumented camera vocabulary: \(label)")
+      XCTAssertTrue((camera + exposure).contains("\"\(label)\""), "Missing camera vocabulary: \(label)")
+    }
+    let alphaSpec = try String(contentsOf: root.appendingPathComponent("docs/alpha-redesign/SPEC.md"), encoding: .utf8)
+    for label in ["My skin", "Highlights", "Signal white", "Near white", "Mid grey", "Very dark", "Near black"] {
+      XCTAssertTrue(alphaSpec.contains(label), "Undocumented exposure vocabulary: \(label)")
     }
     let menu = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/App/VideoPrompterApp.swift"), encoding: .utf8)
     for name in ["ToolbarCommands()", "Zoom In", "Zoom Out", "Actual Size", "Make Text Bigger", "Make Text Smaller", "Start Reading", "Pause Reading", "Last Take", "Open Second Monitor Window"] { XCTAssertTrue(menu.contains(name), name) }

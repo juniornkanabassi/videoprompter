@@ -81,16 +81,15 @@ final class ExposureOrientationRegressionTests: XCTestCase {
   func testLegendUsesTheActiveSkinTableAndRange() throws {
     var settings = CameraExposure.Settings(zebras: true, zebraLevel: 45, zebraRange: 2, falseColour: true)
     XCTAssertEqual(settings.zebraRangeLabel, "43 to 47")
-    let skin = try XCTUnwrap(settings.legendBands.first { $0.label == "Skin" })
+    let skin = try XCTUnwrap(settings.legendBands.first { $0.label == "My skin" })
     XCTAssertEqual(skin.range, "43 to 47")
     XCTAssertEqual(skin.colour, settings.colourTable[Int(CameraExposure.code(ire: 45))])
     XCTAssertNotEqual(skin.colour, settings.colourTable[Int(CameraExposure.code(ire: 54))])
     for band in settings.legendBands { XCTAssertTrue(settings.colourTable.contains(band.colour)) }
     settings.zebraLevel = 95; settings.zebraRange = 0
     XCTAssertEqual(settings.zebraRangeLabel, "95+")
-    XCTAssertNil(settings.legendBands.first { $0.label == "Skin" })
-    XCTAssertEqual(settings.legendBands.first { $0.label == "Brighter mid-tones" }?.range, "52 to 56")
-    settings.zebraLevel = 40; settings.zebraRange = 1
+    XCTAssertEqual(settings.legendBands.first { $0.label == "My skin" }?.range, "43 to 47")
+    settings.skinLevel = 40; settings.skinRange = 1
     XCTAssertTrue(try XCTUnwrap(settings.legendBands.first { $0.label == "Mid grey" }).range.contains(", "),
                   "A skin range splitting mid grey must not label the missing middle as green")
   }
@@ -103,15 +102,15 @@ final class ExposureOrientationRegressionTests: XCTestCase {
     guides.zebraRange = 7
     guides.zebraRangeMode = false
     XCTAssertEqual(guides.zebraRange, 0)
-    XCTAssertEqual(guides.zebraLevel, 45)
-    XCTAssertEqual(guides.exposure.zebraReadout, "Stripes on 45 IRE and above")
+    XCTAssertEqual(guides.zebraLevel, 95)
+    XCTAssertEqual(guides.exposure.zebraReadout, "Stripes on 95 IRE and above")
     guides.zebraRangeMode = true
-    XCTAssertEqual(guides.zebraRange, 2)
+    XCTAssertEqual(guides.zebraRange, 7)
     guides.useZebraPreset(.brightAreas)
     XCTAssertEqual(guides.exposure.zebraReadout, "Stripes on 95 IRE and above")
     XCTAssertEqual(guides.exposure.zebraLegend, "Zebras: Limit 95 IRE and above")
     guides.zebraRangeMode = true
-    XCTAssertEqual(guides.exposure.zebraLegend, "Zebras: Range 93 to 97 IRE")
+    XCTAssertEqual(guides.exposure.zebraLegend, "Zebras: Range 38 to 52 IRE")
     guides.zebraLevel = 0; guides.zebraRange = 10
     XCTAssertEqual(guides.exposure.zebraReadout, "Stripes on 0 to 10 IRE")
     guides.zebraLevel = 100
@@ -141,16 +140,16 @@ final class ExposureOrientationRegressionTests: XCTestCase {
     _ = LibraryAX.bool(limit, "accessibilityPerformPress")
     try await settle()
     XCTAssertEqual(camera.guides.zebraRange, 0)
-    XCTAssertFalse(LibraryAX.named("Stripes on 45 IRE and above", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Stripes on 95 IRE and above", in: host).isEmpty)
     let range = try XCTUnwrap(LibraryAX.named("Range", in: host).first)
     _ = LibraryAX.bool(range, "accessibilityPerformPress")
     try await settle()
     XCTAssertEqual(camera.guides.zebraRange, 2)
-    let clipping = try XCTUnwrap(LibraryAX.named("Clipping 95+", in: host).first)
+    let clipping = try XCTUnwrap(LibraryAX.named("Highlights", in: host).first)
     XCTAssertTrue(LibraryAX.bool(clipping, "accessibilityPerformPress"))
     try await settle()
     XCTAssertFalse(LibraryAX.named("Stripes on 95 IRE and above", in: host).isEmpty)
-    let skin = try XCTUnwrap(LibraryAX.named("Skin 45 ±2", in: host).first)
+    let skin = try XCTUnwrap(LibraryAX.named("My skin", in: host).first)
     XCTAssertTrue(LibraryAX.bool(skin, "accessibilityPerformPress"))
     try await settle()
     XCTAssertEqual(camera.guides.zebraLevel, 45)
