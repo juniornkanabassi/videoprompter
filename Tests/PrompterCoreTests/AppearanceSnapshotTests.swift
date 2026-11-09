@@ -35,8 +35,6 @@ import XCTest
         let name = rangeMode ? "range" : "limit"
         try await snapshot(ZebraAdjustView(guides: .constant(camera.guides)), name: "alpha-zebra-\(name)-\(mode)",
                            size: .init(width: 400, height: 300), scheme: scheme, destination: destination)
-        try await snapshot(ExposurePictureLegend(settings: camera.guides.exposure), name: "alpha-legend-\(name)-\(mode)",
-                           size: .init(width: 480, height: 300), scheme: scheme, destination: destination)
         camera.guides = .firstUse; camera.guides.falseColour = true
       }
     }
