@@ -586,8 +586,8 @@ struct CameraRecordingPage: View {
         row("Camera", "Used for the monitor picture", camera.sourceInfo?.displayName ?? "No camera chosen", .camera)
         row("Shot", "Landscape, vertical turned left or vertical turned right", camera.shotSummary, .shot)
         row("My skin reference", "Pink in false colour and the My skin zebra preset", "\(camera.guides.skinReference.level) ±\(camera.guides.skinReference.range) IRE", .skin)
-        row("Zebras", "Range or limit, with your presets", !camera.guides.zebras ? "Off" : camera.exposureBypassed ? "Hidden" : camera.guides.zebraRangeMode ? "On · Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "On · Limit \(camera.guides.zebraLevel)", .zebras)
-        row("False colour", "Brightness bands, with your skin in pink", camera.guides.falseColour ? (camera.exposureBypassed ? "Hidden" : "On") : "Off", .falseColour)
+        row("Zebras", "Range or limit, with your presets", !camera.effectiveZebras ? "Off" : camera.guides.zebraRangeMode ? "On · Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "On · Limit \(camera.guides.zebraLevel)", .zebras)
+        row("False colour", "Brightness bands, with your skin in pink", camera.effectiveFalseColour ? "On" : "Off", .falseColour)
         row("Guides", "Vertical 9:16, thirds, centre mark", guideSummary, .guides)
         row("Exposure key", "Shown while setting up", exposureKey ? "On" : "Off", .key)
         row("Advanced", "Other camera and guide choices", "", .advanced)
@@ -653,9 +653,9 @@ struct CameraSettingsDetailSheet: View {
         VStack(alignment: .leading, spacing: Space.md) {
           switch item {
           case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [])
-          case .skin: SkinTonePicker(guides: $camera.guides)
-          case .zebras: ZebraAdjustView(guides: $camera.guides)
-          case .falseColour: FalseColourAdjustView(guides: $camera.guides)
+          case .skin: SkinTonePicker(model: camera)
+          case .zebras: ZebraAdjustView(model: camera)
+          case .falseColour: FalseColourAdjustView(model: camera)
           case .guides: AlphaGuideSections(model: camera)
           case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch).frame(minHeight: 44)
           case .advanced:

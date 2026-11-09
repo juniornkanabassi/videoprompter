@@ -301,7 +301,7 @@ struct PresenterHelp: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.md) {
-        Text("Presenter help").font(.title2)
+        Text("Help").font(.title2)
         Text(Features.recording ? "Start reading moves the script. Record saves the camera and microphone. Each starts and stops separately." : "Start reading moves the script. Use the camera as a reference monitor while you read.")
         Text(Features.recording ? "Back to start returns to the first word without stopping a recording." : "Back to start returns to the first word.")
         Text("The Picture row switches Zebras, False colour, Guides, Mic level and Clean on and off, and Camera opens the camera list. Switching an aid off preserves your choices.")

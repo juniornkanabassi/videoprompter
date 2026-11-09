@@ -395,7 +395,7 @@ import XCTest
     }
   }
 
-  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero) async throws {
+  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero, scrollToBottom: Bool = false) async throws {
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     // Match PresenterController: the host must not grow the window to its intrinsic minimum.
@@ -411,6 +411,18 @@ import XCTest
       try await Task.sleep(for: .milliseconds(30))
     }
     try await Task.sleep(for: settleDelay)
+    if scrollToBottom {
+      func scrollViews(_ view: NSView) -> [NSScrollView] {
+        (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
+      }
+      let scroll = try XCTUnwrap(scrollViews(host).max { $0.bounds.width * $0.bounds.height < $1.bounds.width * $1.bounds.height })
+      let document = try XCTUnwrap(scroll.documentView)
+      let bottom = document.isFlipped ? max(0, document.bounds.height - scroll.contentView.bounds.height) : 0
+      scroll.contentView.scroll(to: NSPoint(x: 0, y: bottom))
+      scroll.reflectScrolledClipView(scroll.contentView)
+      host.layoutSubtreeIfNeeded()
+      try await Task.sleep(for: .milliseconds(120))
+    }
     if name.hasPrefix("library-100-scripts-200-") {
       func outlines(_ view: NSView) -> [NSOutlineView] {
         (view as? NSOutlineView).map { [$0] } ?? view.subviews.flatMap(outlines)

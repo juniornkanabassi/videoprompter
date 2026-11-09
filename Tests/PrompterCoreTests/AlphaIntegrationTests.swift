@@ -53,6 +53,24 @@ import XCTest
     assertRestored(model)
     XCTAssertFalse(model.guides.falseColour)
   }
+  func testSettingsDetailsRestoreBypassedExposure() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("SettingsEffectiveExposure")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    for (item, title) in [(CameraSettingsDetail.zebras, "Zebras"), (.falseColour, "False colour")] {
+      let model = CameraModel(defaults: freshDefaults("SettingsEffectiveAid"))
+      model.guides.zebras = true
+      model.guides.falseColour = true
+      model.exposureBypassed = true
+      let view = CameraSettingsDetailSheet(item: item, store: store, camera: model,
+        recorder: CameraRecorder(defaults: defaults), startsCamera: false, exposureKey: .constant(true), done: {},
+        containerSize: .init(width: 1000, height: 900))
+      try await press(title, in: view)
+      XCTAssertFalse(model.exposureBypassed)
+      XCTAssertTrue(item == .zebras ? model.effectiveZebras : model.effectiveFalseColour)
+    }
+  }
   func testLegacyZebraPresetEndsGreyCard() async throws {
     let model = camera()
     try await press("Highlights", in: ZebraSettings(guides: Binding(get: { model.guides }, set: { model.guides = $0 })))

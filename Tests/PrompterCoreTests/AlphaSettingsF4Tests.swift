@@ -17,13 +17,26 @@ extension AppearanceSnapshotTests {
       store.uiZoom = zoom
       for tab in SettingsTab.allCases {
         try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "f4-settings-\(tab.label)-\(Int(zoom * 100))-\(mode)", size: .init(width: 1600, height: 1200), scheme: scheme, destination: destination)
+        try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "r3-settings-\(tab.label)-\(Int(zoom * 100))-lower-\(mode)", size: .init(width: 1600, height: 1200), scheme: scheme, destination: destination, scrollToBottom: true)
       }
       for item in CameraSettingsDetail.allCases {
         try await snapshot(CameraSettingsDetailSheet(item: item, store: store, camera: camera,
           recorder: .shared, startsCamera: false, exposureKey: .constant(true), done: {}, containerSize: .init(width: 1000, height: 900)),
           name: "g4-detail-\(item.rawValue)-\(Int(zoom * 100))-\(mode)",
           size: .init(width: 1000, height: 900), scheme: scheme, destination: destination)
+        try await snapshot(CameraSettingsDetailSheet(item: item, store: store, camera: camera,
+          recorder: .shared, startsCamera: false, exposureKey: .constant(true), done: {}, containerSize: .init(width: 700, height: 700)),
+          name: "r3-detail-\(item.rawValue)-\(Int(zoom * 100))-top-\(mode)",
+          size: .init(width: 700, height: 700), scheme: scheme, destination: destination)
+        try await snapshot(CameraSettingsDetailSheet(item: item, store: store, camera: camera,
+          recorder: .shared, startsCamera: false, exposureKey: .constant(true), done: {}, containerSize: .init(width: 700, height: 700)),
+          name: "r3-detail-\(item.rawValue)-\(Int(zoom * 100))-lower-\(mode)",
+          size: .init(width: 700, height: 700), scheme: scheme, destination: destination, scrollToBottom: true)
       }
+      try await snapshot(ScrollView {
+        CameraAdjustView(model: camera, devicesOverride: [], initiallyAdvanced: true).padding(24)
+      }.uiZoom(zoom), name: "r3-shot-advanced-\(Int(zoom * 100))-\(mode)",
+        size: .init(width: 700, height: 700), scheme: scheme, destination: destination, scrollToBottom: true)
       try await snapshot(ScrollView { AlphaGuideSections(model: camera).padding(24) }.uiZoom(zoom), name: "f4-guides-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 1000), scheme: scheme, destination: destination)
     }
   }

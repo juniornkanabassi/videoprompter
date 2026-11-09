@@ -100,7 +100,7 @@ struct CameraAdjustView: View {
           Image(systemName: rotation == .quarter || rotation == .threeQuarters ? "rectangle.portrait" : "rectangle")
             .font(.title2)
           if rotation != .none {
-            Image(systemName: rotation == .quarter ? "arrow.turn.up.left" : "arrow.turn.up.right").font(.caption.bold()).offset(x: Space.sm, y: -Space.xs)
+            Image(systemName: rotation == .half ? "arrow.uturn.down" : rotation == .quarter ? "arrow.turn.up.left" : "arrow.turn.up.right").font(.caption.bold()).offset(x: Space.sm, y: -Space.xs)
           }
         }.frame(height: 32)
         Text(title).font(.headline)

@@ -433,10 +433,10 @@ struct ZebraAdjustView: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      HStack { Text("Zebras").font(.title2.bold()); Spacer(); Toggle("Zebras", isOn: model?.exposureBinding(\.zebras) ?? $guides.manualExposure(\.zebras)).labelsHidden().toggleStyle(.switch) }.frame(minHeight: AlphaStyle.minTarget)
+      HStack { Text("Zebras").font(.title2.bold()); Spacer(); Toggle("Zebras", isOn: model?.exposureBinding(\.zebras) ?? $guides.manualExposure(\.zebras)).labelsHidden().toggleStyle(.switch).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget) }.frame(minHeight: AlphaStyle.minTarget)
       Text("Stripes show where the picture is at a brightness you choose.").foregroundStyle(.secondary)
       if guides.greyCardCheck { Text("Grey card check on · Zebra target 41 ±2 IRE").font(.callout.bold()) }
-      HStack(spacing: 12) {
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 192), spacing: AlphaStyle.controlGap)], spacing: AlphaStyle.controlGap) {
         preset("My skin", detail: "Range · \(guides.skinReference.level) ±\(guides.skinReference.range) IRE", description: "Is my face exposed right?", purpose: .faceReference)
         preset("Highlights", detail: "Limit · 95 IRE and up", description: "Is anything too bright?", purpose: .brightAreas)
       }
@@ -514,7 +514,7 @@ struct ExposureNumberRow: View {
   }
   var body: some View {
     ViewThatFits(in: .horizontal) {
-      HStack { heading; Spacer(); controls }.fixedSize(horizontal: true, vertical: false)
+      HStack { heading; Spacer(); controls }.frame(minWidth: 420).fixedSize(horizontal: true, vertical: false)
       VStack(alignment: .leading, spacing: Space.sm) { heading; controls }
     }
   }
@@ -590,7 +590,7 @@ struct FalseColourAdjustView: View {
   }
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
-      HStack { Text("False colour").font(.title2.bold()); Spacer(); Toggle("False colour", isOn: model?.exposureBinding(\.falseColour) ?? $guides.manualExposure(\.falseColour)).labelsHidden().toggleStyle(.switch) }.frame(minHeight: AlphaStyle.minTarget)
+      HStack { Text("False colour").font(.title2.bold()); Spacer(); Toggle("False colour", isOn: model?.exposureBinding(\.falseColour) ?? $guides.manualExposure(\.falseColour)).labelsHidden().toggleStyle(.switch).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget) }.frame(minHeight: AlphaStyle.minTarget)
       SkinTonePicker(guides: $guides)
       HStack(alignment: .top, spacing: 12) {
         TonePicture(name: "greycard").frame(width: 80, height: 80).clipShape(RoundedRectangle(cornerRadius: 8))
@@ -599,14 +599,14 @@ struct FalseColourAdjustView: View {
           HStack { Text("Grey card check").font(.headline); Spacer(); Toggle("Grey card check", isOn: Binding(get: { guides.greyCardCheck }, set: { value in
             if let model { model.setGreyCardCheck(value) } else { guides.greyCardCheck = value }
             if !value { NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue]) }
-          })).labelsHidden().toggleStyle(.switch) }.frame(minHeight: AlphaStyle.minTarget)
+          })).labelsHidden().toggleStyle(.switch).frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget) }.frame(minHeight: AlphaStyle.minTarget)
           }
           if guides.greyCardCheck {
             Text("Grey card check on · Zebra target 41 ±2 IRE").font(.callout.bold())
             Button("Finish grey card check") {
               if let model { model.setGreyCardCheck(false) } else { guides.greyCardCheck = false }
               NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-            }
+            }.frame(minHeight: AlphaStyle.minTarget)
           }
           Text("Hold an 18% grey card where your face will be. Adjust exposure until the card turns green (Mid grey, 41 IRE). Turn this off to go back to your skin settings.").font(.callout).foregroundStyle(.secondary)
         }

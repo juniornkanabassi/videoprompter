@@ -401,8 +401,8 @@ struct PresenterView: View {
   }
   @ViewBuilder private var setupTiles: some View {
     shellTile("Camera", "video", tab: .camera, value: shotBadge) { shell.adjustTab = .camera }
-    shellTile("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.guides.zebras && !camera.exposureBypassed, value: zebraDetail) { toggleExposure(\.zebras) }
-    shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.guides.falseColour && !camera.exposureBypassed) { toggleExposure(\.falseColour) }
+    shellTile("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.effectiveZebras, value: zebraDetail) { toggleExposure(\.zebras) }
+    shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.effectiveFalseColour) { toggleExposure(\.falseColour) }
     if !barFit.movesTools {
       shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
       shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { showsMicLevel.toggle() }
@@ -412,7 +412,7 @@ struct PresenterView: View {
     shellTile("Clean", "rectangle", tab: .camera) { camera.cleanView = true }
   }
   private func toggleExposure(_ key: WritableKeyPath<CameraGuides, Bool>) {
-    let enabled = camera.guides[keyPath: key] && !camera.exposureBypassed
+    let enabled = camera.exposureBinding(key).wrappedValue
     camera.exposureBinding(key).wrappedValue = !enabled
   }
 

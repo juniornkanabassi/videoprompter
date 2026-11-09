@@ -42,8 +42,8 @@ struct AdjustPanel: View {
       Group {
         switch selection {
         case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
-        case .zebras: ZebraAdjustView(guides: camera.exposureControls, model: camera)
-        case .falseColour: FalseColourAdjustView(guides: camera.exposureControls, model: camera)
+        case .zebras: ZebraAdjustView(model: camera)
+        case .falseColour: FalseColourAdjustView(model: camera)
         case .guides: AlphaGuideSections(model: camera)
         case .mic: mic
         }
