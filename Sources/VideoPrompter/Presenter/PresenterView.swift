@@ -88,7 +88,7 @@ struct PresenterView: View {
             else {
               Button { showsExposureKey = true } label: {
                 Label("Exposure key", systemImage: "list.bullet.rectangle")
-                  .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44)
+                  .font(.system(size: 14, weight: .semibold)).frame(minHeight: 44 / controlZoom) // uiZoom scales it back to a 44 pt target
               }.buttonStyle(.plain).uiZoom(controlZoom)
             }
           }.fixedSize(horizontal: false, vertical: true).accessibilityElement(children: .contain).accessibilityIdentifier("presenter-exposure-legend")

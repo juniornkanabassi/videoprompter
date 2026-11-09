@@ -683,7 +683,7 @@ struct CameraSettingsDetailSheet: View {
             Text("Guide look").font(.system(size: 17, weight: .semibold))
             CameraGuideSections(model: camera, alphaStyle: true)
             Form { ShootSetupSection(store: store, camera: camera, recorder: recorder) }
-              .formStyle(.grouped).scrollDisabled(true).frame(minHeight: 260)
+              .formStyle(.grouped).scrollDisabled(true).contentMargins(.horizontal, 0, for: .scrollContent).frame(minHeight: 260)
           }
         }.frame(maxWidth: .infinity, alignment: .leading)
       }
