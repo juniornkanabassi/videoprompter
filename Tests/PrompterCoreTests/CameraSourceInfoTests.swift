@@ -20,6 +20,11 @@ final class CameraSourceInfoTests: XCTestCase {
       XCTAssertEqual(CameraSourceInfo.ConnectionKind.classify(deviceType: type, transportType: 0, manufacturer: "", modelID: "", name: name), expected, name)
     }
   }
+  func testFormatDescriptionRetainsFormatAndConnection() {
+    let info = CameraSourceInfo(displayName: "Studio", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)
+    XCTAssertEqual(info.formatDescription, "3840 × 2160 · 25p · HDMI capture")
+    XCTAssertEqual(CameraSourceInfo(displayName: "Camera", connection: .usbCamera).formatDescription, "USB camera")
+  }
   func testFrameRateFromTimestamps() {
     for fps in [25.0, 30000.0 / 1001, 50.0] {
       var rate = CameraFrameRate()

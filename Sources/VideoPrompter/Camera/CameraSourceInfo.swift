@@ -43,6 +43,16 @@ struct CameraSourceInfo: Equatable {
     hardwareName = device.localizedName
   }
 
+  var formatDescription: String {
+    var parts: [String] = []
+    if let width, let height { parts.append("\(width) × \(height)") }
+    if let rate = measuredFrameRate ?? nominalFrameRate, rate.isFinite, rate > 0 {
+      parts.append(String(format: abs(rate.rounded() - rate) < 0.01 ? "%.0fp" : "%.2fp", rate))
+    }
+    parts.append(connectionDescription)
+    return parts.joined(separator: " · ")
+  }
+
   var summary: String {
     var parts = [displayName, connection.rawValue]
     if let width, let height { parts.append("\(width) × \(height)") }
