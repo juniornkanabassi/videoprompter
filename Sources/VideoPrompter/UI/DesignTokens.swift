@@ -38,3 +38,17 @@ enum Palette {
     contrast == .increased ? 1 : 0.75
   }
 }
+
+/// The Alpha redesign's single look (mockups of 9 Nov 2026): one yellow accent for primary
+/// actions and every selection, black text on yellow, checkmarks for chosen state.
+enum AlphaStyle {
+  static let accent = Color(red: 1, green: 0.824, blue: 0.247)
+  static let onAccent = Color(red: 0.1, green: 0.08, blue: 0)
+  static let selectedFill = accent.opacity(0.10)
+  static let selectionStroke: CGFloat = 2
+  static let cardCorner: CGFloat = 16
+  static let panelInset = Space.xxl
+  static let sectionGap = Space.lg
+  static let controlGap = Space.md
+  static let minTarget: CGFloat = 44
+}
