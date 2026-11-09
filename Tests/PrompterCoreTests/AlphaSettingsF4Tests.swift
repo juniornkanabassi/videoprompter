@@ -18,6 +18,12 @@ extension AppearanceSnapshotTests {
       for tab in SettingsTab.allCases {
         try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "f4-settings-\(tab.label)-\(Int(zoom * 100))-\(mode)", size: .init(width: 1600, height: 1200), scheme: scheme, destination: destination)
       }
+      for item in CameraSettingsDetail.allCases {
+        try await snapshot(CameraSettingsDetailSheet(item: item, store: store, camera: camera,
+          recorder: .shared, startsCamera: false, exposureKey: .constant(true), done: {}, containerSize: .init(width: 1000, height: 900)),
+          name: "g4-detail-\(item.rawValue)-\(Int(zoom * 100))-\(mode)",
+          size: .init(width: 1000, height: 900), scheme: scheme, destination: destination)
+      }
       try await snapshot(ScrollView { AlphaGuideSections(model: camera).padding(24) }.uiZoom(zoom), name: "f4-guides-\(Int(zoom * 100))-\(mode)", size: .init(width: 1000, height: 1000), scheme: scheme, destination: destination)
     }
   }

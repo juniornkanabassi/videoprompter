@@ -24,7 +24,6 @@ enum SettingsTab: String, CaseIterable {
 }
 
 struct AppSettingsView: View {
-  @Environment(\.offscreenRendering) private var offscreenRendering
   @ObservedObject var store: AppStore
   @State private var selection: SettingsTab
   @SceneStorage("settingsTab") private var savedTab = SettingsTab.general.rawValue
@@ -55,18 +54,19 @@ struct AppSettingsView: View {
     GeometryReader { geometry in
       let sidebarWidth = min(250 * store.uiZoom, geometry.size.width * 0.34)
       HStack(alignment: .top, spacing: 0) {
-        List(selection: $selection) {
+        VStack(alignment: .leading, spacing: Space.xs) {
           ForEach(SettingsTab.allCases, id: \.self) { tab in
-            Group {
-              if offscreenRendering && selection == tab {
-                navigationLabel(tab, width: sidebarWidth / store.uiZoom).foregroundStyle(.white)
-              } else { navigationLabel(tab, width: sidebarWidth / store.uiZoom) }
-            }.tag(tab)
+            Button { selection = tab } label: {
+              navigationLabel(tab, width: sidebarWidth / store.uiZoom)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(selection == tab ? AlphaStyle.accent.opacity(0.18) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            }.buttonStyle(.plain).accessibilityLabel(tab.label).accessibilityAddTraits(selection == tab ? .isSelected : [])
           }
-        }.listStyle(.sidebar).uiZoom(store.uiZoom)
-          .frame(width: sidebarWidth)
-          .frame(maxHeight: .infinity)
-          .accessibilityLabel("Settings page")
+          Spacer()
+        }.padding(Space.sm).uiZoom(store.uiZoom)
+          .frame(width: sidebarWidth).frame(maxHeight: .infinity)
+          .accessibilityElement(children: .contain).accessibilityLabel("Settings page")
         SettingsPage(store: store, tab: selection).uiZoom(store.uiZoom)
           .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       }
@@ -109,14 +109,16 @@ struct SettingsPage: View {
   private var readingPage: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: Space.lg) {
+        Text("Reading").font(.system(size: 28, weight: .bold))
         ReadingSettingsPage(store: store).frame(minHeight: 700)
         SettingsPage(store: store, tab: .presets).frame(minHeight: 500)
-      }
+      }.padding(AlphaStyle.panelInset)
     }
   }
 
   private var form: some View {
     Form {
+      if tab == .general { Text("App").font(.system(size: 28, weight: .bold)) }
       switch tab {
       case .general:
         Section {
@@ -185,7 +187,7 @@ struct SettingsPage: View {
           }
         } header: { Text("Reading presets").foregroundStyle(.primary) } footer: { Text("Applies reading mode, speed, text appearance and presenter layout. Keeps your microphone and spoken language.").foregroundStyle(.primary) }
       }
-    }.formStyle(.grouped)
+    }.formStyle(.grouped).padding(.top, tab == .general ? -8 : 0)
       .alert("Rename reading preset", isPresented: Binding(get: { renamePreset != nil }, set: { if !$0 { renamePreset = nil } })) {
         TextField("Preset name", text: $renameValue).help("Enter a new name for this reading preset")
         Button("Save") { if let preset = renamePreset { store.renamePreset(preset.id, name: renameValue) }; renamePreset = nil }
@@ -240,7 +242,10 @@ struct MicrophonePage: View {
   private var session: SessionStore { store.session }
 
   var body: some View {
-    Form { sections }.formStyle(.grouped)
+    Form {
+      if !compact { Text("Microphone").font(.system(size: 28, weight: .bold)) }
+      sections
+    }.formStyle(.grouped)
     .task { supportedSpeechLocales = await SpeechTranscriber.supportedLocales }
     .task(id: gainDraft) {
       guard gainDraft != nil, (try? await Task.sleep(for: .milliseconds(300))) != nil else { return }
@@ -413,7 +418,10 @@ private struct MicrophoneTestRow: View {
 private struct LiveInputLevelMeter: View {
   @ObservedObject var meter: InputMeter
   var body: some View {
-    InputLevelMeter(peakDBFS: meter.peakDBFS, isClipping: meter.isClipping, showsScale: false)
+    VStack(alignment: .leading, spacing: Space.xs) {
+      InputLevelMeter(peakDBFS: meter.peakDBFS, isClipping: meter.isClipping, showsScale: true, zoneScale: true)
+      Text(meter.peakDBFS.isFinite ? String(format: "%.0f dBFS", meter.peakDBFS) : "No signal").monospacedDigit()
+    }
   }
 }
 
@@ -437,6 +445,7 @@ struct InputLevelMeter: View {
   let peakDBFS: Float
   let isClipping: Bool
   var showsScale = true
+  var zoneScale = false
   @State private var peakHold = PeakHold()
   static let ticks: [(Float, String)] = [(-60, "−60"), (-50, "−50"), (-40, "−40"), (-30, "−30"), (-18, "−18"), (-15, "−15"), (-12, "−12"), (-9, "−9"), (-6, "−6"), (-3, "−3"), (0, "0")]
   private static let labelFont = NSFont.monospacedDigitSystemFont(
@@ -480,7 +489,9 @@ struct InputLevelMeter: View {
 
   var body: some View {
     GeometryReader { geometry in
-      let positions = Self.ticks.map { Self.position($0.0) }
+      let ticks = zoneScale ? Self.ticks.filter { $0.0 == -18 || $0.0 == -6 } : Self.ticks
+      let widths = ticks.map { ($0.1 as NSString).size(withAttributes: [.font: Self.labelFont]).width }
+      let positions = ticks.map { Self.position($0.0) }
       ZStack(alignment: .topLeading) {
         ZStack(alignment: .leading) {
           Self.zoneTrack().opacity(0.2)
@@ -501,9 +512,9 @@ struct InputLevelMeter: View {
         }
         .frame(height: 12)
         if showsScale {
-        ForEach(Self.visibleLabels(positions: positions, widths: Self.labelWidths, availableWidth: geometry.size.width), id: \.self) { index in
-          let span = Self.labelSpan(position: positions[index], width: Self.labelWidths[index], availableWidth: geometry.size.width)
-          Text(Self.ticks[index].1)
+        ForEach(Self.visibleLabels(positions: positions, widths: widths, availableWidth: geometry.size.width), id: \.self) { index in
+          let span = Self.labelSpan(position: positions[index], width: widths[index], availableWidth: geometry.size.width)
+          Text(ticks[index].1)
             .font(Font(Self.labelFont as CTFont))
             .foregroundStyle(Self.scaleColour(scheme))
             .fixedSize()
@@ -575,8 +586,8 @@ struct CameraRecordingPage: View {
         row("Camera", "Used for the monitor picture", camera.sourceInfo?.displayName ?? "No camera chosen", .camera)
         row("Shot", "Landscape, vertical turned left or vertical turned right", camera.shotSummary, .shot)
         row("My skin reference", "Pink in false colour and the My skin zebra preset", "\(camera.guides.skinReference.level) ±\(camera.guides.skinReference.range) IRE", .skin)
-        row("Zebras", "Range or limit, with your presets", camera.guides.zebraRangeMode ? "Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "Limit \(camera.guides.zebraLevel)", .zebras)
-        row("False colour", "Brightness bands, with your skin in pink", camera.guides.falseColour ? "On" : "Off", .falseColour)
+        row("Zebras", "Range or limit, with your presets", !camera.guides.zebras ? "Off" : camera.exposureBypassed ? "Hidden" : camera.guides.zebraRangeMode ? "On · Range \(camera.guides.zebraLevel) ±\(camera.guides.zebraRange)" : "On · Limit \(camera.guides.zebraLevel)", .zebras)
+        row("False colour", "Brightness bands, with your skin in pink", camera.guides.falseColour ? (camera.exposureBypassed ? "Hidden" : "On") : "Off", .falseColour)
         row("Guides", "Vertical 9:16, thirds, centre mark", guideSummary, .guides)
         row("Exposure key", "Shown while setting up", exposureKey ? "On" : "Off", .key)
         row("Advanced", "Other camera and guide choices", "", .advanced)
@@ -584,28 +595,9 @@ struct CameraRecordingPage: View {
     }
     .tint(AlphaStyle.accent)
     .sheet(item: $detail) { item in
-      VStack(alignment: .leading, spacing: Space.lg) {
-        HStack { Text(item.rawValue).font(.title2.bold()); Spacer(); Button("Done") { detail = nil } }
-        ScrollView {
-          switch item {
-          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [])
-          case .skin: SkinTonePicker(guides: $camera.guides)
-          case .zebras: ZebraAdjustView(guides: $camera.guides)
-          case .falseColour: FalseColourAdjustView(guides: $camera.guides)
-          case .guides: AlphaGuideSections(model: camera)
-          case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch)
-          case .advanced:
-            VStack(alignment: .leading) {
-              Toggle("Mirror camera preview", isOn: $camera.mirrored).toggleStyle(.switch)
-              Button("Upside down") { camera.setRotation(.half) }
-              Button("Automatic") { camera.guides.automaticRotation = true }
-              CameraGuideSections(model: camera)
-              ShootSetupSection(store: store, camera: camera, recorder: recorder)
-              PermissionSection()
-            }
-          }
-        }
-      }.padding(AlphaStyle.panelInset).frame(minWidth: 480, minHeight: 500).tint(AlphaStyle.accent)
+      CameraSettingsDetailSheet(item: item, store: store, camera: camera, recorder: recorder,
+        startsCamera: startsCamera, exposureKey: $exposureKey) { detail = nil }
+
     }
   }
   private var guideSummary: String {
@@ -631,9 +623,64 @@ struct CameraRecordingPage: View {
       .overlay(alignment: .bottom) { Divider() }
   }
 }
-private enum CameraSettingsDetail: String, Identifiable {
+enum CameraSettingsDetail: String, CaseIterable, Identifiable {
   case camera = "Camera", shot = "Shot", skin = "My skin reference", zebras = "Zebras", falseColour = "False colour", guides = "Guides", key = "Exposure key", advanced = "Advanced"
   var id: String { rawValue }
+}
+
+
+struct CameraSettingsDetailSheet: View {
+  let item: CameraSettingsDetail
+  @ObservedObject var store: AppStore
+  @ObservedObject var camera: CameraModel
+  @ObservedObject var recorder: CameraRecorder
+  let startsCamera: Bool
+  @Binding var exposureKey: Bool
+  var done: () -> Void
+  var containerSize: CGSize? = nil
+  private var availableSize: CGSize {
+    let size = containerSize ?? NSApp.keyWindow?.contentView?.bounds.size ?? NSScreen.main?.visibleFrame.size ?? CGSize(width: 1280, height: 900)
+    return CGSize(width: max(1, min(700 * store.uiZoom, size.width)), height: max(1, min(700 * store.uiZoom, size.height)))
+  }
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.lg) {
+      HStack {
+        Text(item.rawValue).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
+        Spacer()
+        Button("Done", action: done).frame(minHeight: 44)
+      }
+      ScrollView {
+        VStack(alignment: .leading, spacing: Space.md) {
+          switch item {
+          case .camera, .shot: CameraAdjustView(model: camera, devicesOverride: startsCamera ? nil : [])
+          case .skin: SkinTonePicker(guides: $camera.guides)
+          case .zebras: ZebraAdjustView(guides: $camera.guides)
+          case .falseColour: FalseColourAdjustView(guides: $camera.guides)
+          case .guides: AlphaGuideSections(model: camera)
+          case .key: Toggle("Show exposure key", isOn: $exposureKey).toggleStyle(.switch).frame(minHeight: 44)
+          case .advanced:
+            Toggle("Mirror camera preview", isOn: $camera.mirrored).toggleStyle(.switch).frame(minHeight: 44)
+            Button("Upside down") { camera.setRotation(.half) }
+            Button("Automatic") { camera.guides.automaticRotation = true }
+            CameraGuideSections(model: camera)
+            ShootSetupSection(store: store, camera: camera, recorder: recorder)
+            PermissionSection()
+          }
+        }.frame(maxWidth: .infinity, alignment: .leading)
+      }
+    }.padding(AlphaStyle.panelInset)
+      .buttonStyle(SettingsDetailButtonStyle())
+      .uiZoom(store.uiZoom)
+      .frame(width: availableSize.width, height: availableSize.height)
+      .tint(AlphaStyle.accent)
+  }
+}
+
+private struct SettingsDetailButtonStyle: ButtonStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    configuration.label.frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+      .opacity(configuration.isPressed ? 0.7 : 1)
+  }
 }
 
 
