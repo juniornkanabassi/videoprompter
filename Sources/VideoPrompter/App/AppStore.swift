@@ -867,6 +867,7 @@ private enum PresenterSaveError: LocalizedError {
     compared.id = settings.id; compared.name = settings.name
     compared.audioDeviceUID = settings.audioDeviceUID
     compared.speechLanguage = settings.speechLanguage
+    compared.speechLocales = settings.speechLocales
     return compared == settings
   }
   func applyPreset(_ preset: PrompterSettings, undoManager: UndoManager? = nil) {
@@ -878,6 +879,7 @@ private enum PresenterSaveError: LocalizedError {
     applied.name = settings.name
     applied.audioDeviceUID = settings.audioDeviceUID
     applied.speechLanguage = settings.speechLanguage
+    applied.speechLocales = settings.speechLocales
     settings = applied
   }
   func deletePreset(_ id: UUID, undoManager: UndoManager? = nil) {

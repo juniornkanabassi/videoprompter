@@ -27,6 +27,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   /// French half of "Mixed" heard English speech as noise and once sent Voice 26 words ahead.
   /// Saved settings keep their choice; missing values use automatic detection.
   var speechLanguage = "Automatic"
+  var speechLocales: [String: String] = [:]
   var fontWeight = "Regular"
   var textColorHex = "#FFFFFF"
   var backgroundColorHex = "#000000"
@@ -74,12 +75,11 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     paragraphSpacing = InputValidation.paragraphSpacing.repair(paragraphSpacing)
     textWidth = Self.clampedTextWidth(textWidth)
     mode = Self.normalisedMode(mode)
-    speechLanguage = InputValidation.language(speechLanguage)
-    if speechLanguage == "Mixed" { speechLanguage = "Automatic" }
-    if speechLanguage != "Automatic", !ScriptLanguage.allCases.contains(where: { $0.rawValue == speechLanguage }) {
-      speechLanguage = ScriptLanguage.allCases.first {
-        $0.code == Locale(identifier: speechLanguage).language.languageCode?.identifier
-      }?.rawValue ?? "Automatic"
+    let rawLanguage = speechLanguage
+    speechLanguage = ScriptLanguage.setting(rawLanguage) ?? "Automatic"
+    if speechLanguage != "Automatic", rawLanguage != speechLanguage,
+      !ScriptLanguage.allCases.contains(where: { $0.rawValue.lowercased() == rawLanguage.lowercased() }) {
+      speechLocales[speechLanguage] = rawLanguage
     }
     if ![0, 180].contains(rotation) { rotation = 0 }
     if !["Regular", "Bold"].contains(fontWeight) { fontWeight = "Regular" }
@@ -106,6 +106,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     speed = c.preference(.speed, default: 120)
     inputGain = c.preference(.inputGain, default: 1)
     speechLanguage = c.preference(.speechLanguage, default: "Automatic")
+    speechLocales = c.preference(.speechLocales, default: [:])
     fontWeight = c.preference(.fontWeight, default: "Regular")
     audioDeviceUID = c.preference(.audioDeviceUID, default: Optional<String>.none)
     textColorHex = c.preference(.textColorHex, default: "#FFFFFF")

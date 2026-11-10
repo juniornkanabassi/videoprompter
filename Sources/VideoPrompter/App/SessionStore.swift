@@ -19,7 +19,6 @@ final class SessionStore: ObservableObject {
     // `spokenTokens` flattens the whole script; the positions read this on every display frame.
     didSet {
       lastToken = Double(max(0, document.spokenTokens.count - 1))
-      scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: document.markdown)
     }
   }
   private var lastToken = 0.0
@@ -146,6 +145,7 @@ final class SessionStore: ObservableObject {
   private struct SavedPosition: Codable {
     var anchor: ReadingAnchor?
     var index: Int
+    var sourceOffset: Int?
     var confirmed: Int?
     var markdown: String
   }
@@ -187,7 +187,7 @@ final class SessionStore: ObservableObject {
       anchor: anchor ?? ReadingAnchorRemapper.makeAnchor(
         scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
         globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction),
-      index: tokenIndex, confirmed: lastConfirmedTokenIndex, markdown: record.markdown)
+      index: tokenIndex, sourceOffset: activeToken?.sourceRange.location, confirmed: lastConfirmedTokenIndex, markdown: record.markdown)
     savePositions()
   }
 
@@ -202,16 +202,17 @@ final class SessionStore: ObservableObject {
       self.settings = settings
       activeRecord = record
       hasStartedReading = false
-      document = PrompterDocument(markdown: record.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown))
+      scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown)
+      document = PrompterDocument(markdown: record.markdown, language: scriptLanguage)
       let saved = savedAnchors[record.metadata.id]
       let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: $0.markdown)) }
-      var remapped: Int?
+      var remapped: Int? = saved?.sourceOffset.flatMap { offset in document.spokenTokens.lastIndex { $0.sourceRange.location <= offset } }
       if let saved, let oldDocument, let anchor = saved.anchor,
         anchor.revision != record.metadata.revision
       {
         let sourceAnchor = ReadingAnchorRemapper.makeAnchor(
           scriptID: anchor.scriptID, revision: anchor.revision, document: oldDocument,
-          globalTokenIndex: saved.index, guideFraction: anchor.guideFraction) ?? anchor
+          globalTokenIndex: saved.sourceOffset.flatMap { offset in oldDocument.spokenTokens.lastIndex { $0.sourceRange.location <= offset } } ?? saved.index, guideFraction: anchor.guideFraction) ?? anchor
         let result = ReadingAnchorRemapper.remap(sourceAnchor, from: oldDocument, to: document,
           newRevision: record.metadata.revision)
         remapped = result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) }
@@ -243,7 +244,7 @@ final class SessionStore: ObservableObject {
     if value.mode != "Voice" || settings.audioDeviceUID != value.audioDeviceUID {
       stopMicrophoneTest()
     }
-    let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || settings.speechLanguage != value.speechLanguage
+    let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || (settings.speechLanguage != value.speechLanguage || settings.speechLocales != value.speechLocales)
     if modeChanged { anchorNotice = nil; cancelCountdown() }
     let speedChanged = settings.speed != value.speed
     // Manual first catches up to now at the old speed, so a new speed continues from here.
@@ -255,10 +256,16 @@ final class SessionStore: ObservableObject {
     settings = value
     if languageChanged {
       let old = document
-      document = PrompterDocument(markdown: old.markdown, previous: old, language: ScriptLanguage.resolve(settings.speechLanguage, text: old.markdown))
+      scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: old.markdown)
+      document = PrompterDocument(markdown: old.markdown, previous: old, language: scriptLanguage)
       if let source = old.spokenTokens.indices.contains(tokenIndex) ? old.spokenTokens[tokenIndex].sourceRange.location : nil {
         tokenIndex = document.spokenTokens.lastIndex { $0.sourceRange.location <= source } ?? 0
       } else { tokenIndex = 0 }
+      lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { confirmed in
+        guard tokenIndex > 0, old.spokenTokens.indices.contains(confirmed) else { return nil }
+        let offset = old.spokenTokens[confirmed].sourceRange.location
+        return min(document.spokenTokens.lastIndex { $0.sourceRange.location <= offset } ?? 0, tokenIndex - 1)
+      }
       if let record = activeRecord {
         anchor = ReadingAnchorRemapper.makeAnchor(scriptID: record.id, revision: record.metadata.revision,
           document: document, globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
@@ -297,7 +304,8 @@ final class SessionStore: ObservableObject {
     let wasRunning = state == .running
     pause()
     let old = document
-    let new = PrompterDocument(markdown: record.markdown, previous: old, language: ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown))
+    scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: record.markdown)
+    let new = PrompterDocument(markdown: record.markdown, previous: old, language: scriptLanguage)
     if let anchor {
       let result = ReadingAnchorRemapper.remap(
         anchor, from: old, to: new, newRevision: record.metadata.revision)
@@ -834,7 +842,7 @@ final class SessionStore: ObservableObject {
 
   private func speechLocales() async throws -> [Locale] {
     let supported = await DictationTranscriber.supportedLocales
-    guard let locale = scriptLanguage.preferredLocale(supported: supported) else {
+    guard let locale = scriptLanguage.preferredLocale(supported: supported, explicit: settings.speechLocales[scriptLanguage.rawValue]) else {
       throw SpeechProvider.Error.analysisFailed("\(scriptLanguage.rawValue) is unavailable on this Mac. Choose another Script language in Settings > Reading.")
     }
     return [locale]

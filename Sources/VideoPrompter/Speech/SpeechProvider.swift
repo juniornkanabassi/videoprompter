@@ -16,11 +16,12 @@ public struct SpeechCandidate: Sendable, Hashable {
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation }
   public enum Error: Swift.Error, Sendable, LocalizedError {
-    case unavailable, notPrepared
+    case unavailable, notPrepared, reservationLimit
     case analysisFailed(String)
     public var errorDescription: String? {
       switch self {
       case .unavailable: "Speech recognition is not available for this language on this device."
+      case .reservationLimit: "This device has reached its speech language limit. Choose another Script language in Settings > Reading and try again."
       case .notPrepared: "Speech recognition was not ready."
       case .analysisFailed(let reason): "Speech recognition failed. \(reason)"
       }
@@ -87,9 +88,32 @@ public actor SpeechProvider {
     case .transcription: activeModules = newModules
     case .dictation: activeModules = newDictationModules
     }
+    // The old analyzer has finished. Never release a locale used by this preparation.
+    for reserved in await AssetInventory.reservedLocales where !newLocales.contains(reserved) {
+      try checkCurrent(op)
+      _ = await AssetInventory.release(reservedLocale: reserved)
+    }
+    for locale in newLocales {
+      try checkCurrent(op)
+      let reserved = await AssetInventory.reservedLocales
+      try checkCurrent(op)
+      if !reserved.contains(locale), reserved.count >= AssetInventory.maximumReservedLocales {
+        throw Error.reservationLimit
+      }
+      do { try await AssetInventory.reserve(locale: locale) }
+      catch {
+        try checkCurrent(op)
+        if await AssetInventory.reservedLocales.count >= AssetInventory.maximumReservedLocales {
+          throw Error.reservationLimit
+        }
+        throw error
+      }
+      try checkCurrent(op)
+    }
     // The speech files first: until a locale's files are on the device, there is no audio format
     // for it, and an iPad that has never used British English or French dictation has neither.
     if let installation = try await AssetInventory.assetInstallationRequest(supporting: activeModules) {
+      try checkCurrent(op)
       try await installation.downloadAndInstall()
     }
     try checkCurrent(op)

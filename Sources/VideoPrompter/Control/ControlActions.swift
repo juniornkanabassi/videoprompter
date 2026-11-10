@@ -596,15 +596,10 @@ import Speech
     guard !params.isEmpty else { return .error("invalid_params", "Give at least one setting. Example: \(example)") }
     var language: String?
     if let requested = params["language"] {
-      if let named = ["mixed": "Mixed", "automatic": "Automatic", "english": "English", "french": "French"][requested.lowercased()] { language = named }
-      else {
-        let normalised = { (identifier: String) in identifier.replacingOccurrences(of: "_", with: "-").lowercased() }
-        let locales = await SpeechTranscriber.supportedLocales
-        guard let locale = locales.first(where: { normalised($0.identifier) == normalised(requested) }) else {
-          return .error("invalid_params", "Unsupported language. Use Mixed, Automatic, English, French or a supported locale id such as de-DE.")
-        }
-        language = locale.identifier
+      guard let name = ScriptLanguage.setting(requested) else {
+        return .error("invalid_params", "Unsupported language. Use Automatic, English, Spanish, French, German, Italian, Dutch, Portuguese or a locale id for one of these languages.")
       }
+      language = ScriptLanguage.allCases.contains { $0.rawValue.lowercased() == requested.lowercased() } || name == "Automatic" ? name : requested
     }
     // Read after the await, so a change made meanwhile is not overwritten.
     var s = store.settings

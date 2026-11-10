@@ -158,13 +158,13 @@ struct ScriptLanguageRow: View {
   @ObservedObject var store: AppStore
   @State private var availability = ""
   var body: some View {
-    VStack(alignment: .leading, spacing: Space.xs) {
+    let language = ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)
+    return VStack(alignment: .leading, spacing: Space.xs) {
       ReadingChoice(title: "Script language",
         values: ["Automatic"] + ScriptLanguage.allCases.map(\.rawValue),
         names: ["Automatic"] + ScriptLanguage.allCases.map(\.label),
         selection: $store.settings.speechLanguage, zoom: store.uiZoom)
         .frame(minHeight: 44)
-      let language = ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)
       Text(store.settings.speechLanguage == "Automatic" ? "Automatic: \(language.rawValue)" : "Voice: \(language.rawValue)")
         .font(.callout).foregroundStyle(.secondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -172,10 +172,9 @@ struct ScriptLanguageRow: View {
         Text(availability).font(.callout).foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
       }
-    }.task(id: ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)) {
-      let language = ScriptLanguage.resolve(store.settings.speechLanguage, text: store.selected?.markdown ?? store.session.document.markdown)
+    }.task(id: language.rawValue + (store.settings.speechLocales[language.rawValue] ?? "")) {
       let supported = await DictationTranscriber.supportedLocales
-      guard let locale = language.preferredLocale(supported: supported) else {
+      guard let locale = language.preferredLocale(supported: supported, explicit: store.settings.speechLocales[language.rawValue]) else {
         availability = "Voice following is unavailable for this language on this Mac."
         return
       }

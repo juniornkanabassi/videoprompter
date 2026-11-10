@@ -17,8 +17,8 @@ public enum ReadingAnchorRemapper {
     guard !tokens.isEmpty else { return nil }
     let index = min(max(0, globalTokenIndex), tokens.count - 1)
     let token = tokens[index]
-    let blockTokens = document.blocks.first(where: { $0.id == token.blockID })?.spokenTokens ?? []
-    let offset = blockTokens.firstIndex(where: { $0.sourceRange == token.sourceRange }) ?? 0
+    let blockStart = document.blocks.prefix { $0.id != token.blockID }.reduce(0) { $0 + $1.spokenTokens.count }
+    let offset = index - blockStart
     return ReadingAnchor(
       scriptID: scriptID, revision: revision, blockID: token.blockID, tokenOffset: offset,
       precedingContext: Array(tokens[max(0, index - 3)..<index].map(\.normalised)),

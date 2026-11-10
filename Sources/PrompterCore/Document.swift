@@ -28,6 +28,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
   private static let tokenRegex = try! NSRegularExpression(
     pattern: #"[\p{L}\p{N}][\p{L}\p{N}\p{M}]*(?:['’][\p{L}\p{N}][\p{L}\p{N}\p{M}]*)*"#)
   private static let linkRegex = try! NSRegularExpression(pattern: #"!?\[[^\]\n]+\]\([^\)\n]+\)"#)
+  private static let urlRegex = try! NSRegularExpression(pattern: #"https?://[^\s]+"#)
   private static let inlineCodeRegex = try! NSRegularExpression(pattern: #"`[^`\n]*`"#)
   private static let stageDirectionRegex = try! NSRegularExpression(
     pattern: #"(?<!\\)\[([^\]\n]+)\](?!\s*\()"#)
@@ -166,7 +167,17 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
   }
   private static func tokens(in text: String, base: Int, excluding: [NSRange], blockID: UUID,
     language: ScriptLanguage) -> [DocumentToken] {
-    let tokens = tokenMatches(text).flatMap { ns, range -> [DocumentToken] in
+    var matches = tokenMatches(text)
+    if language != .english {
+      let separator = language == .french ? "[ \u{00a0}\u{202f}]" : "[. \u{00a0}\u{202f}]"
+      let grouped = try! NSRegularExpression(pattern: "(?<![\\p{L}\\p{N}])[0-9]{1,3}(?:" + separator + "[0-9]{3})+(?![0-9])")
+      let ns = text as NSString
+      for group in grouped.matches(in: text, range: NSRange(location: 0, length: ns.length)).reversed() {
+        let indices = matches.indices.filter { NSIntersectionRange(matches[$0].1, group.range).length > 0 }
+        if let first = indices.first, let last = indices.last { matches.replaceSubrange(first...last, with: [(ns, group.range)]) }
+      }
+    }
+    let tokens = matches.flatMap { ns, range -> [DocumentToken] in
       guard !excluding.contains(where: { NSIntersectionRange($0, range).length > 0 }) else { return [] }
       let value = ns.substring(with: range)
       if language == .english {
@@ -174,13 +185,13 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
           sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)]
       }
       // A written number can represent several spoken words, all highlighting the same source.
-      if let spelled = language.spellOut(value) {
+      if let spelled = language.spellOut(value.filter { !". \u{00a0}\u{202f}".contains($0) }) {
         return tokenMatches(spelled).map { source, wordRange in
-          DocumentToken(text: value, normalised: normalise(source.substring(with: wordRange)),
+          DocumentToken(text: value, normalised: language.normaliseWord(source.substring(with: wordRange)),
             sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)
         }
       }
-      return [DocumentToken(text: value, normalised: normalise(value),
+      return [DocumentToken(text: value, normalised: language.normaliseWord(value),
         sourceRange: .init(location: base + range.location, length: range.length), blockID: blockID)]
     }
     guard language == .french || language == .italian else { return tokens }
@@ -194,7 +205,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
         let next = tokens[index + 1]
         let end = token.sourceRange.location + token.sourceRange.length
         let gap = NSRange(location: end - base, length: max(0, next.sourceRange.location - end))
-        if gap.length > 0, (text as NSString).substring(with: gap).allSatisfy(\.isWhitespace) {
+        if gap.length > 0, (text as NSString).substring(with: gap).allSatisfy({ $0 == " " || $0 == "\t" }) {
           let range = UTF16SourceRange(location: token.sourceRange.location,
             length: next.sourceRange.location + next.sourceRange.length - token.sourceRange.location)
           result.append(DocumentToken(text: (text as NSString).substring(with: NSRange(location: range.location - base, length: range.length)),
@@ -216,7 +227,7 @@ public struct PrompterDocument: Codable, Hashable, Sendable {
     let linkMatches = linkRegex.matches(in: text, range: full)
     let links = linkMatches.map(\.range)
     let code = inlineCodeRegex.matches(in: text, range: full).map(\.range)
-    var ranges = code
+    var ranges = code + urlRegex.matches(in: text, range: full).map(\.range)
     var cues: [(String, UTF16SourceRange)] = []
     for match in linkMatches {
       let raw = ns.substring(with: match.range) as NSString
