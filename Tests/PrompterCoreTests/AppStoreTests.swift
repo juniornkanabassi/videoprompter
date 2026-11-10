@@ -946,14 +946,14 @@ final class AppStoreTests: XCTestCase {
     let defaults = freshDefaults("AppStoreTests")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await store.waitForWelcomeScript()
-    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set(Features.recording ? [WelcomeScript.title] : [WelcomeScript.title, WelcomeScript.spanishTitle]))
     XCTAssertEqual(store.selected?.markdown, WelcomeScript.markdown)
-    try await store.deleteScript(try XCTUnwrap(store.scripts.first).id)
+    for script in store.scripts { try await store.deleteScript(script.id) }
     let again = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await again.waitForWelcomeScript()
     XCTAssertTrue(again.scripts.isEmpty, "offered once per library")
     again.showWelcomeScript()
-    try await waitUntil { again.scripts.count == 1 }
+    try await waitUntil { again.scripts.count == (Features.recording ? 1 : 2) }
     XCTAssertEqual(again.selected?.metadata.title, WelcomeScript.title, "Help > Welcome Script brings it back")
   }
 
@@ -966,7 +966,7 @@ final class AppStoreTests: XCTestCase {
     await store.waitForWelcomeScript()
     try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
     try await Task.sleep(for: .milliseconds(200))
-    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set(Features.recording ? [WelcomeScript.title] : [WelcomeScript.title, WelcomeScript.spanishTitle]))
   }
 
   func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {
@@ -1000,8 +1000,8 @@ final class AppStoreTests: XCTestCase {
     let spoken = Set(document.spokenTokens.map(\.normalised))
     XCTAssertFalse(spoken.contains("popover"), "the opening note is a callout")
     XCTAssertEqual(document.blocks.flatMap(\.stageDirections).map(\.text),
-                   ["Look at the camera."])
-    XCTAssertTrue(spoken.contains("teleprompter"))
+                   Features.recording ? ["Look at the camera."] : ["Look at the camera.", "Pause for a second.", "Smile."])
+    XCTAssertTrue(spoken.contains(Features.recording ? "teleprompter" : "script"))
   }
 
   private func waitUntil(_ condition: @MainActor () -> Bool) async throws {

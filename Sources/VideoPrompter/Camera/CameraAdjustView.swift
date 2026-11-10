@@ -48,9 +48,7 @@ struct CameraAdjustView: View {
               .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
               .frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget)
               .padding(.top, Space.md)
-          }.padding(Space.sm).background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
-            .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
-            .overlay(alignment: .topTrailing) { selectionBadge(selected) }
+          }.modifier(InputCardStyle(selected: selected))
         }
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
         }

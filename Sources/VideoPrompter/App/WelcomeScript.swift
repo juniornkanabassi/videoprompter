@@ -10,39 +10,74 @@ enum WelcomeScript {
   /// Set once a library has been offered the script, so deleting it is final until Help asks again.
   static let offeredKey = "welcomeScriptOffered"
   static let markdown = Features.recording ? recordingMarkdown : monitorMarkdown
-  private static let monitorMarkdown = """
+  static let spanishTitle = "Prueba en español"
+  static let spanishMarkdown = """
+    # Prueba en español
+
+    > [!note] Empieza aquí
+    > Abre el presentador, pulsa **Start reading** y lee en voz alta.
+
+    Hola, soy Junior. Gracias por usar Video Prompter. [Mira a la cámara.]
+
+    Este guion sirve para probar el modo de voz en español. La aplicación detecta el idioma sola y sigue tu voz mientras lees.
+
+    Habla con calma. Si te paras, el texto te espera.
+
+    Terminé esta versión en 2026, cerca de la medianoche, y espero que te guste.
+
+    ¿Funciona bien? ¡Perfecto! Ya puedes leer tus propios guiones en español.
+    """
+  static let monitorMarkdown = """
     # Welcome to Video Prompter
 
     > [!note] Start here
-    > Click **Open presenter**, then **Start reading**. Choose **Pause** when you need a break. **Back to start** returns to the first word.
+    > Click **Open presenter**, then **Start reading**, and read this out loud. Voice follow is on, so the script moves when you speak.
 
-    Hello, and welcome. [Look at the camera.]
+    Hi, hello, this is Junior. [Look at the camera.]
+
+    Thank you for using Video Prompter. Everything on this Mac is set up and ready to go.
+
+    I stayed up until about midnight finishing this version, so I hope you enjoy it. This script shows you how everything works. Just read it out loud and it will follow you.
 
     ## Reading
 
-    Press **Space** to pause. Choose **Set up the shot** to return to the camera.
-    **Reading settings** under Pause changes the reading mode, font, size and spacing for your teleprompter. You can also find these in **Settings > Reading**.
+    Voice follow listens to you and keeps your place. If you stop talking, it waits for you. [Pause for a second.]
+
+    Press **Space** to pause. **Back to start** takes you to the first word.
+
+    **Script language** is set to **Automatic**, so the app works out the language from your script. You can choose a language yourself in **Settings > Reading**.
+
+    ## Try another language
+
+    There is a second script in your library called **Prueba en español**. Open it, start reading, and the app switches to Spanish on its own. It also works in French, German, Italian, Dutch and Portuguese.
+
+    The first time you use a new language, stay connected to the internet so the Mac can download it.
 
     ## Set up the shot
 
-    Choose **Camera** to select your camera. Under Shot, choose **Landscape**, **Vertical turned left** or **Vertical turned right**.
-    The bar has **Camera**, **Zebras**, **False colour**, **Guides**, **Mic**, **Adjust** and **Clean**.
-    Zebras, False colour, Guides and Mic switch their aids on or off. Choose **Adjust** to change settings. Right-click a tile to jump to its tab.
-    Choose **Adjust > Mic**, select your microphone, then speak and watch the meter. For a microphone test, choose **Settings > Microphone > Test microphone**.
+    Choose **Set up the shot** to go back to the camera.
+
+    The bar along the bottom has **Camera**, **Mic**, **Zebras**, **False colour**, **Guides**, **Adjust** and **Clean**.
+
+    Choose **Camera** to pick your camera and how it is turned. Choose **Mic** to pick your microphone. If your microphone has two channels, you can use the left, the right or both.
+
+    The mic meter on the right shows your level. Green is good. Yellow is loud. Red is too loud.
 
     ## Check exposure
 
-    Choose your skin tone in **Adjust > False colour**. The **Exposure key** explains the colours.
-    For a **Grey card check**, hold a grey card where your face will be. Adjust exposure until it turns green. Choose **Finish grey card check** to return to your skin settings.
+    **Zebras** put stripes on the parts of the picture at the brightness you choose. **False colour** paints the picture by brightness, and your skin shows in pink when it is exposed right.
 
-    ## Clean view
+    Pick your skin tone in **Adjust > False colour**. The **Exposure key** in the top left explains the colours. Choose **Hide key** to tuck it away.
 
-    **Clean** shows only the picture and pauses reading. Move the pointer to see **Exit Clean**. Press **Escape** to leave Clean. Escape also returns from reading to **Set up the shot**.
+    ## Clean
+
+    **Clean** shows only the picture. Press **Escape** to leave it.
 
     ## Your scripts
 
-    Choose **Paste script**, **New script** or **Import file…**. Your library saves edits automatically.
-    You can bring this guide back using **Getting Started Guide** in Help.
+    Choose **Script** in the bar to open the editor while the presenter stays open. Paste or write your own script, and the library saves it for you.
+
+    That is everything. Thank you again for using Video Prompter. [Smile.] Have fun.
     """
   private static let recordingMarkdown = """
     # Welcome to Video Prompter

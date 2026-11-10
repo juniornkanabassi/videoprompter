@@ -4,16 +4,18 @@
 final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
   private let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "VideoPrompter.recording-input-test")
+  private let channel: AudioChannel
   private let meterDelivery: AudioMeterDelivery
 
-  init(device: AVCaptureDevice, floatAudio: Bool, onLevels: @escaping @MainActor @Sendable ([Float]) -> Void) throws {
+  init(device: AVCaptureDevice, floatAudio: Bool, channel: AudioChannel = .both, onLevels: @escaping @MainActor @Sendable ([Float]) -> Void) throws {
+    self.channel = channel
     self.meterDelivery = AudioMeterDelivery(onLevels: onLevels)
     super.init()
     guard CaptureAccess.mayUse(.audio) else { throw CocoaError(.userCancelled) }
     let input = try CaptureAccess.deviceInput(device, media: .audio)
     let output = AVCaptureAudioDataOutput()
     let format = CMAudioFormatDescriptionGetStreamBasicDescription(device.activeFormat.formatDescription)?.pointee
-    output.audioSettings = Self.settings(sampleRate: (floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000)), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
+    output.audioSettings = Self.settings(sampleRate: (floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000)), channels: channel == .both ? min(Int(format?.mChannelsPerFrame ?? 2), 2) : Int(format?.mChannelsPerFrame ?? 2))
     guard session.canAddInput(input), session.canAddOutput(output) else {
       throw NSError(domain: "RecordingAudioTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "This microphone cannot be tested. Choose another recording microphone and try again."])
     }
@@ -56,6 +58,7 @@ final class RecordingAudioTest: NSObject, AVCaptureAudioDataOutputSampleBufferDe
     return peaks
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput buffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+    guard let buffer = channel.extract(buffer) else { return }
     meterDelivery.receive(buffer, clock: session.synchronizationClock)
   }
 }

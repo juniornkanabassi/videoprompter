@@ -238,6 +238,14 @@ final class SessionStore: ObservableObject {
     }
   }
 
+  func audioChannelDidChange() {
+    if isActivelyRunning, settings.mode == "Voice" {
+      stopTasks()
+      restartModeTask()
+      startAudioMode()
+    }
+  }
+
   func updateSettings(_ value: PrompterSettings) {
     var value = value
     value.sanitise()
@@ -515,7 +523,7 @@ final class SessionStore: ObservableObject {
         guard let format = AVAudioFormat(
           commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
         else { throw AudioCaptureError.conversionUnavailable }
-        let capture = AudioCapture(device: device, outputFormat: format, gain: Float(gain))
+        let capture = AudioCapture(device: device, outputFormat: format, gain: Float(gain), channel: AudioChannel.load(device.uid, defaults: defaults))
         self.audioCapture = capture
         try capture.start(
           onBuffer: { [weak self] _, time, _, peak, clipping in
@@ -787,7 +795,7 @@ final class SessionStore: ObservableObject {
           contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
         guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
         let capture = AudioCapture(
-          device: device, outputFormat: format, gain: Float(self.settings.inputGain))
+          device: device, outputFormat: format, gain: Float(self.settings.inputGain), channel: AudioChannel.load(device.uid, defaults: self.defaults))
         self.audioCapture = capture
         let pair = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
         self.analyzerContinuation = pair.continuation

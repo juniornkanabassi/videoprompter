@@ -279,21 +279,9 @@ struct MicrophonePage: View {
   @ViewBuilder private var sections: some View {
     Section("Microphone") {
       if !compact { Text(Features.recording ? "Video Prompter listens to this microphone to follow your words, and records it with your video." : "Video Prompter listens to this microphone to follow your words.").font(.callout) }
-      LabeledContent("Microphone") {
-      Menu {
-        Picker("Microphone", selection: Binding(
-          get: { store.settings.audioDeviceUID ?? "" },
-          set: { session.stopMicrophoneTest(); store.settings.audioDeviceUID = $0.isEmpty ? nil : $0 })
-        ) {
-          Text("System default").tag("")
-          if let uid = store.settings.audioDeviceUID, !devices.contains(where: { $0.uid == uid }) { Text("Selected microphone unavailable").tag(uid) }
-          ForEach(devices) { Text($0.name).tag($0.uid) }
-        }.pickerStyle(.inline)
-      } label: { Text(microphoneName).fixedSize(horizontal: false, vertical: true) }
-        .accessibilityLabel("Microphone").accessibilityValue(microphoneName).help(microphoneName)
-        .disabled(recorder.settingsLocked && !recorder.usesSeparateMicrophone)
-        .initialPopoverFocus(when: !recorder.settingsLocked || recorder.usesSeparateMicrophone)
-      }
+      MicrophoneCards(store: store, devices: devices, willChange: {
+        session.stopMicrophoneTest(); recorder.stopInputTest()
+      }).disabled(recorder.settingsLocked && !recorder.usesSeparateMicrophone)
       if compact { LiveInputLevelMeter(meter: session.meter) }
       else { MicrophoneTestRow(session: session, deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain, micName: microphoneName) }
       LabeledContent("Loudest sound") { LoudestSoundReadout(meter: session.meter) }

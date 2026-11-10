@@ -1,7 +1,16 @@
 import SwiftUI
 
 enum AdjustTab: String, CaseIterable {
-  case camera = "Camera", zebras = "Zebras", falseColour = "False colour", guides = "Guides", mic = "Mic"
+  case camera = "Camera", mic = "Mic", zebras = "Zebras", falseColour = "False colour", guides = "Guides"
+  var symbol: String {
+    switch self {
+    case .camera: "video"
+    case .mic: "mic"
+    case .zebras: "rectangle.pattern.checkered"
+    case .falseColour: "circle.lefthalf.filled"
+    case .guides: "squareshape.split.3x3"
+    }
+  }
 }
 
 struct AdjustPanel: View {
@@ -15,6 +24,7 @@ struct AdjustPanel: View {
   var width: CGFloat = 470 // grid: ok Approved panel content width.
   var close: () -> Void = {}
   var devicesOverride: [CameraDevice]? = nil
+  var microphonesOverride: [AudioInputDevice]? = nil
   let recorder: CameraRecorder
 
   var body: some View {
@@ -22,7 +32,7 @@ struct AdjustPanel: View {
         WrapLayout(spacing: 4, leading: true) {
           ForEach(AdjustTab.allCases, id: \.self) { tab in
             Button { selection = tab } label: {
-              Text(tab.rawValue).font(.system(size: 16, weight: .semibold))
+              Label(tab.rawValue, systemImage: tab.symbol).font(.system(size: 16, weight: .semibold))
                 .padding(.horizontal, Space.md).frame(minHeight: AlphaStyle.minTarget)
                 .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white)
                 .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
@@ -62,30 +72,14 @@ struct AdjustPanel: View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
       Text("Microphone").font(.title2.bold())
       Toggle("Show mic meter", isOn: $showsMic).toggleStyle(.switch).accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter").frame(minHeight: AlphaStyle.minTarget)
-      microphoneChoice("System default", uid: nil)
-      ForEach(microphones) { device in microphoneChoice(device.name, uid: device.uid) }
-      if let uid = store.settings.audioDeviceUID, !microphones.contains(where: { $0.uid == uid }) {
-        microphoneChoice("Selected microphone unavailable", uid: uid)
-      }
+      MicrophoneCards(store: store, devices: microphonesOverride ?? microphones, willChange: {
+        store.session.stopMicrophoneTest()
+        recorder.stopInputTest()
+      })
       MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName, showsHeading: false).frame(height: 180)
       SettingsLink { Text("More in Settings") }.frame(minHeight: AlphaStyle.minTarget)
       Text("Speak to check your microphone level.").foregroundStyle(.secondary)
     }.onAppear { microphones = AudioCapture.inputDevices() }
-  }
-
-  private func microphoneChoice(_ name: String, uid: String?) -> some View {
-    Button {
-      guard store.settings.audioDeviceUID != uid else { return }
-      store.session.stopMicrophoneTest()
-      recorder.stopInputTest()
-      store.settings.audioDeviceUID = uid
-    } label: {
-      HStack {
-        Text(name).multilineTextAlignment(.leading)
-        Spacer()
-        if store.settings.audioDeviceUID == uid { Image(systemName: "checkmark").foregroundStyle(AlphaStyle.accent) }
-      }.frame(maxWidth: .infinity, minHeight: AlphaStyle.minTarget)
-    }.buttonStyle(.plain).accessibilityAddTraits(store.settings.audioDeviceUID == uid ? .isSelected : [])
   }
 
 }

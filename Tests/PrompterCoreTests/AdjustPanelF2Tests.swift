@@ -3,7 +3,7 @@ import XCTest
 @testable import VideoPrompter
 
 extension AppearanceSnapshotTests {
-  func testAdjustTabsStayOnOneRow() async throws {
+  func testAdjustTabsWrapWithoutOverlap() async throws {
     let defaults = freshDefaults("AdjustTabsRow")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -15,7 +15,10 @@ extension AppearanceSnapshotTests {
       let button = try XCTUnwrap(LibraryAX.named(tab.rawValue, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
       return try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     }
-    for frame in frames { XCTAssertEqual(frame.midY, frames[0].midY, accuracy: 1) }
+    for (index, frame) in frames.enumerated() {
+      XCTAssertGreaterThanOrEqual(frame.height, 44)
+      for other in frames.dropFirst(index + 1) { XCTAssertFalse(frame.intersects(other)) }
+    }
     XCTAssertFalse(LibraryAX.named("Close Adjust", in: host).isEmpty)
     XCTAssertFalse(window.isVisible)
   }

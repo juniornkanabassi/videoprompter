@@ -218,7 +218,7 @@ struct PresenterView: View {
     stage
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { stageWidth = $0 }
     // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
-    .task(id: "\(showsMicLevel && !camera.cleanView && startsCamera)-\(recorder.isRecording || recorder.isBusy)-\(store.settings.audioDeviceUID ?? "")") {
+    .task(id: "\(showsMicLevel && !camera.cleanView && startsCamera)-\(recorder.isRecording || recorder.isBusy)-\(store.settings.audioDeviceUID ?? "")-\(store.audioChannelRevision)") {
       guard showsMicLevel && !camera.cleanView && startsCamera else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
       if !recorder.isRecording && !recorder.isBusy {
         recorder.stopInputTest()
@@ -366,14 +366,19 @@ struct PresenterView: View {
           HStack { readingStatus; readingSettings; scriptButton; keyboardHint }
           VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings; scriptButton }; keyboardHint }
         }
-      } else if barFit.twoRows {
-        HStack(spacing: Space.sm) { setupTransport }
-        HStack(spacing: Space.sm) { setupTiles }
       } else {
-        HStack(spacing: Space.md) { setupTransport; Spacer(minLength: 0); setupTiles }
+        ViewThatFits(in: .horizontal) {
+          HStack(spacing: Space.sm) { setupTransport; Spacer(minLength: 0); setupTiles }
+          VStack(spacing: Space.sm) {
+            WrapLayout(spacing: Space.sm, leading: true) { setupTransport }
+            ScrollView(.horizontal) {
+              HStack(spacing: Space.sm) { setupTiles }
+            }.scrollIndicators(.visible).fixedSize(horizontal: false, vertical: true)
+          }
+        }
       }
       }
-    }.padding(narrowReading ? Space.xs : Space.md).frame(maxWidth: .infinity)
+    }.padding(narrowReading ? Space.xs : (!shell.reading && viewport.width / controlZoom < 600 ? Space.sm : Space.md)).frame(maxWidth: .infinity)
       .background(Color(nsColor: NSColor(white: 0.08, alpha: 1)))
       .buttonStyle(PresenterButtonStyle()).accessibilityIdentifier("presenter-control-bar")
   }
@@ -390,15 +395,10 @@ struct PresenterView: View {
 
   @ViewBuilder private var setupTransport: some View {
     transportButton("Start reading", icon: "play.fill", primary: true) { shell.reading = true; session.startReading() }.disabled(!hasScript || draft.isEditing)
-    VStack(spacing: 0) {
-      Button { session.restart() } label: {
-        Text("Back to start").font(.system(size: 16, weight: .semibold))
-          .frame(minWidth: barFit.transportWidth, minHeight: ceil(AlphaStyle.minTarget / controlZoom))
-          .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-      }.buttonStyle(.plain).disabled(!hasScript)
-      scriptButton
-    }
+    transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }.disabled(!hasScript)
+    scriptButton
   }
+
   @ViewBuilder private var readingTransport: some View {
     transportButton("Back to start", icon: "arrow.counterclockwise") { session.restart() }
     transportButton(session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", icon: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", primary: true) { session.toggle() }
@@ -418,14 +418,12 @@ struct PresenterView: View {
   }
   @ViewBuilder private var setupTiles: some View {
     shellTile("Camera", "video", tab: .camera, value: shotBadge) { shell.adjustTab = .camera }
+    shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { shell.adjustTab = .mic }
     shellTile("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.effectiveZebras, value: zebraDetail) { toggleExposure(\.zebras) }
     shellTile("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.effectiveFalseColour) { toggleExposure(\.falseColour) }
-    if !barFit.movesTools {
-      shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
-      shellTile("Mic", "mic", tab: .mic, on: showsMicLevel) { shell.adjustTab = .mic }
-      Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 72)
-    }
-    shellTile("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, value: barFit.movesTools ? "2 more" : nil) { shell.adjustTab = shell.adjustTab == nil ? .camera : nil }
+    shellTile("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible) { camera.toggleFramingGuides() }
+    Rectangle().fill(.white.opacity(0.12)).frame(width: 1, height: 72)
+    shellTile("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, value: nil) { shell.adjustTab = shell.adjustTab == nil ? .camera : nil }
     shellTile("Clean", "rectangle", tab: .camera) { camera.cleanView = true }
   }
   private func toggleExposure(_ key: WritableKeyPath<CameraGuides, Bool>) {
@@ -773,10 +771,8 @@ extension EnvironmentValues {
   }
 }
 
-/// Fit in this order: full row, narrower row, secondary tools in Adjust, then two rows.
+/// Keep named tiles readable; narrow bars scroll the tile row below the transport.
 struct PresenterBarFit {
-  let movesTools: Bool
-  let twoRows: Bool
   let tileWidth: CGFloat
   let tileHeight: CGFloat
   let transportWidth: CGFloat
@@ -784,15 +780,14 @@ struct PresenterBarFit {
   init(size: CGSize, zoom: Double) {
     let width = size.width / zoom - 32
     if width >= 1260 {
-      movesTools = false; twoRows = false; tileWidth = 104; tileHeight = 112; transportWidth = 190; transportHeight = 112
+      tileWidth = 104; tileHeight = 112; transportWidth = 190; transportHeight = 112
     } else if width >= 1100 {
-      movesTools = false; twoRows = false; tileWidth = 88; tileHeight = 112; transportWidth = 160; transportHeight = 112
+      tileWidth = 88; tileHeight = 112; transportWidth = 160; transportHeight = 112
     } else {
-      movesTools = true; twoRows = width < 844
-      tileWidth = twoRows ? max(80, min(104, (width - 32) / 5)) : 88
+      tileWidth = floor(max(80, min(104, (width - 64) / 7)))
       let short = size.height / zoom < 440
       tileHeight = short ? 88 : 112
-      transportHeight = twoRows ? (short ? 44 : 56) : tileHeight
+      transportHeight = short ? 44 : 56
       transportWidth = 160
     }
   }

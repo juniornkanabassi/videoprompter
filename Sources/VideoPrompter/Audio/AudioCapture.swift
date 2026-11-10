@@ -6,6 +6,11 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable {
   public let id: AudioDeviceID
   public let uid: String
   public let name: String
+  public var channels: Int = 1
+  public var sampleRate: Double = 48000
+  public var connection: String = "Built in"
+  public var isOther: Bool { ["Virtual", "Aggregate"].contains(connection) }
+  public var detail: String { "\(connection) · \(channels) channels · \((sampleRate / 1000).formatted(.number.precision(.fractionLength(0...1)))) kHz" }
   public init(id: AudioDeviceID, uid: String, name: String) {
     self.id = id
     self.uid = uid
@@ -31,9 +36,11 @@ public final class AudioCapture: @unchecked Sendable {
   private var converter: AVAudioConverter?
   private var bufferHandler: ((AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void)?
   private var stopHandler: ((AudioCaptureError?) -> Void)?
+  private let channel: AudioChannel
   private var gain: Float
 
-  public init(device: AudioInputDevice, outputFormat: AVAudioFormat, gain: Float = 1) {
+  public init(device: AudioInputDevice, outputFormat: AVAudioFormat, gain: Float = 1, channel: AudioChannel = .both) {
+    self.channel = channel
     selectedDevice = device
     self.outputFormat = outputFormat
     self.gain = max(0, gain)
@@ -71,7 +78,7 @@ public final class AudioCapture: @unchecked Sendable {
       AudioObjectGetPropertyData(
         AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &byteCount, &ids) == noErr
     else { return [] }
-    return ids.compactMap { id in
+    return ids.compactMap { id -> AudioInputDevice? in
       var streams = AudioObjectPropertyAddress(
         mSelector: kAudioDevicePropertyStreams, mScope: kAudioDevicePropertyScopeInput,
         mElement: kAudioObjectPropertyElementMain)
@@ -80,8 +87,35 @@ public final class AudioCapture: @unchecked Sendable {
         streamBytes > 0,
         let uid = deviceString(id, selector: kAudioDevicePropertyDeviceUID)
       else { return nil }
-      return AudioInputDevice(
-        id: id, uid: uid, name: deviceString(id, selector: kAudioObjectPropertyName) ?? uid)
+      var device = AudioInputDevice(id: id, uid: uid, name: deviceString(id, selector: kAudioObjectPropertyName) ?? uid)
+      var transport: UInt32 = 0
+      var rate = 48000.0
+      func read(_ selector: AudioObjectPropertySelector, _ pointer: UnsafeMutableRawPointer, _ size: UInt32) {
+        var address = AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var bytes = size
+        _ = AudioObjectGetPropertyData(id, &address, 0, nil, &bytes, pointer)
+      }
+      read(kAudioDevicePropertyTransportType, &transport, 4)
+      read(kAudioDevicePropertyNominalSampleRate, &rate, 8)
+      device.sampleRate = rate
+      switch transport {
+      case kAudioDeviceTransportTypeUSB: device.connection = "USB"
+      case kAudioDeviceTransportTypeThunderbolt: device.connection = "Thunderbolt"
+      case kAudioDeviceTransportTypeBluetooth, kAudioDeviceTransportTypeBluetoothLE: device.connection = "Bluetooth"
+      case kAudioDeviceTransportTypeVirtual: device.connection = "Virtual"
+      case kAudioDeviceTransportTypeAggregate: device.connection = "Aggregate"
+      default: break
+      }
+      var config = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreamConfiguration, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+      var bytes: UInt32 = 0
+      if AudioObjectGetPropertyDataSize(id, &config, 0, nil, &bytes) == noErr, bytes > 0 {
+        let memory = UnsafeMutableRawPointer.allocate(byteCount: Int(bytes), alignment: MemoryLayout<AudioBufferList>.alignment)
+        defer { memory.deallocate() }
+        if AudioObjectGetPropertyData(id, &config, 0, nil, &bytes, memory) == noErr {
+          device.channels = UnsafeMutableAudioBufferListPointer(memory.assumingMemoryBound(to: AudioBufferList.self)).reduce(0) { $0 + Int($1.mNumberChannels) }
+        }
+      }
+      return device
     }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
@@ -119,7 +153,8 @@ public final class AudioCapture: @unchecked Sendable {
         UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
     else { throw AudioCaptureError.deviceUnavailable }
     let native = node.outputFormat(forBus: 0)
-    guard let converter = AVAudioConverter(from: native, to: outputFormat) else {
+    let selectedFormat = channel == .both || native.channelCount < 2 ? native : AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: native.sampleRate, channels: 1, interleaved: false)!
+    guard let converter = AVAudioConverter(from: selectedFormat, to: outputFormat) else {
       throw AudioCaptureError.conversionUnavailable
     }
     self.converter = converter
@@ -195,7 +230,8 @@ public final class AudioCapture: @unchecked Sendable {
     }
   }
 
-  private func convertAndDeliver(_ source: AVAudioPCMBuffer, time: AVAudioTime) {
+  private func convertAndDeliver(_ input: AVAudioPCMBuffer, time: AVAudioTime) {
+    guard let source = channel.extract(input) else { return }
     guard stateLock.withLock({ running }), let converter else { return }
     let capacity =
       AVAudioFrameCount(

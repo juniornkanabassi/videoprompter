@@ -143,6 +143,7 @@ private enum PresenterSaveError: LocalizedError {
   /// Activation can arrive in a burst; a full refresh reads every script, so it is not worth
   /// repeating on top of the two-second poll.
   private var lastExternalRefresh = Date.distantPast
+  @Published var audioChannelRevision = 0
   let defaults: UserDefaults
   private let settingsPersistence: SettingsPersistence
 
@@ -311,6 +312,7 @@ private enum PresenterSaveError: LocalizedError {
       return
     }
     do {
+      if !Features.recording { _ = try await createScript(title: WelcomeScript.spanishTitle, markdown: WelcomeScript.spanishMarkdown) }
       _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
       defaults.set(true, forKey: WelcomeScript.offeredKey)
     } catch {
@@ -330,11 +332,19 @@ private enum PresenterSaveError: LocalizedError {
   private func selectWelcomeScript() {
     selectedFolderID = nil
     search = ""
-    if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
-      selectedID = existing.id
-    } else {
-      create(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+    Task {
+      do {
+        if !Features.recording, !scripts.contains(where: { $0.metadata.title == WelcomeScript.spanishTitle }) {
+          _ = try await createScript(title: WelcomeScript.spanishTitle, markdown: WelcomeScript.spanishMarkdown)
+        }
+        if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
+          selectedID = existing.id
+        } else {
+          _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
+        }
+      } catch { errorMessage = "The welcome scripts could not be added. \(error)" }
     }
+
   }
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {

@@ -225,9 +225,10 @@ import PrompterCore
       recovery = .microphone
       let input = try CaptureAccess.deviceInput(microphone, media: .audio)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
-      let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: min(Int(format?.mChannelsPerFrame ?? 2), 2))
+      let channel = AudioChannel.load(microphone.uniqueID, defaults: defaults)
+      let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: channel == .both ? min(Int(format?.mChannelsPerFrame ?? 2), 2) : 1)
       audioChannels = spec.channels
-      let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel, defaultLabel: defaultLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, onFrame: { [weak self] duration in
+      let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel, defaultLabel: defaultLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, channel: channel, onFrame: { [weak self] duration in
         Task { @MainActor in
           guard let self, self.recordingID == takeID, self.isCapturing else { return }
           if self.startedAt == nil { self.startedAt = Date(); self.phase = .recording }
@@ -386,7 +387,7 @@ import PrompterCore
       let device = resolvedMicrophoneUID.flatMap { id in Self.microphones().first { $0.uniqueID == id } }
         ?? (resolvedMicrophoneUID == nil ? AVCaptureDevice.default(for: .audio) : nil)
       guard let device else { throw recordingError("Open Microphone settings and choose an available microphone.", recovery: .microphone) }
-      let test = try RecordingAudioTest(device: device, floatAudio: floatAudio) { [weak self] levels in
+      let test = try RecordingAudioTest(device: device, floatAudio: floatAudio, channel: AudioChannel.load(device.uniqueID, defaults: defaults)) { [weak self] levels in
         guard let self, self.testGeneration == generation, self.isTestingInput else { return }
         self.inputMeter.show(channelPeaks: levels)
       }
@@ -447,21 +448,26 @@ final class RecordingSink: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
   private var captureVideoDrops = 0
   private var earlyAudioDrops = 0
   private var firstFrame: CMTime?
+  private let channel: AudioChannel
   private let spec: AudioSpec
   private let floatAudio: Bool
   private let onFailure: @Sendable (Error) -> Void
   private var writer: MovieWriter?
   private var failure: Error?
-  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @MainActor @Sendable ([Float]) -> Void, onVideoDrop: @escaping @Sendable (Int) -> Void = { _ in }, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
+  init(url: URL, preset: RecordingPreset, rotation: CameraRotation, mirrored: Bool, audio: AudioSpec, floatAudio: Bool, microphone: AVCaptureDeviceInput, channel: AudioChannel = .both, onFrame: @escaping @Sendable (TimeInterval) -> Void, onAudio: @escaping @MainActor @Sendable ([Float]) -> Void, onVideoDrop: @escaping @Sendable (Int) -> Void = { _ in }, onAudioDrop: @escaping @Sendable (Int) -> Void = { _ in }, onFailure: @escaping @Sendable (Error) -> Void) {
+    self.channel = channel
     self.url = url; self.preset = preset; self.rotation = rotation; self.mirrored = mirrored; self.onFrame = onFrame; self.meterDelivery = AudioMeterDelivery(onLevels: onAudio); spec = audio; self.floatAudio = floatAudio; self.microphone = microphone; self.onFailure = onFailure; self.onAudioDrop = onAudioDrop; self.onVideoDrop = onVideoDrop
     super.init()
     video.alwaysDiscardsLateVideoFrames = false
     video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: preset == .edit ? kCVPixelFormatType_422YpCbCr8 : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
-    self.audio.audioSettings = RecordingAudioTest.settings(sampleRate: audio.sampleRate, channels: audio.channels)
+    // Extract before any channel-count conversion so multichannel inputs retain channels 1 and 2.
+    let nativeChannels = Int(CMAudioFormatDescriptionGetStreamBasicDescription(microphone.device.activeFormat.formatDescription)?.pointee.mChannelsPerFrame ?? 2)
+    self.audio.audioSettings = RecordingAudioTest.settings(sampleRate: audio.sampleRate, channels: channel == .both ? audio.channels : nativeChannels)
     video.setSampleBufferDelegate(self, queue: queue); self.audio.setSampleBufferDelegate(self, queue: audioQueue)
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
     if output === audio {
+      guard let sampleBuffer = channel.extract(sampleBuffer) else { return }
       meterDelivery.receive(sampleBuffer, clock: captureClock)
       // Keep writer access serial and retain the original capture timestamp.
       let captured = CapturedRecordingAudio(buffer: sampleBuffer)
