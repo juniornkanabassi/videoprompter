@@ -1,14 +1,14 @@
 # Video Prompter
 
-Video Prompter is a teleprompter for the Mac. You write or import a script in Markdown, then read it from a floating presenter window while you record yourself. The presenter can follow your voice as you speak, or scroll at a steady speed you choose. It can also show your camera behind the script and record from it.
+Video Prompter is a teleprompter and camera reference monitor for the Mac. You write or import a script in Markdown, then read it from a presenter window that follows your voice as you speak, in English, Spanish, French, German, Italian, Dutch or Portuguese, or scrolls at a steady speed you choose. Beside the script it shows your camera with zebras, false colour, framing guides and a mic meter.
 
-I record in English and French in the same take, so I built a prompter that follows both.
+Version 2.8.0 does not record. Record with your camera or switcher, and use Video Prompter to read and to check the shot.
 
 [Download Video Prompter](https://github.com/juniornkanabassi/videoprompter/releases/latest/download/VideoPrompter.dmg) · [Release notes](https://github.com/juniornkanabassi/videoprompter/releases/latest) · [App page](https://juniornkanabassi.com/apps/videoprompter/)
 
-The public download is 2.0.3 (build 42). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Older releases, back to the VidPrompt previews, are on the [Releases page](https://github.com/juniornkanabassi/videoprompter/releases) too.
+The public download is 2.8.0 (build 74). Every release uses the file name `VideoPrompter.dmg`, so the download link above always gives you the latest one. Older releases, back to the VidPrompt previews, are on the [Releases page](https://github.com/juniornkanabassi/videoprompter/releases) too.
 
-The source version is 2.1.0 (build 45), prepared for local installation with native Settings, simpler presenter controls, undoable organisation and smoother settings saves. It has no new public download.
+Some sections below still describe the recording features of versions up to 2.3.1; they will be updated when recording returns.
 
 ## Watch the quick-start guide
 
