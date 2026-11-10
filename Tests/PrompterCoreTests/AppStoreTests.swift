@@ -946,14 +946,14 @@ final class AppStoreTests: XCTestCase {
     let defaults = freshDefaults("AppStoreTests")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await store.waitForWelcomeScript()
-    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set(Features.recording ? [WelcomeScript.title] : [WelcomeScript.title, WelcomeScript.spanishTitle]))
+    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set([WelcomeScript.title]))
     XCTAssertEqual(store.selected?.markdown, WelcomeScript.markdown)
     for script in store.scripts { try await store.deleteScript(script.id) }
     let again = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
     await again.waitForWelcomeScript()
     XCTAssertTrue(again.scripts.isEmpty, "offered once per library")
     again.showWelcomeScript()
-    try await waitUntil { again.scripts.count == (Features.recording ? 1 : 2) }
+    try await waitUntil { again.scripts.count == 1 }
     XCTAssertEqual(again.selected?.metadata.title, WelcomeScript.title, "Help > Welcome Script brings it back")
   }
 
@@ -966,7 +966,7 @@ final class AppStoreTests: XCTestCase {
     await store.waitForWelcomeScript()
     try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
     try await Task.sleep(for: .milliseconds(200))
-    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set(Features.recording ? [WelcomeScript.title] : [WelcomeScript.title, WelcomeScript.spanishTitle]))
+    XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set([WelcomeScript.title]))
   }
 
   func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {

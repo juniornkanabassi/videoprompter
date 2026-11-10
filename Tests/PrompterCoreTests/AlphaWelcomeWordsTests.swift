@@ -24,7 +24,6 @@ extension AlphaWelcomeWordsTests {
     let script = WelcomeScript.monitorMarkdown as NSString
     for match in regex.matches(in: WelcomeScript.monitorMarkdown, range: NSRange(location: 0, length: script.length)) {
       let name = script.substring(with: match.range(at: 1))
-      if name == WelcomeScript.spanishTitle { continue }
       // Navigation paths name existing controls; Space and Escape are keyboard equivalents.
       for component in name.components(separatedBy: " > ") {
         XCTAssertTrue(ui.contains(component), "Missing welcome control: \(component)")

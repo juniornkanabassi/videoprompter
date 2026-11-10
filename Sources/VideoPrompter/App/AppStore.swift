@@ -312,7 +312,6 @@ private enum PresenterSaveError: LocalizedError {
       return
     }
     do {
-      if !Features.recording { _ = try await createScript(title: WelcomeScript.spanishTitle, markdown: WelcomeScript.spanishMarkdown) }
       _ = try await createScript(title: WelcomeScript.title, markdown: WelcomeScript.markdown)
       defaults.set(true, forKey: WelcomeScript.offeredKey)
     } catch {
@@ -334,9 +333,6 @@ private enum PresenterSaveError: LocalizedError {
     search = ""
     Task {
       do {
-        if !Features.recording, !scripts.contains(where: { $0.metadata.title == WelcomeScript.spanishTitle }) {
-          _ = try await createScript(title: WelcomeScript.spanishTitle, markdown: WelcomeScript.spanishMarkdown)
-        }
         if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
           selectedID = existing.id
         } else {

@@ -37,7 +37,6 @@ final class Alpha270Tests: XCTestCase {
   }
   func testWelcomeLanguagesAndNewDefaults() {
     XCTAssertEqual(ScriptLanguage.detect(WelcomeScript.monitorMarkdown), .english)
-    XCTAssertEqual(ScriptLanguage.detect(WelcomeScript.spanishMarkdown), .spanish)
     XCTAssertEqual(PrompterSettings().mode, "Voice")
     XCTAssertEqual(PrompterSettings().speechLanguage, "Automatic")
   }

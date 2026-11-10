@@ -10,23 +10,6 @@ enum WelcomeScript {
   /// Set once a library has been offered the script, so deleting it is final until Help asks again.
   static let offeredKey = "welcomeScriptOffered"
   static let markdown = Features.recording ? recordingMarkdown : monitorMarkdown
-  static let spanishTitle = "Prueba en español"
-  static let spanishMarkdown = """
-    # Prueba en español
-
-    > [!note] Empieza aquí
-    > Abre el presentador, pulsa **Start reading** y lee en voz alta.
-
-    Hola, soy Junior. Gracias por usar Video Prompter. [Mira a la cámara.]
-
-    Este guion sirve para probar el modo de voz en español. La aplicación detecta el idioma sola y sigue tu voz mientras lees.
-
-    Habla con calma. Si te paras, el texto te espera.
-
-    Terminé esta versión en 2026, cerca de la medianoche, y espero que te guste.
-
-    ¿Funciona bien? ¡Perfecto! Ya puedes leer tus propios guiones en español.
-    """
   static let monitorMarkdown = """
     # Welcome to Video Prompter
 
@@ -47,9 +30,9 @@ enum WelcomeScript {
 
     **Script language** is set to **Automatic**, so the app works out the language from your script. You can choose a language yourself in **Settings > Reading**.
 
-    ## Try another language
+    ## Other languages
 
-    There is a second script in your library called **Prueba en español**. Open it, start reading, and the app switches to Spanish on its own. It also works in French, German, Italian, Dutch and Portuguese.
+    Video Prompter also reads in Spanish, French, German, Italian, Dutch and Portuguese. Paste a script in any of them, and the app switches language on its own.
 
     The first time you use a new language, stay connected to the internet so the Mac can download it.
 
