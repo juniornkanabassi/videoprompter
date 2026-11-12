@@ -54,6 +54,70 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
   }
 
+  func testVersionThreeMessagesSurviveTheRoundTrip() throws {
+    let id = UUID()
+    let commands: [PadRemote.Command] = [
+      .sendScript(.init(macID: id, title: "Preview", markdown: "# Preview\n\nHello.", basis: "abc", present: true)),
+      .sendScript(.init(macID: id, title: "First", markdown: "Hi")),
+      .look(.init(horizontalMirror: true, fontSize: 60, guideFraction: 0.4)), .look(.init()),
+      .preset("Glass"), .startDelay(5), .voiceSource("Mac"),
+      .follow(.init(confirmed: 12, fingerprint: "0123456789abcdef", seekRevision: 3)),
+    ]
+    let state = PadRemote.State(
+      scripts: [.init(id: id, title: "A", macID: UUID(), fingerprint: "ff")], presenting: id, running: true,
+      mode: "Voice", speed: 120, word: 12, words: 340, version: 3,
+      look: .init(horizontalMirror: true, verticalMirror: false, fontSize: 56, textWidth: 0.8, lineSpacing: 0.2, guideFraction: 0.35),
+      presets: ["Glass", "Desk"], startDelay: 3, voiceSource: "Mac", seekRevision: 4, fingerprint: "ff")
+    let sent = commands.map(CameraLink.Message.command) + [.state(state)]
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
+    XCTAssertEqual(CameraLink.protocolVersion, 3)
+  }
+
+  /// Frozen from what a version 2 Mac and iPad wrote: they must keep decoding as version 3.
+  func testFrozenVersionTwoJSONDecodesAsVersionThree() throws {
+    let id = "5C0A5D2E-8E9F-4B1B-9D0B-1C2D3E4F5A6B"
+    let commands: [(String, PadRemote.Command)] = [
+      (#"{"present":{"_0":"\#(id)"}}"#, .present(UUID(uuidString: id)!)), (#"{"close":{}}"#, .close),
+      (#"{"play":{}}"#, .play), (#"{"pause":{}}"#, .pause), (#"{"backToStart":{}}"#, .backToStart),
+      (#"{"nextPassage":{}}"#, .nextPassage), (#"{"previousPassage":{}}"#, .previousPassage),
+      (#"{"seek":{"word":42}}"#, .seek(word: 42)), (#"{"mode":{"_0":"Manual"}}"#, .mode("Manual")),
+      (#"{"speed":{"_0":150}}"#, .speed(150)),
+    ]
+    for (json, expected) in commands {
+      XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: Data(json.utf8)), expected, json)
+    }
+    let v2State = #"{"scripts":[{"id":"\#(id)","title":"Arsenal v Spurs"}],"presenting":"\#(id)","running":true,"mode":"Voice","speed":120,"word":12,"words":340}"#
+    let state = try JSONDecoder().decode(PadRemote.State.self, from: Data(v2State.utf8))
+    XCTAssertEqual(state.scripts, [.init(id: UUID(uuidString: id)!, title: "Arsenal v Spurs")])
+    XCTAssertEqual(state.word, 12)
+    XCTAssertNil(state.version); XCTAssertNil(state.look); XCTAssertNil(state.presets); XCTAssertNil(state.startDelay)
+    XCTAssertNil(state.voiceSource); XCTAssertNil(state.seekRevision); XCTAssertNil(state.fingerprint)
+    XCTAssertNil(state.scripts[0].macID); XCTAssertNil(state.scripts[0].fingerprint)
+  }
+
+  /// What a version 2 reader (the shapes before version 3, frozen here) makes of version 3 output.
+  func testVersionThreeOutputStillDecodesAsVersionTwo() throws {
+    struct V2Script: Codable, Equatable { var id: UUID; var title: String }
+    struct V2State: Codable, Equatable {
+      var scripts: [V2Script]; var presenting: UUID?; var running: Bool; var mode: String
+      var speed: Int; var word: Int; var words: Int
+    }
+    enum V2Command: Codable, Equatable { case play; case seek(word: Int); case mode(String) }
+    let id = UUID()
+    let v3 = PadRemote.State(
+      scripts: [.init(id: id, title: "A", macID: UUID(), fingerprint: "ff")], presenting: id, running: false,
+      mode: "Voice", speed: 100, word: 3, words: 30, version: 3, look: .init(fontSize: 50), presets: ["x"],
+      startDelay: 3, voiceSource: "iPad", seekRevision: 1, fingerprint: "ff")
+    let old = try JSONDecoder().decode(V2State.self, from: JSONEncoder().encode(v3))
+    XCTAssertEqual(old, V2State(scripts: [.init(id: id, title: "A")], presenting: id, running: false, mode: "Voice", speed: 100, word: 3, words: 30))
+    // A version 2 iPad cannot read the new commands; the framing skips them, so they are not fatal.
+    XCTAssertThrowsError(try JSONDecoder().decode(V2Command.self, from: JSONEncoder().encode(PadRemote.Command.preset("x"))))
+    var reader = CameraLink.Reader()
+    let messages: [CameraLink.Message] = [.command(.voiceSource("Mac")), .command(.play), .goodbye]
+    XCTAssertEqual(try reader.append(messages.reduce(into: Data()) { $0.append($1.encoded()) }), messages)
+  }
+
   func testACommandFromANewerMacIsSkipped() throws {
     var reader = CameraLink.Reader()
     let json = Data(#"{"teleport":{}}"#.utf8)

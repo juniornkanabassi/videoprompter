@@ -13,7 +13,9 @@ public enum CameraLink {
   /// The Bonjour service type the iPad advertises for the Wi-Fi link.
   public static let bonjourType = "_vpcamera._tcp"
   /// 2 added `command` and `state`. An iPad sends `state` only to a Mac that said 2 or more.
-  public static let protocolVersion = 2
+  /// 3 added script transfer, look, presets, countdown and the Mac voice relay; every new field
+  /// is Optional or a new command, so a v2 Mac and a v3 iPad (or the reverse) still talk.
+  public static let protocolVersion = 3
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
 
@@ -159,12 +161,73 @@ public enum PadRemote {
     case mode(String)
     /// Manual speed in words per minute, 20 to 300.
     case speed(Int)
+    /// Version 3: a script from the Mac's library.
+    case sendScript(Transfer)
+    case look(Look)
+    /// Apply a preset by name; the iPad keeps its own mirroring and microphone.
+    case preset(String)
+    /// The Manual countdown in seconds: 0, 3 or 5.
+    case startDelay(Int)
+    /// "iPad" or "Mac": whose microphone the Voice mode follows.
+    case voiceSource(String)
+    case follow(Follow)
+  }
+
+  /// Mac to iPad script transfer. `basis` is the fingerprint (`MarkdownLibrary.fingerprint`) of
+  /// the text the Mac last sent for this `macID`, nil on the first send.
+  public struct Transfer: Codable, Equatable, Sendable {
+    public var macID: UUID
+    public var title: String
+    public var markdown: String
+    public var basis: String?
+    public var present: Bool
+    public init(macID: UUID, title: String, markdown: String, basis: String? = nil, present: Bool = false) {
+      self.macID = macID; self.title = title; self.markdown = markdown; self.basis = basis; self.present = present
+    }
+    /// Beyond these the iPad ignores the transfer.
+    public static let maximumMarkdownBytes = 2 * 1024 * 1024
+    public static let maximumTitleLength = 200
+  }
+
+  /// A partial look update: nil leaves the value as it is. The iPad repairs out-of-range values.
+  public struct Look: Codable, Equatable, Sendable {
+    public var horizontalMirror: Bool?
+    public var verticalMirror: Bool?
+    public var fontSize: Double?
+    public var textWidth: Double?
+    public var lineSpacing: Double?
+    public var guideFraction: Double?
+    public init(
+      horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
+      textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil
+    ) {
+      self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
+      self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
+      self.guideFraction = guideFraction
+    }
+  }
+
+  /// The Mac's voice relay: the last confirmed spoken token (0-based, as
+  /// `SessionStore.lastConfirmedTokenIndex`) of the script with this fingerprint, valid only for
+  /// the iPad `seekRevision` it names.
+  public struct Follow: Codable, Equatable, Sendable {
+    public var confirmed: Int
+    public var fingerprint: String
+    public var seekRevision: Int
+    public init(confirmed: Int, fingerprint: String, seekRevision: Int) {
+      self.confirmed = confirmed; self.fingerprint = fingerprint; self.seekRevision = seekRevision
+    }
   }
 
   public struct Script: Codable, Equatable, Sendable {
     public var id: UUID
     public var title: String
-    public init(id: UUID, title: String) { self.id = id; self.title = title }
+    /// Version 3: the Mac library script this one was sent from, and the fingerprint of its text.
+    public var macID: UUID?
+    public var fingerprint: String?
+    public init(id: UUID, title: String, macID: UUID? = nil, fingerprint: String? = nil) {
+      self.id = id; self.title = title; self.macID = macID; self.fingerprint = fingerprint
+    }
   }
 
   public struct State: Codable, Equatable, Sendable {
@@ -177,9 +240,25 @@ public enum PadRemote {
     /// The reading position from 1, and the script's length in words; 0 when nothing is open.
     public var word: Int
     public var words: Int
-    public init(scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int) {
+    /// Version 3, all Optional: the iPad's `CameraLink.protocolVersion`, its full current look,
+    /// preset names, countdown, voice source, the open script's `SessionStore.seekRevision` and
+    /// the fingerprint of its text.
+    public var version: Int?
+    public var look: Look?
+    public var presets: [String]?
+    public var startDelay: Int?
+    public var voiceSource: String?
+    public var seekRevision: Int?
+    public var fingerprint: String?
+    public init(
+      scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
+      version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
+      voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil
+    ) {
       self.scripts = scripts; self.presenting = presenting; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
+      self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
+      self.voiceSource = voiceSource; self.seekRevision = seekRevision; self.fingerprint = fingerprint
     }
   }
 }

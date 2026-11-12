@@ -50,11 +50,17 @@ enum ScriptFolderError: LocalizedError {
   private var pollTask: Task<Void, Never>?
   private static let bookmarkKey = "scriptFolderBookmark"
   private static let idsKey = "scriptFolderIDs"
+  private static let sentKey = "scriptFolderSentFromMac"
+  /// Mac script to iPad script, per folder (`ScriptTransfer.key`); survives renames.
+  private var sent: [String: UUID]
+  private var fingerprints: [UUID: (modified: Date, value: String)] = [:]
   static let presetsFileName = "Video Prompter presets.json"
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
     ids = (defaults.dictionary(forKey: Self.idsKey) as? [String: String] ?? [:])
+      .compactMapValues(UUID.init(uuidString:))
+    sent = (defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:])
       .compactMapValues(UUID.init(uuidString:))
     rootURL = Self.localFolder
     if let data = defaults.data(forKey: Self.bookmarkKey), let url = Self.resolve(data) {
@@ -181,6 +187,78 @@ enum ScriptFolderError: LocalizedError {
   func forget(_ id: UUID) {
     ids = ids.filter { $0.value != id }
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
+    sent = sent.filter { $0.value != id }
+    defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
+    fingerprints[id] = nil
+  }
+
+  // MARK: Scripts sent from a Mac
+
+  /// The Mac script this iPad script was sent from, in the current folder.
+  func macID(of id: UUID) -> UUID? {
+    let prefix = ScriptTransfer.key(root: rootURL, macID: UUID()).dropLast(36)
+    return sent.first { $0.value == id && $0.key.hasPrefix(prefix) }.flatMap { UUID(uuidString: String($0.key.dropFirst(prefix.count))) }
+  }
+
+  /// The fingerprint of a Mac-sent script's text, read again only when its file changed.
+  func fingerprint(of script: FolderScript) -> String? {
+    if let cached = fingerprints[script.id], cached.modified == script.modified { return cached.value }
+    guard script.isDownloaded, let text = try? Self.read(script.url) else { return nil }
+    let value = MarkdownLibrary.fingerprint(text)
+    fingerprints[script.id] = (script.modified, value)
+    return value
+  }
+
+  /// Applies a Mac's script by `ScriptTransfer.action`; nothing here overwrites an edit made on
+  /// this iPad. Returns nil for a transfer past the limits.
+  func receive(_ transfer: PadRemote.Transfer) throws -> FolderScript? {
+    guard transfer.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes,
+      transfer.title.count <= PadRemote.Transfer.maximumTitleLength
+    else { return nil }
+    refresh()
+    let key = ScriptTransfer.key(root: rootURL, macID: transfer.macID)
+    func text(_ script: FolderScript) throws -> String {
+      guard script.isDownloaded else { throw ScriptFolderError.notDownloaded }
+      return try Self.read(script.url)
+    }
+    let linked = sent[key].flatMap(script)
+    let fileName = Self.fileName(for: transfer.title)
+    let sameTitle = linked != nil ? nil
+      : scripts.first { $0.relativePath == fileName } ?? scripts.first { $0.title == transfer.title }
+    let linkedText = try linked.map(text)
+    var action = ScriptTransfer.action(
+      markdown: transfer.markdown, basis: transfer.basis, linked: linkedText, sameTitle: try sameTitle.map(text))
+    var target = linked ?? sameTitle
+    if action == .replace, let linked, let linkedText {
+      // Checked and written in one coordinated write, so an edit that lands meanwhile wins.
+      if linkedText != transfer.markdown, try !Self.replace(linkedText, with: transfer.markdown, at: linked.url) {
+        action = .createCopy
+      }
+    }
+    if action == .createCopy || action == .create {
+      let directory = action == .create
+        ? rootURL.appendingPathComponent(ScriptTransfer.subfolder, isDirectory: true)
+        : linked!.url.deletingLastPathComponent()
+      let tag = action == .create ? "" : " (from Mac \(Self.macStamp()))"
+      let url = try ScriptTransfer.createFile(
+        title: transfer.title, tag: tag, markdown: transfer.markdown, in: directory)
+      refresh()
+      let path = (directory == rootURL ? "" : directory.lastPathComponent + "/") + url.lastPathComponent
+      target = scripts.first { $0.relativePath == path } ?? FolderScript(
+        id: id(for: path), relativePath: path, url: url, modified: Date(), isDownloaded: true)
+    }
+    guard let target else { return nil }
+    sent[key] = target.id
+    defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
+    refresh()
+    return self.script(target.id) ?? target
+  }
+
+  private static func macStamp() -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyy-MM-dd HH-mm-ss"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    return formatter.string(from: Date())
   }
 
   /// The script as a record the shared session can present. The revision follows the content,
@@ -277,12 +355,7 @@ enum ScriptFolderError: LocalizedError {
 
   // MARK: Files
 
-  static func fileName(for title: String) -> String {
-    let cleaned = title.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
-      .joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
-    let stem = cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(120))
-    return stem.hasPrefix(".") ? "Script " + stem + ".md" : stem + ".md"
-  }
+  static func fileName(for title: String) -> String { ScriptTransfer.fileName(for: title) }
 
   private static func stamp() -> String {
     let formatter = DateFormatter()

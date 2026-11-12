@@ -284,7 +284,13 @@ extension PadStore {
         lastSent = state
       }.store(in: &bag)
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
-      guard let self, name != nil else { return }
+      guard let self else { return }
+      if name == nil {
+        // A relayed session never falls back to this iPad's microphone on its own: it stops, and
+        // the next Play here is the reader's choice.
+        if session.followsRemote { session.pause(); session.followsRemote = false }
+        return
+      }
       lastSent = remoteState
       link.send(lastSent!)
     }.store(in: &bag)
@@ -294,10 +300,23 @@ extension PadStore {
     let open = presentingID != nil
     let words = open ? session.document.spokenTokens.count : 0
     return PadRemote.State(
-      scripts: folder.scripts.map { PadRemote.Script(id: $0.id, title: $0.title) },
+      scripts: folder.scripts.map {
+        let macID = folder.macID(of: $0.id)
+        return PadRemote.Script(
+          id: $0.id, title: $0.title, macID: macID, fingerprint: macID == nil ? nil : folder.fingerprint(of: $0))
+      },
       presenting: presentingID, running: open && session.isActivelyRunning,
       mode: settings.mode, speed: Int(settings.speed.rounded()),
-      word: words > 0 ? session.tokenIndex + 1 : 0, words: words)
+      word: words > 0 ? session.tokenIndex + 1 : 0, words: words,
+      version: CameraLink.protocolVersion,
+      look: PadRemote.Look(
+        horizontalMirror: settings.horizontalMirror, verticalMirror: settings.verticalMirror,
+        fontSize: settings.fontSize, textWidth: settings.textWidth, lineSpacing: settings.lineSpacing,
+        guideFraction: settings.guideFraction),
+      presets: presets.map(\.name), startDelay: session.startDelay,
+      voiceSource: session.followsRemote ? "Mac" : "iPad",
+      seekRevision: open ? session.seekRevision : nil,
+      fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil)
   }
 
   func perform(_ command: PadRemote.Command) {
@@ -310,19 +329,56 @@ extension PadStore {
       if ["Voice", "Manual"].contains(mode) { settings.mode = mode }
     case .speed(let speed):
       settings.speed = Double(min(max(speed, 20), 300))
+    case .sendScript(let transfer):
+      do {
+        guard let script = try folder.receive(transfer) else { return }
+        selectedID = script.id
+        if transfer.present, presentingID != script.id { present(script) }
+        objectWillChange.send()
+      } catch { errorMessage = error.localizedDescription }
+    case .look(let look):
+      var next = settings
+      if let value = look.horizontalMirror { next.horizontalMirror = value }
+      if let value = look.verticalMirror { next.verticalMirror = value }
+      if let value = look.fontSize, value.isFinite { next.fontSize = value }
+      if let value = look.textWidth, value.isFinite { next.textWidth = value }
+      if let value = look.lineSpacing, value.isFinite { next.lineSpacing = value }
+      if let value = look.guideFraction, value.isFinite { next.guideFraction = value }
+      settings = next
+    case .preset(let name):
+      if let preset = presets.first(where: { $0.name == name }) { apply(preset) }
+    case .startDelay(let seconds):
+      if [0, 3, 5].contains(seconds) { session.startDelay = seconds }
+    case .voiceSource(let source):
+      switch source {
+      case "Mac":
+        // Before the mode change, so switching to Voice cannot start this iPad's microphone.
+        session.followsRemote = true
+        settings.mode = "Voice"
+      case "iPad": session.followsRemote = false
+      default: return
+      }
+      objectWillChange.send()
+    case .follow(let follow):
+      guard session.followsRemote, presentingID != nil, settings.mode == "Voice",
+        follow.fingerprint == session.activeRecord?.metadata.contentFingerprint,
+        follow.seekRevision == session.seekRevision
+      else { return }
+      session.followRemote(confirmed: follow.confirmed)
     default:
       // The rest act on the open presenter, as its buttons do.
       guard presentingID != nil else { return }
       switch command {
       case .close: closePresenter()
-      case .play: session.play()
+      // The iPad's own Start: honours the Manual countdown. Pause cancels it.
+      case .play: session.startReading()
       case .pause: session.pause()
       case .backToStart: session.restart()
       case .nextPassage: session.nextPassage()
       case .previousPassage: session.previousPassage()
       case .seek(let word):
         if word >= 1, word <= session.document.spokenTokens.count { session.seek(to: word - 1) }
-      case .present, .mode, .speed: break
+      case .present, .mode, .speed, .sendScript, .look, .preset, .startDelay, .voiceSource, .follow: break
       }
     }
   }

@@ -58,6 +58,65 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     send(.mode("Sideways"))
     _ = try state("nonsense ignored") { $0.mode == "Manual" && $0.presenting == script.id }
 
+    // Version 3: a script from the Mac, the look, and the Mac's voice.
+    send(.close)
+    let macID = UUID()
+    let sentTitle = "Sent \(expectedTitle)"
+    let text = "# \(sentTitle)\n\nOne two three four five six seven eight nine ten eleven twelve."
+    send(.sendScript(.init(macID: macID, title: sentTitle, markdown: text, basis: nil, present: true)))
+    let sent = try state("sent script opens") { state in
+      state.scripts.contains { $0.macID == macID } && state.presenting == state.scripts.first { $0.macID == macID }?.id
+    }
+    let sentScript = try XCTUnwrap(sent.scripts.first { $0.macID == macID })
+    XCTAssertEqual(sentScript.fingerprint, MarkdownLibrary.fingerprint(text))
+    XCTAssertEqual(sent.fingerprint, sentScript.fingerprint)
+    XCTAssertEqual(sent.version, CameraLink.protocolVersion)
+    // Untouched since the last send: the same script takes the new text.
+    let newer = text + " Thirteen fourteen."
+    send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))
+    _ = try state("resend replaces in place") { state in
+      state.scripts.first { $0.macID == macID }.map { $0.id == sentScript.id && $0.fingerprint == MarkdownLibrary.fingerprint(newer) } == true
+    }
+    // No basis and different text is a conflict: a new file, the old one kept.
+    send(.sendScript(.init(macID: macID, title: sentTitle, markdown: text, basis: nil, present: false)))
+    _ = try state("conflict keeps the iPad's file") { state in
+      state.scripts.count(where: { $0.title.hasPrefix(sentTitle) }) == 2
+        && state.scripts.first { $0.macID == macID }.map { $0.id != sentScript.id } == true
+    }
+    // Past the limits: ignored.
+    send(.sendScript(.init(macID: UUID(), title: String(repeating: "T", count: 201), markdown: "x")))
+    send(.look(.init(horizontalMirror: false, verticalMirror: true, fontSize: 64, guideFraction: 0.4)))
+    let looked = try state("look applied") { $0.look?.fontSize == 64 && $0.look?.verticalMirror == true }
+    XCTAssertEqual(looked.look?.horizontalMirror, false)
+    XCTAssertFalse(looked.scripts.contains { $0.title.hasPrefix(String(repeating: "T", count: 201)) })
+    send(.startDelay(5))
+    _ = try state("countdown set") { $0.startDelay == 5 }
+    send(.startDelay(7))
+    send(.voiceSource("Mac"))
+    send(.present(sentScript.id))
+    let following = try state("following the Mac") { $0.voiceSource == "Mac" && $0.presenting == sentScript.id && $0.seekRevision != nil }
+    let revision = try XCTUnwrap(following.seekRevision)
+    XCTAssertEqual(following.startDelay, 5)
+    send(.seek(word: 1))
+    let sought = try state("seeked to the start") { ($0.seekRevision ?? revision) > revision }
+    let freshRevision = try XCTUnwrap(sought.seekRevision)
+    send(.play)
+    _ = try state("running on the Mac's voice") { $0.running }
+    let fingerprint = try XCTUnwrap(sought.fingerprint)
+    // A stale revision and a wrong script are dropped; the right ones move the word.
+    send(.follow(.init(confirmed: 6, fingerprint: fingerprint, seekRevision: freshRevision - 1)))
+    send(.follow(.init(confirmed: 6, fingerprint: "0000000000000000", seekRevision: freshRevision)))
+    send(.follow(.init(confirmed: 99, fingerprint: fingerprint, seekRevision: freshRevision)))
+    Thread.sleep(forTimeInterval: 0.5)
+    XCTAssertEqual(latest.withLock { $0?.word }, 1, "stale, foreign and out-of-range follows must not move it")
+    send(.follow(.init(confirmed: 6, fingerprint: fingerprint, seekRevision: freshRevision)))
+    _ = try state("follow moves the word") { $0.word == 8 }
+    send(.voiceSource("iPad"))
+    send(.pause)
+    _ = try state("voice back on the iPad") { $0.voiceSource == "iPad" && !$0.running }
+    send(.close)
+    _ = try state("version 3 closed") { $0.presenting == nil }
+
     // The camera: a 1080p picture behind the script, for the screenshot the script takes.
     let encoder = LinkEncoder()
     encoder.attach(pipe)

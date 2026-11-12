@@ -36,6 +36,21 @@ final class SessionStore: ObservableObject {
       defaults.set(startDelay, forKey: "automaticScrollStartDelay")
     }
   }
+  /// True while a Mac's microphone drives this session (the iPad link's voice relay): this
+  /// device never opens its own capture, and `followRemote` moves the position instead.
+  var followsRemote = false {
+    didSet {
+      guard followsRemote != oldValue, isActivelyRunning, settings.mode == "Voice" else { return }
+      if followsRemote {
+        // Hand over from this device's microphone: stop its capture, keep reading from here.
+        stopTasks()
+        state = .running
+      } else {
+        // Back to this device's microphone, deliberately, while the script is running.
+        startAudioMode()
+      }
+    }
+  }
   private var countdownTask: Task<Void, Never>?
   var countdownTick: Duration = .seconds(1)
   var isCountingDown: Bool { countdownRemaining > 0 }
@@ -618,31 +633,44 @@ final class SessionStore: ObservableObject {
         state = .uncertain("Following repeated earlier words is off")
         return
       }
-      state = .running
-      lastConfirmedTokenIndex = update.tokenIndex
-      tokenIndex = min(update.tokenIndex + 1, document.spokenTokens.count - 1)
-      if update.tokenIndex > old { acceptedWords += update.tokenIndex - old }
-      if let record = activeRecord {
-        anchor = ReadingAnchorRemapper.makeAnchor(
-          scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
-          globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
-      }
-      anchorNotice = nil
-      if update.tokenIndex < document.spokenTokens.count - 1 {
-        voiceEndTask?.cancel(); voiceEndTask = nil
-      } else if update.tokenIndex > old {
-        voiceEndTask?.cancel()
-        voiceEndTask = Task { [weak self] in
-          guard let self else { return }
-          do { try await Task.sleep(for: self.voiceEndGrace) } catch { return }
-          guard !Task.isCancelled, self.reachedEnd else { return }
-          self.pause()
-        }
-      }
-      rememberSoon()
+      advance(toConfirmed: update.tokenIndex, old: old)
     case .held: state = .uncertain("Listening for a clearer phrase")
     case .staleGeneration, .duplicateRevision: break
     }
+  }
+
+  /// A word the Mac's tracker confirmed (0-based). Moves exactly as a recognised word does,
+  /// except that backward tracking is not checked again: the Mac already applied its own rule.
+  func followRemote(confirmed: Int) {
+    guard followsRemote, isActivelyRunning, activeRecord != nil,
+      confirmed >= 0, confirmed < document.spokenTokens.count
+    else { return }
+    advance(toConfirmed: confirmed, old: lastConfirmedTokenIndex ?? (tokenIndex - 1))
+  }
+
+  private func advance(toConfirmed confirmed: Int, old: Int) {
+    state = .running
+    lastConfirmedTokenIndex = confirmed
+    tokenIndex = min(confirmed + 1, document.spokenTokens.count - 1)
+    if confirmed > old { acceptedWords += confirmed - old }
+    if let record = activeRecord {
+      anchor = ReadingAnchorRemapper.makeAnchor(
+        scriptID: record.metadata.id, revision: record.metadata.revision, document: document,
+        globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
+    }
+    anchorNotice = nil
+    if confirmed < document.spokenTokens.count - 1 {
+      voiceEndTask?.cancel(); voiceEndTask = nil
+    } else if confirmed > old {
+      voiceEndTask?.cancel()
+      voiceEndTask = Task { [weak self] in
+        guard let self else { return }
+        do { try await Task.sleep(for: self.voiceEndGrace) } catch { return }
+        guard !Task.isCancelled, self.reachedEnd else { return }
+        self.pause()
+      }
+    }
+    rememberSoon()
   }
 
   private func restartModeTask() {
@@ -722,7 +750,8 @@ final class SessionStore: ObservableObject {
 
   private func startAudioMode() {
     // Also while a start is still preparing: a second one would race it for the recogniser.
-    guard audioCapture == nil, speechTask == nil else { return }
+    // The single gate for every path (play, a settings change): a relayed session never listens.
+    guard !followsRemote, audioCapture == nil, speechTask == nil else { return }
     if audioDeviceObserver == nil {
       audioDeviceObserver = AudioCapture.inputDeviceObserver { [weak self] in
         guard let self else { return }
