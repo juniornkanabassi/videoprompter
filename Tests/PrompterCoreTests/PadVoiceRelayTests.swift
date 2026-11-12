@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Synchronization
 import XCTest
 
@@ -303,7 +303,7 @@ final class PadVoiceRelayTests: XCTestCase {
     let session = try XCTUnwrap(relay.session)
     session.voiceEndGrace = .milliseconds(20)
     hear(relay, markdown)
-    try await until("self-paused at the end") { !session.isActivelyRunning }
+    try await until("self-paused at the end") { !session.isActivelyRunning && relay.status == "Reached the end of the script" }
     XCTAssertTrue(relay.isRelaying)
     XCTAssertEqual(relay.status, "Reached the end of the script")
     relay.iPadStateChanged(state(running: true, word: 3, revision: 5))
@@ -356,6 +356,98 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertNil(UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints")?[macID.uuidString], "kept in the injected defaults only")
     XCTAssertNil(macDefaults.data(forKey: "readingPositions"))
     relay.stop()
+  }
+
+  // MARK: - Revisions, restarts and the video limit
+
+  func testAnyChangedRevisionIsASeekEvenWhenItGoesDown() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(running: true, revision: 5))
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("live") { relay.session != nil }
+    let session = try XCTUnwrap(relay.session)
+    let before = session.seekRevision
+    relay.iPadStateChanged(state(running: true, word: 8, revision: 2))
+    XCTAssertEqual(session.seekRevision, before + 1)
+    XCTAssertEqual(session.tokenIndex, 7)
+    hear(relay, "hotel india")
+    try await until("follow") { !link.follows.isEmpty }
+    XCTAssertEqual(link.follows.map(\.seekRevision), [2], "stamped with the iPad's current revision, which went down")
+    relay.stop()
+  }
+
+  func testAStopAndStartDuringTheReadinessWaitLeavesTheOldRunInert() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(scripts: false))
+    relay.start(script: record, settings: PrompterSettings())
+    try await Task.sleep(for: .milliseconds(60))
+    relay.stop()
+    relay.start(script: record, settings: PrompterSettings())
+    try await Task.sleep(for: .milliseconds(60))
+    relay.iPadStateChanged(state(voice: "iPad"))
+    link.onSend = { [self, weak relay] command in
+      if command == .voiceSource("Mac") { Task { @MainActor in relay?.iPadStateChanged(state(voice: "Mac")) } }
+    }
+    try await until("live") { relay.session != nil }
+    try await Task.sleep(for: .milliseconds(100))
+    let sends = link.sent.filter { if case .sendScript = $0 { true } else { false } }
+    XCTAssertEqual(sends.count, 2, "one per start")
+    XCTAssertEqual(link.sent.filter { $0 == .voiceSource("Mac") }.count, 1, "only the new run switched the voice")
+    XCTAssertEqual(link.active.filter { $0 }.count, 1)
+    XCTAssertFalse(link.sent.contains(.pause))
+    relay.stop()
+  }
+
+  func testAStopAndStartDuringTheVoiceConfirmationLeavesTheOldRunInert() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(voice: "iPad"))
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("first run waits for the voice") { link.sent == [.voiceSource("Mac")] }
+    relay.stop()
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("second run asks too") { link.sent.count == 2 }
+    // The iPad confirms once; the old run's wait must not complete a second session.
+    relay.iPadStateChanged(state(voice: "Mac"))
+    try await until("live") { relay.session != nil }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(link.sent.filter { $0 == .voiceSource("Mac") }.count, 2, "one request per run")
+    XCTAssertEqual(link.active.filter { $0 }.count, 1, "one activation")
+    XCTAssertTrue(relay.isRelaying)
+    XCTAssertFalse(link.sent.contains(.pause))
+    relay.stop()
+    XCTAssertEqual(link.sent.last, .pause)
+    XCTAssertFalse(relay.isRelaying)
+  }
+
+  func testTheSenderSetsAndRestoresTheVideoLimitOnItsPipe() {
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    let pipe = StalledPipe(name: "limit")
+    sender.pipe = pipe
+    XCTAssertEqual(pipe.videoLimit.load(ordering: .relaxed), 3_000_000)
+    sender.setRelayActive(true)
+    XCTAssertEqual(pipe.videoLimit.load(ordering: .relaxed), 256_000)
+    sender.setRelayActive(false)
+    XCTAssertEqual(pipe.videoLimit.load(ordering: .relaxed), 3_000_000)
+    sender.pipe = nil
+  }
+
+  func testTheEncoderDropsAFrameOnlyAboveTheLimit() throws {
+    func queuedBytesAfterAFrame(limit: Int) throws -> Int {
+      let pipe = StalledPipe(name: "encoder")
+      pipe.videoLimit.store(limit, ordering: .relaxed)
+      // A message the stalled transport never finishes: 300 KB queued.
+      pipe.send(CameraLink.Message.frame(time: 0, keyFrame: true, data: Data(count: 300_000)).encoded())
+      let before = pipe.pendingBytes
+      let encoder = LinkEncoder()
+      encoder.attach(pipe)
+      encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try CameraLinkPipelineTests.frame(1280, 720, 1), from: CameraLinkPipelineTests.connection)
+      encoder.captureQueue.sync {}
+      let deadline = Date().addingTimeInterval(2)
+      while pipe.pendingBytes == before, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+      return pipe.pendingBytes - before
+    }
+    XCTAssertGreaterThan(try queuedBytesAfterAFrame(limit: 3_000_000), 0, "admitted under the normal limit")
+    XCTAssertEqual(try queuedBytesAfterAFrame(limit: 256_000), 0, "dropped over the relay's limit")
   }
 
   // MARK: - The transport
@@ -422,7 +514,7 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertEqual(pipe.pendingBytes, 0)
   }
 
-  func testOtherControlMessagesKeepTheirOrderAroundAReplacedFollow() {
+  func testAReplacedFollowGoesAfterTheCommandsSentBetweenThem() {
     let pipe = StalledPipe(name: "order")
     pipe.send(Self.numbered(0))
     pipe.send(CameraLink.Message.command(.play).encoded())
@@ -430,9 +522,11 @@ final class PadVoiceRelayTests: XCTestCase {
     pipe.send(CameraLink.Message.command(.pause).encoded())
     pipe.send(Self.follow(2))
     for _ in 0..<4 { pipe.finishOne() }
+    // A paused iPad ignores a follow, so the newer one must not jump ahead of the pause.
     XCTAssertEqual(pipe.messages.dropFirst(), [
-      .command(.play), .command(.follow(.init(confirmed: 2, fingerprint: "f", seekRevision: 1))), .command(.pause),
+      .command(.play), .command(.pause), .command(.follow(.init(confirmed: 2, fingerprint: "f", seekRevision: 1))),
     ])
+    XCTAssertEqual(pipe.pendingBytes, 0)
   }
 
   func testAFailedWriteDoesNotStallTheQueue() {

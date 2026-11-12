@@ -69,7 +69,8 @@ import VideoToolbox
   private var browser: NWBrowser?
   private var wifiTargets: [NWEndpoint] = []
   private var usbDevices: [Int] = []
-  private var pipe: LinkPipe?
+  /// The open connection; settable so tests can stand one in.
+  var pipe: LinkPipe?
   private var connecting = false
   /// Bumped by every start and stop, so a connection begun under one run never attaches to the
   /// next or survives the switch being turned off.
@@ -574,13 +575,14 @@ class LinkPipe: @unchecked Sendable {
     let isFollow = kind == 5 && Self.isFollow(data)
     let replaced = backlog.withLock { backlog -> Int? in
       if kind == 2 || kind == 3 { backlog.video.append(data); return nil }
-      // A word still waiting is out of date once a newer one arrives: it is replaced where it stands.
+      // A word still waiting is out of date once a newer one arrives. The newer one goes to the
+      // tail, so a pause or play sent between them is never overtaken by it.
+      var dropped: Int?
       if isFollow, let index = backlog.control.firstIndex(where: { $0.follow }) {
-        defer { backlog.control[index] = (data, true) }
-        return backlog.control[index].data.count
+        dropped = backlog.control.remove(at: index).data.count
       }
       backlog.control.append((data, isFollow))
-      return nil
+      return dropped
     }
     if let replaced { sent(replaced) }
     pump()
