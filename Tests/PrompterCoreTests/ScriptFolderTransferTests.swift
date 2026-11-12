@@ -120,29 +120,46 @@ final class ScriptFolderTransferTests: XCTestCase {
     XCTAssertEqual(folder.scripts.count, 1)
   }
 
-  func testTheLinkAndTheIdentityBelongToTheirFolder() throws {
+  func testMacLinksStayPerFolderAcrossAFolderSwitch() throws {
     let rootA = try directory("A"), rootB = try directory("B")
     let folder = try folder(rootA)
     let mac = UUID()
     let inA = try XCTUnwrap(folder.receive(transfer(mac, "In A")))
-    // Another folder: the same Mac script is not linked here, and the same relative path is a new file.
+    // Another folder: the same Mac script is not linked here, so this is a new file, and A's is untouched.
     folder.choose(rootB)
     XCTAssertTrue(folder.scripts.isEmpty)
+    XCTAssertNil(folder.macID(of: inA.id), "A's link is not B's")
     let inB = try XCTUnwrap(folder.receive(transfer(mac, "In B")))
     XCTAssertEqual(inB.relativePath, inA.relativePath)
-    XCTAssertNotEqual(inB.id, inA.id)
     XCTAssertEqual(try text(inB), "In B")
     XCTAssertEqual(try Folder.read(inA.url), "In A", "the other folder's file is untouched")
-    // Deleting here forgets only this folder's entries.
-    folder.forget(inB.id)
+    XCTAssertEqual(folder.macID(of: inB.id), mac)
+    // Back in A: its link is still there, and a resend replaces in place instead of duplicating.
     folder.choose(rootA)
-    XCTAssertEqual(folder.scripts.map(\.id), [inA.id], "its identity survived the switch and the other folder's forget")
-    XCTAssertEqual(folder.macID(of: inA.id), mac)
+    XCTAssertEqual(folder.scripts.count, 1)
+    XCTAssertEqual(folder.macID(of: try XCTUnwrap(folder.scripts.first).id), mac)
     let again = try XCTUnwrap(folder.receive(transfer(mac, "In A 2", basis: MarkdownLibrary.fingerprint("In A"))))
-    XCTAssertEqual(again.id, inA.id)
-    // A forgotten script is a new one when its path comes back.
+    XCTAssertEqual(again.relativePath, inA.relativePath)
+    XCTAssertEqual(try text(again), "In A 2")
+    XCTAssertEqual(folder.scripts.count, 1)
+    XCTAssertEqual(try Folder.read(inB.url), "In B")
+  }
+
+  func testForgettingAScriptRemovesOnlyThisFoldersMacLink() throws {
+    let rootA = try directory("A"), rootB = try directory("B")
+    let folder = try folder(rootA)
+    let mac = UUID()
+    _ = try XCTUnwrap(folder.receive(transfer(mac, "In A")))
     folder.choose(rootB)
-    XCTAssertNotEqual(folder.scripts.first?.id, inB.id)
+    let inB = try XCTUnwrap(folder.receive(transfer(mac, "In B")))
+    // Deleted here: B's link goes, and A's, in another folder, is not touched.
+    folder.forget(inB.id)
+    XCTAssertNil(folder.macID(of: inB.id))
+    folder.choose(rootA)
+    XCTAssertEqual(folder.macID(of: try XCTUnwrap(folder.scripts.first).id), mac)
+    let again = try XCTUnwrap(folder.receive(transfer(mac, "In A 2", basis: MarkdownLibrary.fingerprint("In A"))))
+    XCTAssertEqual(folder.scripts.count, 1)
+    XCTAssertEqual(try text(again), "In A 2")
   }
 
   func testAnUndownloadedFileDoesNotFailTheTransfer() throws {
@@ -170,45 +187,5 @@ final class ScriptFolderTransferTests: XCTestCase {
     XCTAssertNil(try folder.receive(transfer(UUID(), "ok", title: String(repeating: "T", count: 201))))
     XCTAssertTrue(folder.scripts.isEmpty)
     XCTAssertNotNil(try folder.receive(transfer(UUID(), String(repeating: "x", count: PadRemote.Transfer.maximumMarkdownBytes))))
-  }
-
-  /// Before identities were per folder, A/Preview.md and B/Preview.md shared one. The folder in
-  /// use at the upgrade keeps it, whichever folder is opened first afterwards.
-  func testASharedLegacyIdentityStaysWithTheFolderInUseAtTheUpgrade() throws {
-    for (ownerName, otherName) in [("A", "B"), ("B", "A")] {
-      let roots = [ownerName: try directory(ownerName), otherName: try directory(otherName)]
-      let owner = try XCTUnwrap(roots[ownerName]), other = try XCTUnwrap(roots[otherName])
-      for (name, root) in roots { try Folder.write("Text \(name)", to: root.appendingPathComponent("Preview.md")) }
-      let legacy = UUID()
-      let defaults = freshDefaults("ScriptFolderLegacy")
-      defaults.set(["Preview.md": legacy.uuidString], forKey: "scriptFolderIDs")
-      defaults.set(try owner.bookmarkData(), forKey: "scriptFolderBookmark")
-      let folder = Folder(defaults: defaults, local: try directory("local"))
-      XCTAssertEqual(folder.scripts.map(\.id), [legacy], "\(ownerName) owns it from the first listing")
-      // The other folder opened first or second makes no difference to who owns it.
-      folder.choose(other)
-      let otherID = try XCTUnwrap(folder.scripts.first?.id)
-      XCTAssertNotEqual(otherID, legacy)
-      // Its old membership names the shared id, which the owner holds: reassigned, not deleted, so
-      // the owner's reading position and Google link are not cleaned away.
-      XCTAssertEqual(folder.removedIdentities(known: [legacy], current: [otherID]), [])
-      // Mac links are per folder and a resend lands on the same file, never a duplicate.
-      let mac = UUID()
-      let linked = try XCTUnwrap(folder.receive(transfer(mac, "Text \(otherName)")))
-      XCTAssertEqual(linked.id, otherID)
-      let resent = try XCTUnwrap(folder.receive(transfer(mac, "Text \(otherName) more", basis: MarkdownLibrary.fingerprint("Text \(otherName)"))))
-      XCTAssertEqual(resent.id, otherID)
-      XCTAssertEqual(folder.scripts.count, 1)
-      folder.choose(owner)
-      XCTAssertEqual(folder.scripts.map(\.id), [legacy])
-      let ownerLink = try XCTUnwrap(folder.receive(transfer(mac, "Text \(ownerName)")))
-      XCTAssertEqual(ownerLink.id, legacy)
-      let ownerResent = try XCTUnwrap(folder.receive(transfer(mac, "Text \(ownerName) more", basis: MarkdownLibrary.fingerprint("Text \(ownerName)"))))
-      XCTAssertEqual(ownerResent.id, legacy)
-      XCTAssertEqual(folder.scripts.count, 1)
-      XCTAssertEqual(folder.macID(of: legacy), mac)
-      // A script really deleted from its own folder is still cleaned up.
-      XCTAssertEqual(folder.removedIdentities(known: [legacy], current: []), [legacy])
-    }
   }
 }

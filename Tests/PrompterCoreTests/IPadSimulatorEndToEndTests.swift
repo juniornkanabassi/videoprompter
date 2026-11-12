@@ -169,6 +169,21 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
         throw XCTSkip("stopped")
       }
     }
+    let resetFile = URL(fileURLWithPath: try XCTUnwrap(environment["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents/vp-e2e-link-reset.txt")
+    try? FileManager.default.removeItem(at: resetFile)
+    /// Waits for the iPad to record that it reset the relay for `reason`, then clears the record.
+    func reset(_ reason: String) throws {
+      for _ in 0..<100 {
+        if (try? String(contentsOf: resetFile, encoding: .utf8)) == reason {
+          try? FileManager.default.removeItem(at: resetFile)
+          return
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+      }
+      XCTFail("expected the relay to reset for \(reason), the iPad recorded \(String(describing: try? String(contentsOf: resetFile, encoding: .utf8)))")
+      throw XCTSkip("stopped")
+    }
     func startRelay(_ mac: Mac) throws {
       let first = try mac.state("connected") { $0.scripts.contains { $0.title == expectedTitle } }
       let script = try XCTUnwrap(first.scripts.first { $0.title == expectedTitle })
@@ -182,15 +197,16 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let first = try Mac(port: port, name: "Mac one")
     try startRelay(first)
     first.pipe.close()
-    // Nothing is connected to read the state, so give the drop time to be handled first: the next
-    // Mac then finds no connection to replace, and what it sees is the plain-drop handler's doing.
-    Thread.sleep(forTimeInterval: 1.0)
+    // Nothing is connected to read the state, so the app records why it reset (a hook under the
+    // end-to-end launch); the next Mac connects only once the plain drop has been seen to do it.
+    try reset("drop")
     let second = try Mac(port: port, name: "Mac two")
     _ = try second.state("stopped after a drop") { $0.voiceSource == "iPad" && !$0.running }
     // Another Mac takes the link over while one is relaying: the same.
     try startRelay(second)
     let third = try Mac(port: port, name: "Mac three")
     _ = try third.state("stopped after a replacement") { $0.voiceSource == "iPad" && !$0.running }
+    try reset("replaced")
     third.send(.close)
     _ = try third.state("closed") { $0.presenting == nil }
     third.pipe.send(CameraLink.Message.goodbye.encoded())

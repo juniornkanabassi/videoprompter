@@ -126,6 +126,17 @@ import UIKit
     listener.start(queue: receiver.queue)
   }
 
+  /// Why the last Mac went, "drop" or "replaced"; the end-to-end test reads it through PadStore.
+  private(set) var lastEndReason = ""
+
+  private func ended(_ reason: String) {
+    guard macName != nil else { return }
+    lastEndReason = reason
+    macName = nil
+    pictureSize = nil
+    onChange?()
+  }
+
   private func handle(_ event: LinkReceiver.Event) {
     switch event {
     case .connected(let name):
@@ -136,11 +147,8 @@ import UIKit
       onChange?()
     case .command(let command):
       onCommand?(command)
-    case .disconnected:
-      guard macName != nil else { return }
-      macName = nil
-      pictureSize = nil
-      onChange?()
+    case .disconnected: ended("drop")
+    case .replaced: ended("replaced")
     }
   }
 }
@@ -154,6 +162,8 @@ final class LinkReceiver: @unchecked Sendable {
     case format(CGSize?)
     case command(PadRemote.Command)
     case disconnected
+    /// Another Mac took the link over while this one was connected.
+    case replaced
   }
 
   let queue = DispatchQueue(label: "VideoPrompter.maclink", qos: .userInteractive)
@@ -219,7 +229,7 @@ final class LinkReceiver: @unchecked Sendable {
     connection?.cancel()
     // The Mac that replaces it is a different sender: a disconnect first, so anything tied to the
     // old one (the Mac's voice relay) ends, and it may send no picture.
-    if connection != nil { onEvent?(.disconnected) }
+    if connection != nil { onEvent?(.replaced) }
     connection = new
     connectionIsWiFi = overWiFi
     peerVersion = 0

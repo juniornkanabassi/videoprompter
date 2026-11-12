@@ -195,7 +195,7 @@ import UIKit
     // deleting the old one's scripts.
     if let saved = knownIDs[root] {
       let known = Set(saved.compactMap(UUID.init(uuidString:)))
-      for id in folder.removedIdentities(known: known, current: current) {
+      for id in known.subtracting(current) {
         // The script on screen stays until the presenter closes, which comes back here.
         if id == presentingID { current.insert(id); continue }
         session.forgetScript(id)
@@ -288,7 +288,14 @@ extension PadStore {
       if name == nil {
         // A relayed session never falls back to this iPad's microphone on its own: it stops, and
         // the next Play here is the reader's choice.
-        if session.followsRemote { session.pause(); session.followsRemote = false }
+        if session.followsRemote {
+          session.pause(); session.followsRemote = false
+          // Test hook, only under the end-to-end launch: why the relay was reset, "drop" or "replaced".
+          if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil {
+            try? Data(link.lastEndReason.utf8).write(
+              to: URL.documentsDirectory.appendingPathComponent("vp-e2e-link-reset.txt"), options: .atomic)
+          }
+        }
         return
       }
       lastSent = remoteState

@@ -44,7 +44,6 @@ enum ScriptFolderError: LocalizedError {
 
   /// Each file's last-read fingerprint, the baseline a save compares against.
   private var baselines: [UUID: String] = [:]
-  /// Each file's identity, by folder and path: another folder may hold a file at the same path.
   private var ids: [String: UUID]
   private let defaults: UserDefaults
   private let localURL: URL
@@ -52,9 +51,10 @@ enum ScriptFolderError: LocalizedError {
   private var pollTask: Task<Void, Never>?
   private static let bookmarkKey = "scriptFolderBookmark"
   private static let idsKey = "scriptFolderIDs"
-  private static let sentKey = "scriptFolderSentFromMac"
-  /// Mac script to iPad script, per folder (`ScriptTransfer.key`); survives renames.
-  private var sent: [String: UUID]
+  private static let sentKey = "scriptFolderMacLinks"
+  /// Mac script to the iPad script's path, per folder (`ScriptTransfer.key`). The path is kept,
+  /// not the id, so the link needs nothing from `ids`; `rename` and `forget` keep it in step.
+  private var sent: [String: String]
   private var fingerprints: [UUID: (modified: Date, value: String)] = [:]
   static let presetsFileName = "Video Prompter presets.json"
 
@@ -63,8 +63,7 @@ enum ScriptFolderError: LocalizedError {
     localURL = local
     ids = (defaults.dictionary(forKey: Self.idsKey) as? [String: String] ?? [:])
       .compactMapValues(UUID.init(uuidString:))
-    sent = (defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:])
-      .compactMapValues(UUID.init(uuidString:))
+    sent = defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:]
     rootURL = local
     if let data = defaults.data(forKey: Self.bookmarkKey), let url = Self.resolve(data) {
       use(url)
@@ -175,17 +174,12 @@ enum ScriptFolderError: LocalizedError {
     }
   }
 
-  private static let separator = "\u{1F}"
-  private var rootPrefix: String { rootURL.resolvingSymlinksInPath().standardizedFileURL.path + Self.separator }
-
+  // shortcut: identities are by relative path, so two folders with a file at the same path share
+  // one id (and its reading position and Google link); as shipped, change only with a migration.
   private func id(for path: String) -> UUID {
-    let key = rootPrefix + path
-    if let id = ids[key] { return id }
-    // An identity saved before they were per folder is shared by every folder that had a file at
-    // this path. `init` lists the folder in use at launch before any other, so that folder owns
-    // them; only paths it does not have go to the first other folder that asks.
-    let id = ids.removeValue(forKey: path) ?? UUID()
-    ids[key] = id
+    if let id = ids[path] { return id }
+    let id = UUID()
+    ids[path] = id
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
     return id
   }
@@ -195,29 +189,26 @@ enum ScriptFolderError: LocalizedError {
   /// A script whose file is gone keeps no identity: a new file later saved at the same path
   /// is a new script, not the old one with its reading position and Google link.
   func forget(_ id: UUID) {
-    // This folder's entries only: the same id may be remembered for another folder.
-    ids = ids.filter { !($0.value == id && ($0.key.hasPrefix(rootPrefix) || !$0.key.contains(Self.separator))) }
+    // Only this folder's Mac links: another folder's link to a file at the same path stays.
+    let prefix = macLinkPrefix
+    sent = sent.filter { !($0.key.hasPrefix(prefix) && ids[$0.value] == id) }
+    defaults.set(sent, forKey: Self.sentKey)
+    ids = ids.filter { $0.value != id }
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
-    sent = sent.filter { !($0.value == id && $0.key.hasPrefix(rootPrefix)) }
-    defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
     fingerprints[id] = nil
-  }
-
-  /// Of the identities a folder listed last time and no longer lists, the ones really gone. One
-  /// that another folder now holds was reassigned, not deleted, and its reading position and
-  /// Google link belong to that folder.
-  func removedIdentities(known: Set<UUID>, current: Set<UUID>) -> Set<UUID> {
-    let elsewhere = Set(ids.filter { !$0.key.hasPrefix(rootPrefix) }.values)
-    return known.subtracting(current).subtracting(elsewhere)
   }
 
   // MARK: Scripts sent from a Mac
 
   /// The Mac script this iPad script was sent from, in the current folder.
   func macID(of id: UUID) -> UUID? {
-    let prefix = ScriptTransfer.key(root: rootURL, macID: UUID()).dropLast(36)
-    return sent.first { $0.value == id && $0.key.hasPrefix(prefix) }.flatMap { UUID(uuidString: String($0.key.dropFirst(prefix.count))) }
+    let prefix = macLinkPrefix
+    return sent.first { $0.key.hasPrefix(prefix) && ids[$0.value] == id }
+      .flatMap { UUID(uuidString: String($0.key.dropFirst(prefix.count))) }
   }
+
+  /// What every `ScriptTransfer.key` of this folder starts with (the key ends in a 36-character id).
+  private var macLinkPrefix: String { String(ScriptTransfer.key(root: rootURL, macID: UUID()).dropLast(36)) }
 
   /// The fingerprint of a Mac-sent script's text, read again only when its file changed.
   func fingerprint(of script: FolderScript) -> String? {
@@ -238,7 +229,7 @@ enum ScriptFolderError: LocalizedError {
     let key = ScriptTransfer.key(root: rootURL, macID: transfer.macID)
     // An iCloud placeholder has no text to compare yet.
     func text(_ script: FolderScript) throws -> String? { script.isDownloaded ? try Self.read(script.url) : nil }
-    let linked = sent[key].flatMap(script)
+    let linked = sent[key].flatMap { path in scripts.first { $0.relativePath == path } }
     let fileName = Self.fileName(for: transfer.title)
     let sameTitle = linked != nil ? nil
       : scripts.first { $0.relativePath == fileName } ?? scripts.first { $0.title == transfer.title }
@@ -267,8 +258,8 @@ enum ScriptFolderError: LocalizedError {
         id: id(for: path), relativePath: path, url: url, modified: Date(), isDownloaded: true)
     }
     guard let target else { return nil }
-    sent[key] = target.id
-    defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
+    sent[key] = target.relativePath
+    defaults.set(sent, forKey: Self.sentKey)
     refresh()
     return self.script(target.id) ?? target
   }
@@ -337,9 +328,12 @@ enum ScriptFolderError: LocalizedError {
     if let failure = failure ?? error { throw failure }
     // The reading position follows the file to its new name.
     let newPath = (script.folder.map { $0 + "/" } ?? "") + destination.lastPathComponent
-    ids[rootPrefix + newPath] = script.id
-    ids[rootPrefix + script.relativePath] = nil
+    ids[newPath] = script.id
+    ids[script.relativePath] = nil
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
+    let prefix = macLinkPrefix
+    for (key, path) in sent where key.hasPrefix(prefix) && path == script.relativePath { sent[key] = newPath }
+    defaults.set(sent, forKey: Self.sentKey)
     refresh()
   }
 
