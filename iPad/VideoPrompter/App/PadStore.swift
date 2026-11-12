@@ -195,7 +195,7 @@ import UIKit
     // deleting the old one's scripts.
     if let saved = knownIDs[root] {
       let known = Set(saved.compactMap(UUID.init(uuidString:)))
-      for id in known.subtracting(current) {
+      for id in folder.removedIdentities(known: known, current: current) {
         // The script on screen stays until the presenter closes, which comes back here.
         if id == presentingID { current.insert(id); continue }
         session.forgetScript(id)

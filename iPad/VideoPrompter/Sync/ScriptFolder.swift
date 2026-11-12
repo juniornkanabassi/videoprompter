@@ -176,12 +176,14 @@ enum ScriptFolderError: LocalizedError {
   }
 
   private static let separator = "\u{1F}"
-  private var rootPrefix: String { rootURL.standardizedFileURL.path + Self.separator }
+  private var rootPrefix: String { rootURL.resolvingSymlinksInPath().standardizedFileURL.path + Self.separator }
 
   private func id(for path: String) -> UUID {
     let key = rootPrefix + path
     if let id = ids[key] { return id }
-    // An identity saved before they were per folder goes to the first folder that asks for it.
+    // An identity saved before they were per folder is shared by every folder that had a file at
+    // this path. `init` lists the folder in use at launch before any other, so that folder owns
+    // them; only paths it does not have go to the first other folder that asks.
     let id = ids.removeValue(forKey: path) ?? UUID()
     ids[key] = id
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
@@ -199,6 +201,14 @@ enum ScriptFolderError: LocalizedError {
     sent = sent.filter { !($0.value == id && $0.key.hasPrefix(rootPrefix)) }
     defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
     fingerprints[id] = nil
+  }
+
+  /// Of the identities a folder listed last time and no longer lists, the ones really gone. One
+  /// that another folder now holds was reassigned, not deleted, and its reading position and
+  /// Google link belong to that folder.
+  func removedIdentities(known: Set<UUID>, current: Set<UUID>) -> Set<UUID> {
+    let elsewhere = Set(ids.filter { !$0.key.hasPrefix(rootPrefix) }.values)
+    return known.subtracting(current).subtracting(elsewhere)
   }
 
   // MARK: Scripts sent from a Mac

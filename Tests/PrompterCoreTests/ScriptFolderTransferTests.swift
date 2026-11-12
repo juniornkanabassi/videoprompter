@@ -171,4 +171,44 @@ final class ScriptFolderTransferTests: XCTestCase {
     XCTAssertTrue(folder.scripts.isEmpty)
     XCTAssertNotNil(try folder.receive(transfer(UUID(), String(repeating: "x", count: PadRemote.Transfer.maximumMarkdownBytes))))
   }
+
+  /// Before identities were per folder, A/Preview.md and B/Preview.md shared one. The folder in
+  /// use at the upgrade keeps it, whichever folder is opened first afterwards.
+  func testASharedLegacyIdentityStaysWithTheFolderInUseAtTheUpgrade() throws {
+    for (ownerName, otherName) in [("A", "B"), ("B", "A")] {
+      let roots = [ownerName: try directory(ownerName), otherName: try directory(otherName)]
+      let owner = try XCTUnwrap(roots[ownerName]), other = try XCTUnwrap(roots[otherName])
+      for (name, root) in roots { try Folder.write("Text \(name)", to: root.appendingPathComponent("Preview.md")) }
+      let legacy = UUID()
+      let defaults = freshDefaults("ScriptFolderLegacy")
+      defaults.set(["Preview.md": legacy.uuidString], forKey: "scriptFolderIDs")
+      defaults.set(try owner.bookmarkData(), forKey: "scriptFolderBookmark")
+      let folder = Folder(defaults: defaults, local: try directory("local"))
+      XCTAssertEqual(folder.scripts.map(\.id), [legacy], "\(ownerName) owns it from the first listing")
+      // The other folder opened first or second makes no difference to who owns it.
+      folder.choose(other)
+      let otherID = try XCTUnwrap(folder.scripts.first?.id)
+      XCTAssertNotEqual(otherID, legacy)
+      // Its old membership names the shared id, which the owner holds: reassigned, not deleted, so
+      // the owner's reading position and Google link are not cleaned away.
+      XCTAssertEqual(folder.removedIdentities(known: [legacy], current: [otherID]), [])
+      // Mac links are per folder and a resend lands on the same file, never a duplicate.
+      let mac = UUID()
+      let linked = try XCTUnwrap(folder.receive(transfer(mac, "Text \(otherName)")))
+      XCTAssertEqual(linked.id, otherID)
+      let resent = try XCTUnwrap(folder.receive(transfer(mac, "Text \(otherName) more", basis: MarkdownLibrary.fingerprint("Text \(otherName)"))))
+      XCTAssertEqual(resent.id, otherID)
+      XCTAssertEqual(folder.scripts.count, 1)
+      folder.choose(owner)
+      XCTAssertEqual(folder.scripts.map(\.id), [legacy])
+      let ownerLink = try XCTUnwrap(folder.receive(transfer(mac, "Text \(ownerName)")))
+      XCTAssertEqual(ownerLink.id, legacy)
+      let ownerResent = try XCTUnwrap(folder.receive(transfer(mac, "Text \(ownerName) more", basis: MarkdownLibrary.fingerprint("Text \(ownerName)"))))
+      XCTAssertEqual(ownerResent.id, legacy)
+      XCTAssertEqual(folder.scripts.count, 1)
+      XCTAssertEqual(folder.macID(of: legacy), mac)
+      // A script really deleted from its own folder is still cleaned up.
+      XCTAssertEqual(folder.removedIdentities(known: [legacy], current: []), [legacy])
+    }
+  }
 }

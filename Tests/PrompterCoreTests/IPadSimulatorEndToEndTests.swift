@@ -182,6 +182,9 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let first = try Mac(port: port, name: "Mac one")
     try startRelay(first)
     first.pipe.close()
+    // Nothing is connected to read the state, so give the drop time to be handled first: the next
+    // Mac then finds no connection to replace, and what it sees is the plain-drop handler's doing.
+    Thread.sleep(forTimeInterval: 1.0)
     let second = try Mac(port: port, name: "Mac two")
     _ = try second.state("stopped after a drop") { $0.voiceSource == "iPad" && !$0.running }
     // Another Mac takes the link over while one is relaying: the same.

@@ -33,7 +33,7 @@ public enum ScriptTransfer {
   /// The link from a Mac script to an iPad script is per folder: another folder may hold a file
   /// at the same relative path that is a different script.
   public static func key(root: URL, macID: UUID) -> String {
-    root.standardizedFileURL.path + "\u{1F}" + macID.uuidString
+    root.resolvingSymlinksInPath().standardizedFileURL.path + "\u{1F}" + macID.uuidString
   }
 
   /// A file name for a title, with `reserving` characters left free for a suffix. Never longer
