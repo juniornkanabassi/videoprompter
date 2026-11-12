@@ -17,7 +17,7 @@ import VideoToolbox
 ///
 /// The camera is the one the Second monitor window shows, from the same shared session, so a DeckLink
 /// or ATEM feed is opened once. Frames are encoded to H.264 in hardware at up to 1080p.
-@MainActor final class IPadCameraSender: ObservableObject {
+@MainActor final class IPadCameraSender: ObservableObject, PadRelayLink {
   static let shared = IPadCameraSender()
 
   /// Sends the camera.
@@ -25,7 +25,12 @@ import VideoToolbox
   /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
   @Published var controlsIPad = false { didSet { if controlsIPad != oldValue { updateLink() } } }
   /// What the iPad's presenter shows, while an iPad that reports it is connected.
-  @Published private(set) var iPadState: PadRemote.State?
+  @Published private(set) var iPadState: PadRemote.State? {
+    didSet { relay.iPadStateChanged(iPadState) }
+  }
+  /// The Mac's microphone driving the iPad's reading, fed by every state the iPad sends.
+  private(set) lazy var relay = PadVoiceRelay(link: self)
+  private var relayActive = false
   /// What the menu shows under the toggles.
   @Published private(set) var status = "Off"
   /// Off by default: USB-C needs no trust decision, while Wi-Fi is unencrypted and anything on
@@ -84,6 +89,12 @@ import VideoToolbox
       updateLink()
     }
     return await body()
+  }
+
+  /// While the voice relay runs, only a little video may queue, so its word messages are never far behind.
+  func setRelayActive(_ active: Bool) {
+    relayActive = active
+    pipe?.videoLimit.store(active ? 256_000 : 3_000_000, ordering: .relaxed)
   }
 
   /// The iPad answered but is too old to be controlled.
@@ -282,6 +293,7 @@ import VideoToolbox
 
   private func use(_ pipe: LinkPipe) {
     self.pipe = pipe
+    if relayActive { pipe.videoLimit.store(256_000, ordering: .relaxed) }
     status = Self.connected(over: pipe.name, sending: isOn)
     pipe.onClose = { [weak self, weak pipe] in
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
@@ -393,7 +405,7 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
     // The cable or Wi-Fi is behind: skip this frame rather than queue it, and start the next
     // one clean so the iPad never shows a smeared picture.
-    if pipe.pendingBytes > 3_000_000 {
+    if pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) {
       forceKeyFrame = true
       return
     }
@@ -518,6 +530,12 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
 class LinkPipe: @unchecked Sendable {
   let name: String
   private let pending = Atomic<Int>(0)
+  /// Written one message at a time from here, so a control message (anything but format or
+  /// frame) can overtake the video still waiting, never the one already being written.
+  private let backlog = Mutex((control: [Data](), video: [Data](), writing: false))
+  /// Queued bytes above which the encoder drops a frame. Lower while the voice relay runs, so its
+  /// word messages are never far behind.
+  let videoLimit = Atomic<Int>(3_000_000)
   private let closeHandler = Mutex<(@Sendable () -> Void)?>(nil)
   private let messageHandler = Mutex<(@Sendable (CameraLink.Message) -> Void)?>(nil)
   private let reader = Mutex(CameraLink.Reader())
@@ -533,9 +551,34 @@ class LinkPipe: @unchecked Sendable {
   }
 
   init(name: String) { self.name = name }
-  func send(_ data: Data) {}
+  /// Writes one message to the transport and calls `done` once it has gone (or failed).
+  func write(_ data: Data, done: @escaping @Sendable () -> Void) { done() }
   func close() {}
   func startReading() {}
+
+  final func send(_ data: Data) {
+    queued(data.count)
+    // Length, then the kind byte: format (2) and frame (3) are the picture, the rest is control.
+    let isVideo = data.count > 4 && (data[data.startIndex + 4] == 2 || data[data.startIndex + 4] == 3)
+    backlog.withLock { if isVideo { $0.video.append(data) } else { $0.control.append(data) } }
+    pump()
+  }
+
+  private func pump() {
+    let next = backlog.withLock { backlog -> Data? in
+      guard !backlog.writing else { return nil }
+      guard let data = backlog.control.isEmpty ? (backlog.video.isEmpty ? nil : backlog.video.removeFirst()) : backlog.control.removeFirst()
+      else { return nil }
+      backlog.writing = true
+      return data
+    }
+    guard let next else { return }
+    write(next) { [self] in
+      sent(next.count)
+      backlog.withLock { $0.writing = false }
+      pump()
+    }
+  }
 
   /// Hands whole messages to `onMessage`; false when the bytes make no sense and the pipe
   /// should close.
@@ -564,10 +607,9 @@ final class SocketPipe: LinkPipe, @unchecked Sendable {
     super.init(name: name)
   }
 
-  override func send(_ data: Data) {
-    queued(data.count)
+  override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
     queue.async { [self] in
-      defer { sent(data.count) }
+      defer { done() }
       guard state.withLock({ $0.open }) else { return }
       if !USBMux.writeAll(socket, data) { shut() }
     }
@@ -677,11 +719,10 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
     }
   }
 
-  override func send(_ data: Data) {
-    queued(data.count)
+  override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
     connection.send(content: data, completion: .contentProcessed { [weak self] error in
-      self?.sent(data.count)
       if error != nil { self?.connection.cancel() }
+      done()
     })
   }
 

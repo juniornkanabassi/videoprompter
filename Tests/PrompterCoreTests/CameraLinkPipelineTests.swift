@@ -13,7 +13,7 @@ final class CameraLinkPipelineTests: XCTestCase {
   /// A pipe that keeps what is sent.
   final class CollectingPipe: LinkPipe, @unchecked Sendable {
     let bytes = Mutex(Data())
-    override func send(_ data: Data) { bytes.withLock { $0.append(data) } }
+    override func write(_ data: Data, done: @escaping @Sendable () -> Void) { bytes.withLock { $0.append(data) }; done() }
   }
 
   /// What the Camera window can hand over: a UVC webcam or ATEM at 720p or 1080p, a DeckLink
