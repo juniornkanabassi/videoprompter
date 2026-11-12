@@ -78,3 +78,18 @@ final class ScriptTransferTests: XCTestCase {
     XCTAssertEqual(ScriptTransfer.fileName(for: ".hidden"), "Script .hidden.md")
   }
 }
+
+final class ScriptTransferNamingTests: XCTestCase {
+  func testOneHugeCharacterNeverLeavesAHiddenFile() {
+    // A single grapheme of 400 scalars: truncating whole characters would leave nothing.
+    let huge = "e" + String(repeating: "\u{0301}", count: 400)
+    XCTAssertEqual(huge.count, 1)
+    let name = ScriptTransfer.fileName(for: huge, reserving: 39)
+    XCTAssertTrue(name.hasSuffix(".md"))
+    XCTAssertGreaterThan(name.count, 3, name)
+    XCTAssertFalse(name.hasPrefix("."))
+    XCTAssertLessThanOrEqual(name.utf8.count, 203)
+    // Only whitespace and separators cleans to nothing: a plain name, never ".md".
+    XCTAssertEqual(ScriptTransfer.fileName(for: "   "), "Untitled.md")
+  }
+}

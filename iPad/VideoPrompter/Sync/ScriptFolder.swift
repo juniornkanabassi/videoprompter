@@ -44,8 +44,10 @@ enum ScriptFolderError: LocalizedError {
 
   /// Each file's last-read fingerprint, the baseline a save compares against.
   private var baselines: [UUID: String] = [:]
+  /// Each file's identity, by folder and path: another folder may hold a file at the same path.
   private var ids: [String: UUID]
   private let defaults: UserDefaults
+  private let localURL: URL
   private var accessing: URL?
   private var pollTask: Task<Void, Never>?
   private static let bookmarkKey = "scriptFolderBookmark"
@@ -56,13 +58,14 @@ enum ScriptFolderError: LocalizedError {
   private var fingerprints: [UUID: (modified: Date, value: String)] = [:]
   static let presetsFileName = "Video Prompter presets.json"
 
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = .standard, local: URL = ScriptFolder.localFolder) {
     self.defaults = defaults
+    localURL = local
     ids = (defaults.dictionary(forKey: Self.idsKey) as? [String: String] ?? [:])
       .compactMapValues(UUID.init(uuidString:))
     sent = (defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:])
       .compactMapValues(UUID.init(uuidString:))
-    rootURL = Self.localFolder
+    rootURL = local
     if let data = defaults.data(forKey: Self.bookmarkKey), let url = Self.resolve(data) {
       use(url)
     } else {
@@ -98,7 +101,7 @@ enum ScriptFolderError: LocalizedError {
     defaults.removeObject(forKey: Self.bookmarkKey)
     accessing?.stopAccessingSecurityScopedResource()
     accessing = nil
-    rootURL = Self.localFolder
+    rootURL = localURL
     isICloud = false
     try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
     refresh()
@@ -172,10 +175,15 @@ enum ScriptFolderError: LocalizedError {
     }
   }
 
+  private static let separator = "\u{1F}"
+  private var rootPrefix: String { rootURL.standardizedFileURL.path + Self.separator }
+
   private func id(for path: String) -> UUID {
-    if let id = ids[path] { return id }
-    let id = UUID()
-    ids[path] = id
+    let key = rootPrefix + path
+    if let id = ids[key] { return id }
+    // An identity saved before they were per folder goes to the first folder that asks for it.
+    let id = ids.removeValue(forKey: path) ?? UUID()
+    ids[key] = id
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
     return id
   }
@@ -185,9 +193,10 @@ enum ScriptFolderError: LocalizedError {
   /// A script whose file is gone keeps no identity: a new file later saved at the same path
   /// is a new script, not the old one with its reading position and Google link.
   func forget(_ id: UUID) {
-    ids = ids.filter { $0.value != id }
+    // This folder's entries only: the same id may be remembered for another folder.
+    ids = ids.filter { !($0.value == id && ($0.key.hasPrefix(rootPrefix) || !$0.key.contains(Self.separator))) }
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
-    sent = sent.filter { $0.value != id }
+    sent = sent.filter { !($0.value == id && $0.key.hasPrefix(rootPrefix)) }
     defaults.set(sent.mapValues(\.uuidString), forKey: Self.sentKey)
     fingerprints[id] = nil
   }
@@ -217,17 +226,18 @@ enum ScriptFolderError: LocalizedError {
     else { return nil }
     refresh()
     let key = ScriptTransfer.key(root: rootURL, macID: transfer.macID)
-    func text(_ script: FolderScript) throws -> String {
-      guard script.isDownloaded else { throw ScriptFolderError.notDownloaded }
-      return try Self.read(script.url)
-    }
+    // An iCloud placeholder has no text to compare yet.
+    func text(_ script: FolderScript) throws -> String? { script.isDownloaded ? try Self.read(script.url) : nil }
     let linked = sent[key].flatMap(script)
     let fileName = Self.fileName(for: transfer.title)
     let sameTitle = linked != nil ? nil
       : scripts.first { $0.relativePath == fileName } ?? scripts.first { $0.title == transfer.title }
-    let linkedText = try linked.map(text)
-    var action = ScriptTransfer.action(
-      markdown: transfer.markdown, basis: transfer.basis, linked: linkedText, sameTitle: try sameTitle.map(text))
+    let linkedText = try linked.flatMap(text)
+    // The linked file cannot be read yet: it may hold an edit, so it is kept and the text goes beside it.
+    var action = linked != nil && linkedText == nil
+      ? ScriptTransfer.Action.createCopy
+      : ScriptTransfer.action(
+        markdown: transfer.markdown, basis: transfer.basis, linked: linkedText, sameTitle: try sameTitle.flatMap(text))
     var target = linked ?? sameTitle
     if action == .replace, let linked, let linkedText {
       // Checked and written in one coordinated write, so an edit that lands meanwhile wins.
@@ -236,14 +246,13 @@ enum ScriptFolderError: LocalizedError {
       }
     }
     if action == .createCopy || action == .create {
-      let directory = action == .create
-        ? rootURL.appendingPathComponent(ScriptTransfer.subfolder, isDirectory: true)
-        : linked!.url.deletingLastPathComponent()
+      let folder = action == .create ? ScriptTransfer.subfolder : linked?.folder
+      let directory = folder.map { rootURL.appendingPathComponent($0, isDirectory: true) } ?? rootURL
       let tag = action == .create ? "" : " (from Mac \(Self.macStamp()))"
       let url = try ScriptTransfer.createFile(
         title: transfer.title, tag: tag, markdown: transfer.markdown, in: directory)
       refresh()
-      let path = (directory == rootURL ? "" : directory.lastPathComponent + "/") + url.lastPathComponent
+      let path = (folder.map { $0 + "/" } ?? "") + url.lastPathComponent
       target = scripts.first { $0.relativePath == path } ?? FolderScript(
         id: id(for: path), relativePath: path, url: url, modified: Date(), isDownloaded: true)
     }
@@ -318,8 +327,8 @@ enum ScriptFolderError: LocalizedError {
     if let failure = failure ?? error { throw failure }
     // The reading position follows the file to its new name.
     let newPath = (script.folder.map { $0 + "/" } ?? "") + destination.lastPathComponent
-    ids[newPath] = script.id
-    ids[script.relativePath] = nil
+    ids[rootPrefix + newPath] = script.id
+    ids[rootPrefix + script.relativePath] = nil
     defaults.set(ids.mapValues(\.uuidString), forKey: Self.idsKey)
     refresh()
   }
@@ -336,6 +345,7 @@ enum ScriptFolderError: LocalizedError {
     refresh()
   }
 
+#if !PAD_FOLDER_TESTS  // PrompterSettings lives in the app target; the test build leaves presets out.
   // MARK: Presets shared with the Mac
 
   var presetsURL: URL { rootURL.appendingPathComponent(Self.presetsFileName) }
@@ -352,6 +362,7 @@ enum ScriptFolderError: LocalizedError {
     if (try? Self.read(presetsURL)) == text { return }
     try? Self.write(text, to: presetsURL)
   }
+#endif
 
   // MARK: Files
 

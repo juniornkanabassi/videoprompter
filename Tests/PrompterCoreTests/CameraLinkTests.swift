@@ -96,26 +96,51 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertNil(state.scripts[0].macID); XCTAssertNil(state.scripts[0].fingerprint)
   }
 
-  /// What a version 2 reader (the shapes before version 3, frozen here) makes of version 3 output.
-  func testVersionThreeOutputStillDecodesAsVersionTwo() throws {
+  /// What a version 2 iPad makes of version 3 traffic, read with a frozen copy of the version 2
+  /// types and framing (not the current reader).
+  func testVersionThreeTrafficStillReadsAsVersionTwo() throws {
     struct V2Script: Codable, Equatable { var id: UUID; var title: String }
     struct V2State: Codable, Equatable {
       var scripts: [V2Script]; var presenting: UUID?; var running: Bool; var mode: String
       var speed: Int; var word: Int; var words: Int
     }
-    enum V2Command: Codable, Equatable { case play; case seek(word: Int); case mode(String) }
+    enum V2Command: Codable, Equatable {
+      case present(UUID), close, play, pause, backToStart, nextPassage, previousPassage
+      case seek(word: Int), mode(String), speed(Int)
+    }
+    /// The version 2 reader: four-byte length, kind, payload; unknown kinds and unreadable JSON skipped.
+    func readAsV2(_ bytes: Data) -> [String] {
+      var out: [String] = []
+      var at = bytes.startIndex
+      while at + 5 <= bytes.endIndex {
+        let length = bytes[at..<(at + 4)].reduce(0) { $0 << 8 | Int($1) }
+        let kind = bytes[at + 4]
+        let payload = bytes.subdata(in: (at + 5)..<(at + 4 + length))
+        at += 4 + length
+        switch kind {
+        case 4: out.append("goodbye")
+        case 5: if let command = try? JSONDecoder().decode(V2Command.self, from: payload) { out.append("command \(command)") }
+        case 6: if let state = try? JSONDecoder().decode(V2State.self, from: payload) { out.append("state \(state.word)/\(state.words) \(state.mode)") }
+        default: break
+        }
+      }
+      return out
+    }
     let id = UUID()
-    let v3 = PadRemote.State(
+    let v3State = PadRemote.State(
       scripts: [.init(id: id, title: "A", macID: UUID(), fingerprint: "ff")], presenting: id, running: false,
       mode: "Voice", speed: 100, word: 3, words: 30, version: 3, look: .init(fontSize: 50), presets: ["x"],
       startDelay: 3, voiceSource: "iPad", seekRevision: 1, fingerprint: "ff")
-    let old = try JSONDecoder().decode(V2State.self, from: JSONEncoder().encode(v3))
-    XCTAssertEqual(old, V2State(scripts: [.init(id: id, title: "A")], presenting: id, running: false, mode: "Voice", speed: 100, word: 3, words: 30))
-    // A version 2 iPad cannot read the new commands; the framing skips them, so they are not fatal.
-    XCTAssertThrowsError(try JSONDecoder().decode(V2Command.self, from: JSONEncoder().encode(PadRemote.Command.preset("x"))))
-    var reader = CameraLink.Reader()
-    let messages: [CameraLink.Message] = [.command(.voiceSource("Mac")), .command(.play), .goodbye]
-    XCTAssertEqual(try reader.append(messages.reduce(into: Data()) { $0.append($1.encoded()) }), messages)
+    let sent: [CameraLink.Message] = [
+      .command(.voiceSource("Mac")), .command(.play), .command(.preset("x")), .command(.startDelay(5)),
+      .command(.look(.init(fontSize: 50))), .command(.sendScript(.init(macID: id, title: "T", markdown: "m"))),
+      .command(.follow(.init(confirmed: 1, fingerprint: "ff", seekRevision: 1))), .command(.seek(word: 7)),
+      .state(v3State), .goodbye,
+    ]
+    // The new commands are skipped; everything a version 2 iPad knows still arrives.
+    XCTAssertEqual(
+      readAsV2(sent.reduce(into: Data()) { $0.append($1.encoded()) }),
+      ["command play", "command seek(word: 7)", "state 3/30 Voice", "goodbye"])
   }
 
   func testACommandFromANewerMacIsSkipped() throws {

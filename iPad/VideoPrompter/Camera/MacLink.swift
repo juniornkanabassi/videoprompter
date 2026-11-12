@@ -217,8 +217,9 @@ final class LinkReceiver: @unchecked Sendable {
     guard pending.contains(where: { $0.connection === new }) else { return }
     pending.removeAll { $0.connection === new }
     connection?.cancel()
-    // The Mac that replaces it may send no picture.
-    if connection != nil { onEvent?(.format(nil)) }
+    // The Mac that replaces it is a different sender: a disconnect first, so anything tied to the
+    // old one (the Mac's voice relay) ends, and it may send no picture.
+    if connection != nil { onEvent?(.disconnected) }
     connection = new
     connectionIsWiFi = overWiFi
     peerVersion = 0

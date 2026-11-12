@@ -42,7 +42,10 @@ public enum ScriptTransfer {
     let cleaned = title.components(separatedBy: CharacterSet(charactersIn: "/\\:?%*|\"<>\n\r\t"))
       .joined(separator: "-").trimmingCharacters(in: .whitespacesAndNewlines)
     var stem = cleaned.isEmpty ? "Untitled" : String(cleaned.prefix(max(1, 120 - reserving)))
-    while stem.utf8.count > 200 { stem.removeLast() }
+    // By scalar, not character: one character can be longer than the limit on its own.
+    while stem.utf8.count > 200 { stem.unicodeScalars.removeLast() }
+    stem = stem.trimmingCharacters(in: .whitespacesAndNewlines)
+    if stem.isEmpty { stem = "Untitled" }
     return stem.hasPrefix(".") ? "Script " + stem + ".md" : stem + ".md"
   }
 

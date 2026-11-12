@@ -83,12 +83,16 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       state.scripts.count(where: { $0.title.hasPrefix(sentTitle) }) == 2
         && state.scripts.first { $0.macID == macID }.map { $0.id != sentScript.id } == true
     }
-    // Past the limits: ignored.
-    send(.sendScript(.init(macID: UUID(), title: String(repeating: "T", count: 201), markdown: "x")))
+    // Past the limits: ignored. A look sent after them comes back only once they were handled.
+    let longTitle = UUID(), hugeText = UUID()
+    send(.sendScript(.init(macID: longTitle, title: String(repeating: "T", count: 201), markdown: "x")))
+    send(.sendScript(.init(macID: hugeText, title: "Huge \(expectedTitle)", markdown: String(repeating: "y", count: PadRemote.Transfer.maximumMarkdownBytes + 1))))
     send(.look(.init(horizontalMirror: false, verticalMirror: true, fontSize: 64, guideFraction: 0.4)))
     let looked = try state("look applied") { $0.look?.fontSize == 64 && $0.look?.verticalMirror == true }
     XCTAssertEqual(looked.look?.horizontalMirror, false)
-    XCTAssertFalse(looked.scripts.contains { $0.title.hasPrefix(String(repeating: "T", count: 201)) })
+    XCTAssertFalse(looked.scripts.contains { $0.macID == longTitle }, "a 201-character title must be refused")
+    XCTAssertFalse(looked.scripts.contains { $0.macID == hugeText }, "a markdown body over 2 MB must be refused")
+    XCTAssertFalse(looked.scripts.contains { $0.title.hasPrefix("Huge ") })
     send(.startDelay(5))
     _ = try state("countdown set") { $0.startDelay == 5 }
     send(.startDelay(7))
@@ -137,6 +141,58 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     _ = try state("closed") { $0.presenting == nil }
     pipe.send(CameraLink.Message.goodbye.encoded())
     pipe.close()
+  }
+
+  /// The Mac's voice relay must end when the Mac goes, and when another Mac takes over the link.
+  func testTheMacVoiceStopsWhenTheMacDropsOrIsReplaced() throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let environment = ProcessInfo.processInfo.environment
+    let port = try XCTUnwrap(environment["VP_IPAD_E2E_PORT"].flatMap(UInt16.init))
+    let expectedTitle = try XCTUnwrap(environment["VP_IPAD_E2E_SCRIPT"])
+    final class Mac: @unchecked Sendable {
+      let pipe: SocketPipe
+      let latest = Mutex<PadRemote.State?>(nil)
+      init(port: UInt16, name: String) throws {
+        let fd = try XCTUnwrap(IPadSimulatorEndToEndTests.connect(port: port), "the fixture iPad app is not listening")
+        pipe = SocketPipe(socket: fd, name: name)
+        pipe.onMessage = { [self] in if case .state(let state) = $0 { latest.withLock { $0 = state } } }
+        pipe.startReading()
+        pipe.send(CameraLink.Message.hello(name: name, version: CameraLink.protocolVersion).encoded())
+      }
+      func send(_ command: PadRemote.Command) { pipe.send(CameraLink.Message.command(command).encoded()) }
+      func state(_ what: String, _ check: (PadRemote.State) -> Bool) throws -> PadRemote.State {
+        for _ in 0..<50 {
+          if let state = latest.withLock({ $0 }), check(state) { return state }
+          Thread.sleep(forTimeInterval: 0.1)
+        }
+        XCTFail("\(what): the iPad reported \(String(describing: latest.withLock { $0 }))")
+        throw XCTSkip("stopped")
+      }
+    }
+    func startRelay(_ mac: Mac) throws {
+      let first = try mac.state("connected") { $0.scripts.contains { $0.title == expectedTitle } }
+      let script = try XCTUnwrap(first.scripts.first { $0.title == expectedTitle })
+      mac.send(.voiceSource("Mac"))
+      mac.send(.present(script.id))
+      _ = try mac.state("following") { $0.voiceSource == "Mac" && $0.presenting == script.id }
+      mac.send(.play)
+      _ = try mac.state("running on the Mac's voice") { $0.running && $0.voiceSource == "Mac" }
+    }
+    // The Mac goes away: the iPad stops, and does not fall back to its own microphone.
+    let first = try Mac(port: port, name: "Mac one")
+    try startRelay(first)
+    first.pipe.close()
+    let second = try Mac(port: port, name: "Mac two")
+    _ = try second.state("stopped after a drop") { $0.voiceSource == "iPad" && !$0.running }
+    // Another Mac takes the link over while one is relaying: the same.
+    try startRelay(second)
+    let third = try Mac(port: port, name: "Mac three")
+    _ = try third.state("stopped after a replacement") { $0.voiceSource == "iPad" && !$0.running }
+    third.send(.close)
+    _ = try third.state("closed") { $0.presenting == nil }
+    third.pipe.send(CameraLink.Message.goodbye.encoded())
+    third.pipe.close()
+    second.pipe.close()
   }
 
   static func connect(port: UInt16) -> Int32? {
