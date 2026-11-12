@@ -23,24 +23,29 @@ final class PadVoiceRelayTests: XCTestCase {
   private var markdown: String { words.joined(separator: " ") }
   private let macID = UUID()
   private let padID = UUID()
-  private var record: ScriptRecord {
-    ScriptRecord(metadata: ScriptMetadata(id: macID, title: "Relay", fileName: "relay.md"), markdown: markdown)
+  private var record: ScriptRecord { record(markdown) }
+  private func record(_ text: String) -> ScriptRecord {
+    ScriptRecord(metadata: ScriptMetadata(id: macID, title: "Relay", fileName: "relay.md"), markdown: text)
   }
   private var fingerprint: String { MarkdownLibrary.fingerprint(markdown) }
 
+  /// What the iPad reports. `text` is what its copy of the script says; `open` is whether it is presenting it.
   private func state(
-    scripts: Bool = true, running: Bool = false, word: Int = 1, revision: Int = 4, voice: String = "Mac"
+    scripts: Bool = true, running: Bool = false, word: Int = 1, revision: Int = 4, voice: String = "Mac",
+    text: String? = nil, open: Bool = true
   ) -> PadRemote.State {
-    PadRemote.State(
+    let fingerprint = MarkdownLibrary.fingerprint(text ?? markdown)
+    return PadRemote.State(
       scripts: scripts ? [PadRemote.Script(id: padID, title: "Relay", macID: macID, fingerprint: fingerprint)] : [],
-      presenting: scripts ? padID : nil, running: running, mode: "Voice", speed: 3, word: word, words: words.count,
-      version: 3, voiceSource: voice, seekRevision: scripts ? revision : nil, fingerprint: scripts ? fingerprint : nil)
+      presenting: scripts && open ? padID : nil, running: running, mode: "Voice", speed: 3, word: word, words: words.count,
+      version: 3, voiceSource: voice, seekRevision: scripts && open ? revision : nil,
+      fingerprint: scripts && open ? fingerprint : nil)
   }
 
-  private func makeRelay(_ link: FakeLink, initial: PadRemote.State?) -> PadVoiceRelay {
+  private func makeRelay(_ link: FakeLink, initial: PadRemote.State?, defaults: UserDefaults? = nil) -> PadVoiceRelay {
     let suite = "VideoPrompterTests.padRelay.\(UUID().uuidString)"
     removeDefaultsAtTeardown(suite)
-    let relay = PadVoiceRelay(link: link, suiteName: suite)
+    let relay = PadVoiceRelay(link: link, suiteName: suite, defaults: defaults ?? freshDefaults())
     relay.captureAudio = false
     relay.presenterIsCapturing = { false }
     relay.confirmationTimeout = .seconds(2)
@@ -135,8 +140,7 @@ final class PadVoiceRelayTests: XCTestCase {
     hear(relay, "papa quebec")
     try await until("follow") { !link.follows.isEmpty }
     XCTAssertEqual(link.follows.map(\.seekRevision), [5])
-    // An older revision (a late state) neither seeks nor changes the stamp.
-    relay.iPadStateChanged(state(running: true, word: 3, revision: 4))
+    XCTAssertEqual(session.seekRevision, before + 1, "and still only the one seek")
     relay.stop()
   }
 
@@ -183,6 +187,9 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertFalse(relay.isRelaying)
     XCTAssertEqual(link.sent.count, sentBefore)
     XCTAssertTrue(relay.status.contains("dropped"), relay.status)
+    XCTAssertNil(relay.session)
+    XCTAssertNil(relay.meter)
+    XCTAssertEqual(link.active, [true, false])
   }
 
   func testAnotherScriptOnTheIPadEndsTheRelay() async throws {
@@ -235,35 +242,246 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertEqual(UserDefaults.standard.data(forKey: "readingPositions"), before)
   }
 
-  // MARK: - Control messages beat video
+  // MARK: - Starting and stopping
+
+  func testAStopBeforeTheStartRunsSendsNothing() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(voice: "iPad"))
+    relay.start(script: record, settings: PrompterSettings())
+    relay.stop()
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertTrue(link.sent.isEmpty, "\(link.sent)")
+    XCTAssertNil(relay.session)
+    XCTAssertFalse(relay.isRelaying)
+    XCTAssertFalse(link.active.contains(true))
+    // And a new start afterwards works: the old run cannot leak into it.
+    relay.iPadStateChanged(state(voice: "Mac"))
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("live") { relay.session != nil }
+    XCTAssertEqual(link.sent, [.voiceSource("Mac")])
+    relay.stop()
+  }
+
+  func testAnIPadThatNeverOpensTheScriptEndsTheStartWithoutPausingIt() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(scripts: false))
+    relay.confirmationTimeout = .milliseconds(150)
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("gave up") { !relay.isRelaying }
+    XCTAssertTrue(relay.status.contains("did not open"), relay.status)
+    XCTAssertFalse(link.sent.contains(.pause), "it was never moving")
+    XCTAssertNil(relay.session)
+  }
+
+  func testALinkDropWhileStartingEndsTheStart() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(scripts: false))
+    relay.start(script: record, settings: PrompterSettings())
+    relay.iPadStateChanged(nil)
+    XCTAssertFalse(relay.isRelaying, "not left waiting")
+    XCTAssertTrue(relay.status.contains("dropped"), relay.status)
+    XCTAssertFalse(link.sent.contains(.pause))
+  }
+
+  func testAScriptClosedDuringTheVoiceSwitchIsNotRelayed() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(voice: "iPad"))
+    // The iPad switches to the Mac's voice but has closed the script meanwhile.
+    link.onSend = { [self, weak relay] command in
+      if command == .voiceSource("Mac") { Task { @MainActor in relay?.iPadStateChanged(state(voice: "Mac", open: false)) } }
+    }
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("ended") { !relay.isRelaying }
+    XCTAssertNil(relay.session)
+    XCTAssertFalse(link.active.contains(true))
+    XCTAssertTrue(relay.status.contains("closed or changed"), relay.status)
+    XCTAssertFalse(link.sent.contains(.pause))
+  }
+
+  func testASeekAfterTheScriptsEndRestartsTheRelayOnARunningIPad() async throws {
+    let (relay, _) = try await started(running: true)
+    let session = try XCTUnwrap(relay.session)
+    session.voiceEndGrace = .milliseconds(20)
+    hear(relay, markdown)
+    try await until("self-paused at the end") { !session.isActivelyRunning }
+    XCTAssertTrue(relay.isRelaying)
+    XCTAssertEqual(relay.status, "Reached the end of the script")
+    relay.iPadStateChanged(state(running: true, word: 3, revision: 5))
+    XCTAssertTrue(session.isActivelyRunning, "the iPad is still running and has gone back to word 3")
+    XCTAssertEqual(session.tokenIndex, 2)
+    relay.stop()
+  }
+
+  func testAWindowClosedStopsTheRelayAndPausesTheIPad() async throws {
+    let link = FakeLink()
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    let relay = makeRelay(link, initial: state(running: true))
+    sender.relay = relay
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("live") { relay.session != nil }
+    sender.controlsIPad = true
+    XCTAssertTrue(relay.isRelaying, "opening the window does not stop it")
+    sender.controlsIPad = false
+    XCTAssertFalse(relay.isRelaying)
+    XCTAssertEqual(link.sent.last, .pause)
+  }
+
+  func testTheTextLastSentIsTheBasisOfTheNextSend() async throws {
+    let macDefaults = freshDefaults()
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(scripts: false), defaults: macDefaults)
+    let ready = state(running: true)
+    link.onSend = { [weak relay] command in
+      if case .sendScript = command { Task { @MainActor in relay?.iPadStateChanged(ready) } }
+    }
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("live") { relay.session != nil }
+    guard case .sendScript(let first) = link.sent.first else { return XCTFail("\(link.sent)") }
+    XCTAssertNil(first.basis, "nothing was sent before")
+    relay.stop()
+    // The Mac edits the script; the iPad still has what was sent.
+    let edited = markdown + " uniform"
+    link.sent = []
+    let editedReady = state(running: true, text: edited)
+    link.onSend = { [weak relay] command in
+      if case .sendScript = command { Task { @MainActor in relay?.iPadStateChanged(editedReady) } }
+    }
+    relay.iPadStateChanged(state(running: false))
+    relay.start(script: record(edited), settings: PrompterSettings())
+    try await until("live again") { relay.session != nil }
+    guard case .sendScript(let second) = link.sent.first else { return XCTFail("\(link.sent)") }
+    XCTAssertEqual(second.basis, fingerprint, "so the iPad updates its copy instead of keeping a duplicate")
+    XCTAssertEqual(second.markdown, edited)
+    XCTAssertNil(UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints")?[macID.uuidString], "kept in the injected defaults only")
+    XCTAssertNil(macDefaults.data(forKey: "readingPositions"))
+    relay.stop()
+  }
+
+  // MARK: - The transport
 
   private final class StalledPipe: LinkPipe, @unchecked Sendable {
     let written = Mutex<[Data]>([])
     let waiting = Mutex<[@Sendable () -> Void]>([])
+    /// Writes numbered here fail: they are never written and the transport still finishes them.
+    let failing = Mutex(Set<Int>())
+    private let attempts = Mutex(0)
     override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
-      written.withLock { $0.append(data) }
       waiting.withLock { $0.append(done) }
+      let attempt = attempts.withLock { count in defer { count += 1 }; return count }
+      if !failing.withLock({ $0.contains(attempt) }) { written.withLock { $0.append(data) } }
     }
     /// The transport finishes the write it was on.
     func finishOne() { waiting.withLock { $0.isEmpty ? nil : $0.removeFirst() }?() }
+    var messages: [CameraLink.Message] {
+      var reader = CameraLink.Reader()
+      return written.withLock { $0 }.flatMap { (try? reader.append($0)) ?? [] }
+    }
   }
 
-  func testAControlMessageSentAfterManyFramesIsWrittenBeforeThem() throws {
+  private static func numbered(_ index: Int) -> Data {
+    CameraLink.Message.frame(time: UInt64(index), keyFrame: false, data: Data(repeating: UInt8(index % 250), count: 1_000)).encoded()
+  }
+  private static func number(_ message: CameraLink.Message) -> Int? {
+    if case .frame(let time, _, _) = message { return Int(time) }
+    return nil
+  }
+  private static func follow(_ index: Int) -> Data {
+    CameraLink.Message.command(.follow(.init(confirmed: index, fingerprint: "f", seekRevision: 1))).encoded()
+  }
+
+  func testControlMessagesAreWrittenBeforeQueuedVideoInExactOrder() throws {
     let pipe = StalledPipe(name: "stalled")
-    let frame = CameraLink.Message.frame(time: 0, keyFrame: false, data: Data(repeating: 1, count: 10_000)).encoded()
-    for _ in 0..<40 { pipe.send(frame) }
-    XCTAssertEqual(pipe.pendingBytes, 40 * frame.count)
+    for index in 0..<40 { pipe.send(Self.numbered(index)) }
+    XCTAssertEqual(pipe.pendingBytes, 40 * Self.numbered(0).count)
     pipe.send(CameraLink.Message.command(.pause).encoded())
     pipe.send(CameraLink.Message.command(.play).encoded())
     for _ in 0..<42 { pipe.finishOne() }
-    let written = pipe.written.withLock { $0 }
-    XCTAssertEqual(written.count, 42)
-    var reader = CameraLink.Reader()
-    let messages = try written.flatMap { try reader.append($0) }
-    // The first frame was already on the wire; the commands go next, in order, ahead of the other 39.
+    let messages = pipe.messages
+    XCTAssertEqual(messages.count, 42)
+    // Frame 0 was already on the wire; the commands follow in order, then frames 1...39 in order.
+    XCTAssertEqual(Self.number(messages[0]), 0)
     XCTAssertEqual(messages[1], .command(.pause))
     XCTAssertEqual(messages[2], .command(.play))
-    XCTAssertEqual(messages.filter { if case .frame = $0 { true } else { false } }.count, 40, "no frame is lost")
+    XCTAssertEqual(messages.dropFirst(3).compactMap(Self.number), Array(1..<40))
+    XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  func testOnlyTheNewestWaitingFollowIsWritten() {
+    let pipe = StalledPipe(name: "follows")
+    pipe.send(Self.numbered(0))
+    for index in 0..<20 { pipe.send(Self.follow(index)) }
+    let queuedBytes = pipe.pendingBytes
+    XCTAssertEqual(queuedBytes, Self.numbered(0).count + Self.follow(19).count, "replaced ones no longer count as queued")
+    pipe.send(CameraLink.Message.command(.pause).encoded())
+    for _ in 0..<3 { pipe.finishOne() }
+    let messages = pipe.messages
+    XCTAssertEqual(messages.count, 3)
+    XCTAssertEqual(messages[1], .command(.follow(.init(confirmed: 19, fingerprint: "f", seekRevision: 1))))
+    XCTAssertEqual(messages[2], .command(.pause))
+    XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  func testOtherControlMessagesKeepTheirOrderAroundAReplacedFollow() {
+    let pipe = StalledPipe(name: "order")
+    pipe.send(Self.numbered(0))
+    pipe.send(CameraLink.Message.command(.play).encoded())
+    pipe.send(Self.follow(1))
+    pipe.send(CameraLink.Message.command(.pause).encoded())
+    pipe.send(Self.follow(2))
+    for _ in 0..<4 { pipe.finishOne() }
+    XCTAssertEqual(pipe.messages.dropFirst(), [
+      .command(.play), .command(.follow(.init(confirmed: 2, fingerprint: "f", seekRevision: 1))), .command(.pause),
+    ])
+  }
+
+  func testAFailedWriteDoesNotStallTheQueue() {
+    let pipe = StalledPipe(name: "failing")
+    pipe.failing.withLock { $0 = [1] }
+    for index in 0..<5 { pipe.send(Self.numbered(index)) }
+    for _ in 0..<5 { pipe.finishOne() }
+    XCTAssertEqual(pipe.messages.compactMap(Self.number), [0, 2, 3, 4], "the failed one is gone, the rest follow")
+    XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  /// The real socket pipe, blocked in a write to a peer that never reads, is closed: the rest of
+  /// the backlog drains without being written and nothing stays counted as queued.
+  func testClosingDuringAnOutstandingWriteDrainsTheBacklog() throws {
+    var fds: [Int32] = [0, 0]
+    XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+    var on: Int32 = 1
+    setsockopt(fds[0], SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+    defer { Darwin.close(fds[1]) }
+    let pipe = SocketPipe(socket: fds[0], name: "USB-C")
+    let big = CameraLink.Message.frame(time: 0, keyFrame: false, data: Data(repeating: 7, count: 2_000_000)).encoded()
+    for _ in 0..<6 { pipe.send(big) }
+    pipe.send(CameraLink.Message.command(.pause).encoded())
+    Thread.sleep(forTimeInterval: 0.2)
+    XCTAssertGreaterThan(pipe.pendingBytes, 5 * big.count, "stuck in the first write")
+    pipe.close()
+    let deadline = Date().addingTimeInterval(3)
+    while pipe.pendingBytes > 0, Date() < deadline { Thread.sleep(forTimeInterval: 0.02) }
+    XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  func testSendersOnTwoThreadsLoseNothingAndKeepEachOnesOrder() {
+    final class Immediate: LinkPipe, @unchecked Sendable {
+      let written = Mutex<[Data]>([])
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) { written.withLock { $0.append(data) }; done() }
+    }
+    let pipe = Immediate(name: "threads")
+    let group = DispatchGroup()
+    for thread in 0..<2 {
+      DispatchQueue.global().async(group: group) {
+        for index in 0..<300 { pipe.send(Self.numbered(thread * 1000 + index)) }
+      }
+    }
+    XCTAssertEqual(group.wait(timeout: .now() + 10), .success)
+    var reader = CameraLink.Reader()
+    let numbers = pipe.written.withLock { $0 }.flatMap { (try? reader.append($0)) ?? [] }.compactMap(Self.number)
+    XCTAssertEqual(numbers.count, 600)
+    XCTAssertEqual(numbers.filter { $0 < 1000 }, Array(0..<300))
+    XCTAssertEqual(numbers.filter { $0 >= 1000 }, Array(1000..<1300))
     XCTAssertEqual(pipe.pendingBytes, 0)
   }
 }

@@ -34,6 +34,11 @@ import PrompterCore
   var confirmationTimeout: Duration = .seconds(5)
 
   private let suiteName: String
+  /// The Mac's own preferences: only the text last sent to the iPad is kept there, per script.
+  private let defaults: UserDefaults
+  private static let sentKey = "padRelaySentFingerprints"
+  /// Bumped by every start and finish, so a start that was stopped never acts afterwards.
+  private var run = 0
   private enum Phase { case idle, preparing, live }
   private var phase = Phase.idle
   private(set) var session: SessionStore?
@@ -50,9 +55,10 @@ import PrompterCore
   private var pendingFollow: Int?
   private var flushScheduled = false
 
-  init(link: PadRelayLink? = nil, suiteName: String = "VideoPrompter.padRelay") {
+  init(link: PadRelayLink? = nil, suiteName: String = "VideoPrompter.padRelay", defaults: UserDefaults = .standard) {
     self.link = link
     self.suiteName = suiteName
+    self.defaults = defaults
   }
 
   /// Sends the script to the iPad if it lacks it, then listens and follows. Asynchronous: the
@@ -65,7 +71,9 @@ import PrompterCore
     phase = .preparing
     isRelaying = true
     status = "Getting the script onto the iPad…"
-    startTask = Task { [weak self] in await self?.begin(script: script, settings: settings) }
+    run += 1
+    let thisRun = run
+    startTask = Task { [weak self] in await self?.begin(script: script, settings: settings, run: thisRun) }
   }
 
   /// Pauses the iPad, then lets go. The voice source is left for the user to change.
@@ -74,17 +82,22 @@ import PrompterCore
   /// Fed with every state the iPad sends, and nil when the link drops.
   func iPadStateChanged(_ state: PadRemote.State?) {
     iPadState = state
+    if state == nil, phase == .preparing { return finish("The link to the iPad dropped", pausingIPad: false) }
     guard phase == .live else { return }
     guard let state else { return finish("The link to the iPad dropped", pausingIPad: false) }
     guard state.presenting == iPadScriptID, state.fingerprint == fingerprint, state.seekRevision != nil else {
       return finish("The iPad opened another script or closed this one", pausingIPad: true)
     }
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
-    // Only a seek on the iPad moves the relay; its word changing as it follows us does not.
+    // Only a seek on the iPad moves the relay; its word changing as it follows us does not. The iPad
+    // checks each follow against its current revision and states arrive in order, so any change
+    // (the counter wraps) is a seek to adopt, and a follow stamped earlier is already stale.
     if let revision = state.seekRevision, revision != knownRevision {
       knownRevision = revision
       pendingFollow = nil
       move(to: state.word - 1)
+      // The relay stopped itself at the end of the script; a seek on a running iPad starts it again.
+      if state.running, session?.isActivelyRunning == false { play() }
     }
     // Transitions only: after the script's end the relay stays stopped while the iPad's own pause catches up.
     if state.running != iPadRunning {
@@ -95,34 +108,44 @@ import PrompterCore
 
   // MARK: - Starting
 
-  private func begin(script: ScriptRecord, settings: PrompterSettings) async {
+  private func begin(script: ScriptRecord, settings: PrompterSettings, run: Int) async {
+    // A stopped or replaced start does nothing at all, and above all sends nothing.
+    func current() -> Bool { run == self.run && phase == .preparing && !Task.isCancelled }
+    guard current() else { return }
     let wanted = MarkdownLibrary.fingerprint(script.markdown)
     let macID = script.metadata.id
     func entry(_ state: PadRemote.State?) -> PadRemote.Script? { state?.scripts.first { $0.macID == macID } }
-    func ready(_ state: PadRemote.State) -> Bool {
-      guard let found = entry(state), found.fingerprint == wanted else { return false }
+    func ready(_ state: PadRemote.State?) -> Bool {
+      guard let state, let found = entry(state), found.fingerprint == wanted else { return false }
       return state.presenting == found.id && state.fingerprint == wanted && state.seekRevision != nil
     }
     if let state = iPadState, !ready(state) {
       if let found = entry(state), found.fingerprint == wanted {
         link?.send(.present(found.id))
       } else {
-        // No basis: if the iPad's copy was edited there, it is kept and the Mac's text arrives as a new file.
-        link?.send(.sendScript(.init(macID: macID, title: script.metadata.title, markdown: script.markdown, basis: nil, present: true)))
-      }
-      status = "Waiting for the iPad to open the script…"
-      guard await wait({ [self] in iPadState.map(ready) ?? false }) else {
-        return fail("The iPad did not open the script", ending: true)
+        // The basis is the text last sent from this Mac: an iPad copy edited there is kept, and the
+        // Mac's text arrives beside it as a new file; an untouched one is updated in place.
+        link?.send(.sendScript(.init(
+          macID: macID, title: script.metadata.title, markdown: script.markdown,
+          basis: sentFingerprints[macID.uuidString], present: true)))
       }
     }
+    status = "Waiting for the iPad to open the script…"
+    let opened = await wait({ [self] in ready(iPadState) })
+    guard current() else { return }
+    guard opened else { return finish("The iPad did not open the script", pausingIPad: false) }
+    remember(wanted, for: macID)
     link?.send(.voiceSource("Mac"))
-    guard await wait({ [self] in iPadState?.voiceSource == "Mac" }) else {
-      return fail("The iPad did not switch to the Mac's voice", ending: true)
+    let switched = await wait({ [self] in iPadState?.voiceSource == "Mac" })
+    guard current() else { return }
+    guard switched else { return finish("The iPad did not switch to the Mac's voice", pausingIPad: false) }
+    // The iPad may have changed or closed the script while it switched.
+    guard let state = iPadState, ready(state), let found = entry(state) else {
+      return finish("The iPad closed or changed the script", pausingIPad: false)
     }
-    guard !Task.isCancelled, phase == .preparing, let state = iPadState, let found = entry(state) else { return }
 
     UserDefaults(suiteName: suiteName)?.removePersistentDomain(forName: suiteName)
-    guard let defaults = UserDefaults(suiteName: suiteName) else { return fail("Could not start the relay", ending: true) }
+    guard let defaults = UserDefaults(suiteName: suiteName) else { return finish("Could not start the relay", pausingIPad: false) }
     var relaySettings = PrompterSettings()
     relaySettings.mode = "Voice"
     relaySettings.speechLanguage = settings.speechLanguage
@@ -150,6 +173,16 @@ import PrompterCore
     phase = .live
     iPadRunning = state.running
     if state.running { play() } else { status = "Ready. Press play on the iPad, then read" }
+  }
+
+  private var sentFingerprints: [String: String] {
+    defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:]
+  }
+
+  private func remember(_ fingerprint: String, for macID: UUID) {
+    var all = sentFingerprints
+    all[macID.uuidString] = fingerprint
+    defaults.set(all, forKey: Self.sentKey)
   }
 
   private func wait(_ condition: @MainActor () -> Bool) async -> Bool {
@@ -209,16 +242,16 @@ import PrompterCore
 
   // MARK: - Ending
 
-  private func fail(_ message: String, ending: Bool = false) {
-    if ending { finish(message, pausingIPad: false) } else { status = message }
-  }
+  /// Refused before anything started: only the status says why.
+  private func fail(_ message: String) { status = message }
 
   private func finish(_ message: String, pausingIPad: Bool) {
     guard phase != .idle else { return }
+    run += 1
     startTask?.cancel()
     startTask = nil
-    // Only a script the iPad was following needs to be paused; one that never opened was not moving.
-    if pausingIPad, iPadState != nil { link?.send(.pause) }
+    // Only a script the iPad was following needs to be paused; before that it was not moving.
+    if pausingIPad, phase == .live, iPadState != nil { link?.send(.pause) }
     phase = .idle
     wantsRunning = false
     pendingFollow = nil

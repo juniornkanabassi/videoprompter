@@ -23,13 +23,20 @@ import VideoToolbox
   /// Sends the camera.
   @Published var isOn = false { didSet { if isOn != oldValue { isOn ? startCamera() : stopCamera() } } }
   /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
-  @Published var controlsIPad = false { didSet { if controlsIPad != oldValue { updateLink() } } }
+  @Published var controlsIPad = false {
+    didSet {
+      guard controlsIPad != oldValue else { return }
+      // Closing the Control iPad window ends the relay even if the camera keeps the link open.
+      if !controlsIPad { relay.stop() }
+      updateLink()
+    }
+  }
   /// What the iPad's presenter shows, while an iPad that reports it is connected.
   @Published private(set) var iPadState: PadRemote.State? {
     didSet { relay.iPadStateChanged(iPadState) }
   }
   /// The Mac's microphone driving the iPad's reading, fed by every state the iPad sends.
-  private(set) lazy var relay = PadVoiceRelay(link: self)
+  lazy var relay = PadVoiceRelay(link: self)
   private var relayActive = false
   /// What the menu shows under the toggles.
   @Published private(set) var status = "Off"
@@ -100,8 +107,11 @@ import VideoToolbox
   /// The iPad answered but is too old to be controlled.
   var iPadIsOld: Bool { oldIPad }
 
+  /// Tests turn this off so that switching the remote on never looks for an iPad.
+  var searchesForIPad = true
+
   private func updateLink() {
-    let wanted = isOn || controlsIPad || calls > 0
+    let wanted = searchesForIPad && (isOn || controlsIPad || calls > 0)
     guard wanted != linkOn else { return }
     linkOn = wanted
     wanted ? startLink() : stopLink()
@@ -531,8 +541,9 @@ class LinkPipe: @unchecked Sendable {
   let name: String
   private let pending = Atomic<Int>(0)
   /// Written one message at a time from here, so a control message (anything but format or
-  /// frame) can overtake the video still waiting, never the one already being written.
-  private let backlog = Mutex((control: [Data](), video: [Data](), writing: false))
+  /// frame) can overtake the video still waiting, never the one already being written. At most
+  /// one `.follow` waits at a time.
+  private let backlog = Mutex((control: [(data: Data, follow: Bool)](), video: [Data](), writing: false))
   /// Queued bytes above which the encoder drops a frame. Lower while the voice relay runs, so its
   /// word messages are never far behind.
   let videoLimit = Atomic<Int>(3_000_000)
@@ -559,15 +570,33 @@ class LinkPipe: @unchecked Sendable {
   final func send(_ data: Data) {
     queued(data.count)
     // Length, then the kind byte: format (2) and frame (3) are the picture, the rest is control.
-    let isVideo = data.count > 4 && (data[data.startIndex + 4] == 2 || data[data.startIndex + 4] == 3)
-    backlog.withLock { if isVideo { $0.video.append(data) } else { $0.control.append(data) } }
+    let kind = data.count > 4 ? data[data.startIndex + 4] : 0
+    let isFollow = kind == 5 && Self.isFollow(data)
+    let replaced = backlog.withLock { backlog -> Int? in
+      if kind == 2 || kind == 3 { backlog.video.append(data); return nil }
+      // A word still waiting is out of date once a newer one arrives: it is replaced where it stands.
+      if isFollow, let index = backlog.control.firstIndex(where: { $0.follow }) {
+        defer { backlog.control[index] = (data, true) }
+        return backlog.control[index].data.count
+      }
+      backlog.control.append((data, isFollow))
+      return nil
+    }
+    if let replaced { sent(replaced) }
     pump()
+  }
+
+  private static func isFollow(_ message: Data) -> Bool {
+    guard let command = try? JSONDecoder().decode(PadRemote.Command.self, from: message.dropFirst(5)),
+      case .follow = command
+    else { return false }
+    return true
   }
 
   private func pump() {
     let next = backlog.withLock { backlog -> Data? in
       guard !backlog.writing else { return nil }
-      guard let data = backlog.control.isEmpty ? (backlog.video.isEmpty ? nil : backlog.video.removeFirst()) : backlog.control.removeFirst()
+      guard let data = backlog.control.isEmpty ? (backlog.video.isEmpty ? nil : backlog.video.removeFirst()) : backlog.control.removeFirst().data
       else { return nil }
       backlog.writing = true
       return data
