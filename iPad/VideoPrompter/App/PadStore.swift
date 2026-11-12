@@ -291,10 +291,12 @@ extension PadStore {
         if session.followsRemote {
           session.pause(); session.followsRemote = false
           // Test hook, only under the end-to-end launch: why the relay was reset, "drop" or "replaced".
+          #if DEBUG && targetEnvironment(simulator)
           if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil {
             try? Data(link.lastEndReason.utf8).write(
               to: URL.documentsDirectory.appendingPathComponent("vp-e2e-link-reset.txt"), options: .atomic)
           }
+          #endif
         }
         return
       }

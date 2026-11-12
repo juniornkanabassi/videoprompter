@@ -188,4 +188,25 @@ final class ScriptFolderTransferTests: XCTestCase {
     XCTAssertTrue(folder.scripts.isEmpty)
     XCTAssertNotNil(try folder.receive(transfer(UUID(), String(repeating: "x", count: PadRemote.Transfer.maximumMarkdownBytes))))
   }
+
+  func testFingerprintsAreNotSharedBetweenFoldersWithTheSamePathAndDate() throws {
+    let rootA = try directory("A"), rootB = try directory("B")
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    for (root, text) in [(rootA, "Text in A"), (rootB, "A different text in B")] {
+      let file = root.appendingPathComponent("Preview.md")
+      try Folder.write(text, to: file)
+      try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+    }
+    let folder = try folder(rootA)
+    let inA = try XCTUnwrap(folder.scripts.first)
+    XCTAssertEqual(folder.fingerprint(of: inA), MarkdownLibrary.fingerprint("Text in A"))
+    folder.choose(rootB)
+    let inB = try XCTUnwrap(folder.scripts.first)
+    XCTAssertEqual(inB.id, inA.id, "shipped behaviour: the same path shares an id")
+    XCTAssertEqual(inB.modified, inA.modified)
+    XCTAssertEqual(folder.fingerprint(of: inB), MarkdownLibrary.fingerprint("A different text in B"))
+    folder.useLocalFolder()
+    folder.choose(rootA)
+    XCTAssertEqual(folder.fingerprint(of: try XCTUnwrap(folder.scripts.first)), MarkdownLibrary.fingerprint("Text in A"))
+  }
 }

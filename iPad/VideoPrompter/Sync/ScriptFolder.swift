@@ -100,6 +100,7 @@ enum ScriptFolderError: LocalizedError {
     defaults.removeObject(forKey: Self.bookmarkKey)
     accessing?.stopAccessingSecurityScopedResource()
     accessing = nil
+    fingerprints = [:]
     rootURL = localURL
     isICloud = false
     try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -109,6 +110,8 @@ enum ScriptFolderError: LocalizedError {
   private func use(_ url: URL) {
     accessing?.stopAccessingSecurityScopedResource()
     accessing = url.startAccessingSecurityScopedResource() ? url : nil
+    // Ids are shared by path across folders, so a cached fingerprint is only good for one folder.
+    fingerprints = [:]
     rootURL = url
     isICloud = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
       || url.path.contains("/Mobile Documents/")
