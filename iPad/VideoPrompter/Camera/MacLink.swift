@@ -327,7 +327,7 @@ import UIKit
       let parameters = CameraLinkSecurity.parameters(code: pairingCode, additionalCodes: credentials.values.map(\.code))
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
-      listener.service = NWListener.Service(name: PadIdentity(defaults: .standard).serviceName, type: CameraLink.bonjourType)
+      listener.service = NWListener.Service(name: PadIdentity(defaults: .standard, modelName: deviceName).serviceName, type: CameraLink.bonjourType)
       // Before it starts, so the receiver knows it before any of its connections arrive.
       receiver.adoptWiFi(listener)
       configure(listener, wifi: true)
