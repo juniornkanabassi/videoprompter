@@ -101,7 +101,7 @@ struct PresenterScreen: View {
         }
         if let snapshotPicker {
           DevicePickerCards(store: store, microphone: snapshotPicker)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .padding(.trailing, 140).padding(.bottom, 152)
         }
@@ -150,7 +150,7 @@ struct PresenterScreen: View {
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
     if let referencePicture, store.pictureMode == .behindScript, !store.cameraOnly {
-      Image(uiImage: referencePicture).resizable().scaledToFit()
+      Image(uiImage: referencePicture).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     } else if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
@@ -249,15 +249,17 @@ struct PresenterScreen: View {
     let recording = macConnected ? store.recordingState : .standby
     return ZStack {
       Color.black
+      Group {
       if let referencePicture {
-        Image(uiImage: referencePicture).resizable().scaledToFit()
+        Image(uiImage: referencePicture).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       } else if macConnected {
         if store.cameraOn { LinkPreview(camera: camera, link: camera.link) }
       } else if camera.isOn {
         CameraPreview(camera: camera)
       }
+      }.clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)).padding(16)
       if recording != .standby {
-        Rectangle().strokeBorder(recordingColour(recording), lineWidth: recording == .recording ? 8 : 5)
+        RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(recordingColour(recording), lineWidth: recording == .recording ? 8 : 5).padding(16)
       }
     }
     .frame(width: size.width, height: size.height)
@@ -430,8 +432,8 @@ struct PresenterScreen: View {
     .font(.system(size: 18))
     .foregroundStyle(PresenterTheme.text)
     .padding(.horizontal, 20).padding(.vertical, 16)
-    .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: 16))
-    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(PresenterTheme.warn))
+    .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+    .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(PresenterTheme.warn))
   }
 
   private var primaryTitle: String {
@@ -467,8 +469,8 @@ struct PresenterScreen: View {
       ) { store.setFlip(!store.flip) }
     }
     .padding(4)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(PresenterTheme.line))
+    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+    .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(PresenterTheme.line))
   }
 
   // MARK: Setting up
@@ -578,7 +580,7 @@ struct PresenterScreen: View {
         }
         .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: 16))
+        .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       }.buttonStyle(.plain)
         .popover(isPresented: $showingCamera) {
           VStack(alignment: .leading, spacing: 16) {
@@ -682,7 +684,7 @@ struct PresenterScreen: View {
     .foregroundStyle(PresenterTheme.text)
     .padding(16)
     .frame(width: 380)
-    .background(PresenterTheme.card)
+    .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     .presentationCompactAdaptation(.popover)
   }
 
@@ -820,8 +822,8 @@ extension View {
       .background(
         kind == .primary ? PresenterTheme.accent : kind == .lit ? Color.white.opacity(0.2) : kind == .card ? PresenterTheme.card : PresenterTheme.card2,
         in: RoundedRectangle(cornerRadius: 12))
-      .overlay { if kind == .card { RoundedRectangle(cornerRadius: 16).strokeBorder(PresenterTheme.line) } }
-      .contentShape(RoundedRectangle(cornerRadius: 16))
+      .overlay { if kind == .card { RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(PresenterTheme.line) } }
+      .contentShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
   }
 }
 
@@ -865,8 +867,8 @@ private struct TurnButton: View {
       Image(systemName: symbol).font(.system(size: 20, weight: .medium))
         .foregroundStyle(isOn ? PresenterTheme.accent : PresenterTheme.text)
         .frame(width: 52, height: 48)
-        .background(isOn ? PresenterTheme.lit : Color.clear, in: RoundedRectangle(cornerRadius: 16))
-        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .background(isOn ? PresenterTheme.lit : Color.clear, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+        .contentShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     }
     .buttonStyle(.plain)
     .accessibilityLabel(title)
@@ -925,7 +927,8 @@ struct DevicePickerCards: View {
       }.padding(20)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
     }.frame(width: 500, height: min(680, contentHeight))
-      .background(Color(white: 0.1)).preferredColorScheme(.dark)
+      .background(Color(white: 0.1), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      .clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)).preferredColorScheme(.dark)
       .onAppear { if microphone { store.showPickerMeter(showMeter) } }
       .onDisappear { if microphone { store.showPickerMeter(false) } }
       .onChange(of: showMeter) { _, value in if microphone { store.showPickerMeter(value) } }

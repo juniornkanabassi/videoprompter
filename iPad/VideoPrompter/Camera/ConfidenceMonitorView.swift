@@ -84,6 +84,7 @@ struct ConfidenceMonitorView: View {
                       }
                 .padding(16)
               }
+              .clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
               .position(x: area.size.width / 2, y: area.size.height / 2)
               .clipped()
           }
@@ -170,6 +171,8 @@ private struct MonitorPicture: UIViewRepresentable {
       super.init(frame: .zero)
       backgroundColor = .black
       clipsToBounds = true
+      display.cornerRadius = AlphaStyle.cardCorner
+      display.masksToBounds = true
       display.removeFromSuperlayer()
       self.layer.addSublayer(display)
     }

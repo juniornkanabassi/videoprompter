@@ -682,6 +682,8 @@ struct LinkPreview: UIViewRepresentable {
       shadeLayer.fillRule = .evenOdd
       guideLayer.fillColor = nil
       guideLayer.lineWidth = 1.5
+      displayLayer.cornerRadius = AlphaStyle.cardCorner
+      displayLayer.masksToBounds = true
       displayLayer.removeFromSuperlayer()
       layer.addSublayer(displayLayer)
       layer.addSublayer(shadeLayer)
