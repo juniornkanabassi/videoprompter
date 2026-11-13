@@ -277,6 +277,12 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       _ = try state("picture mode") { $0.pictureMode == mode }
     }
     send(.picturePriority(.sharper1080p))
+    send(.cameraGuides(.init(zebras: true)))
+    _ = try state("zebras enabled") { $0.guides?.zebras == true }
+    send(.rename("Footballco Studio iPad"))
+    _ = try state("iPad renamed") { $0.deviceName == "Footballco Studio iPad" }
+    send(.look(.init(fontName: "Georgia", paragraphSpacing: 0.6)))
+    _ = try state("text parity") { $0.look?.fontName == "Georgia" && $0.look?.paragraphSpacing == 0.6 }
     send(.cleanScreen(true))
     _ = try state("priority and clean screen") { $0.picturePriority == .sharper1080p && $0.cleanScreen == true }
     send(.cleanScreen(false))

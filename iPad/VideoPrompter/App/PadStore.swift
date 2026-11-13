@@ -481,6 +481,13 @@ extension PadStore {
     let link = camera.link
     link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
+    micMeter.$levelDB.dropFirst().throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
+      .sink { [weak self] _ in
+        guard let self, link.macName != nil else { return }
+        link.send(.microphoneLevel(micOn ? micMeter.levelDB : -60))
+      }.store(in: &bag)
+    camera.objectWillChange.receive(on: DispatchQueue.main)
+      .sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
     objectWillChange.receive(on: DispatchQueue.main)
       .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
@@ -614,7 +621,11 @@ extension PadStore {
       deviceName: camera.link.deviceName,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
-      cameraOnly: cameraOnly, linkHeartbeat: true, markdown: open ? session.activeRecord?.markdown : nil)
+      cameraOnly: cameraOnly, linkHeartbeat: true, markdown: open ? session.activeRecord?.markdown : nil,
+      guides: .init(zebras: camera.guides.zebras, falseColour: camera.guides.falseColour,
+        thirds: camera.guides.thirds, centre: camera.guides.axes, marker: camera.guides.marker?.label ?? "Off",
+        exposureKey: defaults.object(forKey: "presenterExposureKey") as? Bool ?? true),
+      micLevelDB: micOn ? micMeter.levelDB : -60)
   }
 
   func perform(_ command: PadRemote.Command) {
@@ -648,6 +659,20 @@ extension PadStore {
       }
     }
     switch command {
+    case .rename(let name): camera.link.deviceName = PadIdentity.cleanName(name)
+    case .cameraGuides(let update):
+      var guides = camera.guides
+      if let value = update.zebras { guides.changeExposure { $0.zebras = value } }
+      if let value = update.falseColour { guides.changeExposure { $0.falseColour = value } }
+      if let value = update.thirds { guides.thirds = value }
+      if let value = update.centre { guides.axes = value }
+      if let value = update.marker {
+        if value == "Off" { guides.marker = nil }
+        else if let marker = CameraAspect.presets.first(where: { $0.label == value }) { guides.marker = marker }
+      }
+      guides.sanitise()
+      camera.guides = guides
+      if let value = update.exposureKey { defaults.set(value, forKey: "presenterExposureKey") }
     case .editing(let value):
       if value {
         if !editing { beginEditing(); editingFromMac = true }
@@ -714,6 +739,14 @@ extension PadStore {
       if let value = look.textWidth, value.isFinite { next.textWidth = value }
       if let value = look.lineSpacing, value.isFinite { next.lineSpacing = value }
       if let value = look.guideFraction, value.isFinite { next.guideFraction = value }
+      if let value = look.fontName { next.fontName = value }
+      if let value = look.fontWeight { next.fontWeight = value }
+      if let value = look.paragraphSpacing, value.isFinite { next.paragraphSpacing = value }
+      if let value = look.textOpacity, value.isFinite { next.textOpacity = value }
+      if let value = look.textColorHex { next.textColorHex = value }
+      if let value = look.alignment { next.alignment = value }
+      if let value = look.showCues { next.showCues = value }
+      next.sanitise()
       settings = next
     case .preset(let name):
       if let preset = presets.first(where: { $0.name == name }) { apply(preset) }

@@ -186,6 +186,24 @@ public enum PadRemote {
     case micOn(Bool)
     /// Mac to iPad. Optional fields are partial updates.
     case macStatus(MacStatus)
+    case cameraGuides(Guides)
+    case rename(String)
+    case microphoneLevel(Double)
+  }
+
+  /// Optional fields leave an older peer's existing settings untouched.
+  public struct Guides: Codable, Equatable, Sendable {
+    public var zebras: Bool?
+    public var falseColour: Bool?
+    public var thirds: Bool?
+    public var centre: Bool?
+    public var marker: String?
+    public var exposureKey: Bool?
+    public init(zebras: Bool? = nil, falseColour: Bool? = nil, thirds: Bool? = nil,
+      centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil) {
+      self.zebras = zebras; self.falseColour = falseColour; self.thirds = thirds
+      self.centre = centre; self.marker = marker; self.exposureKey = exposureKey
+    }
   }
 
   public enum PictureMode: String, Codable, CaseIterable, Sendable {
@@ -364,6 +382,8 @@ public enum PadRemote {
     /// The presenter shows the camera alone, with no script (`presenting` is nil then).
     public var cameraOnly: Bool?
     /// Older iPads only report changes; apply a liveness timeout only when they promise replies.
+    public var guides: Guides?
+    public var micLevelDB: Double?
     public var linkHeartbeat: Bool?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
@@ -373,10 +393,12 @@ public enum PadRemote {
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
       macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
       selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil,
-      cameraOnly: Bool? = nil, linkHeartbeat: Bool? = nil, markdown: String? = nil
+      cameraOnly: Bool? = nil, linkHeartbeat: Bool? = nil, markdown: String? = nil,
+      guides: Guides? = nil, micLevelDB: Double? = nil
     ) {
       self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
       self.cameraOnly = cameraOnly; self.markdown = markdown
+      self.guides = guides; self.micLevelDB = micLevelDB
       self.linkHeartbeat = linkHeartbeat
       self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words

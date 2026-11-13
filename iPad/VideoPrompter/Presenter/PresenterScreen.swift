@@ -39,7 +39,7 @@ struct PresenterScreen: View {
   @State private var keyExpanded = true
   @State private var showsExposureNote = false
   private var falseColour: Bool { camera.guides.falseColour }
-  @State private var showKey = true
+  @AppStorage("presenterExposureKey") private var showKey = true
   @State private var showingCamera = false
   @State private var hadMac = false
   @State private var editingRecord: ScriptRecord?

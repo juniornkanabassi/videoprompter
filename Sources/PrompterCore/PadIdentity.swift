@@ -5,11 +5,11 @@ public struct PadIdentity: Equatable, Sendable {
   public let id: String
   public let name: String
 
-  public init(defaults: UserDefaults) {
+  public init(defaults: UserDefaults, modelName: String = "iPad") {
     let id = defaults.string(forKey: "macLinkDeviceID").flatMap(UUID.init(uuidString:)) ?? UUID()
     self.id = id.uuidString
     defaults.set(self.id, forKey: "macLinkDeviceID")
-    name = defaults.string(forKey: "macLinkDeviceName") ?? "iPad \(self.id.prefix(4))"
+    name = defaults.string(forKey: "macLinkDeviceName") ?? Self.cleanName(modelName)
   }
 
   public static func cleanName(_ value: String) -> String {

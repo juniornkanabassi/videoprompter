@@ -7,6 +7,20 @@ import XCTest
 @testable import PrompterCore
 
 final class CameraLinkTests: XCTestCase {
+  func testConsoleCommandsAndOptionalState() throws {
+    for command in [PadRemote.Command.rename("Footballco Studio iPad"),
+      .cameraGuides(.init(zebras: true, falseColour: true, thirds: true, centre: true, marker: "9:16", exposureKey: false))] {
+      XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: JSONEncoder().encode(command)), command)
+    }
+    let legacy = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
+    let state = try JSONDecoder().decode(PadRemote.State.self, from: legacy)
+    XCTAssertNil(state.guides)
+    XCTAssertNil(state.micLevelDB)
+    let partial = try JSONDecoder().decode(PadRemote.Guides.self, from: Data(#"{"zebras":true}"#.utf8))
+    XCTAssertEqual(partial.zebras, true)
+    XCTAssertNil(partial.falseColour)
+  }
+
   func testReplicaStateAndSeekAreCompatibleWithOlderPeers() throws {
     let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
     var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
@@ -50,7 +64,9 @@ final class CameraLinkTests: XCTestCase {
     let a = UserDefaults(suiteName: suiteA)!
     let b = UserDefaults(suiteName: suiteB)!
     defer { a.removePersistentDomain(forName: suiteA); b.removePersistentDomain(forName: suiteB) }
-    let first = PadIdentity(defaults: a)
+    let first = PadIdentity(defaults: a, modelName: "iPad Pro")
+    XCTAssertEqual(first.name, "iPad Pro")
+    XCTAssertEqual(PadIdentity.cleanName("  Footballco Studio iPad \n"), "Footballco Studio iPad")
     a.set("Studio", forKey: "macLinkDeviceName")
     b.set("Studio", forKey: "macLinkDeviceName")
     let renamed = PadIdentity(defaults: a)
