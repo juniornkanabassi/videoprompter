@@ -80,6 +80,9 @@ struct PresenterView: View {
   private var controlZoom: Double {
     Self.controlZoom(store.uiZoom) * Self.sizeBoost(width: viewport.width / Self.controlZoom(store.uiZoom))
   }
+  /// The mic strip grows with the interface size only up to 150%, so at 200% the text keeps the room.
+  static func meterZoom(controlZoom: Double, uiZoom: Double) -> Double { controlZoom * min(1, 1.5 / max(1, uiZoom)) }
+  private var meterZoom: Double { Self.meterZoom(controlZoom: controlZoom, uiZoom: store.uiZoom) }
   /// The width of the slim microphone strip at the right edge, before zoom: dB numbers, bar and zone words.
   static let meterWidth: CGFloat = 120
   /// One width for the side cards (exposure key, camera), with their padding, so they line up. It is a
@@ -88,11 +91,28 @@ struct PresenterView: View {
   static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
     min(300, max(188, width / zoom * 0.12)) * zoom + Space.md * 2
   }
-  /// How much of the setup bar shows words, decided by one rule at every size: the window's width in
-  /// points, before interface zoom and the 4K boost. Picture tools keep their words above `standard`.
-  enum BarTier { case full, standard, compact }
-  static func barTier(width: CGFloat) -> BarTier { width >= 1700 ? .full : width >= 1150 ? .standard : .compact }
-  private var barTier: BarTier { Self.barTier(width: viewport.width / controlZoom) }
+  /// The words the setup bar shows. One rule at every size: the bar takes the richest variant that fits
+  /// (see `setupWordVariants`), so Camera, Mic, Script and the transport keep their words longest, the
+  /// picture tools shorten ("False colour" to "Colour") and drop their caption before they become icons.
+  struct SetupWords: Equatable {
+    /// Once the picture tools are short, every label gives up a little of its side room too.
+    var snug: Bool { shortToolTitles }
+    var viewTitles = true
+    var toolsCaption = true
+    var toolTitles = true
+    var shortToolTitles = false
+    var transportTitles = true
+    var callTitles = true
+  }
+  static let setupWordVariants: [SetupWords] = [
+    SetupWords(),
+    SetupWords(viewTitles: false),
+    SetupWords(viewTitles: false, shortToolTitles: true),
+    SetupWords(viewTitles: false, toolsCaption: false, shortToolTitles: true),
+    SetupWords(viewTitles: false, toolsCaption: false, toolTitles: false),
+    SetupWords(viewTitles: false, toolsCaption: false, toolTitles: false, transportTitles: false),
+    SetupWords(viewTitles: false, toolsCaption: false, toolTitles: false, transportTitles: false, callTitles: false)
+  ]
   /// The text runs down to the bar and fades out over `ScriptTextView.fadeHeight` (a line and a half),
   /// so no extra room is kept under it and upcoming words stay in view at every interface size.
   static let readingBottomInset: CGFloat = 0
@@ -126,9 +146,8 @@ struct PresenterView: View {
     GeometryReader { geometry in
       let editing = draft.isEditing
       // The key explains the picture's zebras or false colour, so it needs a picture.
-      let hasPicture = referencePicture != nil || camera.pictureSize != nil
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && hasPicture && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
-      let meterWidth = meterReserved ? Self.meterWidth * controlZoom : 0
+      let meterWidth = meterReserved ? Self.meterWidth * meterZoom : 0
       let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
       let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
       let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
@@ -140,7 +159,9 @@ struct PresenterView: View {
       let regionWidth = max(1, setup ? geometry.size.width - 2 * cardColumn : geometry.size.width - meterWidth)
       let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
       let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
-      let backingWidth = max(1, min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl))
+      // The current-line band reaches the same distance past the text column on both sides; the backing a little further.
+      let bandWidth = max(1, min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl))
+      let backingWidth = max(1, min(regionWidth, bandWidth + 2 * ReadingBacking.margin))
       let scriptTopInset = keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0
       let bottomInset = Self.readingBottomInset + (barOverlays && !focusActive ? max(controlBarHeight, 60 * controlZoom) : 0)
       let scriptHeight = max(1, geometry.size.height - scriptTopInset - bottomInset)
@@ -177,13 +198,13 @@ struct PresenterView: View {
             // A soft band behind the current line and a clear full-width line under it, in the line gap.
             if !editing {
               PresenterReadingLine(settings: store.settings)
-                .frame(width: backingWidth)
+                .frame(width: bandWidth)
                 .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: store.settings.guideFraction)
                   - PresenterReadingLine.bandHeight(fontSize: store.settings.fontSize) / 2)
             }
             if editing {
               // Save and Cancel stay upright; only the text itself follows the mirror and rotation settings.
-              PresenterEditingSurface(session: session, draft: draft, settings: store.settings, width: regionWidth, zoom: controlZoom,
+              PresenterEditingSurface(session: session, draft: draft, settings: store.settings, width: regionWidth, centreShift: meterWidth / 2, zoom: controlZoom,
                 isSaving: draft.isSaving, save: { Task { await draft.confirm(store: store) } }, cancel: { draft.requestCancel() }) {
                 editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
               }
@@ -237,7 +258,7 @@ struct PresenterView: View {
         if setup { Color.clear.frame(width: max(0, cardColumn - meterWidth)) }
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening)
-            .frame(width: Self.meterWidth, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
+            .frame(width: Self.meterWidth, height: max(0, geometry.size.height / meterZoom - 32)).uiZoom(meterZoom)
             .frame(width: meterWidth).padding(.vertical, Space.md)
         } else if meterWidth > 0 {
           // Editing keeps the strip, so the text wraps as in reading; it takes the editor's backdrop.
@@ -245,7 +266,7 @@ struct PresenterView: View {
         }
       }.foregroundStyle(.white)
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
-    }.background(camera.cleanView ? Color.black : Color(white: 0.035))
+    }.background(Color.black) // One colour under the picture, the side columns and the meter: no grey strip beside a black picture.
 
   }
 
@@ -488,33 +509,34 @@ struct PresenterView: View {
   // MARK: Setup bar
 
   /// One row: transport on the left, then the video-call group, then the picture tools. The words follow
-  /// one rule (`barTier`, the window's width in points): the picture tools keep theirs longest and only
-  /// go to icons below about 1150 points; below that the groups wrap if they still do not fit.
+  /// one rule (`setupWordVariants`, richest first): the first variant that fits shows; the groups wrap
+  /// as icons only when even the last one does not.
   private var setupBar: some View {
-    let tier = barTier
-    return ViewThatFits(in: .horizontal) {
-      setupRow(tier: tier)
+    ViewThatFits(in: .horizontal) {
+      ForEach(Array(Self.setupWordVariants.enumerated()), id: \.offset) { index, words in
+        setupRow(words, spacious: index == 0)
+      }
       WrapLayout(spacing: Space.sm, leading: true) {
         setupTransport(titled: false)
         callGroup(titles: false)
-        toolsGroup(titles: false)
+        toolsGroup(words: Self.setupWordVariants[Self.setupWordVariants.count - 1])
         viewGroup(titles: false)
       }.frame(maxWidth: .infinity, alignment: .leading)
     }
   }
-  private func setupRow(tier: BarTier) -> some View {
-    HStack(spacing: tier == .full ? PresenterBar.groupGap : Space.lg) {
-      HStack(spacing: Space.sm) { setupTransport(titled: tier == .full) }
-      Spacer(minLength: Space.md)
-      callGroup(titles: tier == .full)
-      toolsGroup(titles: tier != .compact)
-      viewGroup(titles: tier == .full)
+  private func setupRow(_ words: SetupWords, spacious: Bool) -> some View {
+    HStack(spacing: spacious ? PresenterBar.groupGap : Space.md) {
+      HStack(spacing: Space.sm) { setupTransport(titled: words.transportTitles, snug: words.snug) }
+      Spacer(minLength: Space.sm)
+      callGroup(titles: words.callTitles, snug: words.snug)
+      toolsGroup(words: words)
+      viewGroup(titles: words.viewTitles)
     }
   }
 
   /// Opens the script in the library. Plain among the quiet options, so it never looks switched on.
-  private func scriptButton(titled: Bool = false, role: BarButtonStyle.Role = .plain) -> some View {
-    Button { controller.openScript(store: store) } label: { BarLabel(title: "Open script", symbol: "doc.text", showsTitle: titled) }
+  private func scriptButton(titled: Bool = false, role: BarButtonStyle.Role = .plain, label: String = "Open script", snug: Bool = false) -> some View {
+    Button { controller.openScript(store: store) } label: { BarLabel(title: label, symbol: "doc.text", showsTitle: titled, snug: snug) }
       .buttonStyle(BarButtonStyle(role: role)).accessibilityLabel("Open script")
       .help("Open this script in the library to edit its title and details")
   }
@@ -526,14 +548,14 @@ struct PresenterView: View {
   }
 
   /// Start reading always has its words; the other two keep theirs while there is room.
-  @ViewBuilder private func setupTransport(titled: Bool) -> some View {
-    Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill") }
+  @ViewBuilder private func setupTransport(titled: Bool, snug: Bool = false) -> some View {
+    Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
       .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
-    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: titled) }
+    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: titled, snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton(titled: titled, role: .secondary)
+    scriptButton(titled: titled, role: .secondary, snug: snug)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -541,24 +563,24 @@ struct PresenterView: View {
   private var recorderBusy: Bool { recorder.isRecording || recorder.isBusy }
   private var cameraValue: String { "\(sourceInfo?.displayName ?? "No camera chosen"), \(shotLabel)" }
 
-  private func callGroup(titles: Bool) -> some View {
+  private func callGroup(titles: Bool, snug: Bool = false) -> some View {
     BarGroup(label: "Camera, microphone and script") {
       BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.presentsWithVideo,
-        showsTitle: titles, isEnabled: hasScript,
+        showsTitle: titles, snug: snug, isEnabled: hasScript,
         toggleHelp: camera.presentsWithVideo ? "Turn the camera off to see just the script" : "Turn the camera on",
         menuLabel: "Choose camera", menuValue: cameraValue, toggle: toggleCamera) { cameraMenu }
       BarDivider()
-      micControl(titles: titles)
+      micControl(titles: titles, snug: snug)
       BarDivider()
-      BarToggle(title: "Script", symbol: "text.alignleft", isOn: shell.scriptPreview, showsTitle: titles,
+      BarToggle(title: "Script", symbol: "text.alignleft", isOn: shell.scriptPreview, showsTitle: titles, snug: snug,
         help: shell.scriptPreview ? "Hide the script" : "Show the script over the picture") { shell.scriptPreview.toggle() }
         .disabled(!hasScript)
     }
   }
 
-  private func micControl(titles: Bool) -> some View {
+  private func micControl(titles: Bool, snug: Bool = false) -> some View {
     BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: micListening,
-      showsTitle: titles,
+      showsTitle: titles, snug: snug,
       toggleHelp: micListening ? "Turn the microphone off: Video Prompter stops listening" : "Turn the microphone on",
       menuLabel: "Choose microphone", menuValue: inputName, toggle: toggleMicrophone) { micMenu }
   }
@@ -630,16 +652,26 @@ struct PresenterView: View {
 
   // MARK: Picture tools
 
-  private func toolsGroup(titles: Bool) -> some View {
-    BarGroup(label: "Picture tools", caption: titles ? "Picture" : nil, raised: false) {
-      tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.effectiveZebras, titles: titles,
-           help: "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
-      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.effectiveFalseColour, titles: titles,
-           help: "False colour exposure (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
-      tool("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible, titles: titles,
+  /// The picture exists: a reference image, or frames from the camera. Without it the exposure and
+  /// guide tools have nothing to act on, so they are dimmed (still reachable) and never show as on.
+  private var hasPicture: Bool { referencePicture != nil || camera.pictureSize != nil }
+
+  private func toolsGroup(words: SetupWords) -> some View {
+    let titles = words.toolTitles
+    let live = hasPicture
+    let snug = words.shortToolTitles
+    return BarGroup(label: "Picture tools", caption: titles && words.toolsCaption ? "Picture" : nil, raised: false) {
+      tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, titles: titles, snug: snug,
+           help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
+        .opacity(live ? 1 : 0.45)
+      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, titles: titles, shortTitle: words.shortToolTitles ? "Colour" : nil, snug: snug,
+           help: live ? "False colour exposure (⌥⌘X). Press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
+        .opacity(live ? 1 : 0.45)
+      tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, titles: titles, snug: snug,
            help: "Framing guides. Press and hold to adjust.") { camera.toggleFramingGuides() }
+        .opacity(live ? 1 : 0.45)
       BarDivider()
-      tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, titles: titles, adjustable: false,
+      tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, titles: titles, snug: snug, adjustable: false,
            help: "Open the adjust panel", traits: [], value: shell.adjustTab == nil ? "Collapsed" : "Expanded") {
         shell.adjustTab = shell.adjustTab == nil ? .camera : nil
       }
@@ -657,10 +689,10 @@ struct PresenterView: View {
   }
 
   /// A picture tool: tapping toggles it, pressing and holding (or the context menu) opens its Adjust tab.
-  private func tool(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool, titles: Bool, adjustable: Bool = true,
+  private func tool(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool, titles: Bool, shortTitle: String? = nil, snug: Bool = false, adjustable: Bool = true,
                     help: String, traits: AccessibilityTraits = .isToggle, value: String? = nil,
                     action: @escaping () -> Void) -> some View {
-    BarToggle(title: title, symbol: symbol, isOn: on, showsTitle: titles, help: help, traits: traits, value: value) {
+    BarToggle(title: title, symbol: symbol, isOn: on, showsTitle: titles, displayTitle: shortTitle, snug: snug, help: help, traits: traits, value: value) {
       adjustOpener = title; action()
     }
     .restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)")
@@ -679,28 +711,36 @@ struct PresenterView: View {
   private var readingBar: some View {
     ViewThatFits(in: .horizontal) {
       readingRow(showsPill: true, titles: true)
-      readingRow(showsPill: true, titles: false)
+      // Words on the actions before the status pill: at 200% the pill goes first, then the Space hint
+      // and the long name "Open script" (shown as "Script"), and only last the names themselves.
+      readingRow(showsPill: false, titles: true)
+      readingRow(showsPill: false, titles: true, short: true)
       readingRow(showsPill: false, titles: false)
     }
   }
   /// Words beside the right-hand icons while there is room; they are plain buttons, lit only when on.
-  private func readingRow(showsPill: Bool, titles: Bool) -> some View {
+  private func readingRow(showsPill: Bool, titles: Bool, short: Bool = false) -> some View {
     HStack(spacing: Space.md) {
-      Group {
-        if showsPill { BarStatusPill(text: readingPillText, isActive: session.isActivelyRunning) } else { Color.clear.frame(width: 0, height: 0) }
-      }.frame(maxWidth: .infinity, alignment: .leading)
-      HStack(spacing: Space.sm) { readingTransport(titles: titles) }
-      BarGroup(label: "Reading options") {
-        micControl(titles: false)
-        BarDivider()
-        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: titles,
-                  help: "Focus: only the text, the level meter and the reading line (⌥⌘F)") { focusMode.toggle() }
-          .contextMenu { Toggle("Auto-hide these controls while reading", isOn: $autoHidesBar) }
-        Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size", showsTitle: titles) }
-          .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text size").accessibilityLabel("Reading settings")
-        editButton(titled: titles)
-        scriptButton(titled: titles)
-      }.frame(maxWidth: .infinity, alignment: .trailing)
+      // With the pill, both sides share the width equally so the transport stays centred; without it the
+      // options take the room they need and the transport sits in what is left.
+      if showsPill { BarStatusPill(text: readingPillText, isActive: session.isActivelyRunning).frame(maxWidth: .infinity, alignment: .leading) }
+      else { Spacer(minLength: 0) }
+      HStack(spacing: Space.sm) { readingTransport(titles: titles, hint: !short) }
+      if !showsPill { Spacer(minLength: Space.md) }
+      readingOptions(titles: titles, short: short).frame(maxWidth: showsPill ? .infinity : nil, alignment: .trailing)
+    }
+  }
+  private func readingOptions(titles: Bool, short: Bool) -> some View {
+    BarGroup(label: "Reading options") {
+      micControl(titles: false)
+      BarDivider()
+      BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: titles,
+                help: "Focus: only the text, the level meter and the reading line (⌥⌘F)") { focusMode.toggle() }
+        .contextMenu { Toggle("Auto-hide these controls while reading", isOn: $autoHidesBar) }
+      Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size", showsTitle: titles) }
+        .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text size").accessibilityLabel("Reading settings")
+      editButton(titled: titles)
+      scriptButton(titled: titles, label: short ? "Script" : "Open script")
     }
   }
   private var readingPillText: String {
@@ -708,14 +748,14 @@ struct PresenterView: View {
     return store.settings.mode == "Voice" ? "Voice · \(state)" : "Automatic · \(Int(store.settings.speed)) wpm · \(state)"
   }
 
-  @ViewBuilder private func readingTransport(titles: Bool) -> some View {
+  @ViewBuilder private func readingTransport(titles: Bool, hint: Bool = true) -> some View {
     let running = session.isActivelyRunning || session.isCountingDown
     Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: false) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start").help("Back to the first word (Home)")
     Button { session.toggle() } label: {
       HStack(spacing: Space.sm) {
         BarLabel(title: running ? "Pause" : "Start reading", symbol: running ? "pause.fill" : "play.fill")
-        if running { Text("Space").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5)).padding(.trailing, Space.md) }
+        if running && hint { Text("Space").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5)).padding(.trailing, Space.md) }
       }
     }.buttonStyle(BarButtonStyle(role: running ? .secondary : .prominent))
       .accessibilityLabel(running ? "Pause" : "Start reading").help((running ? "Pause" : "Start reading") + " (Space)")
@@ -785,6 +825,9 @@ struct PresenterEditingSurface: View {
   let settings: PrompterSettings
   /// The width the reading text column is centred in.
   let width: CGFloat
+  /// The empty meter strip beside the editor: the box moves over by half of it, so it sits in the middle of
+  /// the stage and not of the stage less that strip. Its text keeps the reading column's width.
+  var centreShift: CGFloat = 0
   var zoom = 1.0
   var isSaving = false
   var save: () -> Void = {}
@@ -799,6 +842,8 @@ struct PresenterEditingSurface: View {
     let columnInset = ScriptTextView.sideInset(width: width, textWidth: measure)
     let shape = RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)
     let boxWidth = max(1, width - 2 * max(0, columnInset - Self.inset))
+    let sidePadding = max(0, columnInset - Self.inset)
+    let shift = min(centreShift, sidePadding)
     GeometryReader { geometry in
       let header = Self.headerHeight * zoom
       let available = max(1, geometry.size.height - Space.xl - Space.xxl - header)
@@ -809,15 +854,15 @@ struct PresenterEditingSurface: View {
         PresenterEditorView(session: session, draft: draft, settings: settings, sideInset: Self.inset, onUnsupportedEdit: onUnsupportedEdit)
           .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
           .rotationEffect(.degrees(Double(settings.rotation)))
-          .padding(.top, Space.md)
+          .padding(.top, Space.xs)
           .frame(height: available)
       }
-      .background(shape.fill(.white.opacity(0.07)))
+      .background(shape.fill(.white.opacity(0.1)))
       .clipShape(shape)
       // A plain 1 pt edge, and a soft yellow ring for focus, so Save keeps the strongest yellow.
       .overlay(shape.stroke(.white.opacity(0.3), lineWidth: 1))
-      .overlay(shape.inset(by: -3).stroke(AlphaStyle.accent.opacity(0.35), lineWidth: 2))
-      .padding(.horizontal, max(0, columnInset - Self.inset))
+      .overlay(shape.inset(by: -3).stroke(AlphaStyle.accent.opacity(0.3), lineWidth: 2))
+      .padding(.leading, sidePadding + shift).padding(.trailing, sidePadding - shift)
       .padding(.top, Space.xl)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-editing-surface")

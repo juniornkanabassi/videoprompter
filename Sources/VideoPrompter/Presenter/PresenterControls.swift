@@ -26,6 +26,8 @@ struct BarLabel: View {
   var weight = Font.Weight.semibold
   /// A tool that is on keeps a neutral fill and shows it with a yellow icon, so only Start reading is yellow-filled.
   var accentIcon = false
+  /// A little less room each side of the word, for a bar that is short of width.
+  var snug = false
   var body: some View {
     HStack(spacing: Space.xs) {
       if accentIcon {
@@ -34,7 +36,7 @@ struct BarLabel: View {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
       if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
-    }.padding(.horizontal, showsTitle ? Space.md : Space.sm)
+    }.padding(.horizontal, showsTitle && !snug ? Space.md : Space.sm)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
   }
 }
@@ -86,7 +88,7 @@ struct BarGroup<Content: View>: View {
     let shape = RoundedRectangle(cornerRadius: PresenterBar.corner)
     HStack(spacing: 0) {
       if let caption {
-        Text(caption).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.65))
+        Text(caption).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
           .padding(.horizontal, Space.md).accessibilityHidden(true)
       }
       content()
@@ -112,6 +114,7 @@ struct BarDeviceControl<MenuContent: View>: View {
   let offSymbol: String
   let isOn: Bool
   var showsTitle = true
+  var snug = false
   var isEnabled = true
   let toggleHelp: String
   let menuLabel: String
@@ -121,7 +124,7 @@ struct BarDeviceControl<MenuContent: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle) }
+      Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug) }
         .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
@@ -145,12 +148,15 @@ struct BarToggle: View {
   let symbol: String
   let isOn: Bool
   var showsTitle = true
+  /// A shorter word to show beside the icon; the full title stays the accessibility label.
+  var displayTitle: String? = nil
+  var snug = false
   var help: String? = nil
   var traits: AccessibilityTraits = .isToggle
   var value: String? = nil
   let action: () -> Void
   var body: some View {
-    Button(action: action) { BarLabel(title: title, symbol: symbol, showsTitle: showsTitle, accentIcon: isOn) }
+    Button(action: action) { BarLabel(title: displayTitle ?? title, symbol: symbol, showsTitle: showsTitle, accentIcon: isOn, snug: snug) }
       .buttonStyle(BarButtonStyle(role: isOn ? .on : .plain))
       .help(help ?? title)
       .accessibilityLabel(title)
@@ -168,13 +174,16 @@ struct GuideLine: View {
   }
 }
 
-/// A dark column behind the text, the full height of the picture, so the picture and the zebras stop
-/// showing through the words. No edge lines (they read as a frame): the sides just soften.
+/// A calm column behind the text, the full height of the picture, so the picture and the zebras stop
+/// showing through the words. It is a touch lighter than the dimmed picture around it, so the column
+/// reads as a step and not as a hole. No edge lines (they read as a frame): the sides just soften.
 struct ReadingBacking: View {
   let opacity: Double
   static let feather = Space.md
+  /// How far the column reaches past the current-line band on each side.
+  static let margin = Space.lg
   var body: some View {
-    Rectangle().fill(Color.black.opacity(opacity))
+    Rectangle().fill(Color(white: 0.1).opacity(opacity))
       .mask {
         HStack(spacing: 0) {
           LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: Self.feather)
