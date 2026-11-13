@@ -41,9 +41,11 @@ public final class AudioCapture: @unchecked Sendable {
   private var converter: AVAudioConverter?
   private var bufferHandler: ((AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void)?
   private var stopHandler: ((AudioCaptureError?) -> Void)?
+  private let channel: AudioChannel
   private var gain: Float
 
-  public init(device: AudioInputDevice, outputFormat: AVAudioFormat, gain: Float = 1) {
+  public init(device: AudioInputDevice, outputFormat: AVAudioFormat, gain: Float = 1, channel: AudioChannel = .both) {
+    self.channel = channel
     selectedDevice = device
     self.outputFormat = outputFormat
     self.gain = max(0, gain)
@@ -112,10 +114,8 @@ public final class AudioCapture: @unchecked Sendable {
     } catch { throw AudioCaptureError.engineFailure(error.localizedDescription) }
     let node = engine.inputNode
     let native = node.outputFormat(forBus: 0)
-    guard native.sampleRate > 0, let converter = AVAudioConverter(from: native, to: outputFormat) else {
-      throw AudioCaptureError.conversionUnavailable
-    }
-    self.converter = converter
+    guard native.sampleRate > 0 else { throw AudioCaptureError.conversionUnavailable }
+    try prepareConverter(sampleRate: native.sampleRate)
     bufferHandler = onBuffer
     stopHandler = onStop
     stateLock.withLock {
@@ -202,13 +202,26 @@ public final class AudioCapture: @unchecked Sendable {
     }
   }
 
-  private func convertAndDeliver(_ source: AVAudioPCMBuffer, time: AVAudioTime) {
-    guard stateLock.withLock({ running }), let converter else { return }
+  /// Every consumer downstream gets the chosen channel as mono float, so the converter always starts from it.
+  func prepareConverter(sampleRate: Double) throws {
+    guard let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false),
+      let converter = AVAudioConverter(from: mono, to: outputFormat) else { throw AudioCaptureError.conversionUnavailable }
+    self.converter = converter
+  }
+
+  private func convertAndDeliver(_ input: AVAudioPCMBuffer, time: AVAudioTime) {
+    guard stateLock.withLock({ running }), let result = process(input) else { return }
+    bufferHandler?(result.buffer, time, result.rms, result.peak, result.peak >= 0.98)
+  }
+
+  /// Chosen channel, then rate conversion, gain and the meter reading, in that order.
+  func process(_ input: AVAudioPCMBuffer) -> (buffer: AVAudioPCMBuffer, rms: Float, peak: Float)? {
+    guard let source = channel.mono(input), let converter else { return nil }
     let capacity =
       AVAudioFrameCount(
         ceil(Double(source.frameLength) * outputFormat.sampleRate / source.format.sampleRate)) + 2
     guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
-      return
+      return nil
     }
     let supply = InputSupply()
     var error: NSError?
@@ -223,13 +236,13 @@ public final class AudioCapture: @unchecked Sendable {
     }
     if let error {
       stop(reason: .engineFailure("The microphone's audio could not be converted. \(error.localizedDescription)"))
-      return
+      return nil
     }
     // Normal now and then: the converter keeps a few samples back for the next buffer.
-    guard output.frameLength > 0 else { return }
+    guard output.frameLength > 0 else { return nil }
     let currentGain = stateLock.withLock { gain }
     let levels = Self.applyGainAndMeasure(output, gain: currentGain)
-    bufferHandler?(output, time, levels.rms, levels.peak, levels.peak >= 0.98)
+    return (output, levels.rms, levels.peak)
   }
 
   private static func deepCopy(_ source: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
