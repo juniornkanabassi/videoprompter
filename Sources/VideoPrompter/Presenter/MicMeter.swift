@@ -73,6 +73,7 @@ struct MicMeterView: View {
   }
 
   /// Where the horizontal "aim here" word ends: over the yellow zone, but clear of "too loud".
+  static let zoneWordWidth: CGFloat = 60
   static func aimLabelTrailing(width: CGFloat, tooLoudWidth: CGFloat = 52) -> CGFloat {
     min(width * MeterZones.position(MeterZones.redFrom) - 3, width - tooLoudWidth - 6)
   }
@@ -87,7 +88,7 @@ struct MicMeterView: View {
       let fill = MeterZones.position(db)
       let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
       GeometryReader { available in
-        let horizontal = available.size.height < 280
+        let horizontal = available.size.width >= 180 && available.size.height < 280
         VStack(spacing: horizontal ? Space.xs : Space.sm) {
           if showsHeading { heading }
           if horizontal { horizontalBar(fill: fill, clipLit: clipLit, now: now) } else { verticalBar(fill: fill, clipLit: clipLit, now: now) }
@@ -107,8 +108,8 @@ struct MicMeterView: View {
         .accessibilityValue(isListening ? Self.readout(db) + (clipLit ? ", Clipping" : "") : "Off")
         .accessibilityHint(clipLit ? "Input is clipping." : "Green is quiet to normal speech, yellow is where to peak, red above minus 6 dBFS is too loud.")
       }
-      .onChange(of: meter.isClipping, initial: true) { _, clipping in
-        if clipping { clipLatchUntil = ProcessInfo.processInfo.systemUptime + Self.clipLatchSeconds }
+      .onChange(of: meter.isClipping, initial: true) { wasClipping, clipping in
+        if clipping || wasClipping { clipLatchUntil = ProcessInfo.processInfo.systemUptime + Self.clipLatchSeconds }
       }
       .onChange(of: db, initial: true) { _, value in
         peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime)
@@ -152,41 +153,41 @@ struct MicMeterView: View {
       HStack(spacing: Space.xs) {
         // Each number is centred on its boundary: the label's centre, not its top, is the anchor.
         GeometryReader { geometry in
-          ZStack(alignment: .topTrailing) {
+          ZStack {
             ForEach(Self.visibleScale(height: geometry.size.height), id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: 13)).monospacedDigit()
                 .foregroundStyle(Palette.onDarkQuiet(contrast))
-                .alignmentGuide(.top) { $0[VerticalAlignment.center] }
-                .offset(y: geometry.size.height * (1 - MeterZones.position(entry.value)))
+                .frame(width: Self.tickColumn, alignment: .trailing)
+                .position(x: Self.tickColumn / 2, y: geometry.size.height * (1 - MeterZones.position(entry.value)))
             }
-          }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+          }
         }
         .frame(width: Self.tickColumn)
         GeometryReader { geometry in
           let height = geometry.size.height
-          ZStack(alignment: .bottom) {
+          ZStack {
             MeterZones.zoneTrack(vertical: true).opacity(0.28)
             MeterZones.zoneTrack(vertical: true).mask(alignment: .bottom) {
               Rectangle().frame(height: height * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(height: 1)
-                .offset(y: -height * MeterZones.position(boundary))
+                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.position(boundary)))
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(height: 2)
-                .offset(y: -height * MeterZones.position(peak))
+                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.position(peak)))
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }
         .frame(width: Self.barWidth)
         GeometryReader { geometry in
           let height = geometry.size.height
-          ZStack(alignment: .topLeading) {
+          ZStack {
             zoneWord("aim here", colour: aimColour, middle: (MeterZones.yellowFrom + MeterZones.redFrom) / 2, height: height)
             zoneWord("too loud", colour: loudColour, middle: MeterZones.redFrom / 2, height: height)
-          }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          }
         }
         .frame(width: Self.zoneColumn)
       }
@@ -196,49 +197,49 @@ struct MicMeterView: View {
   }
 
   private func zoneWord(_ text: String, colour: Color, middle: Float, height: CGFloat) -> some View {
-    Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(colour).lineLimit(1).fixedSize()
-      .alignmentGuide(.top) { $0[VerticalAlignment.center] }
-      .offset(y: height * (1 - MeterZones.position(middle)))
+    Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(colour).lineLimit(1)
+      .frame(width: Self.zoneColumn, alignment: .leading)
+      .position(x: Self.zoneColumn / 2, y: height * (1 - MeterZones.position(middle)))
   }
 
   private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
     HStack(alignment: .top, spacing: Space.xs) {
       VStack(spacing: Space.xs) {
         GeometryReader { geometry in
-          ZStack(alignment: .topLeading) {
-            Text("aim here").font(.system(size: 12, weight: .medium)).foregroundStyle(aimColour).lineLimit(1).fixedSize()
-              .alignmentGuide(.leading) { $0.width }
-              .offset(x: Self.aimLabelTrailing(width: geometry.size.width))
-            Text("too loud").font(.system(size: 12, weight: .medium)).foregroundStyle(loudColour).lineLimit(1).fixedSize()
-              .alignmentGuide(.leading) { $0.width }
-              .offset(x: geometry.size.width)
-          }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          ZStack {
+            // Each word is right-aligned in a fixed box that ends where the word should end.
+            Text("aim here").font(.system(size: 12, weight: .medium)).foregroundStyle(aimColour).lineLimit(1)
+              .frame(width: Self.zoneWordWidth, alignment: .trailing)
+              .position(x: Self.aimLabelTrailing(width: geometry.size.width) - Self.zoneWordWidth / 2, y: 8)
+            Text("too loud").font(.system(size: 12, weight: .medium)).foregroundStyle(loudColour).lineLimit(1)
+              .frame(width: Self.zoneWordWidth, alignment: .trailing)
+              .position(x: geometry.size.width - Self.zoneWordWidth / 2, y: 8)
+          }
         }.frame(height: 16)
         GeometryReader { geometry in
-          ZStack(alignment: .leading) {
+          ZStack {
             MeterZones.zoneTrack(vertical: false).opacity(0.28)
             MeterZones.zoneTrack(vertical: false).mask(alignment: .leading) {
               Rectangle().frame(width: geometry.size.width * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(width: 1)
-                .offset(x: geometry.size.width * MeterZones.position(boundary))
+                .position(x: geometry.size.width * MeterZones.position(boundary), y: Self.barWidth / 2)
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(width: 2)
-                .offset(x: geometry.size.width * MeterZones.position(peak))
+                .position(x: geometry.size.width * MeterZones.position(peak), y: Self.barWidth / 2)
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }.frame(height: Self.barWidth)
         GeometryReader { geometry in
-          ZStack(alignment: .topLeading) {
+          ZStack {
             ForEach(Self.visibleScale(width: geometry.size.width), id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.onDarkQuiet(contrast)).fixedSize()
-                .alignmentGuide(.leading) { $0[HorizontalAlignment.center] }
-                .offset(x: geometry.size.width * MeterZones.position(entry.value))
+                .position(x: geometry.size.width * MeterZones.position(entry.value), y: 8)
             }
-          }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+          }
         }.frame(height: 16)
       }
       // At 0 dBFS, beside the bar's loud end and level with the bar.

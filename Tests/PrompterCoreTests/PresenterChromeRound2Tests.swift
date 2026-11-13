@@ -147,6 +147,28 @@ import XCTest
     XCTAssertEqual(PresenterView.sizeBoost(width: 7680), 1.5)
   }
 
+  func testReadingMeasureAndEditorTypography() {
+    let fraction = ScriptTextView.measureCappedFraction(width: 3600, textWidth: 0.9, fontSize: 40)
+    XCTAssertEqual(fraction * 3600, 1200, accuracy: 0.01)
+    XCTAssertEqual(ScriptTextView.sideInset(width: 3600, textWidth: fraction), 1200, accuracy: 0.01)
+    let rendered = FormattedMarkdownEditModel(markdown: "A short paragraph").rendered(
+      fontName: "System", fontSize: 40,
+      typography: EditorTypography(lineSpacing: 8, paragraphSpacing: 16, bold: true))
+    let font = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+    XCTAssertTrue(font.map { NSFontManager.shared.traits(of: $0).contains(.boldFontMask) } ?? false)
+    let paragraph = rendered.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+    XCTAssertEqual(paragraph?.lineSpacing, 8)
+    XCTAssertEqual(paragraph?.paragraphSpacing, 16)
+  }
+
+  func testBothMeterOrientationsUseTheSameBoundaries() {
+    XCTAssertEqual(MeterZones.position(-60), 0)
+    XCTAssertEqual(MeterZones.position(-12), 0.8, accuracy: 0.0001)
+    XCTAssertEqual(MeterZones.position(-6), 0.9, accuracy: 0.0001)
+    XCTAssertEqual(MeterZones.position(0), 1)
+    XCTAssertEqual(MicMeterView.visibleScale(width: 300).map(\.value), MicMeterView.visibleScale(height: 300).map(\.value))
+  }
+
   // MARK: Editing
 
   func testEditingHasABandWithSaveAndCancelAndNoMicMeter() async throws {
@@ -168,7 +190,7 @@ import XCTest
 // MARK: - Snapshots
 
 extension AppearanceSnapshotTests {
-  func testPresenterChromeRound2Snapshots() async throws {
+  func testPresenterChromeRound3Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let destination = URL(fileURLWithPath: output)
@@ -187,10 +209,12 @@ extension AppearanceSnapshotTests {
     camera.guides.zebras = true
     let picture = try XCTUnwrap(NSImage(contentsOf: Bundle.module.url(forResource: "presenter-zebras", withExtension: "png", subdirectory: "Fixtures")!))
     let source = CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)
+    // One level everywhere: the side meter and the Adjust mic card read the same peak, never "No signal" beside -9.
     recorder.inputMeter.show(peakDBFS: -9, isClipping: false)
+    store.session.meter.show(peakDBFS: -9, isClipping: false)
 
     func present(_ name: String, size: CGSize, reading: Bool = false, editing: Bool = false, preview: Bool = false, noCamera: Bool = false,
-                 zoom: Double = 1, focus: Bool = false, autoHide: Bool = false) async throws {
+                 zoom: Double = 1, focus: Bool = false, autoHide: Bool = false, adjust: AdjustTab? = nil) async throws {
       store.uiZoom = zoom
       recorder.inputMeter.show(peakDBFS: -9, isClipping: false)
       defaults.set(focus, forKey: "presenterFocusMode")
@@ -199,7 +223,7 @@ extension AppearanceSnapshotTests {
       let draft = PresenterDraft(record: record)
       if editing { draft.begin(session: store.session) }
       let view = PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder,
-        shell: PresenterShell(reading: reading, scriptPreview: preview), referencePicture: noCamera ? nil : picture,
+        shell: PresenterShell(reading: reading, adjustTab: adjust, scriptPreview: preview), referencePicture: noCamera ? nil : picture,
         sourceInfoOverride: noCamera ? nil : source, microphoneNameOverride: "ATEM ISO").environment(\.presenterReduceTransparency, false).defaultAppStorage(defaults)
       try await snapshot(view, name: name, size: size, scheme: .dark, destination: destination, settleDelay: .milliseconds(300))
       if editing { draft.cancel() }
@@ -209,30 +233,35 @@ extension AppearanceSnapshotTests {
     // Setup with no camera: one centred empty state, one clear button.
     camera.displayMode = .prompterWithVideo
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r2-setup-nocamera-\(label)", size: size, noCamera: true)
+      try await present("r3-setup-nocamera-\(label)", size: size, noCamera: true)
     }
-    try await present("r2-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
+    try await present("r3-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
     // Setup with the camera on, then off (just the script).
-    try await present("r2-setup-camera-1600", size: wide)
+    try await present("r3-setup-camera-1600", size: wide)
     camera.displayMode = .prompterOnly
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r2-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
+      try await present("r3-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
     }
     camera.displayMode = .prompterWithVideo
+    try await present("r3-setup-camera-4k", size: uhd)
+    try await present("r3-setup-camera-200", size: wide, zoom: 2)
+    try await present("r3-adjust-mic-1600", size: wide, adjust: .mic)
     // Reading: soft backing, the reading line, one status pill, the meter with numbers.
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r2-reading-\(label)", size: size, reading: true)
+      try await present("r3-reading-\(label)", size: size, reading: true)
     }
-    try await present("r2-reading-200", size: wide, reading: true, zoom: 2)
-    try await present("r2-reading-autohide-1600", size: wide, reading: true, autoHide: true)
+    try await present("r3-reading-200", size: wide, reading: true, zoom: 2)
+    try await present("r3-reading-autohide-1600", size: wide, reading: true, autoHide: true)
     // Clean full screen: only the text, the audio meter and the reading line.
-    try await present("r2-reading-focus-1600", size: wide, reading: true, focus: true)
-    try await present("r2-reading-focus-1280", size: laptop, reading: true, focus: true)
+    try await present("r3-reading-focus-1600", size: wide, reading: true, focus: true)
+    try await present("r3-reading-focus-1280", size: laptop, reading: true, focus: true)
     // Editing: a top band, an editable surface, no meter.
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r2-editing-\(label)", size: size, editing: true)
+      try await present("r3-editing-\(label)", size: size, editing: true)
     }
-    try await present("r2-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r3-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r3-editing-4k", size: uhd, editing: true)
+    try await present("r3-reading-focus-4k", size: uhd, reading: true, focus: true)
     store.session.pause()
     store.uiZoom = 1
     defaults.set(false, forKey: "presenterFocusMode")

@@ -14,6 +14,7 @@ struct EditorTypography {
   var paragraphSpacing: Double = 0
   var horizontalInset: Double = 0
   var alignment: NSTextAlignment = .left
+  var bold = false
 }
 
 private final class FormattingTextView: NSTextView {
@@ -238,6 +239,7 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
         || self.typography.lineSpacing != typography.lineSpacing
         || self.typography.paragraphSpacing != typography.paragraphSpacing
         || self.typography.alignment != typography.alignment
+        || self.typography.bold != typography.bold
       self.fontName = fontName
       self.fontSize = fontSize
       self.typography = typography
@@ -482,7 +484,8 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
 
     private func applyEmptyTypingAttributes(to view: NSTextView) {
       guard view.string.isEmpty else { return }
-      view.typingAttributes = [.font: FormattedMarkdownEditModel.font(name: fontName, size: fontSize), .foregroundColor: typography.textColor]
+      let font = FormattedMarkdownEditModel.font(name: fontName, size: fontSize)
+      view.typingAttributes = [.font: typography.bold ? NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) : font, .foregroundColor: typography.textColor]
     }
 
     private func reconcileAttributes(in view: NSTextView, rendered: NSAttributedString) {

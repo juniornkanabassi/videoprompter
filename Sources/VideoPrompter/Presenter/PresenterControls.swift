@@ -231,7 +231,7 @@ struct PresenterEditingBand: View {
 
   /// A key hint in a small outlined capsule: 14 pt, readable at a glance.
   private func keycap(_ text: String, dark: Bool) -> some View {
-    Text(text).font(.system(size: 14, weight: .semibold))
+    Text(text).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
       .foregroundStyle(dark ? AlphaStyle.onAccent.opacity(0.85) : .white.opacity(0.9))
       .padding(.horizontal, Space.sm).padding(.vertical, 2)
       .overlay(RoundedRectangle(cornerRadius: 6).stroke(dark ? AlphaStyle.onAccent.opacity(0.45) : .white.opacity(0.45), lineWidth: 1))

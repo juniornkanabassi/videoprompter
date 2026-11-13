@@ -583,7 +583,7 @@ struct PresenterExposureKey: View {
         Text("Measured from the incoming picture.").font(.system(size: 13)).foregroundStyle(.secondary)
       }
     }.font(.system(size: 16)).padding(Space.md)
-      .frame(maxWidth: expanded ? 280 : nil, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       .environment(\.colorScheme, .dark).uiZoom(zoom)
   }

@@ -34,6 +34,12 @@ struct ScriptTextView: View {
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
     max(42, width * (1 - CGFloat(textWidth)) / 2)
   }
+  /// A line of about 65 characters is the most the eye follows comfortably: at 30 ems the column stops growing,
+  /// however wide the window. Returns the Text width setting, held to that.
+  static let measureEms = 30.0
+  static func measureCappedFraction(width: CGFloat, textWidth: Double, fontSize: Double) -> Double {
+    min(textWidth, Double(max(1, CGFloat(fontSize * measureEms)) / max(1, width)))
+  }
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
   }
