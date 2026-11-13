@@ -13,8 +13,11 @@ struct ScriptStyle: Equatable {
   var alignment = "Left"
   var showCues = false
   var highlightActiveWord = false
+  /// Over the camera picture the words get the Mac's soft dark halo.
+  var overVideo = false
 
-  init(_ settings: PrompterSettings) {
+  init(_ settings: PrompterSettings, overVideo: Bool = false) {
+    self.overVideo = overVideo
     fontName = settings.fontName
     fontSize = settings.fontSize
     fontWeight = settings.fontWeight
@@ -109,9 +112,17 @@ enum ScriptRenderer {
           append(raw, from: skip, lineStart: lineStart, literal: false, into: &text, offsets: &offsets)
         }
       }
-      output.append(NSAttributedString(string: text, attributes: [
+      var attributes: [NSAttributedString.Key: Any] = [
         .font: blockFont, .foregroundColor: base, .paragraphStyle: paragraph,
-      ]))
+      ]
+      if style.overVideo {
+        let halo = NSShadow()
+        halo.shadowColor = UIColor.black.withAlphaComponent(0.6)
+        halo.shadowBlurRadius = 6
+        halo.shadowOffset = .zero
+        attributes[.shadow] = halo
+      }
+      output.append(NSAttributedString(string: text, attributes: attributes))
       // Offsets count UTF-16 units, as NSString and the document's source ranges do.
       for (index, sourceOffset) in offsets.enumerated() where sourceOffset >= 0 {
         visible[sourceOffset] = start + index

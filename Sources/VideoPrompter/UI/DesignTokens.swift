@@ -23,10 +23,16 @@ enum UIType {
 
 /// Opaque presenter chrome stays dark over every possible camera picture.
 enum Surfaces {
+  #if canImport(AppKit)
   static let presenterPanel = Color(nsColor: NSColor(name: nil) { appearance in
     let increased = appearance.bestMatch(from: [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua, .aqua, .darkAqua])
     return NSColor(white: increased == .accessibilityHighContrastAqua || increased == .accessibilityHighContrastDarkAqua ? 0.08 : 0.12, alpha: 1)
   })
+  #else
+  static let presenterPanel = Color(uiColor: UIColor { traits in
+    UIColor(white: traits.accessibilityContrast == .high ? 0.08 : 0.12, alpha: 1)
+  })
+  #endif
   static let scrim = Color.black.opacity(0.9)
 }
 

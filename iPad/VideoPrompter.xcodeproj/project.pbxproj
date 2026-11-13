@@ -20,6 +20,11 @@
 		DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */; };
 		932B66FBA0F63A68B7B66FE6 /* Lexend-Variable.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */; };
 		B04E630E40B5392C4792BD4C /* PrompterCore in Frameworks */ = {isa = PBXBuildFile; productRef = E07036B5367EDC4E164C8BB4 /* PrompterCore */; };
+		DF2CBE2BDB54685DEB3BF363 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1942F7D66DD34C0F923060B7 /* DesignTokens.swift */; };
+		73B8E45F3D8FD6F2498942B5 /* MicMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 278E07ECB9F62B78AF720BE8 /* MicMeter.swift */; };
+		5686F7AB3365F44837A8D184 /* MeterZones.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB0512639610DBC42A9C6994 /* MeterZones.swift */; };
+		59CE54BD36F351C652A90B96 /* PresenterControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B8C814094E81EFFABA6D7F5 /* PresenterControls.swift */; };
+		7A1B2C3D4E5F60718293A4BA /* PrompterCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A1B2C3D4E5F60718293A4C0 /* PrompterCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,10 +42,16 @@
 		4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraLinkSecurity.swift; sourceTree = "<group>"; };
 		B098A951223076B6ADAB0C56 /* LexendDeca-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "LexendDeca-Variable.ttf"; sourceTree = "<group>"; };
 		BEDB2D50EF2A3C6808DD6C15 /* Lexend-Variable.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Lexend-Variable.ttf"; sourceTree = "<group>"; };
+		1942F7D66DD34C0F923060B7 /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/DesignTokens.swift; sourceTree = "<group>"; };
+		278E07ECB9F62B78AF720BE8 /* MicMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presenter/MicMeter.swift; sourceTree = "<group>"; };
+		CB0512639610DBC42A9C6994 /* MeterZones.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presenter/MeterZones.swift; sourceTree = "<group>"; };
+		4B8C814094E81EFFABA6D7F5 /* PresenterControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Presenter/PresenterControls.swift; sourceTree = "<group>"; };
+		7A1B2C3D4E5F60718293A4B6 /* VideoPrompterTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = VideoPrompterTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		74C61EEF9C048939045A3EDA /* VideoPrompter */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VideoPrompter; sourceTree = "<group>"; };
+		7A1B2C3D4E5F60718293A4B7 /* VideoPrompterTests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = VideoPrompterTests; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +63,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A1B2C3D4E5F60718293A4B9 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7A1B2C3D4E5F60718293A4BA /* PrompterCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -59,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				74C61EEF9C048939045A3EDA /* VideoPrompter */,
+				7A1B2C3D4E5F60718293A4B7 /* VideoPrompterTests */,
 				429461E971936A1CC87DA17D /* Shared with the Mac app */,
 				863E78993B57209C9A5B482C /* Fonts */,
 				FA685967BAA69CB4A9C14425 /* Info.plist */,
@@ -79,6 +99,10 @@
 				09486326B37D8BA3B702E4C6 /* CameraGuides.swift */,
 				769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */,
 				4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */,
+				1942F7D66DD34C0F923060B7 /* DesignTokens.swift */,
+				278E07ECB9F62B78AF720BE8 /* MicMeter.swift */,
+				CB0512639610DBC42A9C6994 /* MeterZones.swift */,
+				4B8C814094E81EFFABA6D7F5 /* PresenterControls.swift */,
 			);
 			name = "Shared with the Mac app";
 			path = ../Sources/VideoPrompter;
@@ -98,6 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				0B8FE8C58B23D2288819C897 /* VideoPrompter.app */,
+				7A1B2C3D4E5F60718293A4B6 /* VideoPrompterTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -128,7 +153,48 @@
 			productReference = 0B8FE8C58B23D2288819C897 /* VideoPrompter.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7A1B2C3D4E5F60718293A4B5 /* VideoPrompterTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7A1B2C3D4E5F60718293A4BB /* Build configuration list for PBXNativeTarget "VideoPrompterTests" */;
+			buildPhases = (
+				7A1B2C3D4E5F60718293A4B8 /* Sources */,
+				7A1B2C3D4E5F60718293A4B9 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7A1B2C3D4E5F60718293A4BE /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7A1B2C3D4E5F60718293A4B7 /* VideoPrompterTests */,
+			);
+			name = VideoPrompterTests;
+			packageProductDependencies = (
+				7A1B2C3D4E5F60718293A4C0 /* PrompterCore */,
+			);
+			productName = VideoPrompterTests;
+			productReference = 7A1B2C3D4E5F60718293A4B6 /* VideoPrompterTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
+
+/* Begin PBXContainerItemProxy section */
+		7A1B2C3D4E5F60718293A4BF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 46F86FAA6BBF9AC94A7E4595 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 42AEFBAE01D2DFD981F7DA7D;
+			remoteInfo = VideoPrompter;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		7A1B2C3D4E5F60718293A4BE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 42AEFBAE01D2DFD981F7DA7D /* VideoPrompter */;
+			targetProxy = 7A1B2C3D4E5F60718293A4BF /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin PBXProject section */
 		46F86FAA6BBF9AC94A7E4595 /* Project object */ = {
@@ -140,6 +206,10 @@
 				TargetAttributes = {
 					42AEFBAE01D2DFD981F7DA7D = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					7A1B2C3D4E5F60718293A4B5 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = 42AEFBAE01D2DFD981F7DA7D;
 					};
 				};
 			};
@@ -161,6 +231,7 @@
 			projectRoot = "";
 			targets = (
 				42AEFBAE01D2DFD981F7DA7D /* VideoPrompter */,
+				7A1B2C3D4E5F60718293A4B5 /* VideoPrompterTests */,
 			);
 		};
 /* End PBXProject section */
@@ -183,6 +254,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */,
+				DF2CBE2BDB54685DEB3BF363 /* DesignTokens.swift in Sources */,
+				73B8E45F3D8FD6F2498942B5 /* MicMeter.swift in Sources */,
+				5686F7AB3365F44837A8D184 /* MeterZones.swift in Sources */,
+				59CE54BD36F351C652A90B96 /* PresenterControls.swift in Sources */,
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
 				7C1A0E5D2B9F4A6381D05E71 /* AudioChannel.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
@@ -192,6 +267,13 @@
 				A698447D355A4D7944783966 /* CameraGuides.swift in Sources */,
 				311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */,
 				2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7A1B2C3D4E5F60718293A4B8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -246,6 +328,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 45;
 				DEVELOPMENT_TEAM = M6L2VW4W5Z;
@@ -272,6 +355,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 45;
 				DEVELOPMENT_TEAM = M6L2VW4W5Z;
@@ -291,6 +375,48 @@
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		7A1B2C3D4E5F60718293A4BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompterTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoPrompter.app/VideoPrompter";
+			};
+			name = Debug;
+		};
+		7A1B2C3D4E5F60718293A4BD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = M6L2VW4W5Z;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompterTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/VideoPrompter.app/VideoPrompter";
 			};
 			name = Release;
 		};
@@ -315,6 +441,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7A1B2C3D4E5F60718293A4BB /* Build configuration list for PBXNativeTarget "VideoPrompterTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A1B2C3D4E5F60718293A4BC /* Debug */,
+				7A1B2C3D4E5F60718293A4BD /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -326,6 +461,10 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		E07036B5367EDC4E164C8BB4 /* PrompterCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PrompterCore;
+		};
+		7A1B2C3D4E5F60718293A4C0 /* PrompterCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PrompterCore;
 		};

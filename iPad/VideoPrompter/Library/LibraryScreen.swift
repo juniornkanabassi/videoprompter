@@ -118,16 +118,17 @@ private struct ICloudPrompt: View {
   let dismiss: () -> Void
   var body: some View {
     Section {
-      VStack(alignment: .leading, spacing: 8) {
-        Label("Use the same scripts as your Mac", systemImage: "icloud").font(.headline)
+      VStack(alignment: .leading, spacing: Space.sm) {
+        Label("Use the same scripts as your Mac", systemImage: "icloud").font(UIType.heading)
         Text("On the Mac, turn on File › Keep Scripts in iCloud Drive for iPad. Then choose iCloud Drive › Video Prompter here.")
-          .font(.subheadline).foregroundStyle(.secondary)
-        HStack {
-          Button("Choose Folder", action: choose).buttonStyle(.borderedProminent)
-          Button("Not Now", action: dismiss)
+          .font(UIType.secondary).foregroundStyle(.secondary)
+        HStack(spacing: Space.md) {
+          Button(action: choose) { Text("Choose Folder").font(.system(size: 15, weight: .semibold)).padding(.horizontal, Space.md) }
+            .buttonStyle(BarButtonStyle(role: .prominent))
+          Button("Not Now", action: dismiss).frame(minHeight: AlphaStyle.minTarget)
         }
       }
-      .padding(.vertical, 4)
+      .padding(.vertical, Space.xs)
     }
   }
 }
@@ -146,7 +147,7 @@ private struct ScriptDetail: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: Space.lg) {
         if let record {
           Text((try? AttributedString(markdown: record.markdown, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(record.markdown))
             .font(.custom("Lexend Deca", size: 19, relativeTo: .body))
@@ -157,22 +158,22 @@ private struct ScriptDetail: View {
         }
       }
       .frame(maxWidth: 760, alignment: .leading)
-      .padding(28)
+      .padding(Space.section)
       .frame(maxWidth: .infinity)
     }
     .safeAreaInset(edge: .bottom) {
       Button {
         store.present(script)
       } label: {
+        // The presenter's own Start button, a little larger for the library's roomy page.
         Label("Present", systemImage: "play.fill")
-          .font(.title2.weight(.semibold))
-          .frame(maxWidth: 420, minHeight: 60)
+          .font(.system(size: 20, weight: .semibold))
+          .frame(maxWidth: 420, minHeight: 56)
       }
-      .buttonStyle(.borderedProminent)
-      .buttonBorderShape(.capsule)
+      .buttonStyle(BarButtonStyle(role: .prominent))
       .disabled(!script.isDownloaded)
       .keyboardShortcut(.return, modifiers: .command)
-      .padding()
+      .padding(Space.lg)
     }
     .navigationTitle(script.title)
     .toolbar {
@@ -197,9 +198,9 @@ private struct ScriptDetail: View {
       if let updateNote {
         Text(updateNote)
           .font(.callout)
-          .padding(.horizontal, 16).padding(.vertical, 8)
+          .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
           .background(.thinMaterial, in: Capsule())
-          .padding(.top, 8)
+          .padding(.top, Space.sm)
           .task {
             try? await Task.sleep(for: .seconds(2.5))
             self.updateNote = nil
