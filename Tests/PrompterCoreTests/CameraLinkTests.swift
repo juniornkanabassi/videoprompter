@@ -45,6 +45,68 @@ final class CameraLinkTests: XCTestCase {
   }
 
   @MainActor
+  func testInstallIdentitySurvivesRenameAndKeepsSameNamedIPadsSeparate() {
+    let suiteA = "identity-a-\(UUID())", suiteB = "identity-b-\(UUID())"
+    let a = UserDefaults(suiteName: suiteA)!
+    let b = UserDefaults(suiteName: suiteB)!
+    defer { a.removePersistentDomain(forName: suiteA); b.removePersistentDomain(forName: suiteB) }
+    let first = PadIdentity(defaults: a)
+    a.set("Studio", forKey: "macLinkDeviceName")
+    b.set("Studio", forKey: "macLinkDeviceName")
+    let renamed = PadIdentity(defaults: a)
+    let other = PadIdentity(defaults: b)
+    XCTAssertEqual(first.id, renamed.id)
+    XCTAssertNotEqual(renamed.id, other.id)
+    XCTAssertEqual(PadIdentity.peer(serviceName: renamed.serviceName).id, first.id)
+    XCTAssertEqual(PadIdentity.peer(serviceName: renamed.serviceName).name, "Studio")
+    XCTAssertEqual(PadIdentity.peer(serviceName: "Old iPad").id, "Old iPad")
+    XCTAssertLessThanOrEqual(PadIdentity.cleanName(String(repeating: "📷", count: 30)).utf8.count + 39, 63)
+  }
+
+  @MainActor
+  func testSameNamedIPadsPairIndependentlyAndSurviveRename() {
+    let suite = "pair-identities-\(UUID())"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let sender = IPadCameraSender(defaults: defaults)
+    let a = UUID().uuidString, b = UUID().uuidString
+    func endpoint(_ name: String, _ id: String) -> NWEndpoint {
+      .service(name: "\(name) [\(id)]", type: CameraLink.bonjourType, domain: "local.", interface: nil)
+    }
+    sender.wifiChanged([endpoint("iPad", a), endpoint("iPad", b)])
+    XCTAssertEqual(sender.wifiDevices.count, 2)
+    sender.selectedWiFiID = a
+    sender.pair(key: "0123456789ABCDEF")
+    sender.selectedWiFiID = b
+    XCTAssertEqual(sender.unpairedDeviceName, "iPad")
+    sender.pair(key: "FEDCBA9876543210")
+    let codes = defaults.dictionary(forKey: "sendCameraPairingCodes")
+    XCTAssertEqual(codes?[a] as? String, "0123456789ABCDEF")
+    XCTAssertEqual(codes?[b] as? String, "FEDCBA9876543210")
+    sender.wifiChanged([endpoint("Renamed", a), endpoint("iPad", b)])
+    sender.selectedWiFiID = a
+    XCTAssertNil(sender.unpairedDeviceName)
+  }
+
+  @MainActor
+  func testLegacyMigrationWaitsForProofAndRefusalIsPerDevice() {
+    let defaults = freshDefaults()
+    defaults.set(["iPad": "0123456789ABCDEF"], forKey: "sendCameraPairingCodes")
+    let sender = IPadCameraSender(defaults: defaults)
+    sender.searchesForIPad = false
+    XCTAssertEqual(sender.pairingCode(id: "first", name: "Studio"), "0123456789ABCDEF")
+    XCTAssertNil(defaults.dictionary(forKey: "sendCameraPairingCodes")?["first"])
+    sender.acceptedPairing(id: "first", code: "0123456789ABCDEF")
+    sender.refusedPairing(id: "second", name: "Other iPad")
+    XCTAssertNil(sender.pairingCode(id: "second", name: "Other iPad"))
+    XCTAssertEqual(sender.pairingCode(id: "first", name: "Renamed"), "0123456789ABCDEF")
+    XCTAssertEqual(sender.unpairedDeviceName, "Other iPad")
+    sender.pair(key: "FEDCBA9876543210")
+    XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), "FEDCBA9876543210")
+    XCTAssertEqual(defaults.dictionary(forKey: "sendCameraPairingCodes")?["iPad"] as? String, "0123456789ABCDEF")
+  }
+
+  @MainActor
   func testInlinePairingValidatesAndStoresTheDiscoveredIPadKey() {
     let defaults = freshDefaults()
     let sender = IPadCameraSender(defaults: defaults)

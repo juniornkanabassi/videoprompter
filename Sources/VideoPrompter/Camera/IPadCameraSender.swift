@@ -222,6 +222,26 @@ import VideoToolbox
       if linkOn { usesWiFi ? startBrowsing() : stopBrowsing() }
     }
   }
+  struct WiFiDevice: Identifiable, Equatable {
+    let id: String
+    let name: String
+  }
+  @Published private(set) var wifiDevices: [WiFiDevice] = []
+  @Published var selectedWiFiID: String? {
+    didSet {
+      guard selectedWiFiID != oldValue else { return }
+      generation += 1
+      oldIPad = false
+      if let old = pipe, old.name == "Wi-Fi" {
+        old.send(CameraLink.Message.goodbye.encoded())
+        old.close()
+        lost(old)
+      }
+      updatePairingTarget()
+      connectIfNeeded()
+    }
+  }
+  private var unpairedDeviceID: String?
   @Published private(set) var unpairedDeviceName: String?
   @Published private(set) var pairingFailure: String?
   @Published private(set) var previewImage: CGImage?
@@ -235,17 +255,19 @@ import VideoToolbox
   }
 
   func pair(key: String) {
-    guard let name = unpairedDeviceName else { return }
+    guard let id = unpairedDeviceID else { return }
     guard let code = CameraLinkSecurity.normalised(key) else {
       pairingFailure = "Enter the full pairing key shown on the iPad."
       return
     }
-    codes[name] = code
+    codes[id] = code
     pairingFailure = nil
+    selectedWiFiID = id
     connectIfNeeded()
   }
 
-  /// The pairing code for each iPad the user has paired over Wi-Fi, by its Bonjour name.
+  /// The pairing code for each iPad the user has paired over Wi-Fi, by its install ID (legacy peers use their Bonjour name).
+  private var refusedLegacyIDs: Set<String> = []
   private var codes: [String: String] {
     didSet { defaults.set(codes, forKey: "sendCameraPairingCodes") }
   }
@@ -427,6 +449,8 @@ import VideoToolbox
     browser?.cancel()
     browser = nil
     wifiTargets = []
+    wifiDevices = []
+    unpairedDeviceID = nil
     unpairedDeviceName = nil
     pairingFailure = nil
     if pipe?.name == "Wi-Fi" { pipe?.close() }
@@ -467,8 +491,42 @@ import VideoToolbox
   /// Only paired iPads are sent to. A new one is paired once, with the code its Settings show.
   func wifiChanged(_ endpoints: [NWEndpoint]) {
     wifiTargets = endpoints
-    unpairedDeviceName = endpoints.compactMap(Self.serviceName).first { codes[$0] == nil }
+    let discovered = endpoints.compactMap(Self.serviceName).map {
+      let peer = PadIdentity.peer(serviceName: $0)
+      return WiFiDevice(id: peer.id, name: peer.name)
+    }
+    wifiDevices = Dictionary(discovered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      .values.sorted { $0.id < $1.id }
+    if let selectedWiFiID, !wifiDevices.contains(where: { $0.id == selectedWiFiID }) {
+      self.selectedWiFiID = nil
+    }
+    updatePairingTarget()
     connectIfNeeded()
+  }
+
+  private func updatePairingTarget() {
+    let device = wifiDevices.first {
+      (selectedWiFiID == nil || $0.id == selectedWiFiID) && codes[$0.id] == nil
+    }
+    unpairedDeviceID = device?.id
+    unpairedDeviceName = device?.name
+  }
+
+  func pairingCode(id: String, name: String) -> String? {
+    codes[id] ?? (refusedLegacyIDs.contains(id) ? nil : (codes[name] ?? (id != name ? codes["iPad"] : nil)))
+  }
+
+  func acceptedPairing(id: String, code: String) {
+    codes[id] = code
+  }
+
+  func refusedPairing(id: String, name: String) {
+    codes[id] = nil
+    // Do not retry an ambiguous legacy key on this device until the user pairs it.
+    refusedLegacyIDs.insert(id)
+    unpairedDeviceID = id
+    unpairedDeviceName = name
+    pairingFailure = "Pairing failed. Check the key on the iPad and try again."
   }
 
   private static func serviceName(_ endpoint: NWEndpoint) -> String? {
@@ -494,15 +552,23 @@ import VideoToolbox
       }
       if opened == nil {
         for endpoint in wifi {
-          guard let name = Self.serviceName(endpoint), let code = codes[name] else { continue }
-          switch await NetworkPipe.open(endpoint, code: code) {
+          guard let serviceName = Self.serviceName(endpoint) else { continue }
+          let peer = PadIdentity.peer(serviceName: serviceName)
+          guard selectedWiFiID == nil || selectedWiFiID == peer.id else { continue }
+          // A legacy key is only migrated after this specific device proves it owns that key.
+          guard let code = pairingCode(id: peer.id, name: peer.name) else { continue }
+          let result = await NetworkPipe.open(endpoint, code: code)
+          guard run == generation, usesWiFi else {
+            if case .opened(let stale) = result { stale.close() }
+            break
+          }
+          switch result {
           case .opened(let pipe):
+            acceptedPairing(id: peer.id, code: code)
             opened = pipe
           case .refused:
             // The iPad has a different code now: pair again next time it is seen.
-            codes[name] = nil
-            unpairedDeviceName = name
-            pairingFailure = "Pairing failed. Check the key on the iPad and try again."
+            refusedPairing(id: peer.id, name: peer.name)
           case .unreachable:
             break
           }

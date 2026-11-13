@@ -553,7 +553,7 @@ extension PadStore {
       editing: editing, rejectionReason: rejectionReason, pictureMode: cameraOnly ? .monitorOnly : pictureMode,
       picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
       microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone, selectedID: selectedID,
-      deviceName: UIDevice.current.name,
+      deviceName: camera.link.deviceName,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
       cameraOnly: cameraOnly, linkHeartbeat: true, markdown: open ? session.activeRecord?.markdown : nil)

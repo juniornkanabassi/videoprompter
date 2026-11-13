@@ -74,7 +74,15 @@ struct IPadRemoteView: View {
         if currentState != nil { Button("Disconnect") { link.disconnect() } }
         else { Toggle("Wi-Fi", isOn: $link.usesWiFi).toggleStyle(.checkbox); if !link.controlsIPad { Button("Connect") { link.controlsIPad = true } } }
       }
-      if currentState == nil, let name = link.unpairedDeviceName {
+      if link.wifiDevices.count > 1 {
+        Picker("Wi-Fi iPad", selection: $link.selectedWiFiID) {
+          Text("Automatic").tag(String?.none)
+          ForEach(link.wifiDevices) { device in
+            Text(device.name).tag(Optional(device.id))
+          }
+        }
+      }
+      if let name = link.unpairedDeviceName {
         Text("Pair with \(name)").font(.headline)
         HStack {
           TextField("Pairing key from the iPad", text: $pairingKey)

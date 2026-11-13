@@ -349,6 +349,11 @@ struct MacControlScreen: View {
 
   private var ways: some View {
     VStack(spacing: 0) {
+      TextField("iPad name", text: $link.deviceName)
+        .onSubmit { link.deviceName = PadIdentity.cleanName(link.deviceName) }
+        .accessibilityLabel("iPad name")
+        .padding(.vertical, 12)
+      divider
       HStack(spacing: 12) {
         VStack(alignment: .leading, spacing: 4) {
           Text("USB-C cable")
