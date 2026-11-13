@@ -9,7 +9,10 @@ struct ConfidenceMonitorView: View {
   @ObservedObject var camera: PadCamera
   @ObservedObject private var link: MacLink
 
-  init(camera: PadCamera) { self.camera = camera; self.link = camera.link }
+  private let referencePicture: UIImage?
+  init(camera: PadCamera, referencePicture: UIImage? = nil) {
+    self.camera = camera; self.link = camera.link; self.referencePicture = referencePicture
+  }
 
   @State private var fill = false
   @State private var showScript = false
@@ -57,12 +60,15 @@ struct ConfidenceMonitorView: View {
           button("Done") { store.setPictureMode(.off) }
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
+        VStack(spacing: 0) {
         HStack(spacing: 24) {
           GeometryReader { area in
             let size = fitSize(in: area.size, fill: fill)
-            MonitorPicture(link: camera.link, fill: fill)
+            Group {
+              if let referencePicture { Image(uiImage: referencePicture).resizable().scaledToFit() }
+              else { MonitorPicture(link: camera.link, fill: fill) }
+            }
               .frame(width: size.width, height: size.height)
-              .scaleEffect(x: orientationX, y: orientationY)
               .overlay {
                 if store.recordingState != .standby {
                   Rectangle().strokeBorder(tallyColour, lineWidth: store.recordingState == .recording ? 8 : 5)
@@ -75,8 +81,7 @@ struct ConfidenceMonitorView: View {
                   let status = paused ? "Picture paused · last frame \(link.lastFrameTime == nil ? "unknown" : "\(Int(max(0, age))) s ago")"
                     : link.transportKind == "Wi-Fi" && link.framesSkipped > 0 ? "Wi-Fi · \(link.framesSkipped) frames skipped" : "Live"
                   chip(status, colour: paused ? amber : Color(white: 0.15))
-                    .scaleEffect(x: orientationX, y: orientationY)
-                }
+                      }
                 .padding(16)
               }
               .position(x: area.size.width / 2, y: area.size.height / 2)
@@ -84,9 +89,9 @@ struct ConfidenceMonitorView: View {
           }
           MonitorMeter(meter: store.micMeter)
             .frame(width: 60).padding(.vertical, 16)
-            .scaleEffect(x: orientationX, y: orientationY)
         }
         if showScript { scriptLine.frame(height: 180) }
+        }.scaleEffect(x: orientationX, y: orientationY)
       }
       .background(.black)
     }
@@ -121,7 +126,6 @@ struct ConfidenceMonitorView: View {
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .overlay(alignment: .top) { Rectangle().fill(accent.opacity(0.6)).frame(height: 4) }
     .clipped()
-    .scaleEffect(x: orientationX, y: orientationY)
   }
 
   private func chip(_ title: String, colour: Color) -> some View {

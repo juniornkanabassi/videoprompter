@@ -64,16 +64,22 @@ struct PresenterScreen: View {
   var body: some View {
     GeometryReader { geometry in
       let size = geometry.size
+      let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
       ZStack {
-        background
         if store.pictureMode == .monitorOnly, !store.cameraOnly {
           // The confidence monitor replaces the presenter while the picture is monitor only.
-          ConfidenceMonitorView(camera: camera)
+          ConfidenceMonitorView(camera: camera, referencePicture: referencePicture)
         } else {
-          if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
+          ZStack {
+            background
+            if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
+            if !store.cleanScreen && (setup || store.cameraOnly) {
+              cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale)
+            }
+          }
+          .scaleEffect(x: turn.a, y: turn.d)
           if !store.cleanScreen {
             chrome.uiZoom(hudScale)
-            if setup || store.cameraOnly { cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale) }
             if !counting {
               if setup || store.cameraOnly { setupBar(width: size.width / hudScale).disabled(store.editing).uiZoom(hudScale) } else { readingControls.disabled(store.editing).uiZoom(hudScale) }
             }
@@ -159,15 +165,13 @@ struct PresenterScreen: View {
   /// Script, reading line, meter and the presenter-facing note: the part the glass shows back.
   /// While controls are visible the script scrolls inside a reading viewport between them, faded at
   /// both edges; clean screen gives the whole screen back. The viewport is worked out on the
-  /// operator's screen and handed to the turned layer the right way round, so Flip never carries
-  /// the text under the controls.
+  /// upright layer and turned once with the picture, so their relative positions stay unchanged.
   private func scriptLayer(_ size: CGSize) -> some View {
-    let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
     let insets = PadPresenterLayout.scriptInsets(
       width: size.width / hudScale, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
-    // In the turned layer's own coordinates: Flip swaps top and bottom.
-    let top = (store.flip ? insets.bottom : insets.top) * hudScale
-    let bottom = (store.flip ? insets.top : insets.bottom) * hudScale
+    // Reserve both control bands at either end, so turning the layer cannot cover the controls.
+    let top = max(insets.top, insets.bottom) * hudScale
+    let bottom = top
     let height = max(size.height - top - bottom, 1)
     let side = setup && !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
     let scriptWidth = max(1, size.width - side * 2)
@@ -225,18 +229,16 @@ struct PresenterScreen: View {
           .lineLimit(1).minimumScaleFactor(0.7)
           .padding(.leading, ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth))
           .frame(width: size.width, height: band, alignment: .leading)
-          .offset(y: store.flip ? size.height - PadPresenterLayout.topChrome - band : PadPresenterLayout.topChrome)
+          .offset(y: PadPresenterLayout.topChrome)
           .allowsHitTesting(false)
       }
     }
     .frame(width: size.width, height: size.height)
-    .scaleEffect(x: turn.a, y: turn.d)
   }
 
   /// Camera Only: the picture alone, turned with Mirror and Flip like the confidence monitor, with
   /// the Mac's recording frame and its meter. Without a Mac the meter would read nothing, so it is left out.
   private func cameraOnlyLayer(_ size: CGSize) -> some View {
-    let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
     let recording = macConnected ? store.recordingState : .standby
     return ZStack {
       Color.black
@@ -252,7 +254,6 @@ struct PresenterScreen: View {
       }
     }
     .frame(width: size.width, height: size.height)
-    .scaleEffect(x: turn.a, y: turn.d)
     .contentShape(Rectangle())
     .onTapGesture { if store.cleanScreen { store.setCleanScreen(false) } }
     .overlay(alignment: .trailing) {

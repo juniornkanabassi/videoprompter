@@ -44,22 +44,39 @@ import XCTest
     let picture = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
       UIColor(white: 0.18, alpha: 1).setFill()
       context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 240, height: 160))
+      UIColor.blue.setFill()
+      context.fill(CGRect(x: 720, y: 380, width: 240, height: 160))
+      ("TOP LEFT →" as NSString).draw(at: CGPoint(x: 32, y: 32), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 36), .foregroundColor: UIColor.white])
     }
-    for state in ["setup", "camera-only", "reading-camera", "mirrored-flipped", "mac-lost"] {
+    for state in ["setup", "camera-only", "reading-camera", "mirrored", "flipped", "mirrored-flipped", "camera-only-mirrored", "camera-only-flipped", "camera-only-mirrored-flipped", "monitor", "monitor-mirrored", "monitor-flipped", "monitor-mirrored-flipped", "mac-lost"] {
       store.closePresenter()
       session.pause()
-      store.setMirror(state == "mirrored-flipped")
-      store.setFlip(state == "mirrored-flipped")
-      if state == "camera-only" { store.presentCamera() } else { store.present(script) }
-      store.setPictureMode(.behindScript)
+      store.setMirror(state.contains("mirrored"))
+      store.setFlip(state.contains("flipped"))
+      if state.hasPrefix("camera-only") { store.presentCamera() } else { store.present(script) }
+      store.setPictureMode(state.hasPrefix("monitor") ? .monitorOnly : .behindScript)
       session.seek(to: 24)
-      if state == "reading-camera" || state == "mirrored-flipped" { session.play(captureAudio: false) }
+      if state == "reading-camera" || state.contains("mirrored") || state == "flipped" { session.play(captureAudio: false) }
       for (name, size) in Self.sizes {
-        try await render(PresenterScreen(session: session, camera: store.camera,
+        let image = try await render(PresenterScreen(session: session, camera: store.camera,
           startsReading: state != "setup" && state != "camera-only", referencePicture: picture,
           previouslyConnected: state == "mac-lost").environmentObject(store),
           size: size, name: "ipad-\(state)-\(name)", directory: directory) {
           store.micMeter.show(-9)
+        }
+        if name == "1180x820", ["reading-camera", "mirrored", "flipped", "mirrored-flipped"].contains(state) {
+          // The red upper-left corner must travel with the text's presenter transform.
+          let scale = CGFloat(try XCTUnwrap(image.cgImage).width) / size.width
+          let point = CGPoint(x: (store.mirror ? 1120 : 60) * scale, y: (store.flip ? 720 : 100) * scale)
+          let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(origin: point, size: CGSize(width: 1, height: 1))))
+          var rgba = [UInt8](repeating: 0, count: 4)
+          let context = try XCTUnwrap(CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8,
+            bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+          context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+          XCTAssertGreaterThan(rgba[0], 200, state)
+          XCTAssertLessThan(rgba[2], 40, state)
         }
       }
     }
@@ -67,7 +84,7 @@ import XCTest
   }
 
   /// A window the size of the iPad (or a Stage Manager window), drawn into a PNG once SwiftUI has laid out.
-  private func render<V: View>(_ view: V, size: CGSize, name: String, directory: String, beforeDraw: () -> Void) async throws {
+  private func render<V: View>(_ view: V, size: CGSize, name: String, directory: String, beforeDraw: () -> Void) async throws -> UIImage {
     let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: .zero)
     window.frame = CGRect(origin: .zero, size: size)
@@ -85,5 +102,6 @@ import XCTest
     window.isHidden = true
     let data = try XCTUnwrap(image.pngData())
     try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
+    return image
   }
 }
