@@ -25,9 +25,11 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     try offer.encoded().write(to: documents.appendingPathComponent("vp-qr-payload.txt"), atomically: true, encoding: .utf8)
     let result = documents.appendingPathComponent("vp-qr-result.txt")
     var confirmedOnMac = false
+    var pairedName: String?
     for _ in 0..<400 where !FileManager.default.fileExists(atPath: result.path) {
       if sender.pairingRequestCode != nil, !confirmedOnMac {
         XCTAssertNil(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults), "A photographed QR must not bypass local Mac approval")
+        pairedName = sender.pairingRequestName
         sender.confirmPairingRequest()
         confirmedOnMac = true
       }
@@ -38,7 +40,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let codes = try XCTUnwrap(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults))
     let padID = try XCTUnwrap(codes.keys.first)
     let code = try XCTUnwrap(codes[padID])
-    let name = "iPad \(padID.prefix(4))"
+    let name = try XCTUnwrap(pairedName)
     let endpoint = NWEndpoint.service(name: "\(name) [\(padID)]", type: CameraLink.bonjourType, domain: "local.", interface: nil)
     for _ in 0..<2 {
       guard case .opened(let pipe) = await NetworkPipe.open(endpoint, code: code) else { return XCTFail("Paired TLS link did not reconnect") }
