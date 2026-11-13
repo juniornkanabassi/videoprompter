@@ -312,9 +312,11 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let longTitle = UUID(), hugeText = UUID()
     send(.sendScript(.init(macID: longTitle, title: String(repeating: "T", count: 201), markdown: "x")))
     send(.sendScript(.init(macID: hugeText, title: "Huge \(expectedTitle)", markdown: String(repeating: "y", count: PadRemote.Transfer.maximumMarkdownBytes + 1))))
-    send(.look(.init(horizontalMirror: false, verticalMirror: true, fontSize: 64, guideFraction: 0.4)))
+    send(.look(.init(horizontalMirror: false, verticalMirror: true, fontSize: 64, guideFraction: 0.4, fontName: "Lexend", paragraphSpacing: 0.6)))
     let looked = try state("look applied") { $0.look?.fontSize == 64 && $0.look?.verticalMirror == true }
     XCTAssertEqual(looked.look?.horizontalMirror, false)
+    XCTAssertEqual(looked.look?.fontName, "Lexend")
+    XCTAssertEqual(looked.look?.paragraphSpacing, 0.6)
     XCTAssertFalse(looked.scripts.contains { $0.macID == longTitle }, "a 201-character title must be refused")
     XCTAssertFalse(looked.scripts.contains { $0.macID == hugeText }, "a markdown body over 2 MB must be refused")
     XCTAssertFalse(looked.scripts.contains { $0.title.hasPrefix("Huge ") })
