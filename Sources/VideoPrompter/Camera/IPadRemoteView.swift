@@ -2,56 +2,199 @@
 import PrompterCore
 import SwiftUI
 
-/// File › Control iPad opens this: the iPad presenter's controls, showing what the iPad reports.
 struct IPadRemoteView: View {
   @ObservedObject var link: IPadCameraSender
+  @ObservedObject private var store = AppStore.shared
   var startsLink = true
-  /// The slider's value while it is dragged; the iPad moves when it is let go.
+  @State private var selectedMac: UUID?
   @State private var dragging: Double?
+  @State private var lookOpen = false
+  @State private var pictureOpen = true
+  @State private var pendingSend: (UUID, String)?
+  @State private var message: String?
+  private let yellow = Color(red: 245/255, green: 207/255, blue: 74/255)
 
   var body: some View {
-    Form {
-      Toggle("Control iPad", isOn: $link.controlsIPad)
-      Text(link.iPadState == nil && link.controlsIPad ? "\(link.status). Open Video Prompter on the iPad, connected by USB-C." : link.status)
-        .foregroundStyle(.secondary)
-      if let state = link.iPadState { controls(state) }
+    ScrollView {
+      VStack(spacing: 16) {
+        connection
+        Group {
+          if let state = link.iPadState {
+            scripts(state)
+            reading(state)
+            picture
+            look(state)
+          } else {
+            let empty = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Manual", speed: 120, word: 0, words: 0)
+            Group { scripts(empty); reading(empty); picture; look(empty) }.disabled(true).opacity(0.4)
+          }
+        }
+      }.padding(20)
     }
-    .formStyle(.grouped)
-    .frame(minWidth: 380)
+    .background(Color(red: 30/255, green: 30/255, blue: 31/255))
+    .tint(yellow).preferredColorScheme(.dark)
+    .frame(width: 760)
+    .frame(minHeight: 500, idealHeight: 850, maxHeight: 900)
     .onAppear { if startsLink { link.controlsIPad = true } }
     .onDisappear { if startsLink { link.controlsIPad = false } }
+    .onReceive(link.$iPadState) { state in
+      guard let (id, fingerprint) = pendingSend, let state, state.scripts.contains(where: { $0.macID == id && $0.id == state.presenting && $0.fingerprint == fingerprint }) else { return }
+      var sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
+      sent[id.uuidString] = fingerprint
+      UserDefaults.standard.set(sent, forKey: "padRelaySentFingerprints")
+      pendingSend = nil
+    }
   }
 
-  @ViewBuilder private func controls(_ state: PadRemote.State) -> some View {
-    Picker("Script", selection: Binding(get: { state.presenting }, set: { link.send($0.map(PadRemote.Command.present) ?? .close) })) {
-      Text("None (presenter closed)").tag(UUID?.none)
-      ForEach(state.scripts, id: \.id) { Text($0.title).tag(Optional($0.id)) }
-    }
-    Picker("Reading mode", selection: Binding(get: { state.mode }, set: { link.send(.mode($0)) })) {
-      Text("Voice follow").tag("Voice")
-      Text("Automatic scroll").tag("Manual")
-    }
-    .pickerStyle(.menu)
-    Stepper("Speed \(state.speed) words a minute", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
-    HStack {
-      Button("Back to Start", systemImage: "backward.end.fill") { link.send(.backToStart) }
-      Button("Previous Passage", systemImage: "chevron.up") { link.send(.previousPassage) }
-      Button(state.running ? "Pause" : "Start", systemImage: state.running ? "pause.fill" : "play.fill") {
-        link.send(state.running ? .pause : .play)
-      }
-      Button("Next Passage", systemImage: "chevron.down") { link.send(.nextPassage) }
-    }
-    .labelStyle(.iconOnly)
-    .disabled(state.presenting == nil)
-    LabeledContent("Word \(state.word) of \(state.words)") {
-      Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }),
-             in: 1...Double(max(state.words, 2))) { editing in
-        guard !editing, let value = dragging else { return }
-        link.send(.seek(word: Int(value.rounded())))
-        dragging = nil
+  private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+    VStack(alignment: .leading, spacing: 12, content: content)
+      .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+      .background(Color(red: 38/255, green: 38/255, blue: 40/255), in: RoundedRectangle(cornerRadius: 12))
+  }
+  private var connection: some View {
+    card {
+      HStack {
+        Circle().fill(link.iPadState == nil ? Color.orange : Color.green).frame(width: 10, height: 10)
+        VStack(alignment: .leading) {
+          Text(link.iPadState == nil ? "Not connected" : "iPad connected").bold()
+          Text(link.iPadState == nil ? link.status : "Connected by \(link.transport ?? "USB-C") · protocol \(link.iPadState?.version ?? 2)")
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        if link.iPadState != nil { Button("Disconnect") { link.controlsIPad = false } }
+        else { Toggle("Wi-Fi", isOn: $link.usesWiFi).toggleStyle(.checkbox); if !link.controlsIPad { Button("Connect") { link.controlsIPad = true } } }
       }
     }
-    .disabled(state.presenting == nil || state.words < 2)
+  }
+  private func scripts(_ state: PadRemote.State) -> some View {
+    card {
+      HStack {
+        Text("On the iPad"); Spacer()
+        Picker("On the iPad", selection: Binding(get: { state.presenting }, set: { link.send($0.map(PadRemote.Command.present) ?? .close) })) {
+          Text("None").tag(UUID?.none)
+          ForEach(state.scripts, id: \.id) { Text($0.title).tag(Optional($0.id)) }
+        }.labelsHidden().frame(maxWidth: 300)
+      }
+      Divider()
+      HStack {
+        Text("Send from this Mac"); Spacer()
+        Picker("Send from this Mac", selection: $selectedMac) {
+          Text("Choose a script").tag(UUID?.none)
+          ForEach(store.scripts) { Text($0.metadata.title).tag(Optional($0.id)) }
+        }.labelsHidden().frame(maxWidth: 280)
+        Button("Send and Open") { sendSelected() }.buttonStyle(.borderedProminent)
+          .disabled(selectedMac == nil || state.editing == true)
+      }
+    }
+  }
+  private func sendSelected() {
+    guard let record = store.scripts.first(where: { $0.id == selectedMac }), record.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes, record.metadata.title.count <= PadRemote.Transfer.maximumTitleLength else { return }
+    let sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
+    pendingSend = (record.id, MarkdownLibrary.fingerprint(record.markdown))
+    link.send(.sendScript(.init(macID: record.id, title: record.metadata.title, markdown: record.markdown, basis: sent[record.id.uuidString], present: true)))
+  }
+  private func reading(_ state: PadRemote.State) -> some View {
+    card {
+      HStack {
+        Button(state.editing == true ? "Resume after save" : state.running ? "Pause" : "Resume") { link.send(state.running ? .pause : .play) }
+          .buttonStyle(.borderedProminent).disabled(state.presenting == nil || state.editing == true)
+        Button("Back to start") { link.send(.backToStart) }.disabled(state.presenting == nil || state.editing == true)
+        Button("Previous passage", systemImage: "arrow.up") { link.send(.previousPassage) }.labelStyle(.iconOnly).disabled(state.presenting == nil || state.editing == true)
+        Button("Next passage", systemImage: "arrow.down") { link.send(.nextPassage) }.labelStyle(.iconOnly).disabled(state.presenting == nil || state.editing == true)
+      }
+      if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
+      HStack {
+        Text("On the iPad").frame(width: 120, alignment: .leading)
+        split("Camera", on: link.cameraOn, sources: link.cameraSources, toggle: link.setCameraOn, select: link.selectCamera)
+        split("Mic", on: link.micOn, sources: link.microphoneSources, toggle: link.setMicOn, select: link.selectMicrophone)
+        Button("Clean screen") { link.setCleanScreen(!link.cleanScreen) }.tint(link.cleanScreen ? yellow : .secondary)
+      }
+      HStack {
+        Text("Follow voice from").frame(width: 120, alignment: .leading)
+        Picker("Follow voice from", selection: Binding(get: { state.mode == "Manual" ? "off" : state.voiceSource == "Mac" ? "mac" : "ipad" }, set: { setVoice($0, state) })) {
+          Text("This Mac").tag("mac"); Text("iPad").tag("ipad"); Text("Off (scroll)").tag("off")
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 250)
+      }
+      HStack {
+        Text("Mic level").frame(width: 120, alignment: .leading)
+        Text(link.microphoneSources.first { $0.id == link.selectedMicrophone }?.name ?? "Microphone").foregroundStyle(.secondary)
+        DBMeter(levelDB: link.micLevelDB, axis: .horizontal).frame(maxWidth: 350)
+      }
+      HStack {
+        Text("Scroll speed").frame(width: 120, alignment: .leading)
+        Slider(value: Binding(get: { Double(state.speed) }, set: { link.send(.speed(Int($0))) }), in: 20...300, step: 10).disabled(state.mode == "Voice")
+        Text("\(state.speed) wpm").monospacedDigit()
+      }
+      HStack {
+        Text("Position").frame(width: 120, alignment: .leading)
+        Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }), in: 1...Double(max(2, state.words))) { editing in
+          if !editing, let value = dragging { link.send(.seek(word: Int(value.rounded()))); dragging = nil }
+        }.disabled(state.presenting == nil || state.words < 2 || state.editing == true)
+        Text("Word \(state.word) of \(state.words)").monospacedDigit()
+      }
+    }
+  }
+  private func split(_ title: String, on: Bool, sources: [PadRemote.Source], toggle: @escaping (Bool) -> Void, select: @escaping (String) -> Void) -> some View {
+    HStack(spacing: 0) {
+      Button(on ? title : "\(title) off") { toggle(!on) }
+      Menu { ForEach(sources) { source in Button(source.name) { select(source.id) } } } label: { Image(systemName: "chevron.down") }
+        .menuStyle(.borderlessButton).fixedSize()
+    }
+  }
+  private func setVoice(_ value: String, _ state: PadRemote.State) {
+    if value == "mac" {
+      guard let id = state.scripts.first(where: { $0.id == state.presenting })?.macID, let record = store.scripts.first(where: { $0.id == id }) else { message = "Send the script from this Mac first"; return }
+      message = nil
+      link.relay.start(script: record, settings: store.settings)
+    } else {
+      if link.relay.isRelaying { link.relay.stop() }
+      if value == "ipad" { link.setVoiceSource("iPad"); link.send(.mode("Voice")) }
+      else { link.send(.mode("Manual")) }
+    }
+  }
+  private var picture: some View {
+    card {
+      Button { pictureOpen.toggle(); if pictureOpen { lookOpen = false } } label: {
+        HStack { Text("Picture to the iPad").bold(); Spacer(); Text(pictureSummary).foregroundStyle(.secondary); Image(systemName: pictureOpen ? "chevron.down" : "chevron.right") }
+      }.buttonStyle(.plain)
+      if pictureOpen {
+        Picker("Picture", selection: Binding(get: { link.pictureMode }, set: link.setPictureMode)) {
+          Text("Off").tag(PadRemote.PictureMode.off); Text("Behind the script").tag(PadRemote.PictureMode.behindScript); Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
+        }.pickerStyle(.segmented)
+        Picker("Source", selection: Binding(get: { link.selectedCamera ?? "" }, set: link.selectCamera)) {
+          Text("Choose a source").tag(""); ForEach(link.cameraSources) { Text($0.name).tag($0.id) }
+        }
+        Picker("Priority", selection: Binding(get: { link.picturePriority }, set: link.setPicturePriority)) {
+          Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p); Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
+        }.pickerStyle(.segmented)
+      }
+    }
+  }
+  private var pictureSummary: String {
+    switch link.pictureMode { case .off: return "Off"; case .behindScript: return "Behind the script"; case .monitorOnly: return "Monitor only" }
+  }
+  private func look(_ state: PadRemote.State) -> some View {
+    card {
+      Button { lookOpen.toggle(); if lookOpen { pictureOpen = false } } label: {
+        HStack { Text("Look on the iPad").bold(); Spacer(); Image(systemName: lookOpen ? "chevron.down" : "chevron.right") }
+      }.buttonStyle(.plain)
+      if lookOpen {
+        HStack {
+          Text("Turn the text").frame(width: 120, alignment: .leading)
+          Toggle("Mirror left to right", isOn: Binding(get: { link.mirror }, set: link.setMirror))
+          Toggle("Flip upside down", isOn: Binding(get: { link.flip }, set: link.setFlip))
+        }.toggleStyle(.checkbox)
+        lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
+        lookSlider("Text width", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
+        lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
+        lookSlider("Reading line", value: state.look?.guideFraction ?? 0.35, range: InputValidation.guideFraction.range) { link.send(.look(.init(guideFraction: $0))) }
+        Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) { Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5) }
+        if let presets = state.presets, !presets.isEmpty { Menu("Presets") { ForEach(presets, id: \.self) { name in Button(name) { link.send(.preset(name)) } } } }
+      }
+    }
+  }
+  private func lookSlider(_ title: String, value: Double, range: ClosedRange<Double>, set: @escaping (Double) -> Void) -> some View {
+    HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 55) }
   }
 }
 #endif
