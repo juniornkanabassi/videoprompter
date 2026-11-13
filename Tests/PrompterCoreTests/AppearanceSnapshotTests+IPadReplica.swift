@@ -30,7 +30,7 @@ extension AppearanceSnapshotTests {
       try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: variant == "not-connected" ? nil : fixture, startsLink: false, previewOverride: image,
         panelOverride: ["devices", "adjust", "text"].contains(variant) ? variant : nil,
         devicesOverride: [.init(id: "personal", name: "Junior’s iPad Pro"), .init(id: "studio", name: "Footballco Studio iPad")]).uiZoom(zoom),
-        name: "ipad-\(variant)-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: (["adjust", "text"].contains(variant) ? 1200 : 720) * zoom),
+        name: "ipad-\(variant)-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: 720 * zoom),
         scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(300), prepare: { host in
           guard variant == "connected-reading" || variant == "paused" else { return }
           func texts(_ view: NSView) -> [NSTextView] {

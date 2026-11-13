@@ -47,8 +47,7 @@ struct IPadRemoteView: View {
             }
           }
         }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
-        if panelOverride == "devices" { deviceChoices(state).padding(Space.md) }
-        if panelOverride == "adjust" || panelOverride == "text" { adjustControls(state).padding(Space.md) }
+
         transport(state)
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
         RelayNotice(relay: link.relay)
@@ -66,6 +65,15 @@ struct IPadRemoteView: View {
       }
     }
     .frame(width: geometry.size.width, height: geometry.size.height)
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if let state = currentState, let panelOverride {
+        Group {
+          if panelOverride == "devices" { deviceChoices(state).padding(Space.lg).frame(width: 400) }
+          else { ScrollView { adjustControls(state).padding(Space.lg) }.frame(width: 460, height: 560) }
+        }.background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: Space.md))
+          .shadow(radius: Space.md).padding(Space.lg)
+      }
     }
     .padding(Space.md)
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
