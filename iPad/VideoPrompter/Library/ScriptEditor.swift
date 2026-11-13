@@ -212,7 +212,7 @@ struct ScriptEditor: View {
   var body: some View {
     NavigationStack {
       if let record {
-        ScriptEditorView(record: record, mode: store.presentingID == script.id ? .onTheFly : .library) { dismiss() }
+        ScriptEditorView(record: record, mode: .library) { dismiss() } // only the presenter's Edit button may lock the iPad
           .navigationTitle(script.title).navigationBarTitleDisplayMode(.inline)
       } else { ProgressView().onAppear { record = store.record(for: script) } }
     }
