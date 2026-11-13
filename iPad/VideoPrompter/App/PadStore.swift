@@ -8,24 +8,26 @@ import UIKit
 /// the settings that belong to this iPad's hardware (mirroring, microphone) stay on the iPad.
 /// UI API: mirror/flip (Bool, backed by settings); editing/cleanScreen/micOn (Bool);
 /// pictureMode/priority (PadRemote enums); macStatus (sources, selection, REC, connection),
-/// micLevelDB (Double, -60...0). Call setMirror/setFlip, beginEditing/endEditing,
+/// micMeter (RemoteMicMeter; observe it directly for levelDB, -60...0). Call setMirror/setFlip, beginEditing/endEditing,
 /// setPictureMode/setPicturePriority/setCleanScreen, selectCamera/setCameraOn,
 /// selectMicrophone/setMicOn. Editing pauses and never resumes automatically.
 @MainActor final class PadStore: ObservableObject {
   @Published private(set) var editing = false
+  private var editingFromMac = false
   @Published private(set) var rejectionReason: String?
   @Published private(set) var pictureMode: PadRemote.PictureMode = .off
   @Published private(set) var picturePriority: PadRemote.PicturePriority = .realTime720p
   @Published private(set) var cleanScreen = false
   @Published private(set) var micOn = true
   @Published private(set) var macStatus = PadRemote.MacStatus()
-  @Published private(set) var macMicLevelDB: Double = -60
+  let micMeter = RemoteMicMeter()
+  private(set) var macMicLevelDB: Double = -60
   var micLevelDB: Double {
     let level = session.followsRemote ? macMicLevelDB : Double(session.audioPeakDBFS)
     return level.isFinite ? min(0, max(-60, level)) : -60
   }
   var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
-  var macDisplayName: String? { camera.link.macName }
+  var macDisplayName: String? { macStatus.displayName ?? camera.link.macName }
   var connectionKind: String? { macStatus.connectionKind }
   var mirror: Bool { settings.horizontalMirror }
   var flip: Bool { settings.verticalMirror }
@@ -43,11 +45,11 @@ import UIKit
   func setVoiceSource(_ value: String) { perform(.voiceSource(value)) }
   func setMirror(_ value: Bool) { settings.horizontalMirror = value }
   func setFlip(_ value: Bool) { settings.verticalMirror = value }
-  func beginEditing() { editing = true; session.pause() }
-  func endEditing() { editing = false; rejectionReason = nil }
-  func setPictureMode(_ value: PadRemote.PictureMode) { pictureMode = value }
-  func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value }
-  func setCleanScreen(_ value: Bool) { cleanScreen = value }
+  func beginEditing() { editingFromMac = false; editing = true; session.pause() }
+  func endEditing() { editing = false; editingFromMac = false; rejectionReason = nil }
+  func setPictureMode(_ value: PadRemote.PictureMode) { pictureMode = value; defaults.set(value.rawValue, forKey: "padPictureMode") }
+  func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value; defaults.set(value.rawValue, forKey: "padPicturePriority") }
+  func setCleanScreen(_ value: Bool) { cleanScreen = value; defaults.set(value, forKey: "padCleanScreen") }
   func selectCamera(_ id: String) { camera.link.send(.selectCamera(id)) }
   func setCameraOn(_ value: Bool) { camera.link.send(.cameraOn(value)) }
   func selectMicrophone(_ id: String) {
@@ -84,6 +86,7 @@ import UIKit
 
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
+  private var lastSent: PadRemote.State?
   private var presentedModified: Date?
   /// The scripts each folder held at the last look, by folder path and kept across launches,
   /// to notice files deleted anywhere, including while the app was closed or another folder
@@ -95,6 +98,9 @@ import UIKit
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    pictureMode = defaults.string(forKey: "padPictureMode").flatMap(PadRemote.PictureMode.init(rawValue:)) ?? .off
+    picturePriority = defaults.string(forKey: "padPicturePriority").flatMap(PadRemote.PicturePriority.init(rawValue:)) ?? .realTime720p
+    cleanScreen = defaults.bool(forKey: "padCleanScreen")
     knownIDs = defaults.dictionary(forKey: Self.knownIDsKey) as? [String: [String]] ?? [:]
     if let data = defaults.data(forKey: Self.settingsKey),
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
@@ -107,13 +113,19 @@ import UIKit
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
-    session.meter.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    session.meter.$peakDBFS.sink { [weak self] level in
+      guard let self, !session.followsRemote else { return }
+      micMeter.show(Double(level))
+    }.store(in: &bag)
     session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     // The first value is the listing the folder made at launch, compared with the last launch's.
     folder.$scripts.sink { [weak self] scripts in
       Task { @MainActor in self?.foldersChanged(scripts) }
     }.store(in: &bag)
     pullPresets()
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil { checkRemoteContractsForE2E() }
+    #endif
     startMacRemote()
   }
 
@@ -328,7 +340,6 @@ extension PadStore {
     let link = camera.link
     link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
-    var lastSent: PadRemote.State?
     // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
     objectWillChange.receive(on: DispatchQueue.main)
       .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
@@ -341,8 +352,7 @@ extension PadStore {
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
       guard let self else { return }
       if name == nil {
-        macStatus = PadRemote.MacStatus()
-        macMicLevelDB = -60
+        resetMacControls()
         // A relayed session never falls back to this iPad's microphone on its own: it stops, and
         // the next Play here is the reader's choice.
         if session.followsRemote {
@@ -361,6 +371,51 @@ extension PadStore {
       link.send(lastSent!)
     }.store(in: &bag)
   }
+
+  private func resetMacControls() {
+    macStatus = PadRemote.MacStatus()
+    macMicLevelDB = -60
+    micMeter.show(-60)
+    lastSent = nil
+    micOn = true
+    if editingFromMac { endEditing() }
+    rejectionReason = nil
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+  /// Actual store checks for the headless fixture, including local actions absent from the wire protocol.
+  private func checkRemoteContractsForE2E() {
+    var checks: [String: Bool] = [:]
+    session.followsRemote = true
+    var changes = 0
+    let observation = objectWillChange.sink { changes += 1 }
+    perform(.macStatus(.init(micLevelDB: -12)))
+    checks["meterIsIsolated"] = changes == 0 && micMeter.levelDB == -12 && remoteState.macStatus?.micLevelDB == nil
+    observation.cancel()
+    session.followsRemote = false
+
+    beginEditing()
+    perform(.seek(word: 2))
+    checks["immediateStateIsDeduplicated"] = lastSent == remoteState && rejectionReason != nil
+    setMicOn(false)
+    resetMacControls()
+    checks["localEditSurvivesDrop"] = editing && rejectionReason == nil && micOn
+    perform(.editing(false))
+    checks["remoteCannotEndLocalEdit"] = editing
+    endEditing()
+    perform(.editing(true))
+    perform(.seek(word: 2))
+    setMicOn(false)
+    resetMacControls()
+    checks["remoteEditEndsOnDrop"] = !editing && rejectionReason == nil && micOn
+    perform(.macStatus(.init(displayName: "Status Mac")))
+    checks["statusDisplayNameWins"] = macDisplayName == "Status Mac"
+    resetMacControls()
+    if let data = try? JSONEncoder().encode(checks) {
+      try? data.write(to: URL.documentsDirectory.appendingPathComponent("vp-e2e-contract-checks.json"), options: .atomic)
+    }
+  }
+  #endif
 
   var remoteState: PadRemote.State {
     let open = presentingID != nil
@@ -385,7 +440,7 @@ extension PadStore {
       fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
       editing: editing, rejectionReason: rejectionReason, pictureMode: pictureMode,
       picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
-      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone)
+      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone, selectedID: selectedID)
   }
 
   func perform(_ command: PadRemote.Command) {
@@ -395,17 +450,22 @@ extension PadStore {
       case .play, .seek, .backToStart, .nextPassage, .previousPassage, .follow, .present, .close:
         blocked = true
       case .sendScript(let transfer):
-        blocked = presentingID.flatMap { folder.macID(of: $0) } == transfer.macID || transfer.present
+        blocked = presentingID.flatMap { folder.macID(of: $0) } == transfer.macID
+          || selectedID.flatMap { folder.macID(of: $0) } == transfer.macID || transfer.present
       default: break
       }
       if blocked {
         rejectionReason = "Finish editing on the iPad first"
-        camera.link.send(remoteState)
+        lastSent = remoteState
+        camera.link.send(lastSent!)
         return
       }
     }
     switch command {
-    case .editing(let value): value ? beginEditing() : endEditing()
+    case .editing(let value):
+      if value {
+        if !editing { beginEditing(); editingFromMac = true }
+      } else if editingFromMac { endEditing() }
     case .pictureMode(let value): setPictureMode(value)
     case .picturePriority(let value): setPicturePriority(value)
     case .cleanScreen(let value): setCleanScreen(value)
@@ -414,12 +474,18 @@ extension PadStore {
     case .cameraOn(let value): setCameraOn(value)
     case .selectMicrophone(let id): selectMicrophone(id)
     case .macStatus(var value):
-      if let db = value.micLevelDB, db.isFinite { macMicLevelDB = min(0, max(-60, db)) }
+      if let db = value.micLevelDB {
+        macMicLevelDB = db.isFinite ? min(0, max(-60, db)) : -60
+        if session.followsRemote { micMeter.show(macMicLevelDB) }
+      }
       // Meter updates must not reset the source list.
       value.micLevelDB = nil
       var next = macStatus
-      if let cameras = value.cameras { next.cameras = cameras; next.selectedCamera = value.selectedCamera }
-      if let microphones = value.microphones { next.microphones = microphones; next.selectedMicrophone = value.selectedMicrophone }
+      if let cameras = value.cameras { next.cameras = cameras }
+      if let microphones = value.microphones { next.microphones = microphones }
+      // List-only updates preserve selections; a complete list that removes one clears it.
+      if let cameras = value.cameras, let id = next.selectedCamera, !cameras.contains(where: { $0.id == id }) { next.selectedCamera = nil }
+      if let microphones = value.microphones, let id = next.selectedMicrophone, !microphones.contains(where: { $0.id == id }) { next.selectedMicrophone = nil }
       if let selected = value.selectedCamera { next.selectedCamera = selected }
       if let selected = value.selectedMicrophone { next.selectedMicrophone = selected }
       if let on = value.cameraOn { next.cameraOn = on }
@@ -440,7 +506,7 @@ extension PadStore {
     case .sendScript(let transfer):
       do {
         guard let script = try folder.receive(transfer) else { return }
-        selectedID = script.id
+        if !editing { selectedID = script.id }
         if transfer.present, presentingID != script.id { present(script) }
         objectWillChange.send()
       } catch { errorMessage = error.localizedDescription }
@@ -460,10 +526,11 @@ extension PadStore {
     case .voiceSource(let source):
       switch source {
       case "Mac":
+        micMeter.show(macMicLevelDB)
         // Before the mode change, so switching to Voice cannot start this iPad's microphone.
         session.followsRemote = true
         settings.mode = "Voice"
-      case "iPad": session.followsRemote = false
+      case "iPad": session.followsRemote = false; micMeter.show(Double(session.audioPeakDBFS))
       default: return
       }
       objectWillChange.send()

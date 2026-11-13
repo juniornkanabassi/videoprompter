@@ -22,7 +22,8 @@ import VideoToolbox
   static let shared = IPadCameraSender()
 
   /// UI API mirrors PadStore: Bool mirror/flip/editing/cleanScreen/micOn, pictureMode/priority
-  /// enums, source lists and selection, recordingState, micLevelDB. Use the set/select methods
+  /// enums, source lists and selection, recordingState, micMeter.levelDB. Observe micMeter
+  /// directly so level updates redraw only the meter. Use the set/select methods
   /// to send intent; iPad-owned values change when its State acknowledges them.
   var mirror: Bool { iPadState?.look?.horizontalMirror ?? false }
   var flip: Bool { iPadState?.look?.verticalMirror ?? false }
@@ -43,7 +44,8 @@ import VideoToolbox
     iPadState?.voiceSource == "iPad" ? iPadState?.selectedMicrophone : macStatus.selectedMicrophone
   }
   var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
-  var micLevelDB: Double { macStatus.micLevelDB ?? -60 }
+  let micMeter = RemoteMicMeter()
+  var micLevelDB: Double { micMeter.levelDB }
   func setVoiceSource(_ value: String) { send(.voiceSource(value)) }
   func setMirror(_ value: Bool) { send(.look(.init(horizontalMirror: value))) }
   func setFlip(_ value: Bool) { send(.look(.init(verticalMirror: value))) }
@@ -76,33 +78,58 @@ import VideoToolbox
     publishMacStatus()
   }
   func setMicOn(_ value: Bool) {
+    send(.micOn(value))
     if iPadState?.voiceSource != "iPad" {
       macMicOn = value
-      if !value { relay.session?.pause() }
+      value ? relay.resumeForMic() : relay.pauseForMic()
     }
-    send(.micOn(value))
     publishMacStatus()
   }
 
   private var statusTimer: AnyCancellable?
   private var statusTicks = 0
+  private var macName = "Mac"
+  private var microphones: [PadRemote.Source] = []
+  private weak var sampledMeter: InputMeter?
+  private var meterSubscription: AnyCancellable?
+  private var pendingPeak: Double = -60
+
+  /// Retain every observed peak until the 15 Hz status tick consumes it.
+  func sampleMicLevel(_ meter: InputMeter) {
+    if sampledMeter !== meter {
+      sampledMeter = meter
+      pendingPeak = -60
+      meterSubscription = meter.$peakDBFS.sink { [weak self] level in
+        guard let self, level.isFinite else { return }
+        pendingPeak = max(pendingPeak, Double(level))
+      }
+    }
+    let current = meter.isFresh() ? Double(meter.peakDBFS) : -60
+    micMeter.show(macMicOn && meter.isFresh() ? max(pendingPeak, current) : -60)
+    pendingPeak = -60
+  }
+
+  private func refreshSources() {
+    CameraModel.shared.refreshDevices()
+    microphones = AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) }
+  }
   private func publishMacStatus() {
     guard pipe != nil else { return }
     let camera = CameraModel.shared
     let recorder = CameraRecorder.shared
     let meter = relay.meter ?? (recorder.isCapturing ? recorder.inputMeter : AppStore.shared.session.meter)
-    let level = macMicOn && meter.isFresh() ? Double(meter.peakDBFS) : -60
+    sampleMicLevel(meter)
     let next = PadRemote.MacStatus(
       cameras: camera.devices.map { .init(id: $0.uid, name: $0.name) },
       selectedCamera: camera.selectedUID, cameraOn: isOn,
-      microphones: AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) },
+      microphones: microphones,
       selectedMicrophone: relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID,
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
-      displayName: Host.current().localizedName ?? "Mac", connectionKind: pipe?.name,
-      micLevelDB: level.isFinite ? min(0, max(-60, level)) : -60)
-    guard next != macStatus else { return }
-    macStatus = next
-    pipe?.send(CameraLink.Message.command(.macStatus(next)).encoded())
+      displayName: macName, connectionKind: pipe?.name)
+    if next != macStatus { macStatus = next }
+    var update = next
+    update.micLevelDB = micMeter.levelDB
+    pipe?.send(CameraLink.Message.command(.macStatus(update)).encoded())
   }
   private func receive(_ command: PadRemote.Command) {
     switch command {
@@ -111,7 +138,7 @@ import VideoToolbox
     case .selectMicrophone(let id): selectMacMicrophone(id)
     case .micOn(let value):
       macMicOn = value
-      if !value { relay.session?.pause() }
+      value ? relay.resumeForMic() : relay.pauseForMic()
       publishMacStatus()
     default: break
     }
@@ -313,6 +340,11 @@ import VideoToolbox
     pipe?.close()
     pipe = nil
     statusTimer = nil
+    meterSubscription = nil
+    sampledMeter = nil
+    pendingPeak = -60
+    micMeter.show(-60)
+    macMicOn = true
     macStatus = PadRemote.MacStatus()
     iPadState = nil
     status = "Off"
@@ -406,14 +438,16 @@ import VideoToolbox
 
   private func use(_ pipe: LinkPipe) {
     self.pipe = pipe
-    CameraModel.shared.refreshDevices()
+    macName = Host.current().localizedName ?? "Mac"
+    refreshSources()
+    statusTicks = 0
     macStatus = PadRemote.MacStatus()
     statusTimer = Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()
       .sink { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self else { return }
           self.statusTicks += 1
-          if self.statusTicks % 15 == 0 { CameraModel.shared.refreshDevices() }
+          if self.statusTicks % 15 == 0 { self.refreshSources() }
           self.publishMacStatus()
         }
       }
@@ -436,8 +470,7 @@ import VideoToolbox
       Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.iPadState = state } }
     }
     pipe.startReading()
-    let name = Host.current().localizedName ?? "Mac"
-    pipe.send(CameraLink.Message.hello(name: name, version: CameraLink.protocolVersion).encoded())
+    pipe.send(CameraLink.Message.hello(name: macName, version: CameraLink.protocolVersion).encoded())
     if isOn { attachCamera(pipe) }
     publishMacStatus()
     // A current iPad answers the hello at once.
@@ -451,9 +484,8 @@ import VideoToolbox
   }
 
   private func attachCamera(_ pipe: LinkPipe) {
-    // Over Wi-Fi the picture is a monitor, not a recording: 720p at 4 Mbps keeps the delay lowest.
-    let usb = pipe.name == "USB-C"
-    encoder.attach(pipe, bitRate: usb ? 10_000_000 : 4_000_000, longSide: iPadState?.picturePriority?.longSide ?? (usb ? 1920 : 1280))
+    let priority = iPadState?.picturePriority ?? .realTime720p
+    encoder.attach(pipe, bitRate: priority.bitRate(overUSB: pipe.name == "USB-C"), longSide: priority.longSide)
     status = Self.connected(over: pipe.name, sending: true)
   }
 
@@ -469,6 +501,11 @@ import VideoToolbox
     encoder.attach(nil)
     pipe = nil
     statusTimer = nil
+    meterSubscription = nil
+    sampledMeter = nil
+    pendingPeak = -60
+    micMeter.show(-60)
+    macMicOn = true
     macStatus = PadRemote.MacStatus()
     iPadState = nil
     guard linkOn else { return }

@@ -157,6 +157,64 @@ final class PadVoiceRelayTests: XCTestCase {
     relay.stop()
   }
 
+  func testMicOffPausesWithoutEndingAndMicOnResumesTheSameSession() async throws {
+    let (relay, link) = try await started()
+    defer { relay.stop() }
+    let session = try XCTUnwrap(relay.session)
+    relay.pauseForMic()
+    relay.pauseForMic() // Repeated off commands must keep the original resume intent.
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(relay.isRelaying)
+    XCTAssertTrue(relay.session === session)
+    XCTAssertFalse(session.isActivelyRunning)
+    XCTAssertFalse(link.sent.contains(.pause), "a deliberate mic pause is not a failed relay")
+    relay.resumeForMic()
+    XCTAssertTrue(session.isActivelyRunning)
+    XCTAssertEqual(link.sent.last, .play)
+    relay.resumeForMic()
+    XCTAssertEqual(link.sent.filter { $0 == .play }.count, 1)
+  }
+
+  func testMicTogglePreservesAnAlreadyPausedRelay() async throws {
+    let (relay, link) = try await started(running: false)
+    defer { relay.stop() }
+    relay.pauseForMic()
+    await Task.yield()
+    relay.resumeForMic()
+    XCTAssertTrue(relay.isRelaying)
+    XCTAssertEqual(relay.session?.isActivelyRunning, false)
+    XCTAssertFalse(link.sent.contains(.play))
+  }
+
+  func testIPadMicStatePausesAndResumesWithoutDiscardingRelay() async throws {
+    let (relay, link) = try await started()
+    defer { relay.stop() }
+    var off = state(running: false)
+    off.micOn = false
+    relay.iPadStateChanged(off)
+    try await Task.sleep(for: .milliseconds(50))
+    XCTAssertTrue(relay.isRelaying)
+    XCTAssertEqual(relay.session?.isActivelyRunning, false)
+    off.micOn = true
+    relay.iPadStateChanged(off)
+    XCTAssertEqual(relay.session?.isActivelyRunning, true)
+    XCTAssertEqual(link.sent.last, .play)
+    relay.iPadStateChanged(state(running: true))
+    XCTAssertEqual(relay.session?.isActivelyRunning, true)
+  }
+
+  func testEditingDuringMicPauseDoesNotResumeReading() async throws {
+    let (relay, link) = try await started()
+    defer { relay.stop() }
+    relay.pauseForMic()
+    var editing = state(running: false)
+    editing.editing = true
+    relay.iPadStateChanged(editing)
+    relay.resumeForMic()
+    XCTAssertEqual(relay.session?.isActivelyRunning, false)
+    XCTAssertFalse(link.sent.contains(.play))
+  }
+
   func testAMicrophoneFailurePausesTheIPadAndSaysWhy() async throws {
     let (relay, link) = try await started(running: false)
     // The recogniser has no microphone: the session pauses itself with a notice, as a real failure does.

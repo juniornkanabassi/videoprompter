@@ -49,6 +49,8 @@ import PrompterCore
   private var fingerprint = ""
   private var knownRevision = 0
   private var wantsRunning = false
+  private var micPaused = false
+  private var resumeAfterMic = false
   private var iPadRunning = false
   /// Set while the relay itself moves the session, so its own seek is not sent back.
   private var movingSession = false
@@ -80,6 +82,26 @@ import PrompterCore
   /// Pauses the iPad, then lets go. The voice source is left for the user to change.
   func stop() { finish("Stopped", pausingIPad: true) }
 
+  /// A microphone toggle suspends capture without ending the relay or losing its place.
+  public func pauseForMic() {
+    guard phase == .live, !micPaused else { return }
+    micPaused = true
+    resumeAfterMic = wantsRunning
+    pendingFollow = nil
+    pause()
+  }
+
+  public func resumeForMic() {
+    guard phase == .live, micPaused else { return }
+    micPaused = false
+    let resume = resumeAfterMic && iPadState?.editing != true
+    resumeAfterMic = false
+    if resume {
+      play()
+      link?.send(.play)
+    }
+  }
+
   /// Fed with every state the iPad sends, and nil when the link drops.
   func iPadStateChanged(_ state: PadRemote.State?) {
     iPadState = state
@@ -93,12 +115,19 @@ import PrompterCore
       return finish("The iPad opened another script or closed this one", pausingIPad: true)
     }
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
-    if state.editing == true || state.micOn == false {
+    if state.editing == true {
+      resumeAfterMic = false
       pendingFollow = nil
       pause()
       iPadRunning = false
       return
     }
+    if state.micOn == false {
+      pauseForMic()
+      iPadRunning = false
+      return
+    }
+    if micPaused { resumeForMic(); return }
     // Only a seek on the iPad moves the relay; its word changing as it follows us does not. The iPad
     // checks each follow against its current revision and states arrive in order, so any change
     // (the counter wraps) is a seek to adopt, and a follow stamped earlier is already stale.
@@ -264,6 +293,8 @@ import PrompterCore
     if pausingIPad, phase == .live, iPadState != nil { link?.send(.pause) }
     phase = .idle
     wantsRunning = false
+    micPaused = false
+    resumeAfterMic = false
     pendingFollow = nil
     bag.removeAll()
     session?.pause()

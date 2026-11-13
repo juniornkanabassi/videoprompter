@@ -34,6 +34,14 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
 
     defer { pipe.close() }
     let first = try state("fixture state on connect") { $0.scripts.contains(where: { $0.title == expectedTitle }) }
+    let checksURL = URL(fileURLWithPath: try XCTUnwrap(environment["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents/vp-e2e-contract-checks.json")
+    let checks = try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: checksURL))
+    for key in ["meterIsIsolated", "immediateStateIsDeduplicated", "localEditSurvivesDrop",
+                "remoteCannotEndLocalEdit", "remoteEditEndsOnDrop", "statusDisplayNameWins"] {
+      XCTAssertEqual(checks[key], true, key)
+    }
+    XCTAssertEqual(first.picturePriority, .realTime720p)
     let script = try XCTUnwrap(first.scripts.first(where: { $0.title == expectedTitle }))
     send(.close)
     send(.mode("Manual"))
@@ -71,9 +79,18 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(sentScript.fingerprint, MarkdownLibrary.fingerprint(text))
     XCTAssertEqual(sent.fingerprint, sentScript.fingerprint)
     XCTAssertEqual(sent.version, CameraLink.protocolVersion)
+    // Select a second script without changing the open presenter. Both must be protected.
+    let selectedMacID = UUID()
+    let selectedText = "A selected draft that must stay untouched"
+    send(.sendScript(.init(macID: selectedMacID, title: "Selected draft", markdown: selectedText)))
+    let selected = try state("selected separate draft") { state in
+      state.selectedID == state.scripts.first { $0.macID == selectedMacID }?.id && state.selectedID != nil
+    }
+    // Start from a different marker value: the default countdown can already be three.
+    send(.startDelay(0))
     // UI parity uses the same intent path as beginEditing/endEditing on the iPad.
     send(.editing(true))
-    let locked = try state("editing lock") { $0.editing == true && !$0.running }
+    let locked = try state("editing lock") { $0.editing == true && !$0.running && $0.startDelay == 0 }
     send(.seek(word: 8))
     send(.nextPassage)
     send(.previousPassage)
@@ -81,9 +98,19 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     send(.play)
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: "Do not overwrite",
                           basis: MarkdownLibrary.fingerprint(text), present: true)))
-    let rejected = try state("editing rejects movement and overwrite") { $0.rejectionReason != nil }
+    send(.sendScript(.init(macID: selectedMacID, title: "Selected draft", markdown: "Do not overwrite selected draft",
+                          basis: MarkdownLibrary.fingerprint(selectedText), present: false)))
+    let unrelatedID = UUID()
+    send(.sendScript(.init(macID: unrelatedID, title: "Unrelated draft", markdown: "Import without selecting")))
+    // An acknowledgement of this final marker proves every blocked command above was processed.
+    send(.startDelay(3))
+    let rejected = try state("editing rejects movement and overwrite") { $0.startDelay == 3 && $0.rejectionReason != nil }
     XCTAssertEqual(rejected.word, locked.word)
     XCTAssertEqual(rejected.fingerprint, locked.fingerprint)
+    XCTAssertEqual(rejected.selectedID, selected.selectedID)
+    XCTAssertEqual(rejected.scripts.first { $0.macID == macID }?.fingerprint, MarkdownLibrary.fingerprint(text))
+    XCTAssertEqual(rejected.scripts.first { $0.macID == selectedMacID }?.fingerprint, MarkdownLibrary.fingerprint(selectedText))
+    XCTAssertTrue(rejected.scripts.contains { $0.macID == unrelatedID }, "unrelated imports still work during editing")
     XCTAssertFalse(rejected.running)
     send(.editing(false))
     _ = try state("editing ended") { $0.editing == false && $0.rejectionReason == nil }
@@ -108,6 +135,16 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
                            connectionKind: "USB-C", micLevelDB: -18)))
       _ = try state("Mac recorder tally") { $0.macStatus?.recording == recording }
     }
+    let cameraChoice = PadRemote.Source(id: "camera-fixture", name: "Camera")
+    let micChoice = PadRemote.Source(id: "mic-fixture", name: "Microphone")
+    send(.macStatus(.init(cameras: [cameraChoice], selectedCamera: cameraChoice.id,
+                         microphones: [micChoice], selectedMicrophone: micChoice.id)))
+    _ = try state("source selections") { $0.macStatus?.selectedCamera == cameraChoice.id && $0.macStatus?.selectedMicrophone == micChoice.id }
+    send(.macStatus(.init(cameras: [cameraChoice], microphones: [micChoice])))
+    send(.startDelay(0))
+    let listed = try state("list-only update") { $0.startDelay == 0 }
+    XCTAssertEqual(listed.macStatus?.selectedCamera, cameraChoice.id)
+    XCTAssertEqual(listed.macStatus?.selectedMicrophone, micChoice.id)
     // Untouched since the last send: the same script takes the new text.
     let newer = text + " Thirteen fourteen."
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))
@@ -176,8 +213,52 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     encoder.finish(pipe)
     send(.close)
     _ = try state("closed") { $0.presenting == nil }
+    send(.pictureMode(.monitorOnly))
+    send(.picturePriority(.sharper1080p))
+    send(.cleanScreen(true))
+    _ = try state("saved picture preferences") { $0.pictureMode == .monitorOnly && $0.picturePriority == .sharper1080p && $0.cleanScreen == true }
     pipe.send(CameraLink.Message.goodbye.encoded())
     pipe.close()
+    try verifyPicturePreferencesAfterRelaunch(port: port)
+  }
+
+  private func verifyPicturePreferencesAfterRelaunch(port: UInt16) throws {
+    let environment = ProcessInfo.processInfo.environment
+    let container = try XCTUnwrap(environment["VP_IPAD_E2E_CONTAINER"])
+    let components = URL(fileURLWithPath: container).pathComponents
+    let deviceIndex = try XCTUnwrap(components.firstIndex(of: "Devices")) + 1
+    let device = components[deviceIndex]
+    func simctl(_ arguments: [String]) throws {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/xcrun")
+      process.arguments = ["simctl"] + arguments
+      var childEnvironment = environment
+      childEnvironment["SIMCTL_CHILD_VP_IPAD_E2E_PORT"] = String(port)
+      process.environment = childEnvironment
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      try process.run()
+      process.waitUntilExit()
+      XCTAssertEqual(process.terminationStatus, 0, "simctl \(arguments)")
+    }
+    try simctl(["terminate", device, "com.juniornkanabassi.VideoPrompter"])
+    try simctl(["launch", device, "com.juniornkanabassi.VideoPrompter"])
+    var descriptor: Int32?
+    for _ in 0..<50 where descriptor == nil {
+      descriptor = Self.connect(port: port)
+      if descriptor == nil { Thread.sleep(forTimeInterval: 0.1) }
+    }
+    let pipe = SocketPipe(socket: try XCTUnwrap(descriptor), name: "USB-C")
+    defer { pipe.close() }
+    let latest = Mutex<PadRemote.State?>(nil)
+    pipe.onMessage = { if case .state(let state) = $0 { latest.withLock { $0 = state } } }
+    pipe.startReading()
+    pipe.send(CameraLink.Message.hello(name: "Relaunch check", version: CameraLink.protocolVersion).encoded())
+    for _ in 0..<50 where latest.withLock({ $0 }) == nil { Thread.sleep(forTimeInterval: 0.1) }
+    let restored = try XCTUnwrap(latest.withLock { $0 })
+    XCTAssertEqual(restored.pictureMode, .monitorOnly)
+    XCTAssertEqual(restored.picturePriority, .sharper1080p)
+    XCTAssertEqual(restored.cleanScreen, true)
   }
 
   /// The Mac's voice relay must end when the Mac goes, and when another Mac takes over the link.
@@ -233,12 +314,20 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     // The Mac goes away: the iPad stops, and does not fall back to its own microphone.
     let first = try Mac(port: port, name: "Mac one")
     try startRelay(first)
+    first.send(.editing(true))
+    _ = try first.state("Mac edit started") { $0.editing == true && !$0.running }
+    first.send(.seek(word: 2))
+    first.send(.micOn(false))
+    _ = try first.state("edit rejection before drop") { $0.rejectionReason != nil && $0.micOn == false }
     first.pipe.close()
     // Nothing is connected to read the state, so the app records why it reset (a hook under the
     // end-to-end launch); the next Mac connects only once the plain drop has been seen to do it.
     try reset("drop")
     let second = try Mac(port: port, name: "Mac two")
-    _ = try second.state("stopped after a drop") { $0.voiceSource == "iPad" && !$0.running }
+    let afterDrop = try second.state("stopped after a drop") { $0.voiceSource == "iPad" && !$0.running }
+    XCTAssertEqual(afterDrop.editing, false)
+    XCTAssertNil(afterDrop.rejectionReason)
+    XCTAssertEqual(afterDrop.micOn, true)
     // Another Mac takes the link over while one is relaying: the same.
     try startRelay(second)
     let third = try Mac(port: port, name: "Mac three")

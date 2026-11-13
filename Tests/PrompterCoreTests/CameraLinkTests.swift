@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 
 @testable import PrompterCore
@@ -78,7 +79,7 @@ final class CameraLinkTests: XCTestCase {
       rejectionReason: "Finish editing on the iPad first", pictureMode: .monitorOnly,
       picturePriority: .sharper1080p, cleanScreen: true, micOn: false,
       macStatus: .init(recording: .standby, displayName: "Mac", connectionKind: "Wi-Fi"),
-      microphoneSources: [.init(id: "ipad-mic", name: "iPad")], selectedMicrophone: "ipad-mic")
+      microphoneSources: [.init(id: "ipad-mic", name: "iPad")], selectedMicrophone: "ipad-mic", selectedID: id)
     let sent = commands.map(CameraLink.Message.command) + [.state(state)]
     var reader = CameraLink.Reader()
     XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
@@ -106,7 +107,7 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertNil(state.voiceSource); XCTAssertNil(state.seekRevision); XCTAssertNil(state.fingerprint)
     XCTAssertNil(state.editing); XCTAssertNil(state.rejectionReason); XCTAssertNil(state.pictureMode)
     XCTAssertNil(state.picturePriority); XCTAssertNil(state.cleanScreen); XCTAssertNil(state.micOn)
-    XCTAssertNil(state.macStatus); XCTAssertNil(state.microphoneSources); XCTAssertNil(state.selectedMicrophone)
+    XCTAssertNil(state.selectedID); XCTAssertNil(state.macStatus); XCTAssertNil(state.microphoneSources); XCTAssertNil(state.selectedMicrophone)
     XCTAssertNil(state.scripts[0].macID); XCTAssertNil(state.scripts[0].fingerprint)
   }
 
@@ -186,6 +187,56 @@ final class CameraLinkTests: XCTestCase {
     }
     XCTAssertEqual(PadRemote.PicturePriority.realTime720p.longSide, 1280)
     XCTAssertEqual(PadRemote.PicturePriority.sharper1080p.longSide, 1920)
+  }
+
+  func testPictureBitrateScalesWithResolutionAndTransport() {
+    XCTAssertEqual(PadRemote.PicturePriority.realTime720p.bitRate(overUSB: true), 6_000_000)
+    XCTAssertEqual(PadRemote.PicturePriority.sharper1080p.bitRate(overUSB: true), 10_000_000)
+    XCTAssertEqual(PadRemote.PicturePriority.realTime720p.bitRate(overUSB: false), 4_000_000)
+    XCTAssertGreaterThan(PadRemote.PicturePriority.sharper1080p.bitRate(overUSB: false), 4_000_000)
+  }
+
+  @MainActor
+  func testMeterClampsInvalidLevelsAndPublishesOnlyChanges() {
+    let meter = RemoteMicMeter()
+    var changes = 0
+    let observation = meter.objectWillChange.sink { changes += 1 }
+    defer { observation.cancel() }
+    meter.show(-90)
+    XCTAssertEqual(changes, 0)
+    meter.show(-12)
+    meter.show(-12)
+    XCTAssertEqual(meter.levelDB, -12)
+    XCTAssertEqual(changes, 1)
+    meter.show(20)
+    XCTAssertEqual(meter.levelDB, 0)
+    meter.show(.nan)
+    XCTAssertEqual(meter.levelDB, -60)
+    meter.show(.infinity)
+    XCTAssertEqual(changes, 3)
+  }
+
+  @MainActor
+  func testMacMeterRetainsPeakBetweenTicksWithoutPublishingTheSender() {
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    let meter = InputMeter()
+    var changes = 0
+    let observation = sender.objectWillChange.sink { changes += 1 }
+    defer { observation.cancel() }
+    sender.sampleMicLevel(meter)
+    meter.show(peakDBFS: -3, isClipping: false)
+    meter.show(peakDBFS: -42, isClipping: false)
+    sender.sampleMicLevel(meter)
+    XCTAssertEqual(sender.micMeter.levelDB, -3)
+    sender.sampleMicLevel(meter)
+    XCTAssertEqual(sender.micMeter.levelDB, -42, "each interval consumes its peak")
+    XCTAssertEqual(changes, 0, "meter samples must not rebuild menus and the remote window")
+    let replacement = InputMeter()
+    replacement.show(peakDBFS: -25, isClipping: false)
+    meter.show(peakDBFS: -1, isClipping: false)
+    sender.sampleMicLevel(replacement)
+    XCTAssertEqual(sender.micMeter.levelDB, -25, "switching source discards the previous microphone's peak")
   }
 
   func testStatusIsLatestWinsAndOvertakesQueuedVideoWithoutReplacingFollows() throws {

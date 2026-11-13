@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The Mac sends its camera to the iPad over this, H.264 from VideoToolbox, and drives the iPad's
@@ -189,6 +190,10 @@ public enum PadRemote {
   public enum PicturePriority: String, Codable, CaseIterable, Sendable {
     case realTime720p, sharper1080p
     public var longSide: Int { self == .realTime720p ? 1280 : 1920 }
+    public func bitRate(overUSB: Bool) -> Int {
+      if overUSB { return self == .realTime720p ? 6_000_000 : 10_000_000 }
+      return self == .realTime720p ? 4_000_000 : 7_000_000
+    }
   }
   public enum RecordingState: String, Codable, Sendable { case recording, standby, unknown }
   public struct Source: Codable, Equatable, Sendable, Identifiable {
@@ -198,9 +203,11 @@ public enum PadRemote {
   }
   public struct MacStatus: Codable, Equatable, Sendable {
     public var cameras: [Source]?
+    /// Nil leaves selection unchanged; a supplied list that omits it clears it.
     public var selectedCamera: String?
     public var cameraOn: Bool?
     public var microphones: [Source]?
+    /// Nil leaves selection unchanged; a supplied list that omits it clears it.
     public var selectedMicrophone: String?
     public var micOn: Bool?
     public var recording: RecordingState?
@@ -281,6 +288,8 @@ public enum PadRemote {
     public var scripts: [Script]
     /// The script in the presenter, if it is open.
     public var presenting: UUID?
+    /// The script selected in the library, which may differ from the presenter.
+    public var selectedID: UUID?
     public var running: Bool
     public var mode: String
     public var speed: Int
@@ -314,9 +323,10 @@ public enum PadRemote {
       voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil,
       editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
-      macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil
+      macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
+      selectedID: UUID? = nil
     ) {
-      self.scripts = scripts; self.presenting = presenting; self.running = running
+      self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
       self.voiceSource = voiceSource; self.seekRevision = seekRevision; self.fingerprint = fingerprint
@@ -340,5 +350,15 @@ extension Data {
   }
   fileprivate func readUInt64(at index: Index) -> UInt64 {
     self[index..<(index + 8)].reduce(0) { $0 << 8 | UInt64($1) }
+  }
+}
+
+/// Observe this at the meter view, independently of the surrounding remote controls.
+@MainActor public final class RemoteMicMeter: ObservableObject {
+  @Published public private(set) var levelDB: Double = -60
+  public init() {}
+  public func show(_ level: Double) {
+    let next = level.isFinite ? min(0, max(-60, level)) : -60
+    if next != levelDB { levelDB = next }
   }
 }
