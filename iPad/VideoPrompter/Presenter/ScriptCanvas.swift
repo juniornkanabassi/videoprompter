@@ -93,6 +93,8 @@ struct ScriptCanvas: UIViewRepresentable {
     var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
+    /// The Mac's yellow, #f5cf4a.
+    private static let currentWord = UIColor(red: 0.961, green: 0.812, blue: 0.290, alpha: 1)
     private var baseColour = UIColor.white
     private var textOpacity = 1.0
 
@@ -121,7 +123,7 @@ struct ScriptCanvas: UIViewRepresentable {
       let confirmed = parent.lastConfirmedTokenIndex.map { index <= $0 } ?? false
       let alpha = confirmed ? textOpacity * 0.38 : textOpacity
       return index == parent.tokenIndex && !confirmed && (renderedStyle?.highlightActiveWord ?? false)
-        ? UIColor.systemYellow.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
+        ? Self.currentWord.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
     }
 
     /// Only the words between the old and new positions change colour.
