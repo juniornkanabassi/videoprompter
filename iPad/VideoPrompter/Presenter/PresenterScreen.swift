@@ -50,17 +50,17 @@ struct PresenterScreen: View {
       let size = geometry.size
       ZStack {
         background
-        if store.pictureMode == .monitorOnly {
+        if store.pictureMode == .monitorOnly, !store.cameraOnly {
           // The confidence monitor replaces the presenter while the picture is monitor only.
           ConfidenceMonitorView(camera: camera)
         } else {
-          scriptLayer(size)
+          if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
           if !store.cleanScreen {
             chrome
             if !counting {
-              if setup { setupBar(width: size.width) } else { readingControls }
+              if setup || store.cameraOnly { setupBar(width: size.width) } else { readingControls }
             }
-            status
+            if !store.cameraOnly { status }
           } else {
             cleanHandle
           }
@@ -78,10 +78,16 @@ struct PresenterScreen: View {
     .onAppear {
       focused = true
       hadMac = macConnected
+      useOwnCameraWithoutMac()
     }
-    .onChange(of: camera.link.macName) { _, name in if name != nil { hadMac = true } }
+    .onChange(of: camera.link.macName) { _, name in
+      if name != nil { hadMac = true }
+      useOwnCameraWithoutMac()
+    }
+    .onChange(of: store.cameraOnly) { _, _ in useOwnCameraWithoutMac() }
     .onChange(of: session.isActivelyRunning) { _, running in if running { setup = false } }
-    .onChange(of: store.pictureMode) { _, mode in if mode == .behindScript { camera.isOn = true } }
+    // A linked Mac supplies the picture, so this iPad's own camera is the fallback only without one.
+    .onChange(of: store.pictureMode) { _, mode in if mode == .behindScript, !macConnected || camera.isShowingMac { camera.isOn = true } }
     .fullScreenCover(
       isPresented: Binding(get: { editingRecord != nil }, set: { if !$0 { editingRecord = nil } }),
       onDismiss: { focused = true }
@@ -97,7 +103,8 @@ struct PresenterScreen: View {
   // MARK: Behind and on the script
 
   @ViewBuilder private var background: some View {
-    if store.pictureMode == .behindScript, camera.isOn {
+    // Camera Only draws its own picture; one picture layer is never in two views.
+    if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
           LinkPreview(camera: camera, link: camera.link)
@@ -114,7 +121,7 @@ struct PresenterScreen: View {
   }
 
   /// The setting-up note beside Camera and Mic ("Camera off: ..."); it sits above the bar, so the script leaves room for it.
-  private var showsOffNote: Bool { !store.cameraOn && macConnected || !store.micOn }
+  private var showsOffNote: Bool { !store.cameraOn && macConnected || !store.micOn && !store.cameraOnly }
 
   /// Script, reading line, meter and the presenter-facing note: the part the glass shows back.
   /// While controls are visible the script scrolls inside a reading viewport between them, faded at
@@ -190,6 +197,44 @@ struct PresenterScreen: View {
     .scaleEffect(x: turn.a, y: turn.d)
   }
 
+  /// Camera Only: the picture alone, turned with Mirror and Flip like the confidence monitor, with
+  /// the Mac's recording frame and its meter. Without a Mac the meter would read nothing, so it is left out.
+  private func cameraOnlyLayer(_ size: CGSize) -> some View {
+    let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
+    let recording = macConnected ? store.recordingState : .standby
+    return ZStack {
+      Color.black
+      if macConnected {
+        if store.cameraOn { LinkPreview(camera: camera, link: camera.link) }
+      } else if camera.isOn {
+        CameraPreview(camera: camera)
+      }
+      if recording != .standby {
+        Rectangle().strokeBorder(recordingColour(recording), lineWidth: recording == .recording ? 8 : 5)
+      }
+    }
+    .frame(width: size.width, height: size.height)
+    .scaleEffect(x: turn.a, y: turn.d)
+    .overlay(alignment: .trailing) {
+      if macConnected {
+        PresenterMeter(meter: store.micMeter)
+          .frame(width: 64)
+          .padding(.top, 96).padding(.bottom, 120).padding(.trailing, 8)
+          .allowsHitTesting(false)
+      }
+    }
+    .accessibilityLabel("Camera picture")
+  }
+
+  private func recordingColour(_ state: PadRemote.RecordingState) -> Color {
+    state == .recording ? Color(red: 0.78, green: 0.18, blue: 0.15) : PresenterTheme.warn
+  }
+
+  /// Camera Only without a Mac shows this iPad's own camera. A Mac that is linked sends its own.
+  private func useOwnCameraWithoutMac() {
+    if store.cameraOnly, !macConnected, !camera.isOn { camera.isOn = true }
+  }
+
   private func countdown(_ size: CGSize) -> some View {
     let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
     return ZStack {
@@ -217,7 +262,7 @@ struct PresenterScreen: View {
           PadButton("Library", icon: "chevron.left", kind: .card, height: 44) { store.closePresenter() }
             .keyboardShortcut(.cancelAction)
           Spacer()
-          if let script = session.activeScriptID.flatMap(store.folder.script) {
+          if !store.cameraOnly, let script = session.activeScriptID.flatMap(store.folder.script) {
             PadButton("Edit", icon: "pencil", kind: .card, showsTitle: false, height: 44) {
               session.pause()
               editingRecord = store.record(for: script)
@@ -246,7 +291,16 @@ struct PresenterScreen: View {
     if macLost { return "Mac disconnected" }
     guard macConnected else { return nil }
     let name = store.macDisplayName ?? camera.link.macName ?? "the Mac"
-    return "Controlled from \(name)" + (store.connectionKind.map { " · \($0)" } ?? "")
+    let rec = store.cameraOnly ? recordingText + " · " : ""
+    return rec + "Controlled from \(name)" + (store.connectionKind.map { " · \($0)" } ?? "")
+  }
+
+  private var recordingText: String {
+    switch store.recordingState {
+    case .recording: return "REC"
+    case .standby: return "Standby"
+    case .unknown: return "REC unknown"
+    }
   }
 
   /// A note about what the iPad has just noticed, such as an unsure match; bottom centre.
@@ -383,19 +437,25 @@ struct PresenterScreen: View {
       }
       ScrollView(.horizontal, showsIndicators: false) {
         HStack(spacing: 8) {
-          PadButton(primaryTitle, kind: .primary, minWidth: compact ? 0 : 160, action: primaryAction)
-          PadButton("Back to start", icon: "arrow.counterclockwise", kind: .plain, showsTitle: false) { session.restart() }
-          Rectangle().fill(PresenterTheme.line).frame(width: 1, height: 48).padding(.horizontal, 8)
+          if !store.cameraOnly {
+            PadButton(primaryTitle, kind: .primary, minWidth: compact ? 0 : 160, action: primaryAction)
+            PadButton("Back to start", icon: "arrow.counterclockwise", kind: .plain, showsTitle: false) { session.restart() }
+            Rectangle().fill(PresenterTheme.line).frame(width: 1, height: 48).padding(.horizontal, 8)
+          }
           cameraButton(compact: compact)
           micButton(compact: compact)
-          PadButton("Script", icon: "doc.text", kind: showScript ? .lit : .plain, showsTitle: !compact) {
-            showScript.toggle()
+          if !store.cameraOnly {
+            PadButton("Script", icon: "doc.text", kind: showScript ? .lit : .plain, showsTitle: !compact) {
+              showScript.toggle()
+            }
           }
           Spacer(minLength: 12)
           if folded { pictureMenu(compact: compact) } else { pictureTools }
           turnGroup
-          PadButton("Look: text size and margins", icon: nil, text: "Aa", kind: .plain, showsTitle: false) { showingLook = true }
-            .popover(isPresented: $showingLook) { lookPopover }
+          if !store.cameraOnly {
+            PadButton("Look: text size and margins", icon: nil, text: "Aa", kind: .plain, showsTitle: false) { showingLook = true }
+              .popover(isPresented: $showingLook) { lookPopover }
+          }
           PadButton("Clean screen", icon: "arrow.up.left.and.arrow.down.right", kind: .plain, showsTitle: false) {
             store.setCleanScreen(true)
           }
@@ -421,8 +481,8 @@ struct PresenterScreen: View {
   }
 
   private var offText: String {
-    let camera = macConnected && !store.cameraOn ? "Camera off: black behind the script." : nil
-    let mic = !store.micOn ? "Mic off: the script won’t follow your voice." : nil
+    let camera = macConnected && !store.cameraOn ? (store.cameraOnly ? "Camera off." : "Camera off: black behind the script.") : nil
+    let mic = !store.micOn && !store.cameraOnly ? "Mic off: the script won’t follow your voice." : nil
     return [camera, mic].compactMap { $0 }.joined(separator: " ")
   }
 
@@ -454,21 +514,23 @@ struct PresenterScreen: View {
           }
         }
       }
-      Picker("Picture", selection: Binding(get: { store.pictureMode }, set: { store.setPictureMode($0) })) {
-        Text("Off (black behind the script)").tag(PadRemote.PictureMode.off)
-        Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
-        Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
+      if !store.cameraOnly {
+        Picker("Picture", selection: Binding(get: { store.pictureMode }, set: { store.setPictureMode($0) })) {
+          Text("Off (black behind the script)").tag(PadRemote.PictureMode.off)
+          Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
+          Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
+        }
       }
     }
   }
 
   private func micButton(compact: Bool) -> some View {
-    let title = !store.micOn ? "Mic off" : session.followsRemote ? "Mac mic" : "iPad mic"
+    let title = !store.micOn ? "Mic off" : store.usesMacMic ? "Mac mic" : "iPad mic"
     return SplitButton(
       title: title, icon: store.micOn ? "mic" : "mic.slash", showsTitle: !compact, isOff: !store.micOn,
       caretLabel: "Choose microphone", action: { store.setMicOn(!store.micOn) }
     ) {
-      if macConnected {
+      if macConnected, !store.cameraOnly {
         Picker("Voice from", selection: Binding(get: { store.voiceSource }, set: { store.setVoiceSource($0) })) {
           // The iPad cannot start the Mac's voice relay; choosing the Mac here would leave it waiting for words.
           // Once the Mac has started it (voiceSource is Mac), it stays selectable.

@@ -43,7 +43,7 @@ mkdir -p "$SCRIPTS"
 } > "$SCRIPTS/$SCRIPT.md"
 xcrun simctl spawn "$DEVICE" log stream --level debug --predicate 'process == "VideoPrompter"' > "$OUT/ipad.log" 2>&1 &
 LOG=$!
-SIMCTL_CHILD_VP_IPAD_E2E_PORT="$PORT" xcrun simctl launch "$DEVICE" $BUNDLE >/dev/null
+SIMCTL_CHILD_VP_IPAD_E2E_CAMERA_ONLY=1 SIMCTL_CHILD_VP_IPAD_E2E_PORT="$PORT" xcrun simctl launch "$DEVICE" $BUNDLE >/dev/null
 sleep 4
 "$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" >&2
 TESTS="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"

@@ -10,7 +10,7 @@ import SwiftUI
       LibraryScreen(folder: store.folder)
         .environmentObject(store)
         .fullScreenCover(isPresented: Binding(
-          get: { store.presentingID != nil },
+          get: { store.isPresenting },
           set: { if !$0 { store.closePresenter() } })
         ) {
           PresenterScreen(session: store.session, camera: store.camera).environmentObject(store)

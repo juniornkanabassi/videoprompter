@@ -557,7 +557,7 @@ import Speech
     let title = { (id: UUID) in state.scripts.first { $0.id == id }.map { ["id": id.uuidString, "title": $0.title] } }
     let result: [String: Any] = ["over": link.transport ?? "", "scripts": state.scripts.map { ["id": $0.id.uuidString, "title": $0.title] },
       "script": state.presenting.flatMap(title) as Any? ?? NSNull(),
-      "state": state.presenting == nil ? "closed" : state.running ? "running" : "paused",
+      "state": state.presenting == nil ? (state.cameraOnly == true ? "camera" : "closed") : state.running ? "running" : "paused",
       "mode": state.mode.lowercased(), "speed": state.speed, "position": ["word": state.word, "words": state.words]]
     guard wanted.allSatisfy({ $0(state) }) else {
       return .error("ipad_unconfirmed", "The iPad did not show the change within three seconds. Its state now: \(result["state"]!), \(state.mode.lowercased()), \(state.speed) words a minute, word \(state.word) of \(state.words).")

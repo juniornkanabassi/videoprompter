@@ -19,7 +19,14 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let fd = try XCTUnwrap(Self.connect(port: port), "the fixture iPad app is not listening")
     let pipe = SocketPipe(socket: fd, name: "USB-C")
     let latest = Mutex<PadRemote.State?>(nil)
-    pipe.onMessage = { if case .state(let state) = $0 { latest.withLock { $0 = state } } }
+    let commands = Mutex<[PadRemote.Command]>([])
+    pipe.onMessage = {
+      switch $0 {
+      case .state(let state): latest.withLock { $0 = state }
+      case .command(let command): commands.withLock { $0.append(command) }
+      default: break
+      }
+    }
     pipe.startReading()
     pipe.send(CameraLink.Message.hello(name: "End-to-end Mac", version: CameraLink.protocolVersion).encoded())
     func state(_ what: String, _ check: (PadRemote.State) -> Bool) throws -> PadRemote.State {
@@ -40,12 +47,31 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       .appendingPathComponent("Documents/vp-e2e-contract-checks.json")
     let checks = try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: checksURL))
     for key in ["meterIsIsolated", "immediateStateIsDeduplicated", "localEditSurvivesDrop",
-                "remoteCannotEndLocalEdit", "remoteEditEndsOnDrop", "statusDisplayNameWins"] {
+                "remoteCannotEndLocalEdit", "remoteEditEndsOnDrop", "statusDisplayNameWins",
+                "cameraOnlyIsReportedHonestly", "cameraOnlyIgnoresReading", "scriptJoinsCameraOnly",
+                "closeRestoresSavedPicture", "remoteCloseEndsCameraOnly"] {
       XCTAssertEqual(checks[key], true, key)
     }
     XCTAssertEqual(first.picturePriority, .realTime720p)
     let script = try XCTUnwrap(first.scripts.first(where: { $0.title == expectedTitle }))
+    // Camera Only opens as this Mac connects (the app is launched with VP_IPAD_E2E_CAMERA_ONLY): no
+    // script is open, and the Mac was asked for its picture with the Camera button's own command.
+    let cameraOnly = try state("camera only") { $0.cameraOnly == true }
+    XCTAssertNil(cameraOnly.presenting)
+    XCTAssertEqual(cameraOnly.words, 0)
+    XCTAssertEqual(cameraOnly.pictureMode, .monitorOnly)
+    for _ in 0..<50 where !commands.withLock({ $0.contains(.cameraOn(true)) }) { Thread.sleep(forTimeInterval: 0.1) }
+    XCTAssertTrue(commands.withLock { $0.contains(.cameraOn(true)) }, "Camera Only must ask the Mac for its picture")
+    send(.play)
+    send(.mode("Manual"))
+    _ = try state("reading commands are ignored with no script") { $0.mode == "Manual" && !$0.running && $0.cameraOnly == true }
+    send(.present(script.id))
+    let over = try state("a script joins Camera Only") { $0.presenting == script.id && $0.cameraOnly == false }
+    XCTAssertEqual(over.pictureMode, .behindScript)
     send(.close)
+    _ = try state("closed after Camera Only") { $0.presenting == nil && $0.cameraOnly == false }
+    // Let the cover finish dismissing, or its end would close the next presentation.
+    Thread.sleep(forTimeInterval: 1.5)
     send(.mode("Manual"))
     send(.speed(240))
     _ = try state("manual at 240") { $0.mode == "Manual" && $0.speed == 240 && $0.presenting == nil }

@@ -196,6 +196,8 @@ struct LibraryScreen: View {
         }
         Text(listHeader).font(.subheadline).foregroundStyle(LibraryTheme.muted)
         Spacer(minLength: 0)
+        // Reachable with no script chosen and with an empty library.
+        CameraOnlyButton(showsTitle: false)
       }
       .padding(.horizontal, 20)
       .padding(.bottom, 12)
@@ -381,6 +383,31 @@ private struct ICloudPrompt: View {
   }
 }
 
+/// The camera on its own, to set up framing and sound before any script, as on the Mac. An unsaved
+/// draft is written first, like Open presenter.
+private struct CameraOnlyButton: View {
+  @EnvironmentObject private var store: PadStore
+  var showsTitle: Bool
+  var body: some View {
+    Button {
+      if store.draftFlusher.resolve() { store.presentCamera() }
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "video")
+        if showsTitle { Text("Camera Only").lineLimit(1) }
+      }
+      .font(.body.weight(.semibold))
+      .padding(.horizontal, showsTitle ? 20 : 0)
+      .frame(minWidth: 44, minHeight: showsTitle ? 48 : 44)
+      .background(LibraryTheme.card2, in: Capsule())
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel("Camera Only")
+    .accessibilityHint("Check framing or record without a script")
+  }
+}
+
 /// The chosen script: title, connection and the presenter button on top, the editor below, and a
 /// footer that says how long it is and which copy this is.
 private struct ScriptDetail: View {
@@ -460,6 +487,7 @@ private struct ScriptDetail: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Connected to \(connection.name)")
       }
+      CameraOnlyButton(showsTitle: back == nil)
       Button {
         // Present what is on screen: an unsaved draft is written first, and a failed save stops here.
         if store.draftFlusher.resolve() { store.present(script) }

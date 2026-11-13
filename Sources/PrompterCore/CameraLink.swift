@@ -322,6 +322,8 @@ public enum PadRemote {
     public var deviceName: String?
     public var appVersion: String?
     public var scriptPreview: String?
+    /// The presenter shows the camera alone, with no script (`presenting` is nil then).
+    public var cameraOnly: Bool?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
       version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
@@ -329,9 +331,11 @@ public enum PadRemote {
       editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
       macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
-      selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil
+      selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil,
+      cameraOnly: Bool? = nil
     ) {
       self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
+      self.cameraOnly = cameraOnly
       self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
