@@ -12,6 +12,12 @@ The Xcode project in this folder builds an iPadOS 26 app from:
 
 A change to the voice tracking or the reading session therefore reaches both apps. Check the iPad still builds after changing any of the shared files above.
 
+## Camera and microphone cards
+
+The presenter’s Camera and Mic carets open device cards grouped under the connected Mac and This iPad. The chosen card has a yellow border and tick. Microphone cards offer a live level meter and channel selection where supported. Choosing a Mac microphone starts voice following on the Mac for the script currently presented on the iPad; choosing an iPad microphone stops the Mac relay. This requires an updated Mac app. Older Macs retain microphone switching when their relay is already selected.
+
+With no Mac connected, Connect to a Mac opens the connection page. The iPad’s local cameras and microphones remain available. Camera cards show the device’s reported connection and format; these describe the source, not a guarantee of the received link resolution.
+
 ## Scripts on both devices
 
 1. On the Mac, turn on File › Keep Scripts in iCloud Drive for iPad. Every script is copied to iCloud Drive › Video Prompter and linked to its file there. Scripts linked to other files (an Obsidian note, say) keep their link and stay on the Mac.

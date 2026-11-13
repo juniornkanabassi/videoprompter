@@ -19,8 +19,19 @@ import UIKit
     let id: String
     let name: String
     let isExternal: Bool
+    var width: Int? = nil
+    var height: Int? = nil
+    var fps: Double? = nil
     var isMac: Bool { id == PadCamera.macLinkID }
   }
+
+  #if DEBUG && targetEnvironment(simulator)
+  func pickerSnapshotDevices() {
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { return }
+    devices = [Device(id: "capture", name: "Cam Link 4K", isExternal: true, width: 1920, height: 1080, fps: 25),
+      Device(id: "front", name: "iPad front camera", isExternal: false)]
+  }
+  #endif
 
   /// The camera list's entry for a Mac sending its camera over the Mac link.
   nonisolated static let macLinkID = "mac-link"
@@ -51,7 +62,10 @@ import UIKit
 
   func refreshDevices() {
     var found = Self.discover().map {
-      Device(id: $0.uniqueID, name: $0.localizedName, isExternal: $0.deviceType == .external)
+      let size = CMVideoFormatDescriptionGetDimensions($0.activeFormat.formatDescription)
+      let duration = $0.activeVideoMinFrameDuration.seconds
+      return Device(id: $0.uniqueID, name: $0.localizedName, isExternal: $0.deviceType == .external,
+        width: Int(size.width), height: Int(size.height), fps: duration.isFinite && duration > 0 ? 1 / duration : nil)
     }.sorted { $0.isExternal && !$1.isExternal }
     if let mac = link.macName, link.pictureSize != nil { found.insert(Device(id: Self.macLinkID, name: mac, isExternal: true), at: 0) }
     devices = found

@@ -74,6 +74,40 @@ final class PadVoiceRelayTests: XCTestCase {
     return (relay, link)
   }
 
+  func testIPadInitiatedRelayUsesPresentedTextAndStopsOnLocalMic() async throws {
+    let link = FakeLink()
+    var current = state(running: false)
+    current.markdown = markdown
+    current.scripts = [.init(id: padID, title: "Made on iPad")]
+    let relay = makeRelay(link, initial: current)
+    relay.startFromIPad(settings: PrompterSettings())
+    try await until("iPad initiated relay") { relay.session != nil }
+    XCTAssertEqual(relay.session?.activeRecord?.markdown, markdown)
+    XCTAssertFalse(link.sent.contains { if case .sendScript = $0 { return true }; return false })
+    current.voiceSource = "iPad"
+    relay.iPadStateChanged(current)
+    XCTAssertFalse(relay.isRelaying)
+    XCTAssertNil(relay.session)
+  }
+
+  func testIPadInitiatedRelayRejectsMismatchedText() {
+    var current = state()
+    current.markdown = "different text"
+    let relay = makeRelay(FakeLink(), initial: current)
+    relay.startFromIPad(settings: PrompterSettings())
+    XCTAssertFalse(relay.isRelaying)
+  }
+
+  func testPickerProtocolCompatibility() throws {
+    let source = try JSONDecoder().decode(PadRemote.Source.self, from: Data(#"{"id":"old","name":"Old camera"}"#.utf8))
+    XCTAssertNil(source.connection)
+    let status = try JSONDecoder().decode(PadRemote.MacStatus.self, from: Data(#"{"cameraOn":true}"#.utf8))
+    XCTAssertNil(status.supportsMicSelection)
+    for command in [PadRemote.Command.macMicrophone(""), .macMicrophone(nil), .microphoneChannel("Left")] {
+      XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: JSONEncoder().encode(command)), command)
+    }
+  }
+
   func testMissingScriptIsSentFirstThenTheRelaySeeksToTheIPadsWord() async throws {
     let link = FakeLink()
     let relay = makeRelay(link, initial: state(scripts: false))

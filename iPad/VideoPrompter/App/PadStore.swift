@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import PrompterCore
 import UIKit
+import AVFoundation
 
 /// The iPad app's state: the scripts folder, the reading session shared with the Mac app, and
 /// the presenter settings. Presets live in the scripts folder so the Mac and iPad share them;
@@ -43,17 +44,62 @@ import UIKit
   var flip: Bool { settings.verticalMirror }
   /// The microphone in use is the Mac's: its voice relay, or Camera Only with a Mac linked, where
   /// the Mac records the sound.
-  var usesMacMic: Bool { session.followsRemote || cameraOnly && camera.link.macName != nil }
+  @Published private var localMicChosen = false
+  var usesMacMic: Bool { session.followsRemote || cameraOnly && camera.link.macName != nil && !localMicChosen }
   var voiceSource: String { session.followsRemote ? "Mac" : "iPad" }
   var cameraSources: [PadRemote.Source] { macStatus.cameras ?? [] }
   var selectedCamera: String? { macStatus.selectedCamera }
   var cameraOn: Bool { macStatus.cameraOn ?? false }
   var microphoneSources: [PadRemote.Source] {
     if usesMacMic { return macStatus.microphones ?? [] }
-    return AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) }
+    return localMicrophones
   }
   var selectedMicrophone: String? {
     usesMacMic ? macStatus.selectedMicrophone : settings.audioDeviceUID
+  }
+  func showPickerMeter(_ show: Bool) {
+    if macStatus.supportsMicSelection == true { camera.link.send(.microphoneMeter(show && usesMacMic)) }
+    session.stopMicrophoneTest()
+    guard show, !usesMacMic, micOn, ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] == nil,
+      ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] == nil else { return }
+    session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
+  }
+  var localMicrophones: [PadRemote.Source] {
+    AudioCapture.inputDevices().map { device in
+      let port = AVAudioSession.sharedInstance().availableInputs?.first { $0.uid == device.uid }
+      return .init(id: device.uid, name: port?.portType == .builtInMic ? "iPad microphone" : device.name,
+        connection: port?.portType == .builtInMic ? "Built-in" : port?.portType.rawValue,
+        channels: port?.channels?.count)
+    }
+  }
+  func chooseMicrophone(_ id: String, onMac: Bool) {
+    if onMac {
+      guard macStatus.supportsMicSelection == true else {
+        if usesMacMic { camera.link.send(.selectMicrophone(id)) }
+        return
+      }
+      localMicChosen = false
+      camera.link.send(remoteState)
+      camera.link.send(.macMicrophone(id))
+    } else {
+      guard id.isEmpty || localMicrophones.contains(where: { $0.id == id }) else { return }
+      if macStatus.supportsMicSelection == true { camera.link.send(.macMicrophone(nil)) }
+      localMicChosen = true
+      setVoiceSource("iPad")
+      settings.audioDeviceUID = id.isEmpty ? nil : id
+      settings.mode = "Voice"
+    }
+    setMicOn(true)
+  }
+  func chooseChannel(_ value: String, onMac: Bool) {
+    guard let channel = AudioChannel(rawValue: value) else { return }
+    if onMac { camera.link.send(.microphoneChannel(value)) }
+    else {
+      channel.save(AudioCapture.resolvedInput(settings.audioDeviceUID)?.uid ?? "")
+      let running = session.isActivelyRunning
+      session.pause()
+      if running { session.play() }
+    }
   }
   func setVoiceSource(_ value: String) { perform(.voiceSource(value)) }
   func setMirror(_ value: Bool) { settings.horizontalMirror = value }
@@ -148,6 +194,18 @@ import UIKit
     startMacRemote()
     #if DEBUG && targetEnvironment(simulator)
     if ProcessInfo.processInfo.environment["VP_IPAD_E2E_CAMERA_ONLY"] != nil { presentCamera() }
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PICKERS"] != nil {
+      Task { @MainActor [weak self] in
+        let trigger = URL.documentsDirectory.appendingPathComponent("vp-picker-request.txt")
+        while !Task.isCancelled {
+          if let request = try? String(contentsOf: trigger, encoding: .utf8) {
+            try? FileManager.default.removeItem(at: trigger)
+            self?.chooseMicrophone("", onMac: request == "Mac")
+          }
+          try? await Task.sleep(for: .milliseconds(100))
+        }
+      }
+    }
     #endif
   }
 
@@ -232,7 +290,7 @@ import UIKit
         let relayed = session.followsRemote && record.markdown != session.activeRecord?.markdown
         if relayed { session.followsRemote = false; micMeter.show(Double(session.audioPeakDBFS)) }
         session.applyEditedRecord(record)
-        if relayed { errorMessage = "The script changed, so the Mac's voice stopped following. The iPad's own microphone is selected. Choose the Mac's voice again from the Mac." }
+        if relayed { errorMessage = "The script changed, so the Mac's voice stopped following. The iPad's own microphone is selected. Choose a Mac microphone again." }
       }
       return .saved
     } catch let error as ScriptFolderError {
@@ -614,6 +672,8 @@ extension PadStore {
       // Meter updates must not reset the source list.
       value.micLevelDB = nil
       var next = macStatus
+      if let supported = value.supportsMicSelection { next.supportsMicSelection = supported }
+      if let channel = value.microphoneChannel { next.microphoneChannel = channel }
       if let cameras = value.cameras { next.cameras = cameras }
       if let microphones = value.microphones { next.microphones = microphones }
       // List-only updates preserve selections; a complete list that removes one clears it.
