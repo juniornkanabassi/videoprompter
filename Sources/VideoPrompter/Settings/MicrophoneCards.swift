@@ -38,7 +38,8 @@ struct MicrophoneCards: View {
   }
   private func card(_ name: String, detail: String, uid: String?, device: AudioInputDevice?) -> some View {
     let selected = store.settings.audioDeviceUID == uid
-    return VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
+    let hasControls = selected && (device != nil || meter != nil)
+    return VStack(alignment: .leading, spacing: Space.xs) {
       Button {
         guard store.settings.audioDeviceUID != uid else { return }
         willChange(); store.settings.audioDeviceUID = uid
@@ -50,14 +51,14 @@ struct MicrophoneCards: View {
             Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
           }.padding(.trailing, Space.lg)
           Spacer(minLength: 0)
-        }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
+        }.frame(maxWidth: .infinity, minHeight: hasControls ? 0 : 60, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(name).accessibilityValue(detail).accessibilityAddTraits(selected ? .isSelected : [])
       // Channel and meter line up with the input's name, one icon width in.
-      if selected, device != nil || meter != nil {
+      if hasControls {
         VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
           // A saved Left or Right stays changeable even if the input now reports one channel.
           if let device, device.channels > 1 || AudioChannel.load(device.uid, defaults: store.defaults) != .both { channelPicker(device) }
-          if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 152).padding(.horizontal, -Space.sm) }
+          if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 96).padding(.horizontal, -Space.sm) }
         }.padding(.leading, Space.xxl + Space.sm)
       }
     }.modifier(InputCardStyle(selected: selected))
