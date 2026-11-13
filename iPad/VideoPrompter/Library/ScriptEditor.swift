@@ -270,7 +270,7 @@ struct ScriptEditorView: View {
             .background(Color.white.opacity(0.03))
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(RoundedRectangle(cornerRadius: 16).stroke(LibraryTheme.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-            .padding(.horizontal, proxy.size.width * 0.12)
+            .padding(.horizontal, proxy.size.width * 0.12) // grid: ok proportional column margin from the mockup
             .padding(.vertical, 16)
         }
       } else {
