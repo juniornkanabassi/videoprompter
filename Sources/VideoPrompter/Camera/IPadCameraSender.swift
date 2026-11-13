@@ -1,6 +1,7 @@
 #if os(macOS)
 @preconcurrency import AVFoundation
 import AppKit
+import Combine
 import Darwin
 import Network
 import PrompterCore
@@ -20,6 +21,102 @@ import VideoToolbox
 @MainActor final class IPadCameraSender: ObservableObject, PadRelayLink {
   static let shared = IPadCameraSender()
 
+  /// UI API mirrors PadStore: Bool mirror/flip/editing/cleanScreen/micOn, pictureMode/priority
+  /// enums, source lists and selection, recordingState, micLevelDB. Use the set/select methods
+  /// to send intent; iPad-owned values change when its State acknowledges them.
+  var mirror: Bool { iPadState?.look?.horizontalMirror ?? false }
+  var flip: Bool { iPadState?.look?.verticalMirror ?? false }
+  var editing: Bool { iPadState?.editing ?? false }
+  var cleanScreen: Bool { iPadState?.cleanScreen ?? false }
+  var pictureMode: PadRemote.PictureMode { iPadState?.pictureMode ?? .off }
+  var picturePriority: PadRemote.PicturePriority { iPadState?.picturePriority ?? .realTime720p }
+  @Published private(set) var macMicOn = true
+  var micOn: Bool { iPadState?.micOn ?? macMicOn }
+  @Published private(set) var macStatus = PadRemote.MacStatus()
+  var cameraSources: [PadRemote.Source] { macStatus.cameras ?? [] }
+  var selectedCamera: String? { macStatus.selectedCamera }
+  var cameraOn: Bool { isOn }
+  var microphoneSources: [PadRemote.Source] {
+    iPadState?.voiceSource == "iPad" ? (iPadState?.microphoneSources ?? []) : (macStatus.microphones ?? [])
+  }
+  var selectedMicrophone: String? {
+    iPadState?.voiceSource == "iPad" ? iPadState?.selectedMicrophone : macStatus.selectedMicrophone
+  }
+  var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
+  var micLevelDB: Double { macStatus.micLevelDB ?? -60 }
+  func setVoiceSource(_ value: String) { send(.voiceSource(value)) }
+  func setMirror(_ value: Bool) { send(.look(.init(horizontalMirror: value))) }
+  func setFlip(_ value: Bool) { send(.look(.init(verticalMirror: value))) }
+  func beginEditing() { send(.editing(true)) }
+  func endEditing() { send(.editing(false)) }
+  func setPictureMode(_ value: PadRemote.PictureMode) { send(.pictureMode(value)) }
+  func setPicturePriority(_ value: PadRemote.PicturePriority) { send(.picturePriority(value)) }
+  func setCleanScreen(_ value: Bool) { send(.cleanScreen(value)) }
+  func setCameraOn(_ value: Bool) { isOn = value; publishMacStatus() }
+  func selectCamera(_ id: String) {
+    let camera = CameraModel.shared
+    camera.refreshDevices()
+    guard camera.devices.contains(where: { $0.uid == id }), !camera.recordingLocked else { return }
+    camera.selectedUID = id
+    if isOn { SharedCameraSession.shared.select(id) }
+    publishMacStatus()
+  }
+  func selectMicrophone(_ id: String) {
+    if iPadState?.voiceSource == "iPad" { send(.selectMicrophone(id)); return }
+    selectMacMicrophone(id)
+  }
+  private func selectMacMicrophone(_ id: String) {
+    guard AudioCapture.inputDevices().contains(where: { $0.uid == id }) else { return }
+    AppStore.shared.settings.audioDeviceUID = id
+    if let session = relay.session {
+      var settings = session.settings
+      settings.audioDeviceUID = id
+      session.updateSettings(settings)
+    }
+    publishMacStatus()
+  }
+  func setMicOn(_ value: Bool) {
+    if iPadState?.voiceSource != "iPad" {
+      macMicOn = value
+      if !value { relay.session?.pause() }
+    }
+    send(.micOn(value))
+    publishMacStatus()
+  }
+
+  private var statusTimer: AnyCancellable?
+  private var statusTicks = 0
+  private func publishMacStatus() {
+    guard pipe != nil else { return }
+    let camera = CameraModel.shared
+    let recorder = CameraRecorder.shared
+    let meter = relay.meter ?? (recorder.isCapturing ? recorder.inputMeter : AppStore.shared.session.meter)
+    let level = macMicOn && meter.isFresh() ? Double(meter.peakDBFS) : -60
+    let next = PadRemote.MacStatus(
+      cameras: camera.devices.map { .init(id: $0.uid, name: $0.name) },
+      selectedCamera: camera.selectedUID, cameraOn: isOn,
+      microphones: AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) },
+      selectedMicrophone: relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID,
+      micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
+      displayName: Host.current().localizedName ?? "Mac", connectionKind: pipe?.name,
+      micLevelDB: level.isFinite ? min(0, max(-60, level)) : -60)
+    guard next != macStatus else { return }
+    macStatus = next
+    pipe?.send(CameraLink.Message.command(.macStatus(next)).encoded())
+  }
+  private func receive(_ command: PadRemote.Command) {
+    switch command {
+    case .selectCamera(let id): selectCamera(id)
+    case .cameraOn(let value): setCameraOn(value)
+    case .selectMicrophone(let id): selectMacMicrophone(id)
+    case .micOn(let value):
+      macMicOn = value
+      if !value { relay.session?.pause() }
+      publishMacStatus()
+    default: break
+    }
+  }
+
   /// Sends the camera.
   @Published var isOn = false { didSet { if isOn != oldValue { isOn ? startCamera() : stopCamera() } } }
   /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
@@ -33,7 +130,10 @@ import VideoToolbox
   }
   /// What the iPad's presenter shows, while an iPad that reports it is connected.
   @Published private(set) var iPadState: PadRemote.State? {
-    didSet { relay.iPadStateChanged(iPadState) }
+    didSet {
+      relay.iPadStateChanged(iPadState)
+      if oldValue?.picturePriority != iPadState?.picturePriority, isOn, let pipe { attachCamera(pipe) }
+    }
   }
   /// The Mac's microphone driving the iPad's reading, fed by every state the iPad sends.
   lazy var relay = PadVoiceRelay(link: self)
@@ -212,6 +312,8 @@ import VideoToolbox
     pipe?.send(CameraLink.Message.goodbye.encoded())
     pipe?.close()
     pipe = nil
+    statusTimer = nil
+    macStatus = PadRemote.MacStatus()
     iPadState = nil
     status = "Off"
   }
@@ -304,12 +406,29 @@ import VideoToolbox
 
   private func use(_ pipe: LinkPipe) {
     self.pipe = pipe
+    CameraModel.shared.refreshDevices()
+    macStatus = PadRemote.MacStatus()
+    statusTimer = Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()
+      .sink { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self else { return }
+          self.statusTicks += 1
+          if self.statusTicks % 15 == 0 { CameraModel.shared.refreshDevices() }
+          self.publishMacStatus()
+        }
+      }
     if relayActive { pipe.videoLimit.store(256_000, ordering: .relaxed) }
     status = Self.connected(over: pipe.name, sending: isOn)
     pipe.onClose = { [weak self, weak pipe] in
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
     }
     pipe.onMessage = { [weak self, weak pipe] message in
+      if case .command(let command) = message {
+        Task { @MainActor in
+          if let self, let pipe, self.pipe === pipe { self.receive(command) }
+        }
+        return
+      }
       guard case .state(var state) = message else { return }
       // Whatever the iPad says, the window's slider and the CLI get sane numbers.
       state.words = min(max(state.words, 0), 10_000_000)
@@ -320,6 +439,7 @@ import VideoToolbox
     let name = Host.current().localizedName ?? "Mac"
     pipe.send(CameraLink.Message.hello(name: name, version: CameraLink.protocolVersion).encoded())
     if isOn { attachCamera(pipe) }
+    publishMacStatus()
     // A current iPad answers the hello at once.
     Task { [weak self, weak pipe] in
       try? await Task.sleep(for: .seconds(3))
@@ -333,7 +453,7 @@ import VideoToolbox
   private func attachCamera(_ pipe: LinkPipe) {
     // Over Wi-Fi the picture is a monitor, not a recording: 720p at 4 Mbps keeps the delay lowest.
     let usb = pipe.name == "USB-C"
-    encoder.attach(pipe, bitRate: usb ? 10_000_000 : 4_000_000, longSide: usb ? 1920 : 1280)
+    encoder.attach(pipe, bitRate: usb ? 10_000_000 : 4_000_000, longSide: iPadState?.picturePriority?.longSide ?? (usb ? 1920 : 1280))
     status = Self.connected(over: pipe.name, sending: true)
   }
 
@@ -348,6 +468,8 @@ import VideoToolbox
     guard pipe === old else { return }
     encoder.attach(nil)
     pipe = nil
+    statusTimer = nil
+    macStatus = PadRemote.MacStatus()
     iPadState = nil
     guard linkOn else { return }
     if oldIPad, !isOn {
@@ -578,8 +700,8 @@ class LinkPipe: @unchecked Sendable {
   private let pending = Atomic<Int>(0)
   /// Written one message at a time from here, so a control message (anything but format or
   /// frame) can overtake the video still waiting, never the one already being written. At most
-  /// one `.follow` waits at a time.
-  private let backlog = Mutex((control: [(data: Data, follow: Bool)](), video: [Data](), writing: false))
+  /// one `.follow` and one latest Mac status wait at a time.
+  private let backlog = Mutex((control: [(data: Data, key: UInt8)](), video: [Data](), writing: false))
   /// Queued bytes above which the encoder drops a frame. Lower while the voice relay runs, so its
   /// word messages are never far behind.
   let videoLimit = Atomic<Int>(3_000_000)
@@ -611,27 +733,30 @@ class LinkPipe: @unchecked Sendable {
     queued(data.count)
     // Length, then the kind byte: format (2) and frame (3) are the picture, the rest is control.
     let kind = data.count > 4 ? data[data.startIndex + 4] : 0
-    let isFollow = kind == 5 && Self.isFollow(data)
+    let key = kind == 5 ? Self.coalescingKey(data) : 0
     let replaced = backlog.withLock { backlog -> Int? in
       if kind == 2 || kind == 3 { backlog.video.append(data); return nil }
       // A word still waiting is out of date once a newer one arrives. The newer one goes to the
       // tail, so a pause or play sent between them is never overtaken by it.
       var dropped: Int?
-      if isFollow, let index = backlog.control.firstIndex(where: { $0.follow }) {
+      if key != 0, let index = backlog.control.firstIndex(where: { $0.key == key }) {
         dropped = backlog.control.remove(at: index).data.count
       }
-      backlog.control.append((data, isFollow))
+      backlog.control.append((data, key))
       return dropped
     }
     if let replaced { sent(replaced) }
     pump()
   }
 
-  private static func isFollow(_ message: Data) -> Bool {
-    guard let command = try? JSONDecoder().decode(PadRemote.Command.self, from: message.dropFirst(5)),
-      case .follow = command
-    else { return false }
-    return true
+  private static func coalescingKey(_ message: Data) -> UInt8 {
+    guard let command = try? JSONDecoder().decode(PadRemote.Command.self, from: message.dropFirst(5))
+    else { return 0 }
+    switch command {
+    case .follow: return 1
+    case .macStatus: return 2
+    default: return 0
+    }
   }
 
   private func pump() {

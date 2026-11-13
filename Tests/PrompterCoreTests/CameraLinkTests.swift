@@ -61,13 +61,24 @@ final class CameraLinkTests: XCTestCase {
       .sendScript(.init(macID: id, title: "First", markdown: "Hi")),
       .look(.init(horizontalMirror: true, fontSize: 60, guideFraction: 0.4)), .look(.init()),
       .preset("Glass"), .startDelay(5), .voiceSource("Mac"),
+      .editing(true), .editing(false), .pictureMode(.off), .pictureMode(.behindScript),
+      .pictureMode(.monitorOnly), .picturePriority(.realTime720p), .picturePriority(.sharper1080p),
+      .cleanScreen(true), .cameraOn(false), .selectCamera("camera-1"),
+      .micOn(false), .selectMicrophone("mic-1"),
+      .macStatus(.init(cameras: [.init(id: "camera-1", name: "Studio")], selectedCamera: "camera-1",
+        cameraOn: true, microphones: [.init(id: "mic-1", name: "Desk")], selectedMicrophone: "mic-1",
+        micOn: true, recording: .recording, displayName: "Studio Mac", connectionKind: "USB-C", micLevelDB: -12)),
       .follow(.init(confirmed: 12, fingerprint: "0123456789abcdef", seekRevision: 3)),
     ]
     let state = PadRemote.State(
       scripts: [.init(id: id, title: "A", macID: UUID(), fingerprint: "ff")], presenting: id, running: true,
       mode: "Voice", speed: 120, word: 12, words: 340, version: 3,
       look: .init(horizontalMirror: true, verticalMirror: false, fontSize: 56, textWidth: 0.8, lineSpacing: 0.2, guideFraction: 0.35),
-      presets: ["Glass", "Desk"], startDelay: 3, voiceSource: "Mac", seekRevision: 4, fingerprint: "ff")
+      presets: ["Glass", "Desk"], startDelay: 3, voiceSource: "Mac", seekRevision: 4, fingerprint: "ff", editing: true,
+      rejectionReason: "Finish editing on the iPad first", pictureMode: .monitorOnly,
+      picturePriority: .sharper1080p, cleanScreen: true, micOn: false,
+      macStatus: .init(recording: .standby, displayName: "Mac", connectionKind: "Wi-Fi"),
+      microphoneSources: [.init(id: "ipad-mic", name: "iPad")], selectedMicrophone: "ipad-mic")
     let sent = commands.map(CameraLink.Message.command) + [.state(state)]
     var reader = CameraLink.Reader()
     XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
@@ -93,6 +104,9 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(state.word, 12)
     XCTAssertNil(state.version); XCTAssertNil(state.look); XCTAssertNil(state.presets); XCTAssertNil(state.startDelay)
     XCTAssertNil(state.voiceSource); XCTAssertNil(state.seekRevision); XCTAssertNil(state.fingerprint)
+    XCTAssertNil(state.editing); XCTAssertNil(state.rejectionReason); XCTAssertNil(state.pictureMode)
+    XCTAssertNil(state.picturePriority); XCTAssertNil(state.cleanScreen); XCTAssertNil(state.micOn)
+    XCTAssertNil(state.macStatus); XCTAssertNil(state.microphoneSources); XCTAssertNil(state.selectedMicrophone)
     XCTAssertNil(state.scripts[0].macID); XCTAssertNil(state.scripts[0].fingerprint)
   }
 
@@ -130,11 +144,18 @@ final class CameraLinkTests: XCTestCase {
     let v3State = PadRemote.State(
       scripts: [.init(id: id, title: "A", macID: UUID(), fingerprint: "ff")], presenting: id, running: false,
       mode: "Voice", speed: 100, word: 3, words: 30, version: 3, look: .init(fontSize: 50), presets: ["x"],
-      startDelay: 3, voiceSource: "iPad", seekRevision: 1, fingerprint: "ff")
+      startDelay: 3, voiceSource: "iPad", seekRevision: 1, fingerprint: "ff",
+      editing: true, pictureMode: .behindScript, picturePriority: .realTime720p, cleanScreen: true,
+      micOn: false, macStatus: .init(recording: .recording))
     let sent: [CameraLink.Message] = [
       .command(.voiceSource("Mac")), .command(.play), .command(.preset("x")), .command(.startDelay(5)),
       .command(.look(.init(fontSize: 50))), .command(.sendScript(.init(macID: id, title: "T", markdown: "m"))),
       .command(.follow(.init(confirmed: 1, fingerprint: "ff", seekRevision: 1))), .command(.seek(word: 7)),
+      .command(.editing(true)), .command(.pictureMode(.monitorOnly)),
+      .command(.picturePriority(.sharper1080p)), .command(.cleanScreen(true)),
+      .command(.cameraOn(true)), .command(.selectCamera("camera")),
+      .command(.micOn(false)), .command(.selectMicrophone("mic")),
+      .command(.macStatus(.init(recording: .recording))),
       .state(v3State), .goodbye,
     ]
     // The new commands are skipped; everything a version 2 iPad knows still arrives.
@@ -150,6 +171,92 @@ final class CameraLinkTests: XCTestCase {
     bytes.append(json)
     bytes.append(CameraLink.Message.goodbye.encoded())
     XCTAssertEqual(try reader.append(bytes), [.goodbye])
+  }
+
+  func testMirrorAndFlipAreIndependentAndKeepTheirWireNames() throws {
+    for mirror in [false, true] {
+      for flip in [false, true] {
+        let look = PadRemote.Look(horizontalMirror: mirror, verticalMirror: flip)
+        let data = try JSONEncoder().encode(look)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Bool])
+        XCTAssertEqual(json["horizontalMirror"], mirror)
+        XCTAssertEqual(json["verticalMirror"], flip)
+        XCTAssertEqual(try JSONDecoder().decode(PadRemote.Look.self, from: data), look)
+      }
+    }
+    XCTAssertEqual(PadRemote.PicturePriority.realTime720p.longSide, 1280)
+    XCTAssertEqual(PadRemote.PicturePriority.sharper1080p.longSide, 1920)
+  }
+
+  func testStatusIsLatestWinsAndOvertakesQueuedVideoWithoutReplacingFollows() throws {
+    final class Stalled: LinkPipe, @unchecked Sendable {
+      var writes: [Data] = []
+      var completion: (@Sendable () -> Void)?
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+        writes.append(data); completion = done
+      }
+      func advance() { let done = completion; completion = nil; done?() }
+    }
+    let pipe = Stalled(name: "test")
+    pipe.send(CameraLink.Message.frame(time: 1, keyFrame: true, data: Data()).encoded())
+    pipe.send(CameraLink.Message.frame(time: 2, keyFrame: false, data: Data()).encoded())
+    pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -40))).encoded())
+    pipe.send(CameraLink.Message.command(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0))).encoded())
+    pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -10))).encoded())
+    for _ in 0..<4 { pipe.advance() }
+    var reader = CameraLink.Reader()
+    let messages = try reader.append(pipe.writes.reduce(into: Data()) { $0.append($1) })
+    XCTAssertEqual(messages, [
+      .frame(time: 1, keyFrame: true, data: Data()),
+      .command(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0))),
+      .command(.macStatus(.init(micLevelDB: -10))),
+      .frame(time: 2, keyFrame: false, data: Data())
+    ])
+    XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  @MainActor
+  func testEditingPausesRelayAndRejectsANewRelay() async throws {
+    final class Link: PadRelayLink {
+      var sent: [PadRemote.Command] = []
+      func send(_ command: PadRemote.Command) { sent.append(command) }
+      func setRelayActive(_ active: Bool) {}
+    }
+    let link = Link()
+    let suite = "VideoPrompterTests.parityRelay." + UUID().uuidString
+    removeDefaultsAtTeardown(suite)
+    let relay = PadVoiceRelay(link: link, suiteName: suite, defaults: freshDefaults())
+    relay.captureAudio = false
+    relay.presenterIsCapturing = { false }
+    let macID = UUID(), padID = UUID()
+    let text = "alpha bravo charlie delta echo foxtrot"
+    let record = ScriptRecord(metadata: ScriptMetadata(id: macID, title: "Test", fileName: "test.md"), markdown: text)
+    let fingerprint = MarkdownLibrary.fingerprint(text)
+    var state = PadRemote.State(
+      scripts: [.init(id: padID, title: "Test", macID: macID, fingerprint: fingerprint)],
+      presenting: padID, running: true, mode: "Voice", speed: 120, word: 1, words: 6,
+      version: 3, voiceSource: "Mac", seekRevision: 0, fingerprint: fingerprint, editing: true)
+    relay.iPadStateChanged(state)
+    relay.start(script: record, settings: PrompterSettings())
+    XCTAssertFalse(relay.isRelaying)
+    XCTAssertTrue(link.sent.isEmpty)
+    state.editing = false
+    relay.iPadStateChanged(state)
+    relay.start(script: record, settings: PrompterSettings())
+    for _ in 0..<100 where relay.session == nil { try await Task.sleep(for: .milliseconds(10)) }
+    XCTAssertEqual(relay.session?.isActivelyRunning, true)
+    // Still reports running: the editing flag alone must suspend the recogniser.
+    state.editing = true
+    relay.iPadStateChanged(state)
+    XCTAssertEqual(relay.session?.isActivelyRunning, false)
+    let count = link.sent.count
+    await Task.yield()
+    XCTAssertEqual(link.sent.count, count)
+    state.editing = false
+    state.running = false
+    relay.iPadStateChanged(state)
+    XCTAssertEqual(relay.session?.isActivelyRunning, false, "ending an edit never resumes reading")
+    relay.stop()
   }
 
   func testATruncatedParameterSetIsRefused() {

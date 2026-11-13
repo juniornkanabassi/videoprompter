@@ -71,6 +71,43 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(sentScript.fingerprint, MarkdownLibrary.fingerprint(text))
     XCTAssertEqual(sent.fingerprint, sentScript.fingerprint)
     XCTAssertEqual(sent.version, CameraLink.protocolVersion)
+    // UI parity uses the same intent path as beginEditing/endEditing on the iPad.
+    send(.editing(true))
+    let locked = try state("editing lock") { $0.editing == true && !$0.running }
+    send(.seek(word: 8))
+    send(.nextPassage)
+    send(.previousPassage)
+    send(.backToStart)
+    send(.play)
+    send(.sendScript(.init(macID: macID, title: sentTitle, markdown: "Do not overwrite",
+                          basis: MarkdownLibrary.fingerprint(text), present: true)))
+    let rejected = try state("editing rejects movement and overwrite") { $0.rejectionReason != nil }
+    XCTAssertEqual(rejected.word, locked.word)
+    XCTAssertEqual(rejected.fingerprint, locked.fingerprint)
+    XCTAssertFalse(rejected.running)
+    send(.editing(false))
+    _ = try state("editing ended") { $0.editing == false && $0.rejectionReason == nil }
+    for mirror in [false, true] {
+      for flip in [false, true] {
+        send(.look(.init(horizontalMirror: mirror, verticalMirror: flip)))
+        _ = try state("independent mirror and flip") {
+          $0.look?.horizontalMirror == mirror && $0.look?.verticalMirror == flip
+        }
+      }
+    }
+    for mode in PadRemote.PictureMode.allCases {
+      send(.pictureMode(mode))
+      _ = try state("picture mode") { $0.pictureMode == mode }
+    }
+    send(.picturePriority(.sharper1080p))
+    send(.cleanScreen(true))
+    _ = try state("priority and clean screen") { $0.picturePriority == .sharper1080p && $0.cleanScreen == true }
+    send(.cleanScreen(false))
+    for recording in [PadRemote.RecordingState.recording, .standby, .unknown] {
+      send(.macStatus(.init(cameras: [], recording: recording, displayName: "End-to-end Mac",
+                           connectionKind: "USB-C", micLevelDB: -18)))
+      _ = try state("Mac recorder tally") { $0.macStatus?.recording == recording }
+    }
     // Untouched since the last send: the same script takes the new text.
     let newer = text + " Thirteen fourteen."
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))

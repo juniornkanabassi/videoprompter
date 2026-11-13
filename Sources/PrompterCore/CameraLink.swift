@@ -171,6 +171,53 @@ public enum PadRemote {
     /// "iPad" or "Mac": whose microphone the Voice mode follows.
     case voiceSource(String)
     case follow(Follow)
+    case editing(Bool)
+    case pictureMode(PictureMode)
+    case picturePriority(PicturePriority)
+    case cleanScreen(Bool)
+    case selectCamera(String)
+    case cameraOn(Bool)
+    case selectMicrophone(String)
+    case micOn(Bool)
+    /// Mac to iPad. Optional fields are partial updates.
+    case macStatus(MacStatus)
+  }
+
+  public enum PictureMode: String, Codable, CaseIterable, Sendable {
+    case off, behindScript, monitorOnly
+  }
+  public enum PicturePriority: String, Codable, CaseIterable, Sendable {
+    case realTime720p, sharper1080p
+    public var longSide: Int { self == .realTime720p ? 1280 : 1920 }
+  }
+  public enum RecordingState: String, Codable, Sendable { case recording, standby, unknown }
+  public struct Source: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+  }
+  public struct MacStatus: Codable, Equatable, Sendable {
+    public var cameras: [Source]?
+    public var selectedCamera: String?
+    public var cameraOn: Bool?
+    public var microphones: [Source]?
+    public var selectedMicrophone: String?
+    public var micOn: Bool?
+    public var recording: RecordingState?
+    public var displayName: String?
+    /// "USB-C" or "Wi-Fi".
+    public var connectionKind: String?
+    /// Finite dBFS, clamped to -60...0. Nil means no sample in this update.
+    public var micLevelDB: Double?
+    public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
+      microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
+      recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
+      micLevelDB: Double? = nil) {
+      self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn
+      self.microphones = microphones; self.selectedMicrophone = selectedMicrophone; self.micOn = micOn
+      self.recording = recording; self.displayName = displayName; self.connectionKind = connectionKind
+      self.micLevelDB = micLevelDB
+    }
   }
 
   /// Mac to iPad script transfer. `basis` is the fingerprint (`MarkdownLibrary.fingerprint`) of
@@ -250,15 +297,33 @@ public enum PadRemote {
     public var voiceSource: String?
     public var seekRevision: Int?
     public var fingerprint: String?
+    public var editing: Bool?
+    /// Why the last remote action was rejected, cleared when editing ends.
+    public var rejectionReason: String?
+    public var pictureMode: PictureMode?
+    public var picturePriority: PicturePriority?
+    public var cleanScreen: Bool?
+    public var micOn: Bool?
+    public var macStatus: MacStatus?
+    /// The microphone choices for the active voice source.
+    public var microphoneSources: [Source]?
+    public var selectedMicrophone: String?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
       version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
-      voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil
+      voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil,
+      editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
+      picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
+      macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil
     ) {
       self.scripts = scripts; self.presenting = presenting; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
       self.voiceSource = voiceSource; self.seekRevision = seekRevision; self.fingerprint = fingerprint
+      self.editing = editing; self.rejectionReason = rejectionReason; self.pictureMode = pictureMode
+      self.picturePriority = picturePriority; self.cleanScreen = cleanScreen; self.micOn = micOn
+      self.macStatus = macStatus
+      self.microphoneSources = microphoneSources; self.selectedMicrophone = selectedMicrophone
     }
   }
 }

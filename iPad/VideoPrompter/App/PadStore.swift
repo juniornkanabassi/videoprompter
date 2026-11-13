@@ -6,7 +6,60 @@ import UIKit
 /// The iPad app's state: the scripts folder, the reading session shared with the Mac app, and
 /// the presenter settings. Presets live in the scripts folder so the Mac and iPad share them;
 /// the settings that belong to this iPad's hardware (mirroring, microphone) stay on the iPad.
+/// UI API: mirror/flip (Bool, backed by settings); editing/cleanScreen/micOn (Bool);
+/// pictureMode/priority (PadRemote enums); macStatus (sources, selection, REC, connection),
+/// micLevelDB (Double, -60...0). Call setMirror/setFlip, beginEditing/endEditing,
+/// setPictureMode/setPicturePriority/setCleanScreen, selectCamera/setCameraOn,
+/// selectMicrophone/setMicOn. Editing pauses and never resumes automatically.
 @MainActor final class PadStore: ObservableObject {
+  @Published private(set) var editing = false
+  @Published private(set) var rejectionReason: String?
+  @Published private(set) var pictureMode: PadRemote.PictureMode = .off
+  @Published private(set) var picturePriority: PadRemote.PicturePriority = .realTime720p
+  @Published private(set) var cleanScreen = false
+  @Published private(set) var micOn = true
+  @Published private(set) var macStatus = PadRemote.MacStatus()
+  @Published private(set) var macMicLevelDB: Double = -60
+  var micLevelDB: Double {
+    let level = session.followsRemote ? macMicLevelDB : Double(session.audioPeakDBFS)
+    return level.isFinite ? min(0, max(-60, level)) : -60
+  }
+  var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
+  var macDisplayName: String? { camera.link.macName }
+  var connectionKind: String? { macStatus.connectionKind }
+  var mirror: Bool { settings.horizontalMirror }
+  var flip: Bool { settings.verticalMirror }
+  var voiceSource: String { session.followsRemote ? "Mac" : "iPad" }
+  var cameraSources: [PadRemote.Source] { macStatus.cameras ?? [] }
+  var selectedCamera: String? { macStatus.selectedCamera }
+  var cameraOn: Bool { macStatus.cameraOn ?? false }
+  var microphoneSources: [PadRemote.Source] {
+    if session.followsRemote { return macStatus.microphones ?? [] }
+    return AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) }
+  }
+  var selectedMicrophone: String? {
+    session.followsRemote ? macStatus.selectedMicrophone : settings.audioDeviceUID
+  }
+  func setVoiceSource(_ value: String) { perform(.voiceSource(value)) }
+  func setMirror(_ value: Bool) { settings.horizontalMirror = value }
+  func setFlip(_ value: Bool) { settings.verticalMirror = value }
+  func beginEditing() { editing = true; session.pause() }
+  func endEditing() { editing = false; rejectionReason = nil }
+  func setPictureMode(_ value: PadRemote.PictureMode) { pictureMode = value }
+  func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value }
+  func setCleanScreen(_ value: Bool) { cleanScreen = value }
+  func selectCamera(_ id: String) { camera.link.send(.selectCamera(id)) }
+  func setCameraOn(_ value: Bool) { camera.link.send(.cameraOn(value)) }
+  func selectMicrophone(_ id: String) {
+    if session.followsRemote { camera.link.send(.selectMicrophone(id)) }
+    else if microphoneSources.contains(where: { $0.id == id }) { settings.audioDeviceUID = id }
+  }
+  func setMicOn(_ value: Bool) {
+    micOn = value
+    if !value { session.pause() }
+    if session.followsRemote { camera.link.send(.micOn(value)) }
+  }
+
   let folder = ScriptFolder()
   let session = SessionStore()
   let camera = PadCamera()
@@ -54,6 +107,7 @@ import UIKit
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    session.meter.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     // The first value is the listing the folder made at launch, compared with the last launch's.
     folder.$scripts.sink { [weak self] scripts in
@@ -272,6 +326,7 @@ extension PadStore {
   /// what it shows: sent a moment after anything changes, and at once when a Mac connects.
   fileprivate func startMacRemote() {
     let link = camera.link
+    link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
     var lastSent: PadRemote.State?
     // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
@@ -286,6 +341,8 @@ extension PadStore {
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
       guard let self else { return }
       if name == nil {
+        macStatus = PadRemote.MacStatus()
+        macMicLevelDB = -60
         // A relayed session never falls back to this iPad's microphone on its own: it stops, and
         // the next Play here is the reader's choice.
         if session.followsRemote {
@@ -325,11 +382,53 @@ extension PadStore {
       presets: presets.map(\.name), startDelay: session.startDelay,
       voiceSource: session.followsRemote ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
-      fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil)
+      fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
+      editing: editing, rejectionReason: rejectionReason, pictureMode: pictureMode,
+      picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
+      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone)
   }
 
   func perform(_ command: PadRemote.Command) {
+    if editing {
+      var blocked = false
+      switch command {
+      case .play, .seek, .backToStart, .nextPassage, .previousPassage, .follow, .present, .close:
+        blocked = true
+      case .sendScript(let transfer):
+        blocked = presentingID.flatMap { folder.macID(of: $0) } == transfer.macID || transfer.present
+      default: break
+      }
+      if blocked {
+        rejectionReason = "Finish editing on the iPad first"
+        camera.link.send(remoteState)
+        return
+      }
+    }
     switch command {
+    case .editing(let value): value ? beginEditing() : endEditing()
+    case .pictureMode(let value): setPictureMode(value)
+    case .picturePriority(let value): setPicturePriority(value)
+    case .cleanScreen(let value): setCleanScreen(value)
+    case .micOn(let value): setMicOn(value)
+    case .selectCamera(let id): selectCamera(id)
+    case .cameraOn(let value): setCameraOn(value)
+    case .selectMicrophone(let id): selectMicrophone(id)
+    case .macStatus(var value):
+      if let db = value.micLevelDB, db.isFinite { macMicLevelDB = min(0, max(-60, db)) }
+      // Meter updates must not reset the source list.
+      value.micLevelDB = nil
+      var next = macStatus
+      if let cameras = value.cameras { next.cameras = cameras; next.selectedCamera = value.selectedCamera }
+      if let microphones = value.microphones { next.microphones = microphones; next.selectedMicrophone = value.selectedMicrophone }
+      if let selected = value.selectedCamera { next.selectedCamera = selected }
+      if let selected = value.selectedMicrophone { next.selectedMicrophone = selected }
+      if let on = value.cameraOn { next.cameraOn = on }
+      if let on = value.micOn { next.micOn = on }
+      if let recording = value.recording { next.recording = recording }
+      if let name = value.displayName { next.displayName = name }
+      if let kind = value.connectionKind { next.connectionKind = kind }
+      if next != macStatus { macStatus = next }
+
     case .present(let id):
       guard let script = folder.script(id) else { return }
       selectedID = id
@@ -380,14 +479,14 @@ extension PadStore {
       switch command {
       case .close: closePresenter()
       // The iPad's own Start: honours the Manual countdown. Pause cancels it.
-      case .play: session.startReading()
+      case .play: if micOn || settings.mode != "Voice" { session.startReading() }
       case .pause: session.pause()
       case .backToStart: session.restart()
       case .nextPassage: session.nextPassage()
       case .previousPassage: session.previousPassage()
       case .seek(let word):
         if word >= 1, word <= session.document.spokenTokens.count { session.seek(to: word - 1) }
-      case .present, .mode, .speed, .sendScript, .look, .preset, .startDelay, .voiceSource, .follow: break
+      default: break
       }
     }
   }

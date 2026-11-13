@@ -47,6 +47,8 @@ import UIKit
   }
 
   /// Tells the Mac what the presenter shows. Dropped unless a Mac that reads it is connected.
+  func send(_ command: PadRemote.Command) { receiver.send(.command(command)) }
+
   func send(_ state: PadRemote.State) { receiver.send(.state(state)) }
 
   /// Called when a Mac connects or goes, so the camera can switch to it and back.

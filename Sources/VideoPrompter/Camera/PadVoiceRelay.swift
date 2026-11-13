@@ -67,6 +67,7 @@ import PrompterCore
     guard phase == .idle else { return }
     guard let state = iPadState else { return fail("No iPad is connected") }
     guard (state.version ?? 2) >= 3 else { return fail("Update Video Prompter on the iPad to use the Mac's voice") }
+    guard state.editing != true else { return fail("Finish editing on the iPad first") }
     guard !presenterIsCapturing() else { return fail("The Mac's own presenter is listening. Stop it first") }
     phase = .preparing
     isRelaying = true
@@ -82,6 +83,9 @@ import PrompterCore
   /// Fed with every state the iPad sends, and nil when the link drops.
   func iPadStateChanged(_ state: PadRemote.State?) {
     iPadState = state
+    if state?.editing == true, phase == .preparing {
+      return finish("Finish editing on the iPad first", pausingIPad: false)
+    }
     if state == nil, phase == .preparing { return finish("The link to the iPad dropped", pausingIPad: false) }
     guard phase == .live else { return }
     guard let state else { return finish("The link to the iPad dropped", pausingIPad: false) }
@@ -89,6 +93,12 @@ import PrompterCore
       return finish("The iPad opened another script or closed this one", pausingIPad: true)
     }
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
+    if state.editing == true || state.micOn == false {
+      pendingFollow = nil
+      pause()
+      iPadRunning = false
+      return
+    }
     // Only a seek on the iPad moves the relay; its word changing as it follows us does not. The iPad
     // checks each follow against its current revision and states arrive in order, so any change
     // (the counter wraps) is a seek to adopt, and a follow stamped earlier is already stale.
@@ -234,7 +244,7 @@ import PrompterCore
     Task { @MainActor [weak self] in
       guard let self else { return }
       self.flushScheduled = false
-      guard self.phase == .live, let confirmed = self.pendingFollow else { return }
+      guard self.phase == .live, self.iPadState?.editing != true, self.iPadState?.micOn != false, let confirmed = self.pendingFollow else { return }
       self.pendingFollow = nil
       self.link?.send(.follow(.init(confirmed: confirmed, fingerprint: self.fingerprint, seekRevision: self.knownRevision)))
     }
