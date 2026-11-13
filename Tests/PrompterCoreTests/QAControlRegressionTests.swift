@@ -96,6 +96,15 @@ import XCTest
     let response = try await run(cli, ["--data-directory", root.path, "status", "--json"], root: root)
     XCTAssertLessThan(ContinuousClock.now - start, .seconds(2))
     XCTAssertTrue(String(decoding: response, as: UTF8.self).contains("ready"))
+    // Encoding the large reply can lag behind status; start the expiry clock only once sending begins.
+    var firstByte: UInt8 = 0
+    let sendingDeadline = ContinuousClock.now + .seconds(5)
+    var peek = recv(fd, &firstByte, 1, MSG_PEEK | MSG_DONTWAIT)
+    while peek < 0, (errno == EAGAIN || errno == EWOULDBLOCK), ContinuousClock.now < sendingDeadline {
+      try await Task.sleep(for: .milliseconds(20))
+      peek = recv(fd, &firstByte, 1, MSG_PEEK | MSG_DONTWAIT)
+    }
+    XCTAssertEqual(peek, 1, "The large reply must begin without draining the stalled reader")
     try await Task.sleep(for: .seconds(5))
     let expired = await Task.detached {
       var timeout = timeval(tv_sec: 1, tv_usec: 0)

@@ -90,6 +90,10 @@ import XCTest
     let store = PadStore(defaults: UserDefaults(suiteName: "picker-shots-\(UUID().uuidString)")!)
     store.settings.mode = "Manual"
     store.settings.horizontalMirror = false
+    let reference = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
+      UIColor.black.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
+    }
     let script = try store.folder.create(title: "Picker fixture", markdown: Self.script)
     store.present(script)
     for state in ["3A", "3B", "3C"] {
@@ -111,7 +115,7 @@ import XCTest
         store.session.seek(to: 24)
         store.camera.guides = CameraGuides()
         if state == "3B" { store.perform(.voiceSource("Mac")) }
-        _ = try await render(PresenterScreen(session: store.session, camera: store.camera, referencePicture: UIImage(), snapshotPicker: state == "3B")
+        _ = try await render(PresenterScreen(session: store.session, camera: store.camera, referencePicture: reference, snapshotPicker: state == "3B")
           .environmentObject(store), size: size, name: "ipad-picker-\(state)-\(name)", directory: directory) {
             store.perform(.macStatus(status))
             store.camera.link.pickerSnapshotConnection(state == "3C" ? nil : "Junior’s MacBook Pro")
@@ -161,7 +165,9 @@ import XCTest
     host.view.layoutIfNeeded()
     try await Task.sleep(for: .seconds(1))
     beforeDraw()
-    try await Task.sleep(for: .milliseconds(150))
+    host.view.setNeedsLayout()
+    host.view.layoutIfNeeded()
+    try await Task.sleep(for: .seconds(1))
     let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
       window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
     }
