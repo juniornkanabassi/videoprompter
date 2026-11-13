@@ -16,7 +16,7 @@ struct ScriptEditor: View {
       TextEditor(text: $text)
         .font(.custom("Lexend Deca", size: 18, relativeTo: .body))
         .lineSpacing(5)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Space.md)
         .scrollContentBackground(.hidden)
         .navigationTitle(script.title)
         .navigationBarTitleDisplayMode(.inline)

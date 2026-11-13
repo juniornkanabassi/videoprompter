@@ -74,7 +74,7 @@ struct MicMeterView: View {
 
   /// Where the horizontal "aim here" word ends: over the yellow zone, but clear of "too loud".
   static func aimLabelTrailing(width: CGFloat, tooLoudWidth: CGFloat = 52) -> CGFloat {
-    min(width * InputLevelMeter.position(InputLevelMeter.redFrom) - 3, width - tooLoudWidth - 6)
+    min(width * MeterZones.position(MeterZones.redFrom) - 3, width - tooLoudWidth - 6)
   }
 
   private var aimColour: Color { Color(red: 1, green: 0.84, blue: 0.3) }
@@ -84,7 +84,7 @@ struct MicMeterView: View {
     TimelineView(.periodic(from: .now, by: 0.1)) { _ in
       let now = ProcessInfo.processInfo.systemUptime
       let db = isListening ? Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now)) : -.infinity
-      let fill = InputLevelMeter.position(db)
+      let fill = MeterZones.position(db)
       let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
       GeometryReader { available in
         let horizontal = available.size.height < 280
@@ -158,7 +158,7 @@ struct MicMeterView: View {
                 .font(.system(size: 13)).monospacedDigit()
                 .foregroundStyle(Palette.onDarkQuiet(contrast))
                 .alignmentGuide(.top) { $0[VerticalAlignment.center] }
-                .offset(y: geometry.size.height * (1 - InputLevelMeter.position(entry.value)))
+                .offset(y: geometry.size.height * (1 - MeterZones.position(entry.value)))
             }
           }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
         }
@@ -166,17 +166,17 @@ struct MicMeterView: View {
         GeometryReader { geometry in
           let height = geometry.size.height
           ZStack(alignment: .bottom) {
-            InputLevelMeter.zoneTrack(vertical: true).opacity(0.28)
-            InputLevelMeter.zoneTrack(vertical: true).mask(alignment: .bottom) {
+            MeterZones.zoneTrack(vertical: true).opacity(0.28)
+            MeterZones.zoneTrack(vertical: true).mask(alignment: .bottom) {
               Rectangle().frame(height: height * fill)
             }
-            ForEach([InputLevelMeter.yellowFrom, InputLevelMeter.redFrom], id: \.self) { boundary in
+            ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(height: 1)
-                .offset(y: -height * InputLevelMeter.position(boundary))
+                .offset(y: -height * MeterZones.position(boundary))
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(height: 2)
-                .offset(y: -height * InputLevelMeter.position(peak))
+                .offset(y: -height * MeterZones.position(peak))
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }
@@ -184,8 +184,8 @@ struct MicMeterView: View {
         GeometryReader { geometry in
           let height = geometry.size.height
           ZStack(alignment: .topLeading) {
-            zoneWord("aim here", colour: aimColour, middle: (InputLevelMeter.yellowFrom + InputLevelMeter.redFrom) / 2, height: height)
-            zoneWord("too loud", colour: loudColour, middle: InputLevelMeter.redFrom / 2, height: height)
+            zoneWord("aim here", colour: aimColour, middle: (MeterZones.yellowFrom + MeterZones.redFrom) / 2, height: height)
+            zoneWord("too loud", colour: loudColour, middle: MeterZones.redFrom / 2, height: height)
           }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: Self.zoneColumn)
@@ -198,7 +198,7 @@ struct MicMeterView: View {
   private func zoneWord(_ text: String, colour: Color, middle: Float, height: CGFloat) -> some View {
     Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(colour).lineLimit(1).fixedSize()
       .alignmentGuide(.top) { $0[VerticalAlignment.center] }
-      .offset(y: height * (1 - InputLevelMeter.position(middle)))
+      .offset(y: height * (1 - MeterZones.position(middle)))
   }
 
   private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
@@ -216,17 +216,17 @@ struct MicMeterView: View {
         }.frame(height: 16)
         GeometryReader { geometry in
           ZStack(alignment: .leading) {
-            InputLevelMeter.zoneTrack(vertical: false).opacity(0.28)
-            InputLevelMeter.zoneTrack(vertical: false).mask(alignment: .leading) {
+            MeterZones.zoneTrack(vertical: false).opacity(0.28)
+            MeterZones.zoneTrack(vertical: false).mask(alignment: .leading) {
               Rectangle().frame(width: geometry.size.width * fill)
             }
-            ForEach([InputLevelMeter.yellowFrom, InputLevelMeter.redFrom], id: \.self) { boundary in
+            ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(width: 1)
-                .offset(x: geometry.size.width * InputLevelMeter.position(boundary))
+                .offset(x: geometry.size.width * MeterZones.position(boundary))
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(width: 2)
-                .offset(x: geometry.size.width * InputLevelMeter.position(peak))
+                .offset(x: geometry.size.width * MeterZones.position(peak))
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }.frame(height: Self.barWidth)
@@ -236,7 +236,7 @@ struct MicMeterView: View {
               Text(entry.label)
                 .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.onDarkQuiet(contrast)).fixedSize()
                 .alignmentGuide(.leading) { $0[HorizontalAlignment.center] }
-                .offset(x: geometry.size.width * InputLevelMeter.position(entry.value))
+                .offset(x: geometry.size.width * MeterZones.position(entry.value))
             }
           }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }.frame(height: 16)

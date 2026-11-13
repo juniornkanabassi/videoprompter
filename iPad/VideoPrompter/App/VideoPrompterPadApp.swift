@@ -24,6 +24,7 @@ import SwiftUI
           Text(store.errorMessage ?? store.folder.errorMessage ?? "")
         }
         .preferredColorScheme(.dark)
+        .tint(AlphaStyle.accent)
     }
     .onChange(of: scenePhase) { _, phase in
       switch phase {

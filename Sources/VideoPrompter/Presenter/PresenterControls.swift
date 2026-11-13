@@ -6,7 +6,15 @@ enum PresenterBar {
   static let corner: CGFloat = 12 // grid: ok Matches the Alpha tile corner.
   /// Between the transport, the video-call group and the picture tools.
   static let groupGap = Space.section
-  static let background = Color(nsColor: NSColor(white: 0.08, alpha: 1))
+  static let background = Color(white: 0.08)
+  /// Fingers need 44 pt each way; the pointer's icon-only button is a little narrower.
+  #if os(iOS)
+  static let iconWidth = AlphaStyle.minTarget
+  static let caretWidth = AlphaStyle.minTarget
+  #else
+  static let iconWidth: CGFloat = 0
+  static let caretWidth: CGFloat = 28
+  #endif
   static let warning = Color(red: 1, green: 0.45, blue: 0.42)
 }
 
@@ -26,7 +34,8 @@ struct BarLabel: View {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
       if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
-    }.padding(.horizontal, showsTitle ? Space.md : Space.sm).frame(minHeight: PresenterBar.height)
+    }.padding(.horizontal, showsTitle ? Space.md : Space.sm)
+      .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
   }
 }
 
@@ -115,7 +124,7 @@ struct BarDeviceControl<MenuContent: View>: View {
         .disabled(!isEnabled)
       Menu(content: menu) {
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
-          .frame(width: 28, height: PresenterBar.height).contentShape(Rectangle())
+          .frame(width: PresenterBar.caretWidth, height: PresenterBar.height).contentShape(Rectangle())
       }
       .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
       .foregroundStyle(isOn ? Color.white.opacity(0.8) : PresenterBar.warning)

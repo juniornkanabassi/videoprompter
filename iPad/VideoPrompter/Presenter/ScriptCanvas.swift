@@ -13,6 +13,8 @@ struct ScriptCanvas: UIViewRepresentable {
   var seekRevision = 0
   /// Where the reading line sits in the canvas's own (unmirrored) layout, from the top.
   let layoutGuideFraction: Double
+  /// The script is flipped top to bottom, so the layout's line sits where the screen's does not.
+  var verticalMirror = false
   let style: ScriptStyle
   let textWidth: Double
   /// The session's fractional token position, read on every frame while running. Nil eases to each word.
@@ -20,14 +22,34 @@ struct ScriptCanvas: UIViewRepresentable {
   let onSeek: (Int) -> Void
   var onUserScroll: ((Int) -> Void)?
 
+  /// The Mac's rules (ScriptTextView): at least 42 pt each side, and a reading line never nearer than 54 pt to the top.
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
-    max(32, width * (1 - CGFloat(textWidth)) / 2)
+    max(42, width * (1 - CGFloat(textWidth)) / 2)
+  }
+  static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
+    min(height, max(54, height * fraction))
   }
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
+  /// Tells the coordinator when layout gives it a new size: SwiftUI does not call `updateUIView` for that
+  /// (first layout, Stage Manager resizing), and the side inset depends on the width.
+  final class ResizingTextView: UITextView {
+    var onResize: (() -> Void)?
+    private var lastSize = CGSize.zero
+    override func layoutSubviews() {
+      super.layoutSubviews()
+      guard bounds.size != lastSize else { return }
+      lastSize = bounds.size
+      onResize?()
+    }
+  }
+
   func makeUIView(context: Context) -> UITextView {
-    let view = UITextView(usingTextLayoutManager: false)
+    let view = ResizingTextView(usingTextLayoutManager: false)
+    view.onResize = { [weak coordinator = context.coordinator] in
+      MainActor.assumeIsolated { coordinator?.sizeChanged() }
+    }
     view.isEditable = false
     view.isSelectable = false
     view.backgroundColor = .clear
@@ -96,6 +118,12 @@ struct ScriptCanvas: UIViewRepresentable {
     private var baseColour = UIColor.white
     private var textOpacity = 1.0
 
+    func sizeChanged() {
+      guard parent != nil, !mappings.isEmpty else { return }
+      snapNext = true
+      if parent?.manualPosition == nil { alignVoice() } else { alignManual() }
+    }
+
     func render(document: PrompterDocument, style: ScriptStyle) {
       guard let textView, let parent else { return }
       let output = ScriptRenderer.render(document, style: style)
@@ -156,7 +184,18 @@ struct ScriptCanvas: UIViewRepresentable {
     private func prepare() -> (manager: NSLayoutManager, guideY: CGFloat)? {
       guard let textView, let parent, textView.bounds.height > 0 else { return nil }
       let height = textView.bounds.height
-      let guideY = min(height - 20, max(40, height * parent.layoutGuideFraction))
+      // The width is only known after layout, and Stage Manager changes it without an update.
+      let inset = ScriptCanvas.sideInset(width: textView.bounds.width, textWidth: parent.textWidth)
+      if abs(textView.textContainerInset.left - inset) > 0.5 {
+        textView.textContainerInset.left = inset
+        textView.textContainerInset.right = inset
+        snapNext = true
+        lastAligned = nil
+        lastPaint = nil
+      }
+      let guideY = parent.verticalMirror
+        ? height - ScriptCanvas.visualGuideY(height: height, fraction: 1 - parent.layoutGuideFraction)
+        : ScriptCanvas.visualGuideY(height: height, fraction: parent.layoutGuideFraction)
       let edge = max(80, max(guideY, height - guideY))
       if abs(textView.textContainerInset.top - edge) > 0.5 || abs(textView.textContainerInset.bottom - edge) > 0.5 {
         textView.textContainerInset.top = edge
