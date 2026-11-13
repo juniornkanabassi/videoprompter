@@ -90,6 +90,8 @@ import UIKit
     #if DEBUG && targetEnvironment(simulator)
     if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil, !isShowingMac { return }
     #endif
+    // Offscreen fixtures supply their own picture and must never request capture permission.
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] == nil else { return }
     if isShowingMac { return configure() }
     Task {
       var allowed = AVCaptureDevice.authorizationStatus(for: .video) == .authorized

@@ -29,16 +29,25 @@ struct PresenterScreen: View {
   @EnvironmentObject private var store: PadStore
   @ObservedObject var session: SessionStore
   @ObservedObject var camera: PadCamera
+  private let referencePicture: UIImage?
+  @ScaledMetric(relativeTo: .body) private var preferredHUDScale = 1.0
+  private var hudScale: Double { max(1, preferredHUDScale) }
   @State private var setup: Bool
   @State private var showScript = true
   @State private var showingLook = false
-  @State private var falseColour = false
+  @State private var keyExpanded = true
+  @State private var showsExposureNote = false
+  private var falseColour: Bool { camera.guides.falseColour }
+  @State private var showKey = true
+  @State private var showingCamera = false
   @State private var hadMac = false
   @State private var editingRecord: ScriptRecord?
   @FocusState private var focused: Bool
 
   /// `startsReading` opens on the reading controls (snapshots and tests); Start does the same.
-  init(session: SessionStore, camera: PadCamera, startsReading: Bool = false) {
+  init(session: SessionStore, camera: PadCamera, startsReading: Bool = false, referencePicture: UIImage? = nil, previouslyConnected: Bool = false) {
+    self.referencePicture = referencePicture
+    _hadMac = State(initialValue: previouslyConnected)
     self.session = session
     self.camera = camera
     _setup = State(initialValue: !startsReading)
@@ -63,11 +72,20 @@ struct PresenterScreen: View {
         } else {
           if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
           if !store.cleanScreen {
-            chrome
+            chrome.uiZoom(hudScale)
+            if setup || store.cameraOnly { cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale) }
             if !counting {
-              if setup || store.cameraOnly { setupBar(width: size.width) } else { readingControls }
+              if setup || store.cameraOnly { setupBar(width: size.width / hudScale).disabled(store.editing).uiZoom(hudScale) } else { readingControls.disabled(store.editing).uiZoom(hudScale) }
             }
             if !store.cameraOnly { status }
+            if showsExposureNote && !store.cameraOnly && !lostPaused {
+              VStack {
+                Text(falseColour ? "False colour off while reading" : "Zebras off while reading")
+                  .font(.system(size: 15, weight: .semibold))
+                  .padding(16).background(.black.opacity(0.8), in: Capsule())
+                Spacer()
+              }.padding(.top, 80).allowsHitTesting(false)
+            }
           } else {
             cleanHandle
           }
@@ -84,14 +102,20 @@ struct PresenterScreen: View {
     .onKeyPress(phases: .down) { press in handle(press) }
     .onAppear {
       focused = true
-      hadMac = macConnected
-      useOwnCameraWithoutMac()
+      hadMac = hadMac || macConnected
+      if referencePicture == nil { useOwnCameraWithoutMac() }
     }
     .onChange(of: camera.link.macName) { _, name in
       if name != nil { hadMac = true }
       useOwnCameraWithoutMac()
     }
     .onChange(of: store.cameraOnly) { _, _ in useOwnCameraWithoutMac() }
+    .task(id: setup) {
+      showsExposureNote = !setup && (camera.guides.zebras || camera.guides.falseColour)
+      guard showsExposureNote else { return }
+      try? await Task.sleep(for: .seconds(3))
+      if !Task.isCancelled { showsExposureNote = false }
+    }
     .onChange(of: session.isActivelyRunning) { _, running in if running { setup = false } }
     // A linked Mac supplies the picture, so this iPad's own camera is the fallback only without one.
     .onChange(of: store.pictureMode) { _, mode in if mode == .behindScript, !macConnected || camera.isShowingMac { camera.isOn = true } }
@@ -111,7 +135,9 @@ struct PresenterScreen: View {
 
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
-    if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
+    if let referencePicture, store.pictureMode == .behindScript, !store.cameraOnly {
+      Image(uiImage: referencePicture).resizable().scaledToFit()
+    } else if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
           LinkPreview(camera: camera, link: camera.link)
@@ -138,14 +164,16 @@ struct PresenterScreen: View {
   private func scriptLayer(_ size: CGSize) -> some View {
     let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
     let insets = PadPresenterLayout.scriptInsets(
-      width: size.width, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
+      width: size.width / hudScale, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
     // In the turned layer's own coordinates: Flip swaps top and bottom.
-    let top = store.flip ? insets.bottom : insets.top
-    let bottom = store.flip ? insets.top : insets.bottom
+    let top = (store.flip ? insets.bottom : insets.top) * hudScale
+    let bottom = (store.flip ? insets.top : insets.bottom) * hudScale
     let height = max(size.height - top - bottom, 1)
+    let side = setup && !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
+    let scriptWidth = max(1, size.width - side * 2)
     let lineY = min(max(size.height * settings.guideFraction, top + 54), top + height - 40)
     let showsLine = !setup && showScript
-    let showsMeter = store.micOn && isVoice
+    let showsMeter = true
     let fade = store.cleanScreen ? 0 : min(40, height / 4) / height
     return ZStack(alignment: .topLeading) {
       if showScript {
@@ -161,7 +189,7 @@ struct PresenterScreen: View {
           onSeek: { session.seek(to: $0) },
           onUserScroll: { session.seekFromUserScroll(to: $0) },
           onSingleTap: store.cleanScreen ? { store.setCleanScreen(false) } : nil)
-        .frame(width: size.width, height: height)
+        .frame(width: scriptWidth, height: height)
         .mask(
           LinearGradient(
             stops: [
@@ -169,17 +197,17 @@ struct PresenterScreen: View {
               .init(color: .black, location: 1 - fade), .init(color: .clear, location: 1),
             ], startPoint: .top, endPoint: .bottom)
         )
-        .offset(y: top)
+        .offset(x: side, y: top)
       }
       if showsLine {
-        ReadingLine(opacity: settings.guideOpacity * 0.75, trailing: showsMeter ? 96 : 24)
-          .frame(width: size.width, height: 24)
-          .offset(y: lineY - 12)
+        PresenterReadingLine(settings: settings)
+          .frame(width: size.width - (showsMeter ? 136 : 24))
+          .offset(y: lineY - PresenterReadingLine.bandHeight(fontSize: settings.fontSize))
           .allowsHitTesting(false)
       }
       if showsMeter {
-        PresenterMeter(meter: store.micMeter)
-          .frame(width: 64)
+        PresenterMeter(meter: store.micMeter, name: microphoneName, isListening: store.micOn)
+          .frame(width: MicMeterView.stripWidth(typeScale: 1))
           .frame(maxHeight: .infinity)
           // Clear of the controls and the Mac-lost card, wherever Flip puts them.
           .padding(.top, store.cleanScreen ? 48 : top + 12)
@@ -212,7 +240,9 @@ struct PresenterScreen: View {
     let recording = macConnected ? store.recordingState : .standby
     return ZStack {
       Color.black
-      if macConnected {
+      if let referencePicture {
+        Image(uiImage: referencePicture).resizable().scaledToFit()
+      } else if macConnected {
         if store.cameraOn { LinkPreview(camera: camera, link: camera.link) }
       } else if camera.isOn {
         CameraPreview(camera: camera)
@@ -226,9 +256,9 @@ struct PresenterScreen: View {
     .contentShape(Rectangle())
     .onTapGesture { if store.cleanScreen { store.setCleanScreen(false) } }
     .overlay(alignment: .trailing) {
-      if macConnected {
-        PresenterMeter(meter: store.micMeter)
-          .frame(width: 64)
+      if macConnected || referencePicture != nil {
+        PresenterMeter(meter: store.micMeter, name: microphoneName, isListening: store.micOn)
+          .frame(width: MicMeterView.stripWidth(typeScale: 1))
           .padding(.top, 96).padding(.bottom, 120).padding(.trailing, 8)
           .allowsHitTesting(false)
       }
@@ -346,10 +376,10 @@ struct PresenterScreen: View {
           Spacer(minLength: 12)
           turnGroup
           PadButton("Back to start", icon: "arrow.counterclockwise", kind: .card, showsTitle: false) { session.restart() }
-          PadButton(primaryTitle, kind: .primary, minWidth: 128, action: primaryAction)
+          PadButton(primaryTitle, icon: session.isActivelyRunning ? "pause.fill" : "play.fill", kind: .primary, minWidth: 128, action: primaryAction)
           PadButton("Show controls", icon: "ellipsis", kind: .card, showsTitle: false) { setup = true }
         }
-        .padding(.trailing, store.micOn && isVoice ? 112 : 24)
+        .padding(.trailing, 136)
       }
       .padding(.leading, 24)
       .padding(.bottom, 24)
@@ -358,14 +388,13 @@ struct PresenterScreen: View {
 
   private var statusPill: some View {
     HStack(spacing: 8) {
-      Circle().fill(PresenterTheme.accent).frame(width: 8, height: 8)
+      Circle().fill(session.isActivelyRunning ? Color.green : .white.opacity(0.4)).frame(width: 8, height: 8)
       Text(statusText).lineLimit(1)
     }
-    .font(.system(size: 16))
-    .foregroundStyle(PresenterTheme.text)
+    .font(.system(size: 14, weight: .medium))
+    .foregroundStyle(.white.opacity(0.85))
     .padding(.horizontal, 16).frame(height: 44)
-    .background(PresenterTheme.card, in: Capsule())
-    .overlay(Capsule().strokeBorder(PresenterTheme.line))
+    .background(.white.opacity(0.07), in: Capsule())
     .accessibilityElement(children: .combine)
   }
 
@@ -437,46 +466,117 @@ struct PresenterScreen: View {
   // MARK: Setting up
 
   private func setupBar(width: CGFloat) -> some View {
-    let folded = PadPresenterLayout.foldsPictureTools(width: width)
-    let compact = PadPresenterLayout.iconOnly(width: width)
-    return VStack(alignment: .leading, spacing: 0) {
+    VStack(alignment: .leading, spacing: 8) {
       Spacer()
-      if showsOffNote {
-        offNote.padding(.leading, compact ? 24 : 288).padding(.bottom, 12)
-      }
-      ScrollView(.horizontal, showsIndicators: false) {
-        HStack(spacing: 8) {
-          if !store.cameraOnly {
-            PadButton(primaryTitle, kind: .primary, minWidth: compact ? 0 : 160, action: primaryAction)
-            PadButton("Back to start", icon: "arrow.counterclockwise", kind: .plain, showsTitle: false) { session.restart() }
-            Rectangle().fill(PresenterTheme.line).frame(width: 1, height: 48).padding(.horizontal, 8)
+      if showsOffNote { offNote.padding(.horizontal, 24) }
+      Group {
+        if width < 900 {
+          VStack(spacing: 8) {
+            HStack(spacing: 8) { transport; Spacer(minLength: 0); turnGroup }
+            HStack { devices; Spacer(minLength: 0) }
+            HStack(spacing: 8) { pictureTools; Spacer(minLength: 0); compactViewTools }
           }
-          cameraButton(compact: compact)
-          micButton(compact: compact)
-          if !store.cameraOnly {
-            PadButton("Script", icon: "doc.text", kind: showScript ? .lit : .plain, showsTitle: !compact) {
-              showScript.toggle()
-            }
-          }
-          Spacer(minLength: 12)
-          if folded { pictureMenu(compact: compact) } else { pictureTools }
-          turnGroup
-          if !store.cameraOnly {
-            PadButton("Look: text size and margins", icon: nil, text: "Aa", kind: .plain, showsTitle: false) { showingLook = true }
-              .popover(isPresented: $showingLook) { lookPopover }
-          }
-          PadButton("Clean screen", icon: "arrow.up.left.and.arrow.down.right", kind: .plain, showsTitle: false) {
-            store.setCleanScreen(true)
-          }
+        } else {
+        ViewThatFits(in: .horizontal) {
+        setupRow()
+        ScrollView(.horizontal, showsIndicators: true) {
+          VStack(spacing: 8) {
+            HStack(spacing: 8) { transport; Spacer(minLength: 0); devices }
+            HStack(spacing: 8) { pictureTools; Spacer(minLength: 0); viewTools }
+          }.frame(minWidth: max(0, width - 48))
+        }.fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 24)
-        .frame(minWidth: width)
-        .frame(height: 100)
+        }
       }
-      .scrollBounceBehavior(.basedOnSize)
-      .background(PresenterTheme.bar)
-      .overlay(alignment: .top) { Rectangle().fill(PresenterTheme.line).frame(height: 1) }
+      .padding(.horizontal, 24).padding(.vertical, 16)
+      .background(PresenterBar.background)
+      .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.14)).frame(height: 1) }
     }
+  }
+
+  private func setupRow() -> some View {
+    HStack(spacing: 16) {
+      transport
+      Spacer(minLength: 0)
+      devices
+      pictureTools
+      viewTools
+    }.fixedSize(horizontal: true, vertical: false)
+  }
+
+  @ViewBuilder private var transport: some View {
+    if !store.cameraOnly {
+      Button(action: primaryAction) { BarLabel(title: primaryTitle, symbol: "play.fill") }
+        .buttonStyle(BarButtonStyle(role: .prominent))
+      Button { session.restart() } label: { BarLabel(title: "Back", symbol: "arrow.counterclockwise") }
+        .buttonStyle(BarButtonStyle(role: .secondary))
+    }
+  }
+
+  private var devices: some View {
+    BarGroup(label: "Camera, microphone and script") {
+      cameraButton(compact: false)
+      BarDivider()
+      micButton(compact: false)
+      if !store.cameraOnly {
+        BarDivider()
+        BarToggle(title: "Script", symbol: "text.alignleft", isOn: showScript) { showScript.toggle() }
+      }
+    }
+  }
+
+  private var viewTools: some View {
+    HStack(spacing: 8) { turnGroup; compactViewTools }
+  }
+
+  private var compactViewTools: some View {
+    HStack(spacing: 8) {
+      if !store.cameraOnly {
+        Button { showingLook = true } label: { BarLabel(title: "Text", symbol: "textformat.size") }
+          .buttonStyle(BarButtonStyle())
+          .popover(isPresented: $showingLook) { lookPopover }
+      }
+      BarToggle(title: "Show key", symbol: "list.bullet.rectangle", isOn: showKey) { showKey.toggle() }
+      Button { store.setCleanScreen(true) } label: { BarLabel(title: "Clean", symbol: "rectangle") }
+        .buttonStyle(BarButtonStyle())
+    }
+  }
+
+  private var microphoneName: String {
+    store.microphoneSources.first { $0.id == store.selectedMicrophone }?.name ?? (store.usesMacMic ? "Mac microphone" : "iPad microphone")
+  }
+
+  private func cameraCard(size: CGSize) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      if showKey && (cameraIsOn || referencePicture != nil) {
+        PresenterExposureKey(guides: camera.guides, expanded: $keyExpanded)
+      }
+      Button { showingCamera = true } label: {
+        VStack(alignment: .leading, spacing: 4) {
+          Text(store.cameraSources.first { $0.id == store.selectedCamera }?.name
+            ?? camera.devices.first { $0.id == camera.selectedID }?.name ?? "Camera")
+            .font(.system(size: 16, weight: .semibold))
+          Text(cameraIsOn ? (macConnected ? "Camera from the Mac" : "iPad camera") : "Camera off")
+          if let mode = camera.mode { Text(mode) }
+          Text(store.flip ? "Upside down" : "Landscape · Upright")
+          if store.mirror { Text("Mirrored") }
+        }
+        .font(.system(size: 14)).foregroundStyle(.white.opacity(0.7))
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: 16))
+      }.buttonStyle(.plain)
+        .popover(isPresented: $showingCamera) {
+          VStack(alignment: .leading, spacing: 16) {
+            Text("Camera and shot").font(.headline)
+            cameraButton(compact: false)
+            turnGroup
+          }.padding(24).presentationCompactAdaptation(.popover)
+        }
+      Spacer()
+    }
+    .frame(width: min(240, size.width / 4))
+    .padding(.leading, 16).padding(.top, 88).padding(.bottom, 160)
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// Beside the Camera button, not over the script.
@@ -501,10 +601,10 @@ struct PresenterScreen: View {
     let name = store.cameraSources.first { $0.id == store.selectedCamera }?.name
     // "Sony FX3 · HDMI capture" shows as "Sony FX3"; the menu holds the full name.
     let title = !cameraIsOn ? "Camera off" : (name?.components(separatedBy: " · ").first ?? "Camera")
-    return SplitButton(
-      title: title, icon: cameraIsOn ? "video" : "video.slash", showsTitle: !compact, isOff: !cameraIsOn,
-      caretLabel: "Choose camera",
-      action: {
+    return BarDeviceControl(
+      offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: cameraIsOn,
+      toggleHelp: title, menuLabel: "Choose camera", menuValue: title,
+      toggle: {
         if macConnected { store.setCameraOn(!store.cameraOn) } else { camera.isOn.toggle() }
       }
     ) {
@@ -535,9 +635,9 @@ struct PresenterScreen: View {
 
   private func micButton(compact: Bool) -> some View {
     let title = !store.micOn ? "Mic off" : store.usesMacMic ? "Mac mic" : "iPad mic"
-    return SplitButton(
-      title: title, icon: store.micOn ? "mic" : "mic.slash", showsTitle: !compact, isOff: !store.micOn,
-      caretLabel: "Choose microphone", action: { store.setMicOn(!store.micOn) }
+    return BarDeviceControl(
+      title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: store.micOn,
+      toggleHelp: title, menuLabel: "Choose microphone", menuValue: title, toggle: { store.setMicOn(!store.micOn) }
     ) {
       if macConnected, !store.cameraOnly {
         Picker("Voice from", selection: Binding(get: { store.voiceSource }, set: { store.setVoiceSource($0) })) {
@@ -569,27 +669,13 @@ struct PresenterScreen: View {
       })
   }
 
+  // shortcut: the iPad preview draws framing guides only; attach CameraExposure when porting its image renderer.
   private var pictureTools: some View {
-    HStack(spacing: 4) {
-      ToolButton(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras)
-      ToolButton(title: "False colour", symbol: "circle.lefthalf.filled", isOn: $falseColour)
-      ToolButton(title: "Guides", symbol: "grid", isOn: guides)
+    BarGroup(label: "Picture tools", raised: false) {
+      BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras.wrappedValue) { zebras.wrappedValue.toggle() }
+      BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour) { camera.guides.falseColour.toggle() }
+      BarToggle(title: "Guides", symbol: "grid", isOn: guides.wrappedValue) { guides.wrappedValue.toggle() }
     }
-    .padding(4)
-    .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: 16))
-  }
-
-  /// The same three tools folded into one menu on narrower screens.
-  private func pictureMenu(compact: Bool) -> some View {
-    Menu {
-      Toggle("Zebras", isOn: zebras)
-      Toggle("False colour", isOn: $falseColour)
-      Toggle("Guides", isOn: guides)
-    } label: {
-      PadLabel(title: "Picture", icon: "slider.horizontal.3", showsTitle: !compact, caret: !compact)
-        .padChrome(kind: .plain, square: compact)
-    }
-    .accessibilityLabel("Picture tools")
   }
 
   private var lookPopover: some View {
@@ -640,6 +726,9 @@ struct PresenterScreen: View {
         .accessibilityLabel("Show controls")
         .accessibilityAddTraits(.isButton)
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .contentShape(Rectangle())
+    .onTapGesture { store.setCleanScreen(false) }
     .padding(.bottom, 4)
     .overlay(alignment: .bottom) {
       Color.clear.frame(height: 64).contentShape(Rectangle())
@@ -660,6 +749,7 @@ struct PresenterScreen: View {
   /// Keyboards, presentation clickers and foot pedals. Most clickers send Page Up and Page Down
   /// or the arrow keys; pedals are usually set to Space or the arrows.
   private func handle(_ press: KeyPress) -> KeyPress.Result {
+    guard !store.editing else { return .ignored }
     if store.cameraOnly {
       // Only Escape, Mirror and Flip mean anything with no script; the reading keys are left alone.
       switch (press.key, press.characters) {
@@ -699,35 +789,21 @@ struct PresenterScreen: View {
 
 // MARK: - Parts
 
-/// The reading line: a full-width rule under the current line with a marker at the reader's side.
-/// It sits in the turned layer, so Mirror puts the marker on the right.
-private struct ReadingLine: View {
-  var opacity: Double
-  var trailing: CGFloat
-  var body: some View {
-    ZStack(alignment: .leading) {
-      Rectangle().fill(PresenterTheme.accent.opacity(opacity)).frame(height: 4)
-        .padding(.trailing, trailing)
-      Triangle().fill(PresenterTheme.accent).frame(width: 16, height: 24)
-    }
-  }
-}
-
-private struct Triangle: Shape {
-  func path(in rect: CGRect) -> Path {
-    var path = Path()
-    path.move(to: CGPoint(x: rect.minX, y: rect.minY))
-    path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-    path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-    path.closeSubpath()
-    return path
-  }
-}
-
 /// Observes the meter itself, so a level arriving 20 times a second redraws only this.
 private struct PresenterMeter: View {
   @ObservedObject var meter: RemoteMicMeter
-  var body: some View { DBMeter(levelDB: meter.levelDB, axis: .vertical) }
+  let name: String
+  var isListening = true
+  @State private var input = InputMeter()
+  var body: some View {
+    MicMeterView(meter: input, micName: name, isListening: isListening)
+      .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+        input.show(peakDBFS: Float(meter.levelDB), isClipping: meter.levelDB >= -0.1)
+      }
+      .onChange(of: meter.levelDB, initial: true) { _, level in
+        input.show(peakDBFS: Float(level), isClipping: level >= -0.1)
+      }
+  }
 }
 
 private enum PadKind { case plain, primary, lit, card }
@@ -758,8 +834,8 @@ extension View {
       .frame(minWidth: square ? height : minWidth, minHeight: height)
       .frame(width: square ? height : nil)
       .background(
-        kind == .primary ? PresenterTheme.accent : kind == .lit ? PresenterTheme.lit : kind == .card ? PresenterTheme.card : PresenterTheme.card2,
-        in: RoundedRectangle(cornerRadius: 16))
+        kind == .primary ? PresenterTheme.accent : kind == .lit ? Color.white.opacity(0.2) : kind == .card ? PresenterTheme.card : PresenterTheme.card2,
+        in: RoundedRectangle(cornerRadius: 12))
       .overlay { if kind == .card { RoundedRectangle(cornerRadius: 16).strokeBorder(PresenterTheme.line) } }
       .contentShape(RoundedRectangle(cornerRadius: 16))
   }
@@ -795,38 +871,6 @@ private struct PadButton: View {
   }
 }
 
-/// Camera and Mic: tapping the main part switches the device off (red, slashed icon) and on again,
-/// the caret opens its source menu.
-private struct SplitButton<Content: View>: View {
-  let title: String
-  let icon: String
-  let showsTitle: Bool
-  let isOff: Bool
-  let caretLabel: String
-  let action: () -> Void
-  @ViewBuilder let menu: () -> Content
-
-  var body: some View {
-    HStack(spacing: 0) {
-      Button(action: action) {
-        PadLabel(title: title, icon: icon, showsTitle: showsTitle, maxTitleWidth: 96)
-          .padding(.horizontal, showsTitle ? 16 : 0)
-          .frame(minWidth: showsTitle ? 0 : 52, minHeight: 52)
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel(title)
-      Rectangle().fill(isOff ? PresenterTheme.offText.opacity(0.25) : PresenterTheme.line).frame(width: 1, height: 52)
-      Menu(content: menu) {
-        Image(systemName: "chevron.down").font(.system(size: 16, weight: .semibold)).frame(width: 48, height: 52)
-      }
-      .accessibilityLabel(caretLabel)
-    }
-    .font(.system(size: 17))
-    .foregroundStyle(isOff ? PresenterTheme.offText : PresenterTheme.text)
-    .background(isOff ? PresenterTheme.offFill : PresenterTheme.card2, in: RoundedRectangle(cornerRadius: 16))
-  }
-}
-
 private struct TurnButton: View {
   let title: String
   let symbol: String
@@ -842,28 +886,6 @@ private struct TurnButton: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel(title)
-    .accessibilityValue(isOn ? "On" : "Off")
-    .accessibilityAddTraits(.isToggle)
-  }
-}
-
-private struct ToolButton: View {
-  let title: String
-  let symbol: String
-  @Binding var isOn: Bool
-  var body: some View {
-    Button { isOn.toggle() } label: {
-      VStack(spacing: 4) {
-        Image(systemName: symbol).font(.system(size: 20))
-        Text(title).font(.system(size: 13)).lineLimit(1).fixedSize()
-      }
-      .foregroundStyle(isOn ? PresenterTheme.accent : PresenterTheme.text)
-      .frame(minWidth: 68, minHeight: 44)
-      .padding(.horizontal, 8).padding(.vertical, 4)
-      .background(isOn ? PresenterTheme.lit : Color.clear, in: RoundedRectangle(cornerRadius: 12))
-      .contentShape(RoundedRectangle(cornerRadius: 12))
-    }
-    .buttonStyle(.plain)
     .accessibilityValue(isOn ? "On" : "Off")
     .accessibilityAddTraits(.isToggle)
   }

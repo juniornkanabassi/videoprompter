@@ -303,3 +303,86 @@ struct KeyCap: View {
       .accessibilityHidden(true)
   }
 }
+
+/// Zoom for a whole pane: lays the content out in 1/scale of the space it is given and draws it
+/// scaled back up, so every label, control and text view grows together. SwiftUI's own scale keeps
+/// clicks on target, AppKit views inside included; an NSHostingView inside a bounds-scaled NSView
+/// draws the same but stops hit-testing its AppKit subviews.
+struct UIZoom: Layout {
+  var scale: Double
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let size = subviews.first?.sizeThatFits(ProposedViewSize(
+      width: proposal.width.map { $0 / scale }, height: proposal.height.map { $0 / scale })) ?? .zero
+    guard scale != 1 else { return size }
+    // Zoomed, a pane takes the space it is offered: passing its content's minimum on, doubled at
+    // 200%, asked the split view for more than the window had and AppKit looped on constraints.
+    return CGSize(width: proposal.width ?? size.width * scale, height: proposal.height ?? size.height * scale)
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    subviews.first?.place(at: bounds.origin, anchor: .topLeading,
+      proposal: ProposedViewSize(width: bounds.width / scale, height: bounds.height / scale))
+  }
+}
+extension View {
+  func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
+}
+
+
+struct PresenterZebraSwatch: View {
+  var body: some View {
+    Canvas { context, size in
+      let picture = CGRect(origin: .zero, size: size)
+      context.fill(Path(picture), with: .color(.white))
+      context.stroke(Path(CameraOverlay.zebraPath(picture: picture)), with: .color(.black),
+                     lineWidth: CameraOverlay.zebraLineWidth(picture: picture))
+    }.clipShape(RoundedRectangle(cornerRadius: 4))
+      .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.6)))
+  }
+}
+
+struct PresenterExposureKey: View {
+  let guides: CameraGuides
+  @Binding var expanded: Bool
+  var zoom = 1.0
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.sm) {
+      Button { expanded.toggle() } label: {
+        HStack {
+          Text(expanded ? "Hide key" : "Exposure key")
+          if expanded { Spacer(minLength: Space.xs) }
+          Image(systemName: expanded ? "chevron.up" : "chevron.down")
+        }.frame(minHeight: AlphaStyle.minTarget)
+      }.buttonStyle(.plain).accessibilityLabel(expanded ? "Hide key" : "Show key")
+        .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+      if expanded {
+        if guides.zebras {
+          HStack(spacing: Space.sm) {
+            PresenterZebraSwatch().frame(width: 24, height: 24)
+            VStack(alignment: .leading, spacing: Space.xs) {
+              Text("Zebras").fontWeight(.semibold)
+              Text(guides.exposure.zebraRangeLabel + " IRE").font(.system(size: 14))
+            }
+          }
+        }
+        if guides.falseColour {
+          ForEach(Array(guides.exposure.legendBands.enumerated()), id: \.offset) { _, band in
+            HStack(spacing: Space.sm) {
+              RoundedRectangle(cornerRadius: Space.xs)
+                .fill(Color(red: Double(band.colour & 255)/255, green: Double((band.colour >> 8) & 255)/255, blue: Double((band.colour >> 16) & 255)/255))
+                .frame(width: 24, height: 24)
+              VStack(alignment: .leading, spacing: 0) {
+                Text(band.label).fontWeight(.semibold)
+                Text(band.range + " IRE").font(.system(size: 14)).foregroundStyle(.secondary)
+              }
+            }
+          }
+        }
+        Text("Measured from the incoming picture.").font(.system(size: 13)).foregroundStyle(.secondary)
+      }
+    }.font(.system(size: 16)).padding(Space.md)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      .environment(\.colorScheme, .dark).uiZoom(zoom)
+  }
+}

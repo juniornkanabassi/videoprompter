@@ -81,3 +81,7 @@ The team has no registered devices, so a signed archive fails with "No profiles 
 | Escape | Close the presenter |
 
 Tap the screen to show or hide the controls. Drag to move the reading position by hand; double-tap a word to jump to it.
+
+## Offscreen presenter comparison
+
+`OUT=/private/tmp/vp-ipad-hud/after zsh checks/ipad-presenter-shots.sh` uses a disposable headless simulator. It captures Setup, Camera Only, Reading with camera, Mirrored + Flipped and Mac lost at 1180 × 820, 1366 × 1024 and 834 × 1194. `DERIVED_DATA` can reuse a previous build directory. The fixture uses a generated neutral reference image, silent manual playback and isolated simulator documents; it never needs a camera or microphone. The matching Mac fixture is `AppearanceSnapshotTests/testPadHUDMacReferences` with `VIDEOPROMPTER_SNAPSHOTS` set to the output directory.

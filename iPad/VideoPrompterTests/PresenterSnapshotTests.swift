@@ -10,9 +10,9 @@ import XCTest
 /// without VP_SHOTS_DIR the test does nothing.
 @MainActor final class PresenterSnapshotTests: XCTestCase {
   private static let sizes: [(name: String, size: CGSize)] = [
-    ("ipad11", CGSize(width: 1210, height: 834)),
-    ("ipad13", CGSize(width: 1376, height: 1032)),
-    ("narrow", CGSize(width: 640, height: 820)),
+    ("1180x820", CGSize(width: 1180, height: 820)),
+    ("1366x1024", CGSize(width: 1366, height: 1024)),
+    ("834x1194", CGSize(width: 834, height: 1194)),
   ]
 
   private static let script = """
@@ -41,23 +41,26 @@ import XCTest
     let session = store.session
     session.seek(to: 24)
 
-    for (name, size) in Self.sizes {
-      try await render(PresenterScreen(session: session, camera: store.camera).environmentObject(store), size: size, name: "ipad-setup-\(name)", directory: directory) {
-        store.micMeter.show(-24)
-      }
+    let picture = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
+      UIColor(white: 0.18, alpha: 1).setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
     }
-
-    session.play()
-    for (name, size) in Self.sizes {
-      try await render(PresenterScreen(session: session, camera: store.camera, startsReading: true).environmentObject(store), size: size, name: "ipad-reading-\(name)", directory: directory) {
-        store.micMeter.show(-9)
-      }
-    }
-
-    store.setCleanScreen(true)
-    for (name, size) in Self.sizes {
-      try await render(PresenterScreen(session: session, camera: store.camera, startsReading: true).environmentObject(store), size: size, name: "ipad-clean-\(name)", directory: directory) {
-        store.micMeter.show(-9)
+    for state in ["setup", "camera-only", "reading-camera", "mirrored-flipped", "mac-lost"] {
+      store.closePresenter()
+      session.pause()
+      store.setMirror(state == "mirrored-flipped")
+      store.setFlip(state == "mirrored-flipped")
+      if state == "camera-only" { store.presentCamera() } else { store.present(script) }
+      store.setPictureMode(.behindScript)
+      session.seek(to: 24)
+      if state == "reading-camera" || state == "mirrored-flipped" { session.play(captureAudio: false) }
+      for (name, size) in Self.sizes {
+        try await render(PresenterScreen(session: session, camera: store.camera,
+          startsReading: state != "setup" && state != "camera-only", referencePicture: picture,
+          previouslyConnected: state == "mac-lost").environmentObject(store),
+          size: size, name: "ipad-\(state)-\(name)", directory: directory) {
+          store.micMeter.show(-9)
+        }
       }
     }
     session.pause()

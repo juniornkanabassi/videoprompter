@@ -690,3 +690,9 @@ Round 17 recording/receipt refinement: recording health and its live meter sit b
 | Tall Tools popover for small sections (visual) | The Tools surface sizes to its content and keeps the bounded scrolling viewport for enlarged content. |
 
 Verified by `RoundNineteenTests`, the updated `FinalFooterTests` state matrix (with a Waiting for picture state) and the `fable-bar-*` / `fable-tools-*` fixtures.
+
+## iPad presenter HUD alignment (13 November 2026)
+
+The iPad presenter uses the Mac's Bar controls, microphone meter, exposure key and current-line band. The setup toolbar wraps to two touch rows when the one-row layout will not fit; each target remains at least 44 pt. Setup reserves 144 pt below the script, or 200 pt for the three-row portrait toolbar, and a side column for the camera card. Reading keeps its smaller transport and the current-line position, viewport fade and independent Mirror/Flip transforms. Accessibility text size scales the HUD through the shared UIZoom layout. Camera Only keeps its existing recording status and camera ownership behaviour. Clean retains the iPad's tap-anywhere exit.
+
+The iPad's camera renderer still supplies framing guides only. The Mac's calibrated zebra and false-colour image processing is not ported by this HUD change; the existing exposure toggles and the shared key retain their configuration. Live camera processing requires a separate renderer change.

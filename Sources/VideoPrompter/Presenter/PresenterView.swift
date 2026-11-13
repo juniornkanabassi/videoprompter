@@ -1197,15 +1197,3 @@ extension EnvironmentValues {
     set { self[PresenterTransparencyOverride.self] = newValue }
   }
 }
-
-struct PresenterZebraSwatch: View {
-  var body: some View {
-    Canvas { context, size in
-      let picture = CGRect(origin: .zero, size: size)
-      context.fill(Path(picture), with: .color(.white))
-      context.stroke(Path(CameraOverlay.zebraPath(picture: picture)), with: .color(.black),
-                     lineWidth: CameraOverlay.zebraLineWidth(picture: picture))
-    }.clipShape(RoundedRectangle(cornerRadius: 4))
-      .overlay(RoundedRectangle(cornerRadius: 4).stroke(.white.opacity(0.6)))
-  }
-}

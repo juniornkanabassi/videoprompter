@@ -65,8 +65,9 @@ final class PadPresenterLayoutTests: XCTestCase {
     // The status pill gets its own row below 900 pt, as the card does below 1300 pt.
     XCTAssertEqual(insets(834), [84, 152])
     XCTAssertEqual(insets(clean: true, setup: true, lost: true), [0, 0])
-    XCTAssertEqual(insets(setup: true), [84, 100])
-    XCTAssertEqual(insets(setup: true, note: true), [84, 156])
+    XCTAssertEqual(insets(setup: true), [84, 144])
+    XCTAssertEqual(insets(834, setup: true), [84, 200])
+    XCTAssertEqual(insets(setup: true, note: true), [84, 200])
     // The Mac-lost notice has its own band; the card takes a row of its own only on narrower screens.
     XCTAssertEqual(insets(1366, lost: true), [128, 92])
     XCTAssertEqual(insets(1180, lost: true), [128, 176])
