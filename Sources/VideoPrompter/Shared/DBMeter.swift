@@ -6,13 +6,13 @@ struct DBMeter: View {
   var axis: Axis
   var showsScale = true
 
-  static let ticks: [Double] = [0, -6, -12, -24, -36, -48, -60]
+  nonisolated static let ticks: [Double] = [0, -6, -12, -24, -36, -48, -60]
   enum Band { case green, yellow, red }
-  static func fraction(_ db: Double) -> Double {
+  nonisolated static func fraction(_ db: Double) -> Double {
     guard !db.isNaN else { return 0 }
     return min(1, max(0, (db + 60) / 60))
   }
-  static func band(_ db: Double) -> Band { db <= -12 ? .green : db <= -6 ? .yellow : .red }
+  nonisolated static func band(_ db: Double) -> Band { db <= -12 ? .green : db <= -6 ? .yellow : .red }
   private static let colours: [Color] = [Color(red: 0.37, green: 0.76, blue: 0.54), Color(red: 0.96, green: 0.81, blue: 0.29), Color(red: 0.89, green: 0.41, blue: 0.36)]
 
   var body: some View {
