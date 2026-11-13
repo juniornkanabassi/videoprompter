@@ -443,7 +443,9 @@ struct FormattedScriptTextView: UIViewRepresentable {
       defer { rendering = false }
       let selection = view.selectedRange
       let offset = view.contentOffset
-      let base = UIFontMetrics(forTextStyle: .body).scaledFont(for: UIFont(name: parent.fontName, size: parent.fontSize) ?? .systemFont(ofSize: parent.fontSize))
+      var style = ScriptStyle()
+      style.fontName = parent.fontName; style.fontSize = parent.fontSize
+      let base = UIFontMetrics(forTextStyle: .body).scaledFont(for: ScriptRenderer.font(style))
       let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 5
       let rich = NSMutableAttributedString(string: model.text, attributes: [.font: base, .foregroundColor: UIColor.label, .paragraphStyle: paragraph])
       for style in model.styles {
