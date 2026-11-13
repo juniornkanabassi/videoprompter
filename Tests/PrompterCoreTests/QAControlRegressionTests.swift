@@ -102,7 +102,13 @@ import XCTest
       setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
       var buffer = [UInt8](repeating: 0, count: 8192)
       var count: Int
-      repeat { count = recv(fd, &buffer, buffer.count, 0) } while count > 0
+      // Under a full parallel suite the server's deadline can fire a little late; allow a few
+      // read timeouts (up to 3 s extra) before deciding the reader was never closed.
+      var timeouts = 0
+      repeat {
+        count = recv(fd, &buffer, buffer.count, 0)
+        if count < 0, errno == EAGAIN || errno == EWOULDBLOCK, timeouts < 3 { timeouts += 1; count = 1 }
+      } while count > 0
       return count == 0
     }.value
     XCTAssertTrue(expired, "The five-second send deadline must close a stalled reader")

@@ -400,6 +400,17 @@ struct FormattedMarkdownEditModel {
       paragraph.alignment = typography.alignment
       output.addAttribute(.paragraphStyle, value: paragraph, range: full)
     }
+    // A blank line between paragraphs is drawn at 0.4 of a line, so more script stays in view;
+    // reading and editing share this, so text wraps and sits the same in both.
+    let text = output.string as NSString
+    let blankFont = NSFont.systemFont(ofSize: max(1, fontSize * 0.4))
+    for index in 0..<text.length where text.character(at: index) == 10 && (index == 0 || text.character(at: index - 1) == 10) {
+      let range = NSRange(location: index, length: 1)
+      output.addAttribute(.font, value: blankFont, range: range)
+      let style = ((output.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle) ?? .default).mutableCopy() as! NSMutableParagraphStyle
+      style.paragraphSpacing = 0
+      output.addAttribute(.paragraphStyle, value: style, range: range)
+    }
     // After the paragraph styles above, which would otherwise replace the box.
     for (index, callout) in callouts.enumerated() where callout.box.length > 0 {
       // Alternating instances keep two touching callouts in two boxes.
