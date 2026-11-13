@@ -23,7 +23,7 @@ final class CameraLinkPipelineTests: XCTestCase {
       let pipe = CollectingPipe(name: "test")
       let encoder = LinkEncoder()
       encoder.attach(pipe)
-      // One frame at a time, as a camera delivers them: the encoder drops a frame that arrives while another is still in it.
+      // The encoder drops a frame that arrives while another is still in it, by design, so each is drained first to keep all 15.
       for index in 0..<15 {
         encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(width, height, index), from: Self.connection)
         encoder.drain()
@@ -44,21 +44,38 @@ final class CameraLinkPipelineTests: XCTestCase {
   /// Turning the camera off while the remote stays: the end of the picture comes after every
   /// frame, so the iPad never goes back to a frozen Mac picture.
   func testTheEndOfThePictureFollowsTheLastFrame() throws {
-    let pipe = CollectingPipe(name: "test")
+    let pipe = CameraLinkLatencyTests.GatedPipe(name: "test", armed: false)
     let encoder = LinkEncoder()
     encoder.attach(pipe)
-    for index in 0..<5 {
+    for index in 0..<4 {
       encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, index), from: Self.connection)
       encoder.drain()
     }
+    // A fifth frame is admitted and held inside the encoder's output while the picture is ended: it
+    // must still come out first. On its own thread, as VideoToolbox may deliver on the calling one.
+    pipe.arm()
+    let fifth = try Self.frame(1920, 1080, 4)
+    let submitted = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: fifth, from: Self.connection)
+      submitted.signal()
+    }
+    XCTAssertEqual(pipe.entered.wait(timeout: .now() + 10), .success, "the fifth frame is outstanding")
     encoder.finish(pipe)
+    pipe.gate.signal()
+    XCTAssertEqual(submitted.wait(timeout: .now() + 10), .success)
     encoder.captureQueue.sync {}
     // A frame the camera delivers after the switch is not sent.
     encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, 5), from: Self.connection)
-    var reader = CameraLink.Reader()
-    let messages = try reader.append(pipe.bytes.withLock { $0 })
-    XCTAssertEqual(messages.last, .format(width: 0, height: 0, parameterSets: []))
-    XCTAssertEqual(messages.filter { if case .frame = $0 { true } else { false } }.count, 5)
+    encoder.drain()
+    let messages = pipe.messages
+    XCTAssertEqual(messages.last, .format(width: 0, height: 0, parameterSets: []), "the end marker is last")
+    XCTAssertEqual(messages.filter { $0 == .format(width: 0, height: 0, parameterSets: []) }.count, 1)
+    let frames = messages.compactMap { message -> Int? in
+      if case .frame(let time, _, _) = message { return Int((time * 30 + 500_000) / 1_000_000) }
+      return nil
+    }
+    XCTAssertEqual(frames, [0, 1, 2, 3, 4], "the outstanding frame precedes the end marker, and nothing follows it")
   }
 
   /// Closed before it ever read: the socket is still let go of exactly once.

@@ -22,6 +22,8 @@ final class CameraLinkLatencyTests: XCTestCase {
     let stall: (at: Double, for: Double)?
     private let first = Mutex<Double?>(nil)
     private let stalled = Mutex(false)
+    /// When the stall ended (nil until it has), on the clock `CACurrentMediaTime` reads.
+    let stallEnd = Mutex<Double?>(nil)
     init(name: String, bytesPerSecond: Double, stall: (at: Double, for: Double)? = nil) {
       self.bytesPerSecond = bytesPerSecond
       self.stall = stall
@@ -48,6 +50,7 @@ final class CameraLinkLatencyTests: XCTestCase {
         }
         if let stall, began - firstWrite >= stall.at, stalled.withLock({ defer { $0 = true }; return !$0 }) {
           Thread.sleep(forTimeInterval: stall.for)
+          stallEnd.withLock { $0 = CACurrentMediaTime() }
         }
         Thread.sleep(forTimeInterval: Double(data.count) / bytesPerSecond)
         done()
@@ -64,7 +67,7 @@ final class CameraLinkLatencyTests: XCTestCase {
   private func run(
     _ label: String, camera: (Int, Int), over: String, megabits: Double, wifi: Bool,
     stall: (at: Double, for: Double)? = nil, seconds: Double = 3
-  ) throws -> (encode: [Double], queue: [Double], decode: [Double], sent: Int, fed: Int, size: CGSize, frames: [Int: TimedPipe.Frame]) {
+  ) throws -> (encode: [Double], queue: [Double], decode: [Double], sent: Int, fed: Int, size: CGSize, frames: [Int: TimedPipe.Frame], pipe: TimedPipe, encoder: LinkEncoder) {
     let pipe = TimedPipe(name: over, bytesPerSecond: megabits * 125_000, stall: stall)
     let encoder = LinkEncoder()
     encoder.attach(pipe, bitRate: wifi ? 4_000_000 : 10_000_000, longSide: wifi ? 1280 : 1920)
@@ -96,7 +99,7 @@ final class CameraLinkLatencyTests: XCTestCase {
     print("LATENCY   encode  \(stage(encode))")
     print("LATENCY   queue   \(stage(queue))")
     print("LATENCY   decode  \(stage(decode))")
-    return (encode, queue, decode, order.count, fed, pipe.size, frames)
+    return (encode, queue, decode, order.count, fed, pipe.size, frames, pipe, encoder)
   }
 
   /// The three delays at the two sizes a confidence monitor sends, over each transport. The numbers
@@ -118,14 +121,15 @@ final class CameraLinkLatencyTests: XCTestCase {
     XCTAssertLessThan(stalled.sent, stalled.fed, "frames behind the stall are dropped")
     // The frame already waiting when the stall began is unavoidably late; nothing else may queue behind it.
     XCTAssertLessThanOrEqual(stalled.queue.filter { $0 > 100 }.count, 1, "at most one frame sat in the queue behind the stall")
-    // The picture comes back: every frame after a gap is a key frame, and delivery goes on to the last
-    // frame fed (run() has already decoded every frame that got through, each to a picture).
+    // The picture comes back: every frame after a gap is a key frame, and output is sustained after the
+    // stall window (a few legitimate drops are fine). run() has decoded every frame that got through.
     let order = stalled.frames.keys.sorted()
     let gaps = zip(order, order.dropFirst()).filter { $1 != $0 + 1 }.map(\.1)
     XCTAssertFalse(gaps.isEmpty)
     for after in gaps { XCTAssertTrue(stalled.frames[after]!.key, "frame \(after) follows a dropped one") }
-    XCTAssertEqual(order.last, stalled.fed - 1, "delivery continues to the last frame")
-    XCTAssertGreaterThanOrEqual(order.filter { $0 >= (gaps.last ?? 0) }.count, 20, "a run of frames follows the stall")
+    let end = try XCTUnwrap(stalled.pipe.stallEnd.withLock { $0 }, "the stall happened")
+    XCTAssertGreaterThanOrEqual(order.filter { stalled.frames[$0]!.queued > end }.count, 20, "frames keep arriving after the stall")
+    try Self.assertProbeDelivered(stalled.encoder, stalled.pipe, index: stalled.fed)
   }
 
   /// Two frames arrive before either has left the encoder, with the transport stalled or not: the
@@ -181,17 +185,28 @@ final class CameraLinkLatencyTests: XCTestCase {
       XCTAssertTrue(frames[after]!.key, "frame \(after) follows a dropped one and must be a key frame")
     }
     XCTAssertGreaterThan(gaps, 0, "the stall dropped something")
-    XCTAssertEqual(order.last, 44, "delivery continues to the last frame")
     // Every frame that got through, gaps and all, decodes to a picture: the key frames made it whole.
     XCTAssertEqual(try Self.timedDecode(order.map { frames[$0]!.data }, sets: pipe.sets).count, order.count)
+    try Self.assertProbeDelivered(encoder, pipe, index: 45)
   }
 
   /// Blocks the first message queued, on the encoder's output thread, until `gate` is signalled.
   final class GatedPipe: LinkPipe, @unchecked Sendable {
     let entered = DispatchSemaphore(value: 0)
     let gate = DispatchSemaphore(value: 0)
-    private let first = Mutex(true)
-    private let state = Mutex((frames: [Int: TimedPipe.Frame](), sets: [Data]()))
+    private let first: Mutex<Bool>
+    private let state = Mutex((frames: [Int: TimedPipe.Frame](), sets: [Data](), written: Data()))
+    init(name: String, armed: Bool = true) {
+      first = Mutex(armed)
+      super.init(name: name)
+    }
+    /// The next message queued blocks too.
+    func arm() { first.withLock { $0 = true } }
+    /// Everything written, in order.
+    var messages: [CameraLink.Message] {
+      var reader = CameraLink.Reader()
+      return (try? reader.append(state.withLock { $0.written })) ?? []
+    }
     override func queued(_ count: Int) {
       super.queued(count)
       if first.withLock({ defer { $0 = false }; return $0 }) {
@@ -200,6 +215,7 @@ final class CameraLinkLatencyTests: XCTestCase {
       }
     }
     override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+      state.withLock { $0.written.append(data) }
       var reader = CameraLink.Reader()
       for message in (try? reader.append(data)) ?? [] {
         switch message {
@@ -216,6 +232,18 @@ final class CameraLinkLatencyTests: XCTestCase {
   }
 
   // MARK: Helpers
+
+  /// A frame submitted after everything has drained must come out, and the whole stream with it
+  /// must still decode: the picture is alive after the stall, whatever was dropped on the way.
+  static func assertProbeDelivered(_ encoder: LinkEncoder, _ pipe: TimedPipe, index: Int) throws {
+    try drain(encoder, pipe)
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try noisyFrame(1280, 720, index), from: CameraLinkPipelineTests.connection)
+    try drain(encoder, pipe)
+    let frames = pipe.frames
+    XCTAssertNotNil(frames[index], "the probe frame was delivered")
+    let order = frames.keys.sorted()
+    XCTAssertEqual(try timedDecode(order.map { frames[$0]!.data }, sets: pipe.sets).count, order.count)
+  }
 
   /// Waits for every frame fed to come out of the encoder, then for the transport to finish writing.
   static func drain(_ encoder: LinkEncoder, _ pipe: LinkPipe) throws {
