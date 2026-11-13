@@ -77,8 +77,14 @@ struct PresenterView: View {
   private var controlZoom: Double {
     Self.controlZoom(store.uiZoom) * Self.sizeBoost(width: viewport.width / Self.controlZoom(store.uiZoom))
   }
-  /// The width of the slim microphone strip at the right edge, before zoom.
-  static let meterWidth: CGFloat = 96
+  /// The width of the slim microphone strip at the right edge, before zoom: dB numbers, bar and zone words.
+  static let meterWidth: CGFloat = 120
+  /// One fixed width for the side cards (exposure key, camera), with their padding, so they line up.
+  static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
+    (width / zoom >= 1400 ? 248 : 188) * zoom + Space.md * 2
+  }
+  /// The strip stays reserved while editing, so the editor wraps its lines exactly as reading does.
+  private var meterReserved: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
   @State private var viewport = CGSize(width: 1600, height: 1000)
   @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
   @ObservedObject private var recorder: CameraRecorder
@@ -107,22 +113,19 @@ struct PresenterView: View {
     GeometryReader { geometry in
       let editing = draft.isEditing
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
-      let meterWidth = micLevelVisible ? Self.meterWidth * controlZoom : 0
+      let meterWidth = meterReserved ? Self.meterWidth * controlZoom : 0
       let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
-      let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
-      let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
-        (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
-      let pictureWidth = min(geometry.size.width, geometry.size.height * pictureAspect)
-      let availableGutter = (geometry.size.width - pictureWidth) / 2
-      let roomyGutter = availableGutter >= (280 * controlZoom + Space.md * 2)
-      let columnWidth = (roomyGutter ? 280 : 144) * controlZoom + Space.md * 2
-      let gutterWidth = setup ? max(meterWidth, min(columnWidth, pictureAspect > 1 ? geometry.size.width * 0.25 : columnWidth)) : 0
-      // The script sits in the picture region: the stage less the setup gutters and the meter.
-      let regionWidth = max(1, setup ? geometry.size.width - 2 * gutterWidth : geometry.size.width - meterWidth)
-      let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: store.settings.textWidth)
+      // A fixed column for the side cards, then the picture fills the rest up to the meter: no empty gutter.
+      let cardColumn = setup && (keyVisible || sourceInfo != nil) ? Self.cardColumnWidth(width: geometry.size.width, zoom: controlZoom) : 0
+      // The script sits in the picture region: the stage less the card column and the meter.
+      let regionWidth = max(1, geometry.size.width - cardColumn - meterWidth)
+      let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
+      let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
+      let backingWidth = min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl)
       let scriptTopInset = keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0
+      let scriptHeight = max(1, geometry.size.height - scriptTopInset - Self.readingBottomInset)
       HStack(alignment: .top, spacing: 0) {
-        if setup {
+        if cardColumn > 0 {
           ScrollView(.vertical) {
           VStack(alignment: .leading, spacing: Space.md) {
             if keyVisible {
@@ -133,7 +136,7 @@ struct PresenterView: View {
               .accessibilityIdentifier("presenter-source-status")
           }.frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.md)
-          }.frame(width: gutterWidth, height: geometry.size.height, alignment: .topLeading)
+          }.frame(width: cardColumn, height: geometry.size.height, alignment: .topLeading)
         }
         ZStack(alignment: .top) {
           if camera.presentsWithVideo || camera.cleanView {
@@ -147,14 +150,14 @@ struct PresenterView: View {
             Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
               .opacity(editing ? 1 : Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
             if !editing && camera.presentsWithVideo {
-              ReadingBacking(opacity: reduceTransparency ? 0.9 : 0.45)
-                .frame(width: min(regionWidth, regionWidth * store.settings.textWidth + 2 * Space.xxl))
-                .padding(.vertical, Space.sm)
+              ReadingBacking(opacity: reduceTransparency ? 0.94 : 0.86).frame(width: backingWidth).frame(maxHeight: .infinity)
             }
-            // Behind the words, so the line shows where the reading is without striking them through.
+            // Under the current line, clear of the letters, and only as wide as the backing over the picture.
             if !editing {
               GuideLine(settings: store.settings)
-                .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: geometry.size.height - scriptTopInset, fraction: store.settings.guideFraction) - 1)
+                .frame(width: camera.presentsWithVideo ? backingWidth : nil)
+                .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: store.settings.guideFraction)
+                  + (store.settings.verticalMirror != (store.settings.rotation == 180) ? -1 : 1) * Self.guideDrop(fontSize: store.settings.fontSize))
             }
             Group {
               if editing {
@@ -165,7 +168,7 @@ struct PresenterView: View {
                 PresenterScriptView(session: session, settings: store.settings,
                   sideInset: columnInset,
                   overVideo: camera.presentsWithVideo,
-                  topInset: scriptTopInset)
+                  topInset: scriptTopInset, bottomInset: Self.readingBottomInset)
               }
             }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
               .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
@@ -189,8 +192,9 @@ struct PresenterView: View {
               .accessibilityIdentifier("presenter-exposure-legend")
           }
           if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
+            // The frame goes inside the zoom, which places its content at the corner of what it is offered.
             CameraRecoveryView(model: camera, prominent: true) { adjustOpener = "Camera"; shell.adjustTab = .camera }
-              .uiZoom(controlZoom).frame(maxWidth: .infinity, maxHeight: .infinity)
+              .frame(maxWidth: .infinity, maxHeight: .infinity).uiZoom(controlZoom)
           }
           if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
             Text("No script yet. Choose one in the library, then open the prompter.")
@@ -206,12 +210,13 @@ struct PresenterView: View {
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
           .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
-        if setup { Color.clear.frame(width: max(0, gutterWidth - meterWidth)) }
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening)
             .frame(width: Self.meterWidth, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
             .frame(width: meterWidth).padding(.vertical, Space.md)
             .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(.vertical, Space.md) }
+        } else if meterWidth > 0 {
+          Color.clear.frame(width: meterWidth)
         }
       }.foregroundStyle(.white)
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
@@ -256,7 +261,7 @@ struct PresenterView: View {
     }
   }
 
-  private var micLevelVisible: Bool { showsMicLevel && !camera.cleanView && !draft.isEditing && (shell.adjustTab == nil || viewport.width >= 1200) }
+  private var micLevelVisible: Bool { meterReserved && !draft.isEditing }
   private var trackedStage: some View {
     stage
     // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
