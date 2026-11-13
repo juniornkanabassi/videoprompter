@@ -25,7 +25,7 @@ final class PadCameraOnlyTests: XCTestCase {
   /// Closing switches off only what Camera Only switched on, and never lets a lost Mac feed start the local camera.
   func testClosingRestoresTheCamerasCameraOnlyStarted() throws {
     let store = try source("iPad/VideoPrompter/App/PadStore.swift")
-    for call in ["guard cameraOnly, camera.link.macName != nil, macStatus.cameraOn == false else { return }",
+    for call in ["guard isPresenting, cameraOnly || pictureMode != .off,\n      camera.link.macName != nil, macStatus.cameraOn == false, !startedMacCamera else { return }",
       "if camera.isShowingMac { camera.isOn = false }\n      setCameraOn(false)",
       "if startedLocalCamera { startedLocalCamera = false; camera.isOn = false }",
       "guard cameraOnly, camera.link.macName == nil, !camera.isOn else { return }\n    startedLocalCamera = true",
@@ -38,4 +38,27 @@ final class PadCameraOnlyTests: XCTestCase {
     XCTAssertTrue(screen.contains("private func useOwnCameraWithoutMac() { store.useOwnCameraWithoutMac() }"))
     XCTAssertFalse(screen.contains("camera.isOn = true }\n  }\n\n  private func countdown"), "no unowned local camera start")
   }
+  func testPictureRequestCoversScriptModesAndReconnectWithoutRepeatingUserOff() throws {
+    let store = try source("iPad/VideoPrompter/App/PadStore.swift")
+    XCTAssertTrue(store.contains("guard isPresenting, cameraOnly || pictureMode != .off,"))
+    XCTAssertTrue(store.contains("macStatus.cameraOn == false, !startedMacCamera"))
+    XCTAssertTrue(store.contains("presentingID = script.id\n    askMacForPicture()"))
+    XCTAssertTrue(store.contains("if firstCameraStatus { askMacForPicture() }"))
+    let link = try source("iPad/VideoPrompter/Camera/MacLink.swift")
+    XCTAssertTrue(link.contains("case .failed, .cancelled: true"))
+    XCTAssertTrue(link.contains("Self.needsRestart(usb!.state)"))
+    XCTAssertTrue(link.contains("Self.needsRestart(wifi!.state)"))
+    XCTAssertTrue(store.contains("camera.link.send(remoteState)"), "unchanged state must still acknowledge the heartbeat")
+  }
+
+  func testDiscoverySurvivesIdleDisconnectAndTransportFailure() throws {
+    let sender = try source("Sources/VideoPrompter/Camera/IPadCameraSender.swift")
+    XCTAssertTrue(sender.contains("(automaticallyLinks || isOn || controlsIPad || calls > 0)"))
+    XCTAssertTrue(sender.contains("pipe.close()\n          self.lost(pipe)"))
+    XCTAssertTrue(sender.contains("while !socket.withLock({ $0.stopped })"))
+    XCTAssertTrue(sender.contains("if self.linkOn && self.usesWiFi { self.startBrowsing() }"))
+    let app = try source("Sources/VideoPrompter/App/VideoPrompterApp.swift")
+    XCTAssertTrue(app.contains("IPadCameraSender.shared.startDiscovering()"))
+  }
+
 }

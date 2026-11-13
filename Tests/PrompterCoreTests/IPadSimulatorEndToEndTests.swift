@@ -10,6 +10,46 @@ import XCTest
 /// usbmuxd's tunnel. Runs only with VP_IPAD_E2E=1 and the app open in a booted Simulator with
 /// at least one script; `checks/ipad-link-e2e.sh` sets that up headless.
 final class IPadSimulatorEndToEndTests: XCTestCase {
+  @MainActor
+  func testAIdleSenderAnswersCameraOnlyAndReconnects() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let environment = ProcessInfo.processInfo.environment
+    let port = try XCTUnwrap(environment["VP_IPAD_E2E_PORT"].flatMap(UInt16.init))
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.capturesCamera = false
+    defer { sender.disconnect() }
+    let frameURL = URL(fileURLWithPath: try XCTUnwrap(environment["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents/vp-e2e-frame.txt")
+    for _ in 0..<2 {
+      try? FileManager.default.removeItem(at: frameURL)
+      let pipe = SocketPipe(socket: try XCTUnwrap(Self.connect(port: port)), name: "USB-C")
+      XCTAssertFalse(sender.isOn)
+      sender.use(pipe)
+      for _ in 0..<100 where !sender.isOn { try await Task.sleep(for: .milliseconds(50)) }
+      XCTAssertTrue(sender.isOn, "Camera Only requests the feed with the sender initially off")
+      for _ in 0..<100 where sender.iPadState?.macStatus?.cameras == nil {
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      XCTAssertNotNil(sender.iPadState?.macStatus?.cameras)
+      XCTAssertNotNil(sender.iPadState?.macStatus?.microphones)
+      XCTAssertEqual(sender.iPadState?.cameraOnly, true)
+      let encoder = LinkEncoder()
+      encoder.attach(pipe)
+      for index in 0..<30 {
+        encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try CameraLinkPipelineTests.frame(320, 180, index), from: CameraLinkPipelineTests.connection)
+        try await Task.sleep(for: .milliseconds(33))
+      }
+      for _ in 0..<100 where !FileManager.default.fileExists(atPath: frameURL.path) {
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      XCTAssertEqual(try String(contentsOf: frameURL, encoding: .utf8), "decoded")
+      encoder.finish(pipe)
+      sender.disconnect()
+      try await Task.sleep(for: .milliseconds(300))
+    }
+  }
+
   func testTheMacDrivesTheIPadAndSendsItsCamera() throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
     let environment = ProcessInfo.processInfo.environment

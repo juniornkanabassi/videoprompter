@@ -79,8 +79,15 @@ import UIKit
   /// Starts listening, or starts again after the app comes back from the background, where iOS
   /// may have torn the listeners down.
   func start() {
-    if usb == nil || usb?.state == .cancelled { usb = makeUSBListener() }
+    if usb == nil || Self.needsRestart(usb!.state) { usb = makeUSBListener() }
     restartWiFi()
+  }
+
+  private static func needsRestart(_ state: NWListener.State) -> Bool {
+    switch state {
+    case .failed, .cancelled: true
+    default: false
+    }
   }
 
   private func makeUSBListener() -> NWListener? {
@@ -106,7 +113,7 @@ import UIKit
       wifi = nil
       // Turning Wi-Fi off also ends a Mac already sending over it; USB-C carries on.
       receiver.dropWiFi()
-    } else if wifi == nil || wifi?.state == .cancelled {
+    } else if wifi == nil || Self.needsRestart(wifi!.state) {
       let parameters = CameraLinkSecurity.parameters(code: pairingCode)
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
@@ -161,7 +168,14 @@ import UIKit
       if size == nil { lastFrameTime = nil; framesSkipped = 0 }
       onChange?()
     case .frame(let date, let skipped):
-      if let date { lastFrameTime = date }
+      if let date {
+        lastFrameTime = date
+        #if DEBUG && targetEnvironment(simulator)
+        if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil {
+          try? Data("decoded".utf8).write(to: URL.documentsDirectory.appendingPathComponent("vp-e2e-frame.txt"), options: .atomic)
+        }
+        #endif
+      }
       framesSkipped = skipped
     case .pairingFailed(let reason): pairingFailure = reason
     case .command(let command):

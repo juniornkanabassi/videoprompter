@@ -1,7 +1,7 @@
 #!/bin/zsh
 # The Mac-to-iPad link end to end, with nothing on screen: builds the iPad app for the Simulator,
 # boots a throwaway iPad headless (no Simulator window), seeds a script, and runs
-# IPadSimulatorEndToEndTests against it. Leaves a screenshot of the iPad showing the Mac's
+# IPadSimulatorEndToEndTests against it, including an idle Mac sender and reconnect. Leaves a screenshot of the iPad showing the Mac's
 # picture at $OUT/ipad-link-e2e.png, then deletes the device.
 set -euo pipefail
 ROOT="${0:A:h:h}"

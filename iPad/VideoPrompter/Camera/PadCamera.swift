@@ -87,6 +87,9 @@ import UIKit
   }
 
   private func start() {
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil, !isShowingMac { return }
+    #endif
     if isShowingMac { return configure() }
     Task {
       var allowed = AVCaptureDevice.authorizationStatus(for: .video) == .authorized

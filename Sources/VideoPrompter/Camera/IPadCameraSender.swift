@@ -54,12 +54,19 @@ import VideoToolbox
   func setPictureMode(_ value: PadRemote.PictureMode) { send(.pictureMode(value)) }
   func setPicturePriority(_ value: PadRemote.PicturePriority) { send(.picturePriority(value)) }
   func setCleanScreen(_ value: Bool) { send(.cleanScreen(value)) }
-  func setCameraOn(_ value: Bool) { isOn = value; publishMacStatus() }
+  func setCameraOn(_ value: Bool) { cameraOwnedByIPad = false; isOn = value; publishMacStatus() }
+  private var cameraOwnedByIPad = false
+  private var receivingCameraRequest = false
   func selectCamera(_ id: String) {
     let camera = CameraModel.shared
     camera.refreshDevices()
     guard camera.devices.contains(where: { $0.uid == id }), !camera.recordingLocked else { return }
     camera.selectedUID = id
+    if cameraOwnedByIPad && !isOn {
+      receivingCameraRequest = true
+      isOn = true
+      receivingCameraRequest = false
+    }
     if isOn { SharedCameraSession.shared.select(id) }
     publishMacStatus()
   }
@@ -88,6 +95,9 @@ import VideoToolbox
 
   private var statusTimer: AnyCancellable?
   private var statusTicks = 0
+  private var lastResponse = Date()
+  private var meterCapture: AudioCapture?
+  private let setupMeter = InputMeter()
   private var macName = "Mac"
   private var microphones: [PadRemote.Source] = []
   private weak var sampledMeter: InputMeter?
@@ -117,7 +127,11 @@ import VideoToolbox
     guard pipe != nil else { return }
     let camera = CameraModel.shared
     let recorder = CameraRecorder.shared
-    let meter = relay.meter ?? (recorder.isCapturing ? recorder.inputMeter : AppStore.shared.session.meter)
+    let session = AppStore.shared.session
+    let activeMeter = relay.meter ?? (recorder.isCapturing ? recorder.inputMeter :
+      (session.isActivelyRunning && session.settings.mode == "Voice" && !session.followsRemote ? session.meter : nil))
+    updateSetupMeter(needed: iPadState?.cameraOnly == true && macMicOn && activeMeter == nil)
+    let meter = activeMeter ?? (meterCapture != nil ? setupMeter : AppStore.shared.session.meter)
     sampleMicLevel(meter)
     let next = PadRemote.MacStatus(
       cameras: camera.devices.map { .init(id: $0.uid, name: $0.name) },
@@ -131,10 +145,39 @@ import VideoToolbox
     update.micLevelDB = micMeter.levelDB
     pipe?.send(CameraLink.Message.command(.macStatus(update)).encoded())
   }
+  private func updateSetupMeter(needed: Bool) {
+    let device = AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)
+    if !needed || meterCapture?.selectedDevice.uid != device?.uid {
+      meterCapture?.stop()
+      meterCapture = nil
+      setupMeter.reset()
+    }
+    guard needed, meterCapture == nil, !CaptureAccess.isAgentOrTest, CaptureAccess.mayUse(.audio), let device,
+      let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1) else { return }
+    let capture = AudioCapture(device: device, outputFormat: format,
+      channel: AudioChannel.load(device.uid, defaults: AppStore.preferences()))
+    let delivery = AudioMeterDelivery { [weak self] in self?.setupMeter.show(channelPeaks: $0) }
+    do {
+      try capture.start(onBuffer: { _, _, _, peak, _ in
+        delivery.receive(peaks: [peak], callback: ProcessInfo.processInfo.systemUptime)
+      }, onStop: { [weak self, weak capture] _ in
+        Task { @MainActor in
+          if self?.meterCapture === capture { self?.meterCapture = nil }
+        }
+      })
+      meterCapture = capture
+    } catch { setupMeter.reset() }
+  }
+
   private func receive(_ command: PadRemote.Command) {
     switch command {
     case .selectCamera(let id): selectCamera(id)
-    case .cameraOn(let value): setCameraOn(value)
+    case .cameraOn(let value):
+      if !value || !isOn { cameraOwnedByIPad = value }
+      receivingCameraRequest = true
+      isOn = value
+      receivingCameraRequest = false
+      publishMacStatus()
     case .selectMicrophone(let id): selectMacMicrophone(id)
     case .micOn(let value):
       macMicOn = value
@@ -145,7 +188,12 @@ import VideoToolbox
   }
 
   /// Sends the camera.
-  @Published var isOn = false { didSet { if isOn != oldValue { isOn ? startCamera() : stopCamera() } } }
+  @Published var isOn = false {
+    didSet {
+      if !receivingCameraRequest { cameraOwnedByIPad = false }
+      if isOn != oldValue { isOn ? startCamera() : stopCamera() }
+    }
+  }
   /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
   @Published var controlsIPad = false {
     didSet {
@@ -179,6 +227,7 @@ import VideoToolbox
   @Published private(set) var previewImage: CGImage?
 
   func disconnect() {
+    automaticallyLinks = false
     controlsIPad = false
     isOn = false
     linkOn = false
@@ -225,6 +274,14 @@ import VideoToolbox
   private var generation = 0
   private var retry: Task<Void, Never>?
   private var linkOn = false
+  private var automaticallyLinks = false
+
+  /// Discovery is independent of camera capture and the Remote window.
+  func startDiscovering() {
+    guard !CaptureAccess.isAgentOrTest else { return }
+    automaticallyLinks = true
+    updateLink()
+  }
   /// CLI and MCP calls under way, each keeping the link open while it runs.
   private var calls = 0
   /// An iPad from before version 2 answered without its state: it cannot be controlled, and a
@@ -260,15 +317,25 @@ import VideoToolbox
   var searchesForIPad = true
 
   private func updateLink() {
-    let wanted = searchesForIPad && (isOn || controlsIPad || calls > 0)
+    let wanted = searchesForIPad && (automaticallyLinks || isOn || controlsIPad || calls > 0)
     guard wanted != linkOn else { return }
     linkOn = wanted
     wanted ? startLink() : stopLink()
   }
 
+  /// Tests exercise the session with generated frames, never capture hardware.
+  var capturesCamera = true
+  private var cameraRetained = false
+
   private func startCamera() {
+    if !capturesCamera {
+      if let pipe { attachCamera(pipe) }
+      updateLink()
+      return
+    }
     oldIPad = false
     let camera = CameraModel.shared
+    camera.refresh()
     camera.start()
     guard let uid = camera.selectedUID else {
       status = "Choose a camera in the Second monitor window first"
@@ -278,6 +345,7 @@ import VideoToolbox
     let shared = SharedCameraSession.shared
     shared.select(uid)
     shared.retain()
+    cameraRetained = true
     let output = self.output
     output.alwaysDiscardsLateVideoFrames = true
     output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
@@ -308,6 +376,8 @@ import VideoToolbox
     } else {
       encoder.attach(nil)
     }
+    guard cameraRetained else { updateLink(); return }
+    cameraRetained = false
     let output = self.output
     let shared = SharedCameraSession.shared
     shared.reconfigure { session in
@@ -335,6 +405,16 @@ import VideoToolbox
   private func startBrowsing() {
     guard browser == nil else { return }
     let browser = NWBrowser(for: .bonjour(type: CameraLink.bonjourType, domain: nil), using: .tcp)
+    browser.stateUpdateHandler = { [weak self, weak browser] state in
+      guard case .failed = state else { return }
+      Task { @MainActor in
+        guard let self, self.browser === browser else { return }
+        self.browser?.cancel()
+        self.browser = nil
+        try? await Task.sleep(for: .seconds(2))
+        if self.linkOn && self.usesWiFi { self.startBrowsing() }
+      }
+    }
     browser.browseResultsChangedHandler = { [weak self] results, _ in
       let endpoints = results.map(\.endpoint)
       Task { @MainActor in self?.wifiChanged(endpoints) }
@@ -362,6 +442,9 @@ import VideoToolbox
     pipe?.send(CameraLink.Message.goodbye.encoded())
     pipe?.close()
     pipe = nil
+    if cameraOwnedByIPad { cameraOwnedByIPad = false; isOn = false }
+    meterCapture?.stop()
+    meterCapture = nil
     statusTimer = nil
     meterSubscription = nil
     sampledMeter = nil
@@ -445,18 +528,24 @@ import VideoToolbox
     }
   }
 
-  private func use(_ pipe: LinkPipe) {
+  func use(_ pipe: LinkPipe) {
     self.pipe = pipe
     unpairedDeviceName = nil
     pairingFailure = nil
     macName = Host.current().localizedName ?? "Mac"
     refreshSources()
     statusTicks = 0
+    lastResponse = Date()
     macStatus = PadRemote.MacStatus()
     statusTimer = Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()
       .sink { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self else { return }
+          if self.iPadState != nil && Date().timeIntervalSince(self.lastResponse) > 8 {
+            self.pipe?.close()
+            if let pipe = self.pipe { self.lost(pipe) }
+            return
+          }
           self.statusTicks += 1
           if self.statusTicks % 15 == 0 { self.refreshSources() }
           self.publishMacStatus()
@@ -471,13 +560,14 @@ import VideoToolbox
       if case .goodbye = message {
         Task { @MainActor in
           guard let self, let pipe, self.pipe === pipe else { return }
-          self.disconnect()
+          pipe.close()
+          self.lost(pipe)
         }
         return
       }
       if case .command(let command) = message {
         Task { @MainActor in
-          if let self, let pipe, self.pipe === pipe { self.receive(command) }
+          if let self, let pipe, self.pipe === pipe { self.lastResponse = Date(); self.receive(command) }
         }
         return
       }
@@ -485,7 +575,7 @@ import VideoToolbox
       // Whatever the iPad says, the window's slider and the CLI get sane numbers.
       state.words = min(max(state.words, 0), 10_000_000)
       state.word = min(max(state.word, 0), state.words)
-      Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.iPadState = state } }
+      Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.lastResponse = Date(); self.iPadState = state } }
     }
     pipe.startReading()
     pipe.send(CameraLink.Message.hello(name: macName, version: CameraLink.protocolVersion).encoded())
@@ -518,6 +608,9 @@ import VideoToolbox
     guard pipe === old else { return }
     encoder.attach(nil)
     pipe = nil
+    if cameraOwnedByIPad { cameraOwnedByIPad = false; isOn = false }
+    meterCapture?.stop()
+    meterCapture = nil
     statusTimer = nil
     meterSubscription = nil
     sampledMeter = nil
@@ -947,7 +1040,7 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
       connection.stateUpdateHandler = { state in
         switch state {
         case .ready: once.finish(.ready)
-        case .failed(.tls), .waiting(.tls): once.finish(.refused)
+        case .failed(.tls): once.finish(.refused)
         case .failed, .cancelled, .waiting: once.finish(.unreachable)
         default: break
         }
@@ -962,6 +1055,7 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
     let pipe = NetworkPipe(connection)
     connection.stateUpdateHandler = { [weak pipe] state in
       switch state {
+      case .waiting: pipe?.close()
       case .failed, .cancelled: pipe?.closed()
       default: break
       }
@@ -1086,17 +1180,27 @@ enum USBMux {
     return ok ? data : nil
   }
 
+  /// Bound only the usbmuxd handshake; the established stream waits normally for frames.
+  static func handshakeTimeout(on fd: Int32, seconds: Int) {
+    var timeout = timeval(tv_sec: seconds, tv_usec: 0)
+    for option in [SO_RCVTIMEO, SO_SNDTIMEO] {
+      setsockopt(fd, SOL_SOCKET, option, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    }
+  }
+
   /// A socket tunnelled to `port` on the device, or nil when the device refuses (nothing is
   /// listening there) or usbmuxd is not reachable.
   static func connect(device: Int, port: UInt16) async -> Int32? {
     await withCheckedContinuation { continuation in
       DispatchQueue.global(qos: .userInitiated).async {
         guard let fd = openSocket() else { return continuation.resume(returning: nil) }
+        handshakeTimeout(on: fd, seconds: 3)
         let message = request("Connect", ["DeviceID": device, "PortNumber": Int(port.bigEndian)])
         guard write(message, to: fd), let reply = read(from: fd), reply["Number"] as? Int == 0 else {
           Darwin.close(fd)
           return continuation.resume(returning: nil)
         }
+        handshakeTimeout(on: fd, seconds: 0)
         continuation.resume(returning: fd)
       }
     }
@@ -1113,31 +1217,43 @@ final class USBMuxListener: @unchecked Sendable {
 
   func start() {
     Thread.detachNewThread { [self] in
-      guard let fd = USBMux.openSocket() else { return }
-      // Only this thread closes the socket, after unpublishing it, so `stop` never shuts a
-      // reused descriptor. A `stop` that came first leaves nothing listening.
-      defer { Darwin.close(fd) }
-      guard socket.withLock({ state in
-        guard !state.stopped else { return false }
-        state.fd = fd
-        return true
-      }) else { return }
-      defer { socket.withLock { $0.fd = nil } }
-      guard USBMux.write(USBMux.request("Listen"), to: fd) else { return }
-      var devices: [Int] = []
-      while let message = USBMux.read(from: fd) {
-        let id = message["DeviceID"] as? Int
-        switch message["MessageType"] as? String {
-        case "Attached":
-          let properties = message["Properties"] as? [String: Any]
-          if let id, properties?["ConnectionType"] as? String == "USB", !devices.contains(id) { devices.append(id) }
-        case "Detached":
-          devices.removeAll { $0 == id }
-        default:
-          continue
+      while !socket.withLock({ $0.stopped }) {
+        listen()
+        onChange([])
+        // usbmuxd can restart independently of the app. Never leave discovery latched off.
+        for _ in 0..<20 {
+          if socket.withLock({ $0.stopped }) { return }
+          Thread.sleep(forTimeInterval: 0.1)
         }
-        onChange(devices)
       }
+    }
+  }
+
+  private func listen() {
+    guard let fd = USBMux.openSocket() else { return }
+    // Only this thread closes the socket, after unpublishing it, so `stop` never shuts a
+    // reused descriptor. A `stop` that came first leaves nothing listening.
+    defer { Darwin.close(fd) }
+    guard socket.withLock({ state in
+      guard !state.stopped else { return false }
+      state.fd = fd
+      return true
+    }) else { return }
+    defer { socket.withLock { $0.fd = nil } }
+    guard USBMux.write(USBMux.request("Listen"), to: fd) else { return }
+    var devices: [Int] = []
+    while let message = USBMux.read(from: fd) {
+      let id = message["DeviceID"] as? Int
+      switch message["MessageType"] as? String {
+      case "Attached":
+        let properties = message["Properties"] as? [String: Any]
+        if let id, properties?["ConnectionType"] as? String == "USB", !devices.contains(id) { devices.append(id) }
+      case "Detached":
+        devices.removeAll { $0 == id }
+      default:
+        continue
+      }
+      onChange(devices)
     }
   }
 

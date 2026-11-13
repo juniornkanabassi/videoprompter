@@ -62,6 +62,7 @@ import UIKit
   func endEditing() { editing = false; editingFromMac = false; rejectionReason = nil }
   func setPictureMode(_ value: PadRemote.PictureMode) {
     pictureMode = value; pictureIsTemporary = false; defaults.set(value.rawValue, forKey: "padPictureMode")
+    askMacForPicture()
   }
   func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value; defaults.set(value.rawValue, forKey: "padPicturePriority") }
   func setCleanScreen(_ value: Bool) { cleanScreen = value; defaults.set(value, forKey: "padCleanScreen") }
@@ -104,6 +105,7 @@ import UIKit
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
   private var lastSent: PadRemote.State?
+  private var lastLinkReply = Date.distantPast
   private var presentedModified: Date?
   /// The scripts each folder held at the last look, by folder path and kept across launches,
   /// to notice files deleted anywhere, including while the app was closed or another folder
@@ -144,6 +146,9 @@ import UIKit
     if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil { checkRemoteContractsForE2E() }
     #endif
     startMacRemote()
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_CAMERA_ONLY"] != nil { presentCamera() }
+    #endif
   }
 
   private static func savedPictureMode(_ defaults: UserDefaults) -> PadRemote.PictureMode {
@@ -254,6 +259,7 @@ import UIKit
       pictureIsTemporary = true
     }
     presentingID = script.id
+    askMacForPicture()
     UIApplication.shared.isIdleTimerDisabled = true
   }
 
@@ -272,7 +278,8 @@ import UIKit
   /// owns it, so this waits for the Mac's first camera status (it follows a connection at once).
   /// A feed that was off is switched on and is the iPad's to switch off again on close.
   private func askMacForPicture() {
-    guard cameraOnly, camera.link.macName != nil, macStatus.cameraOn == false else { return }
+    guard isPresenting, cameraOnly || pictureMode != .off,
+      camera.link.macName != nil, macStatus.cameraOn == false, !startedMacCamera else { return }
     startedMacCamera = true
     setCameraOn(true)
   }
@@ -593,6 +600,11 @@ extension PadStore {
     case .cameraOn(let value): setCameraOn(value)
     case .selectMicrophone(let id): selectMicrophone(id)
     case .macStatus(var value):
+      // Reply even when nothing changes, so a half-open Wi-Fi link is detected by the Mac.
+      if Date().timeIntervalSince(lastLinkReply) >= 1 {
+        lastLinkReply = Date()
+        camera.link.send(remoteState)
+      }
       if let db = value.micLevelDB {
         macMicLevelDB = db.isFinite ? min(0, max(-60, db)) : -60
         if session.followsRemote || cameraOnly { micMeter.show(macMicLevelDB) }

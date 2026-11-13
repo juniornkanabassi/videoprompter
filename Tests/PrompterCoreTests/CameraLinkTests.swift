@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Combine
 import Network
+import Synchronization
 import XCTest
 
 @testable import PrompterCore
@@ -57,6 +58,87 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertTrue(pipe.didClose)
     XCTAssertNil(sender.pipe)
     XCTAssertFalse(sender.controlsIPad)
+  }
+
+  @MainActor
+  func testIdleLinkPublishesStatusAndHonoursRequestsOnBothTransports() async throws {
+    final class Pipe: LinkPipe, @unchecked Sendable {
+      let messages = Synchronization.Mutex<[CameraLink.Message]>([])
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+        var reader = CameraLink.Reader()
+        if let decoded = try? reader.append(data) { messages.withLock { $0 += decoded } }
+        done()
+      }
+    }
+    for transport in ["USB-C", "Wi-Fi"] {
+      let sender = IPadCameraSender(defaults: freshDefaults())
+      sender.searchesForIPad = false
+      sender.capturesCamera = false
+      sender.relay.captureAudio = false
+      let pipe = Pipe(name: transport)
+      sender.use(pipe)
+      XCTAssertFalse(sender.isOn)
+      let status = pipe.messages.withLock { messages in
+        messages.compactMap { message -> PadRemote.MacStatus? in
+          if case .command(.macStatus(let status)) = message { return status }
+          return nil
+        }.last
+      }
+      XCTAssertNotNil(status?.cameras)
+      XCTAssertNotNil(status?.microphones)
+      XCTAssertEqual(status?.cameraOn, false)
+      XCTAssertEqual(status?.connectionKind, transport)
+      pipe.onMessage?(.command(.cameraOn(true)))
+      await Task.yield()
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertTrue(sender.isOn)
+      pipe.onClose?()
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertFalse(sender.isOn, "an iPad-owned feed is released on drop")
+      let replacement = Pipe(name: transport)
+      sender.use(replacement)
+      XCTAssertNotNil(sender.macStatus.cameras)
+      sender.isOn = true
+      replacement.onClose?()
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertTrue(sender.isOn, "a manual override survives a drop")
+      sender.use(pipe)
+      pipe.onMessage?(.command(.cameraOn(false)))
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertFalse(sender.isOn)
+      XCTAssertTrue(sender.pipe === pipe, "camera off keeps the control session")
+      sender.disconnect()
+    }
+  }
+
+  @MainActor
+  func testSilentPeerIsDroppedInsteadOfKeepingADeadSession() async throws {
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.capturesCamera = false
+    defer { sender.disconnect() }
+    let pipe = LinkPipe(name: "Wi-Fi")
+    sender.use(pipe)
+    let state = try JSONDecoder().decode(PadRemote.State.self,
+      from: Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8))
+    pipe.onMessage?(.state(state))
+    try await Task.sleep(for: .seconds(9))
+    XCTAssertNil(sender.pipe)
+    XCTAssertNil(sender.iPadState)
+  }
+
+  func testUSBHandshakeTimeoutDoesNotPersistIntoTheCameraStream() {
+    let fd = socket(AF_INET, SOCK_STREAM, 0)
+    defer { Darwin.close(fd) }
+    for seconds in [3, 0] {
+      USBMux.handshakeTimeout(on: fd, seconds: seconds)
+      for option in [SO_RCVTIMEO, SO_SNDTIMEO] {
+        var timeout = timeval()
+        var size = socklen_t(MemoryLayout<timeval>.size)
+        XCTAssertEqual(getsockopt(fd, SOL_SOCKET, option, &timeout, &size), 0)
+        XCTAssertEqual(timeout.tv_sec, seconds)
+      }
+    }
   }
 
   func testEncoderReportsSkippedFramesWithoutEncodingAThumbnail() throws {

@@ -305,6 +305,7 @@ private struct CameraCommands: Commands {
   func applicationDidFinishLaunching(_ notification: Notification) {
     // Starts the control server even when no library window opens (a headless launch never shows one).
     if store == nil { store = AppStore.shared }
+    IPadCameraSender.shared.startDiscovering()
     NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
       if Self.deletesLineWhileTyping(event, in: NSApp.keyWindow) { return nil }
       if let presenter = NSApp.keyWindow as? PresenterPanel, presenter.handlePassageKey(event) { return nil }

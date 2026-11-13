@@ -52,6 +52,9 @@ public final class AudioCapture: @unchecked Sendable {
   }
 
   public static func requestPermission() async -> Bool {
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil { return false }
+    #endif
     if AVAudioApplication.shared.recordPermission == .granted { return true }
     return await AVAudioApplication.requestRecordPermission()
   }
