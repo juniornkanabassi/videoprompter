@@ -82,7 +82,7 @@ struct MicMeterView: View {
     return (aim, loud)
   }
 
-  private var aimColour: Color { Color(red: 1, green: 0.84, blue: 0.3) }
+  private var aimColour: Color { MeterZones.yellow }
   private var loudColour: Color { Color(red: 1, green: 0.5, blue: 0.46) }
 
   var body: some View {
@@ -130,7 +130,7 @@ struct MicMeterView: View {
   /// A separate lamp at 0 dBFS: dark until the input clips, then lit for two seconds.
   private func clipLamp(lit: Bool, horizontal: Bool) -> some View {
     RoundedRectangle(cornerRadius: 2)
-      .fill(Color.red.opacity(lit ? 1 : 0.28))
+      .fill(MeterZones.red.opacity(lit ? 1 : 0.28))
       .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(lit ? 0.9 : 0.25), lineWidth: 1))
       .frame(width: horizontal ? 8 : Self.barWidth, height: horizontal ? Self.barWidth : 8)
   }
@@ -139,7 +139,7 @@ struct MicMeterView: View {
     VStack(spacing: 0) {
       Text(!isListening ? "Mic off" : db.isFinite ? Self.readout(db).replacingOccurrences(of: " dBFS", with: "") : "No signal")
         .font(.system(size: db.isFinite && isListening ? 22 : 15, weight: .semibold)).monospacedDigit()
-        .foregroundStyle(clipLit ? Color.red : .white.opacity(db.isFinite && isListening ? 1 : 0.7))
+        .foregroundStyle(clipLit ? loudColour : .white.opacity(db.isFinite && isListening ? 1 : 0.7))
         .minimumScaleFactor(0.7).lineLimit(1)
       Text("dBFS").font(.system(size: 13)).foregroundStyle(Palette.onDarkQuiet(contrast))
         .opacity(db.isFinite && isListening ? 1 : 0)
@@ -210,15 +210,23 @@ struct MicMeterView: View {
   private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
     HStack(alignment: .top, spacing: Space.xs) {
       VStack(spacing: Space.xs) {
+        // The legend row: each word centred on its zone, with a short bracket in the zone's own colour
+        // under it, so the words read as the zones' names and never as numbers. The numbers sit on their own row below the bar.
         GeometryReader { geometry in
           let centres = Self.zoneWordCentres(width: geometry.size.width)
+          let width = geometry.size.width
+          let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
           ZStack {
             Text("aim here").font(.system(size: 12, weight: .medium)).foregroundStyle(aimColour).lineLimit(1)
-              .frame(width: Self.zoneWordWidth).position(x: centres.aim, y: 8)
+              .frame(width: Self.zoneWordWidth).position(x: centres.aim, y: 6)
             Text("too loud").font(.system(size: 12, weight: .medium)).foregroundStyle(loudColour).lineLimit(1)
-              .frame(width: Self.zoneWordWidth).position(x: centres.loud, y: 8)
+              .frame(width: Self.zoneWordWidth).position(x: centres.loud, y: 6)
+            Capsule().fill(MeterZones.yellow).frame(width: max(0, width * (red - yellow) - Space.xs), height: 2)
+              .position(x: width * (yellow + red) / 2, y: 16)
+            Capsule().fill(MeterZones.red).frame(width: max(0, width * (1 - red) - Space.xs), height: 2)
+              .position(x: width * (red + 1) / 2, y: 16)
           }
-        }.frame(height: 16)
+        }.frame(height: 18) // grid: ok legend row: a word line and its bracket
         GeometryReader { geometry in
           ZStack {
             MeterZones.zoneTrack(vertical: false, scale: MeterZones.micPosition).opacity(0.28)
@@ -246,7 +254,7 @@ struct MicMeterView: View {
         }.frame(height: 16)
       }
       // At 0 dBFS, beside the bar's loud end and level with the bar.
-      clipLamp(lit: clipLit, horizontal: true).padding(.top, 16 + Space.xs)
+      clipLamp(lit: clipLit, horizontal: true).padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
     }
     // Room for the end numbers, which are centred on -60 and 0.
     .padding(.horizontal, Space.md)

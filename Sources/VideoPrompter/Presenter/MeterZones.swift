@@ -22,12 +22,17 @@ enum MeterZones {
     return micKneePosition * CGFloat((level + 60) / (micKnee + 60))
   }
 
+  /// One saturated colour set for every meter, vertical and horizontal, so a scheme or a card never tints it.
+  static let green = Color(red: 0.19, green: 0.82, blue: 0.35)
+  static let yellow = Color(red: 1, green: 0.84, blue: 0.3)
+  static let red = Color(red: 0.96, green: 0.32, blue: 0.3)
+
   /// `scale` maps dBFS to a position: the OBS-style linear one, or `micPosition`.
   static func zoneTrack(vertical: Bool = false, scale: (Float) -> CGFloat = position) -> some View {
     LinearGradient(stops: [
-      .init(color: .green, location: 0), .init(color: .green, location: scale(yellowFrom)),
-      .init(color: .yellow, location: scale(yellowFrom)), .init(color: .yellow, location: scale(redFrom)),
-      .init(color: .red, location: scale(redFrom)), .init(color: .red, location: 1)
+      .init(color: green, location: 0), .init(color: green, location: scale(yellowFrom)),
+      .init(color: yellow, location: scale(yellowFrom)), .init(color: yellow, location: scale(redFrom)),
+      .init(color: red, location: scale(redFrom)), .init(color: red, location: 1)
     ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
   }
 }
