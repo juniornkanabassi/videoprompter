@@ -284,7 +284,7 @@ import VideoToolbox
         do {
           let request = try JSONDecoder().decode(PairingExchange.Request.self, from: await PairingExchange.receive(on: connection))
           guard let received = request.offer, request.publicKeyCommitment.count == 32,
-            UUID(uuidString: request.id) != nil, let current = self.pairingOffer,
+            UUID(uuidString: request.id) != nil, !request.name.isEmpty, request.name.count <= 128, let current = self.pairingOffer,
             received == current else { throw PairingOffer.Failure.foreign }
           let key = Curve25519.KeyAgreement.PrivateKey()
           try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
@@ -293,6 +293,12 @@ import VideoToolbox
           let shared = try PairingExchange.key(key, peer: publicKey, salt: current.secret)
           let installed = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
           guard installed.id == request.id, installed.code == "installed" else { throw PairingOffer.Failure.foreign }
+          guard self.requestConnection == nil else { throw PairingOffer.Failure.foreign }
+          self.requestConnection = connection
+          self.pairingRequestName = request.name
+          self.pairingRequestCode = PairingExchange.confirmationCode(shared)
+          defer { if self.requestConnection === connection { self.cancelPairingRequest() } }
+          try await self.waitForPairingConfirmation(on: connection)
           validExchange = true
           try self.pairingRedemption.redeem(received, expected: current)
           self.acceptedPairing(id: request.id, code: PairingExchange.credential(shared))
@@ -325,6 +331,14 @@ import VideoToolbox
     confirmedPairingConnection = requestConnection
   }
 
+  private func waitForPairingConfirmation(on connection: NWConnection) async throws {
+    let deadline = Date().addingTimeInterval(55)
+    while confirmedPairingConnection !== connection {
+      guard requestConnection === connection, Date() < deadline else { throw PairingOffer.Failure.expired }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+  }
+
   func requestPairing(_ device: WiFiDevice) {
     cancelPairingRequest()
     selectedWiFiID = device.id
@@ -349,11 +363,7 @@ import VideoToolbox
         guard requestConnection === connection else { return }
         let reply = try PairingExchange.open(data, key: shared)
         guard reply.id == device.id, reply.code.hasPrefix("QR:") else { throw PairingOffer.Failure.foreign }
-        let deadline = Date().addingTimeInterval(55)
-        while confirmedPairingConnection !== connection {
-          guard requestConnection === connection, Date() < deadline else { return }
-          try await Task.sleep(for: .milliseconds(100))
-        }
+        try await waitForPairingConfirmation(on: connection)
         acceptedPairing(id: device.id, code: reply.code)
         selectedWiFiID = device.id
         connectIfNeeded()

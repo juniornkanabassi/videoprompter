@@ -155,6 +155,7 @@ import UIKit
       try await PairingExchange.send(JSONEncoder().encode(request), on: connection)
       let publicKey = try await PairingExchange.receive(on: connection)
       let shared = try PairingExchange.key(key, peer: publicKey, salt: offer.secret)
+      scanStatus = "Check \(PairingExchange.confirmationCode(shared)) matches on \(offer.name), then click Numbers match on the Mac."
       try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
       // Install before acknowledging, so the Mac's first secure connection finds its key.
       try remember(offer.macID.uuidString, name: offer.name, code: PairingExchange.credential(shared))

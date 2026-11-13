@@ -53,7 +53,6 @@ struct IPadConnectPanel: View {
                 Button("Forget") { link.forgetIPad(id: device.id) }
               }
               if link.pairingRequestName == device.name {
-                if link.pairingRequestCode != nil { Button("Numbers match") { link.confirmPairingRequest() } }
                 Button("Cancel") { link.cancelPairingRequest() }
               } else {
                 Button("Connect") { link.requestPairing(device) }
@@ -71,6 +70,14 @@ struct IPadConnectPanel: View {
             Text("Automatic").foregroundStyle(.secondary)
           }
         }.frame(maxWidth: .infinity)
+      }
+      if let name = link.pairingRequestName, let number = link.pairingRequestCode {
+        HStack(spacing: 16) {
+          Text("Pair with \(name)? Check \(number) matches the iPad.").monospacedDigit()
+          Spacer()
+          Button("Cancel") { link.cancelPairingRequest() }
+          Button("Numbers match") { link.confirmPairingRequest() }.buttonStyle(.borderedProminent)
+        }
       }
       if let failure = link.pairingFailure { Text(failure).foregroundStyle(.orange) }
     }

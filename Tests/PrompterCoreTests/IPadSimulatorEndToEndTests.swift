@@ -24,9 +24,16 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let offer = try XCTUnwrap(sender.pairingOffer)
     try offer.encoded().write(to: documents.appendingPathComponent("vp-qr-payload.txt"), atomically: true, encoding: .utf8)
     let result = documents.appendingPathComponent("vp-qr-result.txt")
+    var confirmedOnMac = false
     for _ in 0..<400 where !FileManager.default.fileExists(atPath: result.path) {
+      if sender.pairingRequestCode != nil, !confirmedOnMac {
+        XCTAssertNil(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults), "A photographed QR must not bypass local Mac approval")
+        sender.confirmPairingRequest()
+        confirmedOnMac = true
+      }
       try await Task.sleep(for: .milliseconds(100))
     }
+    XCTAssertTrue(confirmedOnMac)
     XCTAssertTrue(try String(contentsOf: result, encoding: .utf8).hasPrefix("Paired with"))
     let codes = try XCTUnwrap(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults))
     let padID = try XCTUnwrap(codes.keys.first)
