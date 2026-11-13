@@ -31,7 +31,12 @@ import SwiftUI
   /// Tests point this at a throwaway folder so they never touch the real iCloud Drive.
   static var cloudDocsOverride: URL?
   static var cloudDocs: URL {
-    cloudDocsOverride ?? FileManager.default.homeDirectoryForCurrentUser
+    if let cloudDocsOverride { return cloudDocsOverride }
+    // A poll still running after a test resets the override once wrote test scripts into the real iCloud Drive.
+    if NSClassFromString("XCTestCase") != nil {
+      return FileManager.default.temporaryDirectory.appendingPathComponent("VideoPrompterTestCloud", isDirectory: true)
+    }
+    return FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
   }
   static var folder: URL { cloudDocs.appendingPathComponent("Video Prompter", isDirectory: true) }

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # The iPad presenter drawn to PNG with nothing on screen: boots a throwaway iPad headless (no Simulator
-# window), runs PresenterSnapshotTests in it, which draws setup, reading and focus mode at iPad 11-inch,
+# window), runs PresenterSnapshotTests in it, which draws setup, reading and clean screen at iPad 11-inch,
 # 13-inch and a narrow Stage Manager width, then deletes the device. Pictures land in $OUT.
 set -euo pipefail
 ROOT="${0:A:h:h}"

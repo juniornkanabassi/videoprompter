@@ -6,13 +6,85 @@ import UIKit
 /// The iPad app's state: the scripts folder, the reading session shared with the Mac app, and
 /// the presenter settings. Presets live in the scripts folder so the Mac and iPad share them;
 /// the settings that belong to this iPad's hardware (mirroring, microphone) stay on the iPad.
+/// UI API: mirror/flip (Bool, backed by settings); editing/cleanScreen/micOn (Bool);
+/// pictureMode/priority (PadRemote enums); macStatus (sources, selection, REC, connection),
+/// micMeter (RemoteMicMeter; observe it directly for levelDB, -60...0). Call setMirror/setFlip, beginEditing/endEditing,
+/// setPictureMode/setPicturePriority/setCleanScreen, selectCamera/setCameraOn,
+/// selectMicrophone/setMicOn. Editing pauses and never resumes automatically.
 @MainActor final class PadStore: ObservableObject {
+  @Published private(set) var editing = false
+  private var editingFromMac = false
+  @Published private(set) var rejectionReason: String?
+  @Published private(set) var pictureMode: PadRemote.PictureMode = .off
+  /// Camera Only: the presenter is open on the camera alone, with no script. Presenting a script
+  /// from here brings it up over the same picture, as on the Mac.
+  @Published private(set) var cameraOnly = false
+  /// The presenter is open, with or without a script.
+  var isPresenting: Bool { presentingID != nil || cameraOnly }
+  private var pictureIsTemporary = false
+  /// What Camera Only switched on, so closing puts back exactly that and nothing else: the Mac's
+  /// feed, or this iPad's own camera.
+  private var startedMacCamera = false
+  private var startedLocalCamera = false
+  @Published private(set) var picturePriority: PadRemote.PicturePriority = .realTime720p
+  @Published private(set) var cleanScreen = false
+  @Published private(set) var micOn = true
+  @Published private(set) var macStatus = PadRemote.MacStatus()
+  let micMeter = RemoteMicMeter()
+  private(set) var macMicLevelDB: Double = -60
+  var micLevelDB: Double {
+    let level = session.followsRemote ? macMicLevelDB : Double(session.audioPeakDBFS)
+    return level.isFinite ? min(0, max(-60, level)) : -60
+  }
+  var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
+  var macDisplayName: String? { macStatus.displayName ?? camera.link.macName }
+  var connectionKind: String? { macStatus.connectionKind }
+  var mirror: Bool { settings.horizontalMirror }
+  var flip: Bool { settings.verticalMirror }
+  /// The microphone in use is the Mac's: its voice relay, or Camera Only with a Mac linked, where
+  /// the Mac records the sound.
+  var usesMacMic: Bool { session.followsRemote || cameraOnly && camera.link.macName != nil }
+  var voiceSource: String { session.followsRemote ? "Mac" : "iPad" }
+  var cameraSources: [PadRemote.Source] { macStatus.cameras ?? [] }
+  var selectedCamera: String? { macStatus.selectedCamera }
+  var cameraOn: Bool { macStatus.cameraOn ?? false }
+  var microphoneSources: [PadRemote.Source] {
+    if usesMacMic { return macStatus.microphones ?? [] }
+    return AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name) }
+  }
+  var selectedMicrophone: String? {
+    usesMacMic ? macStatus.selectedMicrophone : settings.audioDeviceUID
+  }
+  func setVoiceSource(_ value: String) { perform(.voiceSource(value)) }
+  func setMirror(_ value: Bool) { settings.horizontalMirror = value }
+  func setFlip(_ value: Bool) { settings.verticalMirror = value }
+  func beginEditing() { editingFromMac = false; editing = true; session.pause() }
+  func endEditing() { editing = false; editingFromMac = false; rejectionReason = nil }
+  func setPictureMode(_ value: PadRemote.PictureMode) {
+    pictureMode = value; pictureIsTemporary = false; defaults.set(value.rawValue, forKey: "padPictureMode")
+  }
+  func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value; defaults.set(value.rawValue, forKey: "padPicturePriority") }
+  func setCleanScreen(_ value: Bool) { cleanScreen = value; defaults.set(value, forKey: "padCleanScreen") }
+  func selectCamera(_ id: String) { camera.link.send(.selectCamera(id)) }
+  func setCameraOn(_ value: Bool) { camera.link.send(.cameraOn(value)) }
+  func selectMicrophone(_ id: String) {
+    if usesMacMic { camera.link.send(.selectMicrophone(id)) }
+    else if microphoneSources.contains(where: { $0.id == id }) { settings.audioDeviceUID = id }
+  }
+  func setMicOn(_ value: Bool) {
+    micOn = value
+    if !value { session.pause() }
+    if usesMacMic { camera.link.send(.micOn(value)) }
+  }
+
   let folder = ScriptFolder()
   let session = SessionStore()
   let camera = PadCamera()
   let google = GoogleDocs()
   @Published var selectedID: UUID?
   @Published var presentingID: UUID?
+  /// The library editor's unsaved draft, which anything about to change or present a script resolves first.
+  let draftFlusher = PadDraftFlusher()
   @Published var errorMessage: String?
   @Published var settings = PrompterSettings() {
     didSet {
@@ -31,6 +103,7 @@ import UIKit
 
   private let defaults: UserDefaults
   private var bag = Set<AnyCancellable>()
+  private var lastSent: PadRemote.State?
   private var presentedModified: Date?
   /// The scripts each folder held at the last look, by folder path and kept across launches,
   /// to notice files deleted anywhere, including while the app was closed or another folder
@@ -42,6 +115,9 @@ import UIKit
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    pictureMode = Self.savedPictureMode(defaults)
+    picturePriority = defaults.string(forKey: "padPicturePriority").flatMap(PadRemote.PicturePriority.init(rawValue:)) ?? .realTime720p
+    cleanScreen = defaults.bool(forKey: "padCleanScreen")
     knownIDs = defaults.dictionary(forKey: Self.knownIDsKey) as? [String: [String]] ?? [:]
     if let data = defaults.data(forKey: Self.settingsKey),
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
@@ -54,13 +130,24 @@ import UIKit
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+    session.meter.$peakDBFS.sink { [weak self] level in
+      guard let self, !session.followsRemote else { return }
+      micMeter.show(Double(level))
+    }.store(in: &bag)
     session.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     // The first value is the listing the folder made at launch, compared with the last launch's.
     folder.$scripts.sink { [weak self] scripts in
       Task { @MainActor in self?.foldersChanged(scripts) }
     }.store(in: &bag)
     pullPresets()
+    #if DEBUG && targetEnvironment(simulator)
+    if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil { checkRemoteContractsForE2E() }
+    #endif
     startMacRemote()
+  }
+
+  private static func savedPictureMode(_ defaults: UserDefaults) -> PadRemote.PictureMode {
+    defaults.string(forKey: "padPictureMode").flatMap(PadRemote.PictureMode.init(rawValue:)) ?? .off
   }
 
   private func persist() {
@@ -130,14 +217,26 @@ import UIKit
     }
   }
 
-  func save(_ markdown: String, to script: FolderScript) -> Bool {
+  /// `basis` is the text the edit began from, so a change that landed since goes to a conflict copy.
+  func save(_ markdown: String, to script: FolderScript, basis: String? = nil) -> DraftSave {
     do {
-      let record = try folder.save(markdown, to: script)
-      if session.activeScriptID == script.id { session.applyEditedRecord(record) }
-      return true
+      let record = try folder.save(markdown, to: script, basis: basis.map(MarkdownLibrary.fingerprint))
+      if session.activeScriptID == script.id {
+        // The Mac's voice relay holds the old text and cannot follow the new one, so this iPad's own
+        // microphone takes over, and the reader is told why.
+        let relayed = session.followsRemote && record.markdown != session.activeRecord?.markdown
+        if relayed { session.followsRemote = false; micMeter.show(Double(session.audioPeakDBFS)) }
+        session.applyEditedRecord(record)
+        if relayed { errorMessage = "The script changed, so the Mac's voice stopped following. The iPad's own microphone is selected. Choose the Mac's voice again from the Mac." }
+      }
+      return .saved
+    } catch let error as ScriptFolderError {
+      errorMessage = error.localizedDescription
+      if case .changedElsewhere = error { return .keptAsCopy }
+      return .failed
     } catch {
       errorMessage = error.localizedDescription
-      return false
+      return .failed
     }
   }
 
@@ -148,13 +247,56 @@ import UIKit
     ensureMicrophone()
     session.present(record: record, settings: settings)
     presentedModified = script.modified
+    if cameraOnly {
+      // The script comes up over the camera rather than hiding it; the saved picture mode returns on close.
+      cameraOnly = false
+      pictureMode = .behindScript
+      pictureIsTemporary = true
+    }
     presentingID = script.id
     UIApplication.shared.isIdleTimerDisabled = true
+  }
+
+  /// The camera on its own, to set up framing, sound and recording before any script. The Mac is
+  /// asked for its picture exactly as the Camera button asks; with no Mac, the view uses this iPad's camera.
+  func presentCamera() {
+    guard !isPresenting else { return }
+    session.pause()
+    cameraOnly = true
+    UIApplication.shared.isIdleTimerDisabled = true
+    micMeter.show(macMicLevelDB)
+    askMacForPicture()
+  }
+
+  /// A Mac that is linked sends nothing until asked. Whether its feed was already on decides who
+  /// owns it, so this waits for the Mac's first camera status (it follows a connection at once).
+  /// A feed that was off is switched on and is the iPad's to switch off again on close.
+  private func askMacForPicture() {
+    guard cameraOnly, camera.link.macName != nil, macStatus.cameraOn == false else { return }
+    startedMacCamera = true
+    setCameraOn(true)
+  }
+
+  /// With no Mac, Camera Only shows this iPad's own camera, which closing switches off again.
+  func useOwnCameraWithoutMac() {
+    guard cameraOnly, camera.link.macName == nil, !camera.isOn else { return }
+    startedLocalCamera = true
+    camera.isOn = true
   }
 
   func closePresenter() {
     session.pause()
     presentingID = nil
+    cameraOnly = false
+    if startedMacCamera {
+      startedMacCamera = false
+      // Off before the Mac's picture stops: with it on, losing the Mac's format would fall back to
+      // this iPad's own camera, and starting that could ask for camera access while closing.
+      if camera.isShowingMac { camera.isOn = false }
+      setCameraOn(false)
+    }
+    if startedLocalCamera { startedLocalCamera = false; camera.isOn = false }
+    if pictureIsTemporary { pictureIsTemporary = false; pictureMode = Self.savedPictureMode(defaults) }
     UIApplication.shared.isIdleTimerDisabled = false
     // A script deleted while it was on screen is cleaned up now.
     forgetRemoved(folder.scripts)
@@ -272,8 +414,8 @@ extension PadStore {
   /// what it shows: sent a moment after anything changes, and at once when a Mac connects.
   fileprivate func startMacRemote() {
     let link = camera.link
+    link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
-    var lastSent: PadRemote.State?
     // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
     objectWillChange.receive(on: DispatchQueue.main)
       .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
@@ -284,24 +426,197 @@ extension PadStore {
         lastSent = state
       }.store(in: &bag)
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
-      guard let self, name != nil else { return }
+      guard let self else { return }
+      if name == nil {
+        // Whatever this connection switched on is gone with it, and never belongs to the next Mac.
+        startedMacCamera = false
+        resetMacControls()
+        // A relayed session never falls back to this iPad's microphone on its own: it stops, and
+        // the next Play here is the reader's choice.
+        if session.followsRemote {
+          session.pause(); session.followsRemote = false
+          // Test hook, only under the end-to-end launch: why the relay was reset, "drop" or "replaced".
+          #if DEBUG && targetEnvironment(simulator)
+          if ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] != nil {
+            try? Data(link.lastEndReason.utf8).write(
+              to: URL.documentsDirectory.appendingPathComponent("vp-e2e-link-reset.txt"), options: .atomic)
+          }
+          #endif
+        }
+        return
+      }
+      #if DEBUG && targetEnvironment(simulator)
+      // End-to-end hook: open Camera Only as the Mac connects, to see the Mac asked for its picture.
+      if ProcessInfo.processInfo.environment["VP_IPAD_E2E_CAMERA_ONLY"] != nil { presentCamera() }
+      #endif
       lastSent = remoteState
       link.send(lastSent!)
+      askMacForPicture()
     }.store(in: &bag)
   }
+
+  private func resetMacControls() {
+    macStatus = PadRemote.MacStatus()
+    macMicLevelDB = -60
+    micMeter.show(-60)
+    lastSent = nil
+    micOn = true
+    if editingFromMac { endEditing() }
+    rejectionReason = nil
+  }
+
+  #if DEBUG && targetEnvironment(simulator)
+  /// Actual store checks for the headless fixture, including local actions absent from the wire protocol.
+  private func checkRemoteContractsForE2E() {
+    var checks: [String: Bool] = [:]
+    session.followsRemote = true
+    var changes = 0
+    let observation = objectWillChange.sink { changes += 1 }
+    perform(.macStatus(.init(micLevelDB: -12)))
+    checks["meterIsIsolated"] = changes == 0 && micMeter.levelDB == -12 && remoteState.macStatus?.micLevelDB == nil
+    observation.cancel()
+    session.followsRemote = false
+
+    beginEditing()
+    perform(.seek(word: 2))
+    checks["immediateStateIsDeduplicated"] = lastSent == remoteState && rejectionReason != nil
+    setMicOn(false)
+    resetMacControls()
+    checks["localEditSurvivesDrop"] = editing && rejectionReason == nil && micOn
+    perform(.editing(false))
+    checks["remoteCannotEndLocalEdit"] = editing
+    endEditing()
+    perform(.editing(true))
+    perform(.seek(word: 2))
+    setMicOn(false)
+    resetMacControls()
+    checks["remoteEditEndsOnDrop"] = !editing && rejectionReason == nil && micOn
+    perform(.macStatus(.init(displayName: "Status Mac")))
+    checks["statusDisplayNameWins"] = macDisplayName == "Status Mac"
+    resetMacControls()
+
+    // Camera Only: an open presenter with no script, reported as such, deaf to reading commands.
+    presentCamera()
+    perform(.play)
+    perform(.seek(word: 2))
+    let idle = remoteState
+    checks["cameraOnlyIsReportedHonestly"] = isPresenting && cameraOnly && idle.presenting == nil && idle.cameraOnly == true
+      && idle.words == 0 && idle.word == 0 && !idle.running && idle.pictureMode == .monitorOnly
+    checks["cameraOnlyIgnoresReading"] = !session.isActivelyRunning && rejectionReason == nil
+    if let script = folder.scripts.first(where: \.isDownloaded) {
+      present(script)
+      let over = remoteState
+      checks["scriptJoinsCameraOnly"] = !cameraOnly && presentingID == script.id && pictureMode == .behindScript
+        && over.cameraOnly == false && over.presenting == script.id && over.pictureMode == .behindScript
+      perform(.close)
+      checks["closeRestoresSavedPicture"] = !isPresenting && pictureMode == Self.savedPictureMode(defaults)
+    }
+    presentCamera()
+    perform(.close)
+    checks["remoteCloseEndsCameraOnly"] = !isPresenting && remoteState.cameraOnly == false
+    if let data = try? JSONEncoder().encode(checks) {
+      try? data.write(to: URL.documentsDirectory.appendingPathComponent("vp-e2e-contract-checks.json"), options: .atomic)
+    }
+  }
+  #endif
 
   var remoteState: PadRemote.State {
     let open = presentingID != nil
     let words = open ? session.document.spokenTokens.count : 0
     return PadRemote.State(
-      scripts: folder.scripts.map { PadRemote.Script(id: $0.id, title: $0.title) },
+      scripts: folder.scripts.map {
+        let macID = folder.macID(of: $0.id)
+        return PadRemote.Script(
+          id: $0.id, title: $0.title, macID: macID, fingerprint: macID == nil ? nil : folder.fingerprint(of: $0))
+      },
       presenting: presentingID, running: open && session.isActivelyRunning,
       mode: settings.mode, speed: Int(settings.speed.rounded()),
-      word: words > 0 ? session.tokenIndex + 1 : 0, words: words)
+      word: words > 0 ? session.tokenIndex + 1 : 0, words: words,
+      version: CameraLink.protocolVersion,
+      look: PadRemote.Look(
+        horizontalMirror: settings.horizontalMirror, verticalMirror: settings.verticalMirror,
+        fontSize: settings.fontSize, textWidth: settings.textWidth, lineSpacing: settings.lineSpacing,
+        guideFraction: settings.guideFraction),
+      presets: presets.map(\.name), startDelay: session.startDelay,
+      voiceSource: session.followsRemote ? "Mac" : "iPad",
+      seekRevision: open ? session.seekRevision : nil,
+      fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
+      editing: editing, rejectionReason: rejectionReason, pictureMode: cameraOnly ? .monitorOnly : pictureMode,
+      picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
+      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone, selectedID: selectedID,
+      deviceName: UIDevice.current.name,
+      appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+      scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
+      cameraOnly: cameraOnly)
   }
 
   func perform(_ command: PadRemote.Command) {
     switch command {
+    case .present, .sendScript:
+      // Another version is about to be received or shown: settle the typed draft first, so it
+      // is saved or kept as a copy and never lands on top of the Mac's text.
+      if !draftFlusher.resolve() {
+        rejectionReason = "Save your edit on the iPad first"
+        lastSent = remoteState
+        camera.link.send(lastSent!)
+        return
+      }
+    default: break
+    }
+    if editing {
+      var blocked = false
+      switch command {
+      case .play, .seek, .backToStart, .nextPassage, .previousPassage, .follow, .present, .close:
+        blocked = true
+      case .sendScript(let transfer):
+        blocked = presentingID.flatMap { folder.macID(of: $0) } == transfer.macID
+          || selectedID.flatMap { folder.macID(of: $0) } == transfer.macID || transfer.present
+      default: break
+      }
+      if blocked {
+        rejectionReason = "Finish editing on the iPad first"
+        lastSent = remoteState
+        camera.link.send(lastSent!)
+        return
+      }
+    }
+    switch command {
+    case .editing(let value):
+      if value {
+        if !editing { beginEditing(); editingFromMac = true }
+      } else if editingFromMac { endEditing() }
+    case .pictureMode(let value): setPictureMode(value)
+    case .picturePriority(let value): setPicturePriority(value)
+    case .cleanScreen(let value): setCleanScreen(value)
+    case .micOn(let value): setMicOn(value)
+    case .selectCamera(let id): selectCamera(id)
+    case .cameraOn(let value): setCameraOn(value)
+    case .selectMicrophone(let id): selectMicrophone(id)
+    case .macStatus(var value):
+      if let db = value.micLevelDB {
+        macMicLevelDB = db.isFinite ? min(0, max(-60, db)) : -60
+        if session.followsRemote || cameraOnly { micMeter.show(macMicLevelDB) }
+      }
+      // Meter updates must not reset the source list.
+      value.micLevelDB = nil
+      var next = macStatus
+      if let cameras = value.cameras { next.cameras = cameras }
+      if let microphones = value.microphones { next.microphones = microphones }
+      // List-only updates preserve selections; a complete list that removes one clears it.
+      if let cameras = value.cameras, let id = next.selectedCamera, !cameras.contains(where: { $0.id == id }) { next.selectedCamera = nil }
+      if let microphones = value.microphones, let id = next.selectedMicrophone, !microphones.contains(where: { $0.id == id }) { next.selectedMicrophone = nil }
+      if let selected = value.selectedCamera { next.selectedCamera = selected }
+      if let selected = value.selectedMicrophone { next.selectedMicrophone = selected }
+      let firstCameraStatus = macStatus.cameraOn == nil && value.cameraOn != nil
+      if let on = value.cameraOn { next.cameraOn = on }
+      if let on = value.micOn { next.micOn = on }
+      if let recording = value.recording { next.recording = recording }
+      if let name = value.displayName { next.displayName = name }
+      if let kind = value.connectionKind { next.connectionKind = kind }
+      if next != macStatus { macStatus = next }
+      if firstCameraStatus { askMacForPicture() }
+
+    case .close: if isPresenting { closePresenter() }
     case .present(let id):
       guard let script = folder.script(id) else { return }
       selectedID = id
@@ -310,20 +625,60 @@ extension PadStore {
       if ["Voice", "Manual"].contains(mode) { settings.mode = mode }
     case .speed(let speed):
       settings.speed = Double(min(max(speed, 20), 300))
+    case .sendScript(let transfer):
+      do {
+        guard let script = try folder.receive(transfer) else { return }
+        if !editing { selectedID = script.id }
+        if transfer.present, presentingID != script.id { present(script) }
+        objectWillChange.send()
+      } catch { errorMessage = error.localizedDescription }
+    case .look(let look):
+      var next = settings
+      if let value = look.horizontalMirror { next.horizontalMirror = value }
+      if let value = look.verticalMirror { next.verticalMirror = value }
+      if let value = look.fontSize, value.isFinite { next.fontSize = value }
+      if let value = look.textWidth, value.isFinite { next.textWidth = value }
+      if let value = look.lineSpacing, value.isFinite { next.lineSpacing = value }
+      if let value = look.guideFraction, value.isFinite { next.guideFraction = value }
+      settings = next
+    case .preset(let name):
+      if let preset = presets.first(where: { $0.name == name }) { apply(preset) }
+    case .startDelay(let seconds):
+      if [0, 3, 5].contains(seconds) { session.startDelay = seconds }
+    case .voiceSource(let source):
+      switch source {
+      case "Mac":
+        micMeter.show(macMicLevelDB)
+        // Before the mode change, so switching to Voice cannot start this iPad's microphone.
+        session.followsRemote = true
+        settings.mode = "Voice"
+      case "iPad": session.followsRemote = false; micMeter.show(Double(session.audioPeakDBFS))
+      default: return
+      }
+      objectWillChange.send()
+    case .follow(let follow):
+      guard session.followsRemote, presentingID != nil, settings.mode == "Voice",
+        follow.fingerprint == session.activeRecord?.metadata.contentFingerprint,
+        follow.seekRevision == session.seekRevision
+      else { return }
+      session.followRemote(confirmed: follow.confirmed)
     default:
       // The rest act on the open presenter, as its buttons do.
       guard presentingID != nil else { return }
       switch command {
-      case .close: closePresenter()
-      case .play: session.play()
+      // The iPad's own Start: honours the Manual countdown. Pause cancels it.
+      case .play: if micOn || settings.mode != "Voice" { session.startReading() }
       case .pause: session.pause()
       case .backToStart: session.restart()
       case .nextPassage: session.nextPassage()
       case .previousPassage: session.previousPassage()
       case .seek(let word):
         if word >= 1, word <= session.document.spokenTokens.count { session.seek(to: word - 1) }
-      case .present, .mode, .speed: break
+      default: break
       }
     }
   }
 }
+
+/// What became of an editor draft: written, kept beside a script that changed meanwhile, or not written.
+enum DraftSave { case saved, keptAsCopy, failed }

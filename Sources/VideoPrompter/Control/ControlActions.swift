@@ -431,6 +431,7 @@ import Speech
       if let float = params["floatAudio"] { recorder.floatAudio = float == "on" }
       return .ok(recordingSettings)
     case "ipad": return await iPad(params)
+    case "ipad_send", "ipad_look", "ipad_preset", "ipad_voice", "ipad_picture", "ipad_clean": return await iPadCommand(action, params)
     default: return .error("unknown_action", "Unsupported action.")
     }
   }
@@ -439,6 +440,65 @@ import Speech
   /// asked in order, and reports what the iPad then shows, or that it did not do it.
   private func iPad(_ params: [String: String]) async -> ControlResult {
     await IPadCameraSender.shared.whileLinked { await iPadLinked(params) }
+  }
+
+  private func iPadCommand(_ action: String, _ params: [String: String]) async -> ControlResult {
+    await IPadCameraSender.shared.whileLinked {
+      let link = IPadCameraSender.shared
+      for _ in 0..<50 where link.iPadState == nil { try? await Task.sleep(for: .milliseconds(100)) }
+      guard let before = link.iPadState else { return .error("ipad_not_found", "No iPad answered.") }
+      if before.editing == true && action == "ipad_send" { return .error("ipad_editing", before.rejectionReason ?? "Finish editing on the iPad first") }
+      var command: PadRemote.Command
+      var confirmed: (PadRemote.State) -> Bool = { _ in true }
+      switch action {
+      case "ipad_send":
+        let (record, error) = choose(params["script"]!, in: store.scripts, id: { $0.id.uuidString }, title: { $0.metadata.title }, kind: "script", list: "script list")
+        guard let record else { return error! }
+        guard record.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes, record.metadata.title.count <= PadRemote.Transfer.maximumTitleLength else { return .error("invalid_params", "Script is too large to send to the iPad.") }
+        let fingerprint = MarkdownLibrary.fingerprint(record.markdown)
+        let sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
+        command = .sendScript(.init(macID: record.id, title: record.metadata.title, markdown: record.markdown, basis: sent[record.id.uuidString], present: true))
+        confirmed = { state in state.scripts.contains { $0.macID == record.id && $0.id == state.presenting && $0.fingerprint == fingerprint } }
+      case "ipad_look":
+        guard !params.isEmpty else { return .error("invalid_params", "Give at least one look setting.") }
+        let look = PadRemote.Look(horizontalMirror: params["mirror"].map { $0 == "on" }, verticalMirror: params["flip"].map { $0 == "on" }, fontSize: params["size"].flatMap(Double.init), textWidth: params["width"].flatMap(Double.init))
+        command = .look(look)
+        confirmed = { state in (look.horizontalMirror == nil || state.look?.horizontalMirror == look.horizontalMirror) && (look.verticalMirror == nil || state.look?.verticalMirror == look.verticalMirror) && (look.fontSize == nil || state.look?.fontSize == look.fontSize) && (look.textWidth == nil || state.look?.textWidth == look.textWidth) }
+      case "ipad_preset":
+        guard before.presets?.contains(params["name"]!) == true else { return .error("invalid_params", "Preset not found on the iPad.") }
+        command = .preset(params["name"]!)
+      case "ipad_voice":
+        if params["source"] == "mac" {
+          guard let current = before.scripts.first(where: { $0.id == before.presenting }), let id = current.macID, let record = store.scripts.first(where: { $0.id == id }) else { return .error("ipad_script_unlinked", "Send the script from this Mac first.") }
+          link.relay.start(script: record, settings: store.settings)
+          for _ in 0..<50 where link.iPadState?.voiceSource != "Mac" && link.relay.isRelaying { try? await Task.sleep(for: .milliseconds(100)) }
+          return link.iPadState?.voiceSource == "Mac" ? .ok(["voice": "mac"]) : .error("ipad_unconfirmed", link.relay.status)
+        }
+        if link.relay.isRelaying { link.relay.stop() }
+        if params["source"] == "ipad" { link.setVoiceSource("iPad") }
+        command = .mode(params["source"] == "off" ? "Manual" : "Voice")
+        confirmed = { params["source"] == "off" ? $0.mode == "Manual" : $0.mode == "Voice" && $0.voiceSource == "iPad" }
+      case "ipad_picture":
+        let mode: PadRemote.PictureMode = params["mode"] == "behind" ? .behindScript : params["mode"] == "monitor" ? .monitorOnly : .off
+        if let priority = params["priority"] { link.setPicturePriority(priority == "sharp" ? .sharper1080p : .realTime720p) }
+        command = .pictureMode(mode)
+        confirmed = { $0.pictureMode == mode && (params["priority"] == nil || $0.picturePriority == (params["priority"] == "sharp" ? .sharper1080p : .realTime720p)) }
+      default:
+        let value = params["value"] == "on"; command = .cleanScreen(value); confirmed = { $0.cleanScreen == value }
+      }
+      link.send(command)
+      if action == "ipad_preset" { return .ok(["state": "sent"]) }
+      for _ in 0..<30 where !(link.iPadState.map(confirmed) ?? false) { try? await Task.sleep(for: .milliseconds(100)) }
+      guard let state = link.iPadState else { return .error("ipad_not_found", "The iPad disconnected.") }
+      if let reason = state.rejectionReason { return .error("ipad_rejected", reason) }
+      guard confirmed(state) else { return .error("ipad_unconfirmed", "The iPad did not confirm the change.") }
+      if action == "ipad_send", let name = params["script"], let record = store.scripts.first(where: { $0.id.uuidString == name || $0.metadata.title == name }) {
+        var sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
+        sent[record.id.uuidString] = MarkdownLibrary.fingerprint(record.markdown)
+        UserDefaults.standard.set(sent, forKey: "padRelaySentFingerprints")
+      }
+      return .ok(["state": "confirmed"])
+    }
   }
 
   private func iPadLinked(_ params: [String: String]) async -> ControlResult {
@@ -496,10 +556,11 @@ import Speech
       }
     }
     guard let state = link.iPadState else { return .error("ipad_not_found", "The iPad disconnected.") }
+    if let reason = state.rejectionReason { return .error("ipad_rejected", reason) }
     let title = { (id: UUID) in state.scripts.first { $0.id == id }.map { ["id": id.uuidString, "title": $0.title] } }
     let result: [String: Any] = ["over": link.transport ?? "", "scripts": state.scripts.map { ["id": $0.id.uuidString, "title": $0.title] },
       "script": state.presenting.flatMap(title) as Any? ?? NSNull(),
-      "state": state.presenting == nil ? "closed" : state.running ? "running" : "paused",
+      "state": state.presenting == nil ? (state.cameraOnly == true ? "camera" : "closed") : state.running ? "running" : "paused",
       "mode": state.mode.lowercased(), "speed": state.speed, "position": ["word": state.word, "words": state.words]]
     guard wanted.allSatisfy({ $0(state) }) else {
       return .error("ipad_unconfirmed", "The iPad did not show the change within three seconds. Its state now: \(result["state"]!), \(state.mode.lowercased()), \(state.speed) words a minute, word \(state.word) of \(state.words).")

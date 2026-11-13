@@ -19,6 +19,8 @@ let package = Package(
         .executableTarget(name: "VideoPrompterCLI", dependencies: ["PrompterCore"], path: "Sources/VideoPrompterCLI"),
         // Keeps every test window invisible and stops tests activating the process (see TestOffscreen.m).
         .target(name: "TestOffscreen", path: "Tests/TestOffscreen"),
-        .testTarget(name: "PrompterCoreTests", dependencies: ["PrompterCore", "VideoPrompter", "TestOffscreen"], path: "Tests/PrompterCoreTests", resources: [.copy("Fixtures")])
+        // The iPad app's script folder (a plain Foundation file), built here so its rules are tested without an iPad.
+        .target(name: "PadScriptFolder", dependencies: ["PrompterCore"], path: "iPad/VideoPrompter/Sync", swiftSettings: [.define("PAD_FOLDER_TESTS")]),
+        .testTarget(name: "PrompterCoreTests", dependencies: ["PrompterCore", "VideoPrompter", "TestOffscreen", "PadScriptFolder"], path: "Tests/PrompterCoreTests", resources: [.copy("Fixtures")])
     ]
 )

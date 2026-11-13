@@ -3,6 +3,13 @@ import PrompterCore
 import XCTest
 
 final class ControlCLITests: XCTestCase {
+  func testIPadCommandsAndValidation() throws {
+    XCTAssertEqual(try ControlCLI.parse(["ipad", "send", "Intro"]).params["script"], "Intro")
+    XCTAssertEqual(try ControlCLI.parse(["ipad", "look", "--mirror", "on", "--flip", "off", "--size", "60", "--width", "0.75"]).action, "ipad_look")
+    for args in [["ipad", "preset", "Studio"], ["ipad", "voice", "mac"], ["ipad", "voice", "ipad"], ["ipad", "voice", "off"], ["ipad", "picture", "behind", "--priority", "sharp"], ["ipad", "clean", "on"]] { XCTAssertNoThrow(try ControlCLI.parse(args)) }
+    for args in [["ipad", "look", "--flip", "yes"], ["ipad", "look", "--width", "2"], ["ipad", "voice", "other"], ["ipad", "picture", "off", "--priority", "bad"], ["ipad", "clean"]] { XCTAssertThrowsError(try ControlCLI.parse(args)) }
+  }
+
   func testTargetExecutableUsesBundlePlist() throws {
     let app = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID()).app")
     let contents = app.appendingPathComponent("Contents")

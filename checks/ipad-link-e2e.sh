@@ -34,7 +34,8 @@ trap cleanup EXIT
 xcrun simctl boot "$DEVICE"
 xcrun simctl bootstatus "$DEVICE" -b >/dev/null
 xcrun simctl install "$DEVICE" "$APP"
-SCRIPTS="$(xcrun simctl get_app_container "$DEVICE" $BUNDLE data)/Documents/Scripts"
+CONTAINER="$(xcrun simctl get_app_container "$DEVICE" $BUNDLE data)"
+SCRIPTS="$CONTAINER/Documents/Scripts"
 mkdir -p "$SCRIPTS"
 {
   print "# $SCRIPT\n"
@@ -42,13 +43,13 @@ mkdir -p "$SCRIPTS"
 } > "$SCRIPTS/$SCRIPT.md"
 xcrun simctl spawn "$DEVICE" log stream --level debug --predicate 'process == "VideoPrompter"' > "$OUT/ipad.log" 2>&1 &
 LOG=$!
-SIMCTL_CHILD_VP_IPAD_E2E_PORT="$PORT" xcrun simctl launch "$DEVICE" $BUNDLE >/dev/null
+SIMCTL_CHILD_VP_IPAD_E2E_CAMERA_ONLY=1 SIMCTL_CHILD_VP_IPAD_E2E_PORT="$PORT" xcrun simctl launch "$DEVICE" $BUNDLE >/dev/null
 sleep 4
 "$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" >&2
 TESTS="$("$SWIFT" build --package-path "$ROOT" --build-tests --scratch-path "$VIDEOPROMPTER_TEST_SCRATCH" --show-bin-path)/PrompterCoreTests.xctest"
 MARKER="$OUT/streaming"
 rm -f "$MARKER"
-VP_IPAD_E2E=1 VP_IPAD_E2E_PORT="$PORT" VP_IPAD_E2E_SCRIPT="$SCRIPT" VP_IPAD_E2E_MARKER="$MARKER" zsh "$ROOT/checks/run-xctest.sh" "$XCTEST" -XCTest PrompterCoreTests.IPadSimulatorEndToEndTests "$TESTS" &
+VP_IPAD_E2E=1 VP_IPAD_E2E_CONTAINER="$CONTAINER" VP_IPAD_E2E_PORT="$PORT" VP_IPAD_E2E_SCRIPT="$SCRIPT" VP_IPAD_E2E_MARKER="$MARKER" zsh "$ROOT/checks/run-xctest.sh" "$XCTEST" -XCTest PrompterCoreTests.IPadSimulatorEndToEndTests "$TESTS" &
 TEST=$!
 for _ in {1..300}; do [[ -e "$MARKER" ]] && break; sleep 0.1; done
 sleep 1

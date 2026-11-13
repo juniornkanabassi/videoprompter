@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The Mac sends its camera to the iPad over this, H.264 from VideoToolbox, and drives the iPad's
@@ -13,7 +14,9 @@ public enum CameraLink {
   /// The Bonjour service type the iPad advertises for the Wi-Fi link.
   public static let bonjourType = "_vpcamera._tcp"
   /// 2 added `command` and `state`. An iPad sends `state` only to a Mac that said 2 or more.
-  public static let protocolVersion = 2
+  /// 3 added script transfer, look, presets, countdown and the Mac voice relay; every new field
+  /// is Optional or a new command, so a v2 Mac and a v3 iPad (or the reverse) still talk.
+  public static let protocolVersion = 3
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
 
@@ -159,27 +162,188 @@ public enum PadRemote {
     case mode(String)
     /// Manual speed in words per minute, 20 to 300.
     case speed(Int)
+    /// Version 3: a script from the Mac's library.
+    case sendScript(Transfer)
+    case look(Look)
+    /// Apply a preset by name; the iPad keeps its own mirroring and microphone.
+    case preset(String)
+    /// The Manual countdown in seconds: 0, 3 or 5.
+    case startDelay(Int)
+    /// "iPad" or "Mac": whose microphone the Voice mode follows.
+    case voiceSource(String)
+    case follow(Follow)
+    case editing(Bool)
+    case pictureMode(PictureMode)
+    case picturePriority(PicturePriority)
+    case cleanScreen(Bool)
+    case selectCamera(String)
+    case cameraOn(Bool)
+    case selectMicrophone(String)
+    case micOn(Bool)
+    /// Mac to iPad. Optional fields are partial updates.
+    case macStatus(MacStatus)
+  }
+
+  public enum PictureMode: String, Codable, CaseIterable, Sendable {
+    case off, behindScript, monitorOnly
+  }
+  public enum PicturePriority: String, Codable, CaseIterable, Sendable {
+    case realTime720p, sharper1080p
+    public var longSide: Int { self == .realTime720p ? 1280 : 1920 }
+    public func bitRate(overUSB: Bool) -> Int {
+      if overUSB { return self == .realTime720p ? 6_000_000 : 10_000_000 }
+      return self == .realTime720p ? 4_000_000 : 7_000_000
+    }
+  }
+  public enum RecordingState: String, Codable, Sendable { case recording, standby, unknown }
+  public struct Source: Codable, Equatable, Sendable, Identifiable {
+    public var id: String
+    public var name: String
+    public init(id: String, name: String) { self.id = id; self.name = name }
+  }
+  public struct MacStatus: Codable, Equatable, Sendable {
+    public var cameras: [Source]?
+    /// Nil leaves selection unchanged; a supplied list that omits it clears it.
+    public var selectedCamera: String?
+    public var cameraOn: Bool?
+    public var microphones: [Source]?
+    /// Nil leaves selection unchanged; a supplied list that omits it clears it.
+    public var selectedMicrophone: String?
+    public var micOn: Bool?
+    public var recording: RecordingState?
+    public var displayName: String?
+    /// "USB-C" or "Wi-Fi".
+    public var connectionKind: String?
+    /// Finite dBFS, clamped to -60...0. Nil means no sample in this update.
+    public var micLevelDB: Double?
+    /// Frames skipped by the Mac encoder since the current picture started.
+    public var framesSkipped: Int?
+    public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
+      microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
+      recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
+      micLevelDB: Double? = nil, framesSkipped: Int? = nil) {
+      self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn
+      self.microphones = microphones; self.selectedMicrophone = selectedMicrophone; self.micOn = micOn
+      self.recording = recording; self.displayName = displayName; self.connectionKind = connectionKind
+      self.micLevelDB = micLevelDB; self.framesSkipped = framesSkipped
+    }
+  }
+
+  /// Mac to iPad script transfer. `basis` is the fingerprint (`MarkdownLibrary.fingerprint`) of
+  /// the text the Mac last sent for this `macID`, nil on the first send.
+  public struct Transfer: Codable, Equatable, Sendable {
+    public var macID: UUID
+    public var title: String
+    public var markdown: String
+    public var basis: String?
+    public var present: Bool
+    public init(macID: UUID, title: String, markdown: String, basis: String? = nil, present: Bool = false) {
+      self.macID = macID; self.title = title; self.markdown = markdown; self.basis = basis; self.present = present
+    }
+    /// Beyond these the iPad ignores the transfer.
+    public static let maximumMarkdownBytes = 2 * 1024 * 1024
+    public static let maximumTitleLength = 200
+  }
+
+  /// A partial look update: nil leaves the value as it is. The iPad repairs out-of-range values.
+  public struct Look: Codable, Equatable, Sendable {
+    public var horizontalMirror: Bool?
+    public var verticalMirror: Bool?
+    public var fontSize: Double?
+    public var textWidth: Double?
+    public var lineSpacing: Double?
+    public var guideFraction: Double?
+    public init(
+      horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
+      textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil
+    ) {
+      self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
+      self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
+      self.guideFraction = guideFraction
+    }
+  }
+
+  /// The Mac's voice relay: the last confirmed spoken token (0-based, as
+  /// `SessionStore.lastConfirmedTokenIndex`) of the script with this fingerprint, valid only for
+  /// the iPad `seekRevision` it names.
+  public struct Follow: Codable, Equatable, Sendable {
+    public var confirmed: Int
+    public var fingerprint: String
+    public var seekRevision: Int
+    public init(confirmed: Int, fingerprint: String, seekRevision: Int) {
+      self.confirmed = confirmed; self.fingerprint = fingerprint; self.seekRevision = seekRevision
+    }
   }
 
   public struct Script: Codable, Equatable, Sendable {
     public var id: UUID
     public var title: String
-    public init(id: UUID, title: String) { self.id = id; self.title = title }
+    /// Version 3: the Mac library script this one was sent from, and the fingerprint of its text.
+    public var macID: UUID?
+    public var fingerprint: String?
+    public init(id: UUID, title: String, macID: UUID? = nil, fingerprint: String? = nil) {
+      self.id = id; self.title = title; self.macID = macID; self.fingerprint = fingerprint
+    }
   }
 
   public struct State: Codable, Equatable, Sendable {
     public var scripts: [Script]
     /// The script in the presenter, if it is open.
     public var presenting: UUID?
+    /// The script selected in the library, which may differ from the presenter.
+    public var selectedID: UUID?
     public var running: Bool
     public var mode: String
     public var speed: Int
     /// The reading position from 1, and the script's length in words; 0 when nothing is open.
     public var word: Int
     public var words: Int
-    public init(scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int) {
-      self.scripts = scripts; self.presenting = presenting; self.running = running
+    /// Version 3, all Optional: the iPad's `CameraLink.protocolVersion`, its full current look,
+    /// preset names, countdown, voice source, the open script's `SessionStore.seekRevision` and
+    /// the fingerprint of its text.
+    public var version: Int?
+    public var look: Look?
+    public var presets: [String]?
+    public var startDelay: Int?
+    public var voiceSource: String?
+    public var seekRevision: Int?
+    public var fingerprint: String?
+    public var editing: Bool?
+    /// Why the last remote action was rejected, cleared when editing ends.
+    public var rejectionReason: String?
+    public var pictureMode: PictureMode?
+    public var picturePriority: PicturePriority?
+    public var cleanScreen: Bool?
+    public var micOn: Bool?
+    public var macStatus: MacStatus?
+    /// The microphone choices for the active voice source.
+    public var microphoneSources: [Source]?
+    public var selectedMicrophone: String?
+    public var deviceName: String?
+    public var appVersion: String?
+    public var scriptPreview: String?
+    /// The presenter shows the camera alone, with no script (`presenting` is nil then).
+    public var cameraOnly: Bool?
+    public init(
+      scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
+      version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
+      voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil,
+      editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
+      picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
+      macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
+      selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil,
+      cameraOnly: Bool? = nil
+    ) {
+      self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
+      self.cameraOnly = cameraOnly
+      self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
+      self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
+      self.voiceSource = voiceSource; self.seekRevision = seekRevision; self.fingerprint = fingerprint
+      self.editing = editing; self.rejectionReason = rejectionReason; self.pictureMode = pictureMode
+      self.picturePriority = picturePriority; self.cleanScreen = cleanScreen; self.micOn = micOn
+      self.macStatus = macStatus
+      self.microphoneSources = microphoneSources; self.selectedMicrophone = selectedMicrophone
     }
   }
 }
@@ -196,5 +360,15 @@ extension Data {
   }
   fileprivate func readUInt64(at index: Index) -> UInt64 {
     self[index..<(index + 8)].reduce(0) { $0 << 8 | UInt64($1) }
+  }
+}
+
+/// Observe this at the meter view, independently of the surrounding remote controls.
+@MainActor public final class RemoteMicMeter: ObservableObject {
+  @Published public private(set) var levelDB: Double = -60
+  public init() {}
+  public func show(_ level: Double) {
+    let next = level.isFinite ? min(0, max(-60, level)) : -60
+    if next != levelDB { levelDB = next }
   }
 }

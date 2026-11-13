@@ -5,6 +5,16 @@ import UIKit
 /// The scrolling script. It keeps the current word on the reading line: Manual and Voice both
 /// follow the session's fractional position on every display refresh (Manual's timeline, Voice's
 /// glide after the recogniser), the same rules as the Mac presenter. A drag moves the reading position to the word left on the line.
+/// Tells the coordinator whenever UIKit has really resized it: SwiftUI can update the representable
+/// before the new bounds arrive, and the reading rule must be re-measured against the final size.
+final class CanvasTextView: UITextView {
+  var onLayout: (() -> Void)?
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    onLayout?()
+  }
+}
+
 struct ScriptCanvas: UIViewRepresentable {
   let document: PrompterDocument
   let tokenIndex: Int
@@ -21,6 +31,8 @@ struct ScriptCanvas: UIViewRepresentable {
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   var onUserScroll: ((Int) -> Void)?
+  /// A single tap, told apart from the double tap that jumps to a word. Clean screen uses it to bring the controls back.
+  var onSingleTap: (() -> Void)?
 
   /// The Mac's rules (ScriptTextView): at least 42 pt each side, and a reading line never nearer than 54 pt to the top.
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
@@ -32,24 +44,9 @@ struct ScriptCanvas: UIViewRepresentable {
 
   func makeCoordinator() -> Coordinator { Coordinator() }
 
-  /// Tells the coordinator when layout gives it a new size: SwiftUI does not call `updateUIView` for that
-  /// (first layout, Stage Manager resizing), and the side inset depends on the width.
-  final class ResizingTextView: UITextView {
-    var onResize: (() -> Void)?
-    private var lastSize = CGSize.zero
-    override func layoutSubviews() {
-      super.layoutSubviews()
-      guard bounds.size != lastSize else { return }
-      lastSize = bounds.size
-      onResize?()
-    }
-  }
-
   func makeUIView(context: Context) -> UITextView {
-    let view = ResizingTextView(usingTextLayoutManager: false)
-    view.onResize = { [weak coordinator = context.coordinator] in
-      MainActor.assumeIsolated { coordinator?.sizeChanged() }
-    }
+    let view = CanvasTextView(usingTextLayoutManager: false)
+    view.onLayout = { [weak c = context.coordinator] in c?.relayout() }
     view.isEditable = false
     view.isSelectable = false
     view.backgroundColor = .clear
@@ -63,6 +60,9 @@ struct ScriptCanvas: UIViewRepresentable {
     let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapped(_:)))
     doubleTap.numberOfTapsRequired = 2
     view.addGestureRecognizer(doubleTap)
+    let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTapped))
+    singleTap.require(toFail: doubleTap)
+    view.addGestureRecognizer(singleTap)
     context.coordinator.textView = view
     return view
   }
@@ -115,14 +115,10 @@ struct ScriptCanvas: UIViewRepresentable {
     var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
+    /// The Mac's yellow, #f5cf4a.
+    private static let currentWord = UIColor(red: 0.961, green: 0.812, blue: 0.290, alpha: 1)
     private var baseColour = UIColor.white
     private var textOpacity = 1.0
-
-    func sizeChanged() {
-      guard parent != nil, !mappings.isEmpty else { return }
-      snapNext = true
-      if parent?.manualPosition == nil { alignVoice() } else { alignManual() }
-    }
 
     func render(document: PrompterDocument, style: ScriptStyle) {
       guard let textView, let parent else { return }
@@ -149,7 +145,7 @@ struct ScriptCanvas: UIViewRepresentable {
       let confirmed = parent.lastConfirmedTokenIndex.map { index <= $0 } ?? false
       let alpha = confirmed ? textOpacity * 0.38 : textOpacity
       return index == parent.tokenIndex && !confirmed && (renderedStyle?.highlightActiveWord ?? false)
-        ? UIColor.systemYellow.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
+        ? Self.currentWord.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
     }
 
     /// Only the words between the old and new positions change colour.
@@ -206,10 +202,14 @@ struct ScriptCanvas: UIViewRepresentable {
       return (manager, guideY)
     }
 
-    private func midY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
+    /// Where the reading rule rests for the line holding this word: just under that line's text,
+    /// halfway into the leading below it, from the measured line bounds (not a font-size guess).
+    private func ruleY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
       guard let textView else { return 0 }
-      let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-      return manager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer).midY + textView.textContainerInset.top
+      let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil).location
+      let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
+      let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+      return used.maxY + max(3, (fragment.maxY - used.maxY) / 2) + textView.textContainerInset.top
     }
 
     func alignVoice() {
@@ -219,7 +219,7 @@ struct ScriptCanvas: UIViewRepresentable {
         last.guide == parent.layoutGuideFraction, last.height == height { return }
       let slot = lowerBound(parent.tokenIndex)
       guard slot < mappings.count else { return }
-      let target = max(0, midY(mappings[slot].range, manager: manager) - guideY)
+      let target = max(0, ruleY(mappings[slot].range, manager: manager) - guideY)
       let animate = lastAligned != nil && !snapNext && parent.isActivelyRunning && !UIAccessibility.isReduceMotionEnabled
       let destination = CGPoint(x: 0, y: target)
       if animate {
@@ -234,8 +234,8 @@ struct ScriptCanvas: UIViewRepresentable {
       snapNext = false
     }
 
-    /// Words on one line share a scroll position, so the scroll runs from a line's first word to
-    /// the next line's first word across the words between: smooth, with no hold-then-jump.
+    /// Words on one line share one scroll position, the rule resting just under that line; the text
+    /// glides to the next line during the second half of the line's last word (see lineTransition).
     func alignManual() {
       guard !isDragging, let textView else { return }
       guard let position = parent?.manualPosition?(), !mappings.isEmpty else {
@@ -246,7 +246,7 @@ struct ScriptCanvas: UIViewRepresentable {
       if !snapNext, settle == nil, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
         last.size == textView.bounds.size, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
       guard let (manager, guideY) = prepare() else { return }
-      func y(_ slot: Int) -> CGFloat { midY(mappings[slot].range, manager: manager) - guideY }
+      func y(_ slot: Int) -> CGFloat { ruleY(mappings[slot].range, manager: manager) - guideY }
       var low = 0, high = mappings.count
       while low < high {
         let middle = (low + high) / 2
@@ -254,15 +254,12 @@ struct ScriptCanvas: UIViewRepresentable {
       }
       let current = max(0, low - 1)
       let here = y(current)
-      var first = current
-      while first > 0, abs(y(first - 1) - here) < 2 { first -= 1 }
       var next = current + 1
       while next < mappings.count, abs(y(next) - here) < 2 { next += 1 }
       var target = here
       if next < mappings.count {
-        let from = Double(mappings[first].token), to = Double(mappings[next].token)
-        let fraction = min(max((position - from) / max(to - from, 1), 0), 1)
-        target = here + (y(next) - here) * CGFloat(fraction)
+        let lastToken = Double(mappings[next - 1].token), nextFirst = Double(mappings[next].token)
+        target = here + (y(next) - here) * CGFloat(PadPresenterLayout.lineTransition(position: position, lastToken: lastToken, nextFirstToken: nextFirst))
       }
       target = max(0, target)
       if let settle {
@@ -277,6 +274,12 @@ struct ScriptCanvas: UIViewRepresentable {
         textView.contentOffset = CGPoint(x: 0, y: target)
       }
       snapNext = false
+    }
+
+    /// Re-aligns after a size change; a no-op while nothing moved.
+    func relayout() {
+      guard let parent else { return }
+      if parent.manualPosition == nil { alignVoice() } else { alignManual() }
     }
 
     func updateDisplayLink() {
@@ -321,12 +324,14 @@ struct ScriptCanvas: UIViewRepresentable {
       var bestDistance = CGFloat.greatestFiniteMagnitude
       // Mappings run top to bottom, so the search stops once words move away from the line.
       for slot in mappings.indices {
-        let distance = abs(midY(mappings[slot].range, manager: manager) - line)
+        let distance = abs(ruleY(mappings[slot].range, manager: manager) - line)
         if distance < bestDistance { bestDistance = distance; best = slot } else if distance > bestDistance + 200 { break }
       }
       lastAligned = (mappings[best].token, parent.layoutGuideFraction, textView.bounds.height)
       (parent.onUserScroll ?? parent.onSeek)(mappings[best].token)
     }
+
+    @objc func singleTapped() { parent?.onSingleTap?() }
 
     @objc func doubleTapped(_ gesture: UITapGestureRecognizer) {
       guard let textView, let parent, !mappings.isEmpty else { return }

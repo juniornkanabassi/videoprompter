@@ -40,28 +40,24 @@ import XCTest
     store.present(script)
     let session = store.session
     session.seek(to: 24)
-    UserDefaults.standard.set(true, forKey: "presenterMicLevel251")
-    UserDefaults.standard.set(false, forKey: "presenterFocusMode")
 
     for (name, size) in Self.sizes {
-      session.meter.show(peakDBFS: -24, isClipping: false)
       try await render(PresenterScreen(session: session, camera: store.camera).environmentObject(store), size: size, name: "ipad-setup-\(name)", directory: directory) {
-        session.meter.show(peakDBFS: -24, isClipping: false)
+        store.micMeter.show(-24)
       }
     }
 
     session.play()
     for (name, size) in Self.sizes {
       try await render(PresenterScreen(session: session, camera: store.camera, startsReading: true).environmentObject(store), size: size, name: "ipad-reading-\(name)", directory: directory) {
-        session.meter.show(peakDBFS: -9, isClipping: false)
+        store.micMeter.show(-9)
       }
     }
 
-    UserDefaults.standard.set(true, forKey: "presenterFocusMode")
-    defer { UserDefaults.standard.removeObject(forKey: "presenterFocusMode") }
+    store.setCleanScreen(true)
     for (name, size) in Self.sizes {
-      try await render(PresenterScreen(session: session, camera: store.camera, startsReading: true).environmentObject(store), size: size, name: "ipad-focus-\(name)", directory: directory) {
-        session.meter.show(peakDBFS: -9, isClipping: false)
+      try await render(PresenterScreen(session: session, camera: store.camera, startsReading: true).environmentObject(store), size: size, name: "ipad-clean-\(name)", directory: directory) {
+        store.micMeter.show(-9)
       }
     }
     session.pause()

@@ -153,6 +153,12 @@ public enum ControlProtocol {
       .init("microphone", help: "Recording microphone id from microphone list, or default"),
       .init("floatAudio", "choice", choices: onOff, help: "32-bit float audio")]),
     // iPad
+    .init(action: "ipad_send", words: ["ipad", "send"], summary: "Send and open a Mac library script on the iPad.", example: "videoprompter ipad send Intro", params: [script]),
+    .init(action: "ipad_look", words: ["ipad", "look"], summary: "Change the iPad's reading appearance.", example: "videoprompter ipad look --mirror on --size 60", params: [.init("mirror", "choice", choices: onOff), .init("flip", "choice", choices: onOff), .init("size", "number", range: InputValidation.fontSize.range), .init("width", "number", range: InputValidation.textWidth.range)]),
+    .init(action: "ipad_preset", words: ["ipad", "preset"], summary: "Apply an iPad preset.", example: "videoprompter ipad preset Studio", params: [.init("name", required: true, positional: true)]),
+    .init(action: "ipad_voice", words: ["ipad", "voice"], summary: "Choose voice following source.", example: "videoprompter ipad voice ipad", params: [.init("source", "choice", required: true, positional: true, choices: ["mac", "ipad", "off"])]),
+    .init(action: "ipad_picture", words: ["ipad", "picture"], summary: "Choose the iPad picture mode and quality.", example: "videoprompter ipad picture behind --priority realtime", params: [.init("mode", "choice", required: true, positional: true, choices: ["off", "behind", "monitor"]), .init("priority", "choice", choices: ["realtime", "sharp"])]),
+    .init(action: "ipad_clean", words: ["ipad", "clean"], summary: "Set clean screen on the iPad.", example: "videoprompter ipad clean on", params: [.init("value", "choice", required: true, positional: true, choices: onOff)]),
     .init(action: "ipad", words: ["ipad"], summary: "Drive Video Prompter on an iPad linked by USB-C or paired Wi-Fi, then report its scripts and presenter. With no options it only reports.", example: "videoprompter ipad --present 'My Script' --mode manual --speed 150 --run on", params: [
       .init("present", help: "Open this script on the iPad, by id or exact title from the iPad's own list"),
       .init("mode", "choice", choices: ["voice", "manual"], help: "Tracking mode"),

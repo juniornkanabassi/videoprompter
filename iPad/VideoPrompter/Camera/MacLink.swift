@@ -16,6 +16,13 @@ import UIKit
   @Published private(set) var macName: String?
   /// The picture's size as the Mac encodes it; nil while the Mac sends no camera.
   @Published private(set) var pictureSize: CGSize?
+  @Published private(set) var pairingFailure: String?
+  @Published private(set) var lastFrameTime: Date?
+  @Published private(set) var framesSkipped = 0
+  @Published private(set) var transportKind: String?
+
+  func disconnect() { receiver.disconnect() }
+
   /// Commands from the Mac's remote.
   var onCommand: ((PadRemote.Command) -> Void)?
   @Published var allowsWiFi = UserDefaults.standard.bool(forKey: "macLinkWiFi") {
@@ -47,6 +54,8 @@ import UIKit
   }
 
   /// Tells the Mac what the presenter shows. Dropped unless a Mac that reads it is connected.
+  func send(_ command: PadRemote.Command) { receiver.send(.command(command)) }
+
   func send(_ state: PadRemote.State) { receiver.send(.state(state)) }
 
   /// Called when a Mac connects or goes, so the camera can switch to it and back.
@@ -126,21 +135,39 @@ import UIKit
     listener.start(queue: receiver.queue)
   }
 
+  /// Why the last Mac went, "drop" or "replaced"; the end-to-end test reads it through PadStore.
+  private(set) var lastEndReason = ""
+
+  private func ended(_ reason: String) {
+    guard macName != nil else { return }
+    lastEndReason = reason
+    macName = nil
+    pictureSize = nil
+    lastFrameTime = nil
+    framesSkipped = 0
+    transportKind = nil
+    onChange?()
+  }
+
   private func handle(_ event: LinkReceiver.Event) {
     switch event {
-    case .connected(let name):
+    case .connected(let name, let transport):
+      pairingFailure = nil
+      transportKind = transport
       macName = name
       onChange?()
     case .format(let size):
       pictureSize = size
+      if size == nil { lastFrameTime = nil; framesSkipped = 0 }
       onChange?()
+    case .frame(let date, let skipped):
+      if let date { lastFrameTime = date }
+      framesSkipped = skipped
+    case .pairingFailed(let reason): pairingFailure = reason
     case .command(let command):
       onCommand?(command)
-    case .disconnected:
-      guard macName != nil else { return }
-      macName = nil
-      pictureSize = nil
-      onChange?()
+    case .disconnected: ended("drop")
+    case .replaced: ended("replaced")
     }
   }
 }
@@ -150,10 +177,14 @@ import UIKit
 /// only, except `onEvent`, which is set once before the first connection.
 final class LinkReceiver: @unchecked Sendable {
   enum Event: Sendable {
-    case connected(String)
+    case connected(String, String)
+    case frame(Date?, Int)
+    case pairingFailed(String)
     case format(CGSize?)
     case command(PadRemote.Command)
     case disconnected
+    /// Another Mac took the link over while this one was connected.
+    case replaced
   }
 
   let queue = DispatchQueue(label: "VideoPrompter.maclink", qos: .userInteractive)
@@ -167,6 +198,8 @@ final class LinkReceiver: @unchecked Sendable {
   private var format: CMVideoFormatDescription?
   /// After a connection or a decoder failure, frames wait for the next key frame.
   private var needsKeyFrame = true
+  private var framesSkipped = 0
+  private var senderFramesSkipped = 0
 
   init(renderer: AVSampleBufferVideoRenderer) {
     self.renderer = renderer
@@ -196,7 +229,13 @@ final class LinkReceiver: @unchecked Sendable {
       guard let self, let new else { return }
       switch state {
       case .ready: self.promote(new, overWiFi: overWiFi)
-      case .failed, .cancelled:
+      case .failed(let error):
+        if overWiFi, self.pending.contains(where: { $0.connection === new }), case .tls = error {
+          self.onEvent?(.pairingFailed("Pairing failed. Check the key on this iPad and try again."))
+        }
+        self.pending.removeAll { $0.connection === new }
+        self.closed(new)
+      case .cancelled:
         self.pending.removeAll { $0.connection === new }
         self.closed(new)
       default: break
@@ -217,8 +256,11 @@ final class LinkReceiver: @unchecked Sendable {
     guard pending.contains(where: { $0.connection === new }) else { return }
     pending.removeAll { $0.connection === new }
     connection?.cancel()
-    // The Mac that replaces it may send no picture.
-    if connection != nil { onEvent?(.format(nil)) }
+    // The Mac that replaces it is a different sender: a disconnect first, so anything tied to the
+    // old one (the Mac's voice relay) ends, and it may send no picture.
+    if connection != nil { onEvent?(.replaced) }
+    framesSkipped = 0
+    senderFramesSkipped = 0
     connection = new
     connectionIsWiFi = overWiFi
     peerVersion = 0
@@ -227,6 +269,16 @@ final class LinkReceiver: @unchecked Sendable {
     needsKeyFrame = true
     renderer.flush(removingDisplayedImage: true, completionHandler: nil)
     receive(on: new)
+  }
+
+  func disconnect() {
+    queue.async { [self] in
+      for waiting in pending { waiting.connection.cancel() }
+      pending.removeAll()
+      guard let current = connection else { return }
+      current.send(content: CameraLink.Message.goodbye.encoded(), completion: .contentProcessed { _ in current.cancel() })
+      closed(current)
+    }
   }
 
   func dropWiFi() {
@@ -277,31 +329,39 @@ final class LinkReceiver: @unchecked Sendable {
     switch message {
     case .hello(let name, let version):
       peerVersion = version
-      onEvent?(.connected(name))
+      onEvent?(.connected(name, connectionIsWiFi ? "Wi-Fi" : "USB-C"))
     case .format(let width, let height, let sets):
+      senderFramesSkipped = 0
+      if sets.isEmpty { framesSkipped = 0 }
       format = Self.formatDescription(sets)
       needsKeyFrame = true
       if sets.isEmpty { renderer.flush(removingDisplayedImage: true, completionHandler: nil) }
       onEvent?(.format(sets.isEmpty ? nil : CGSize(width: width, height: height)))
     case .frame(_, let keyFrame, let data):
-      enqueue(data, keyFrame: keyFrame)
+      let shown = enqueue(data, keyFrame: keyFrame)
+      if !shown { framesSkipped += 1 }
+      onEvent?(.frame(shown ? Date() : nil, framesSkipped + senderFramesSkipped))
     case .goodbye:
       connection?.cancel()
     case .command(let command):
+      if case .macStatus(let status) = command, let skipped = status.framesSkipped {
+        senderFramesSkipped = min(10_000_000, max(0, skipped))
+        onEvent?(.frame(nil, framesSkipped + senderFramesSkipped))
+      }
       onEvent?(.command(command))
     case .state:
       break
     }
   }
 
-  private func enqueue(_ data: Data, keyFrame: Bool) {
-    guard let format else { return }
+  private func enqueue(_ data: Data, keyFrame: Bool) -> Bool {
+    guard let format else { return false }
     if renderer.status == .failed || renderer.requiresFlushToResumeDecoding {
       renderer.flush()
       needsKeyFrame = true
     }
     if needsKeyFrame {
-      guard keyFrame else { return }
+      guard keyFrame else { return false }
       needsKeyFrame = false
     }
     // A slow decoder must not build a queue: the picture is for framing, and a late frame is
@@ -309,9 +369,10 @@ final class LinkReceiver: @unchecked Sendable {
     // A dropped frame breaks the ones that refer to it, so wait for the next key frame.
     guard renderer.isReadyForMoreMediaData || keyFrame, let sample = Self.sampleBuffer(data, format: format) else {
       needsKeyFrame = true
-      return
+      return false
     }
     renderer.enqueue(sample)
+    return true
   }
 
   private static func formatDescription(_ sets: [Data]) -> CMVideoFormatDescription? {
