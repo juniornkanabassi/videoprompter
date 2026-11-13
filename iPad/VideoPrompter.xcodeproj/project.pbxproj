@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F4E97043B1774B2D8FDD0011 /* CameraExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */; };
 		A11111111111111111111111 /* DBMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22222222222222222222222 /* DBMeter.swift */; };
 		B11111111111111111111111 /* PadPresenterLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22222222222222222222222 /* PadPresenterLayout.swift */; };
 		FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26C84FA553FEA2B823DA12A /* SessionStore.swift */; };
@@ -30,6 +31,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraExposure.swift; sourceTree = "<group>"; };
 		A22222222222222222222222 /* DBMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DBMeter.swift; sourceTree = "<group>"; };
 		B22222222222222222222222 /* PadPresenterLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/PadPresenterLayout.swift; sourceTree = "<group>"; };
 		0B8FE8C58B23D2288819C897 /* VideoPrompter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoPrompter.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -109,6 +111,7 @@
 				278E07ECB9F62B78AF720BE8 /* MicMeter.swift */,
 				CB0512639610DBC42A9C6994 /* MeterZones.swift */,
 				4B8C814094E81EFFABA6D7F5 /* PresenterControls.swift */,
+				F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */,
 			);
 			name = "Shared with the Mac app";
 			path = ../Sources/VideoPrompter;
@@ -266,6 +269,7 @@
 				73B8E45F3D8FD6F2498942B5 /* MicMeter.swift in Sources */,
 				5686F7AB3365F44837A8D184 /* MeterZones.swift in Sources */,
 				59CE54BD36F351C652A90B96 /* PresenterControls.swift in Sources */,
+				F4E97043B1774B2D8FDD0011 /* CameraExposure.swift in Sources */,
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
 				7C1A0E5D2B9F4A6381D05E71 /* AudioChannel.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,

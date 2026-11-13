@@ -19,6 +19,6 @@ trap cleanup EXIT
 xcrun simctl boot "$DEVICE"
 xcrun simctl bootstatus "$DEVICE" -b >/dev/null
 TEST_RUNNER_VP_SHOTS_DIR="$OUT" xcodebuild test -project "$ROOT/iPad/VideoPrompter.xcodeproj" -scheme VideoPrompterShots \
-  -destination "id=$DEVICE" -derivedDataPath "$OUT/dd" CODE_SIGNING_ALLOWED=NO -only-testing:VideoPrompterTests/PresenterSnapshotTests \
+  -destination "id=$DEVICE" -derivedDataPath "${DERIVED_DATA:-$OUT/dd}" CODE_SIGNING_ALLOWED=NO -only-testing:VideoPrompterTests/PresenterSnapshotTests \
   -test-timeouts-enabled YES -maximum-test-execution-time-allowance 180
 ls "$OUT"/*.png

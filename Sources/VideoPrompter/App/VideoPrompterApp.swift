@@ -340,29 +340,6 @@ private struct CameraCommands: Commands {
   }
 }
 
-/// Zoom for a whole pane: lays the content out in 1/scale of the space it is given and draws it
-/// scaled back up, so every label, control and text view grows together. SwiftUI's own scale keeps
-/// clicks on target, AppKit views inside included; an NSHostingView inside a bounds-scaled NSView
-/// draws the same but stops hit-testing its AppKit subviews.
-struct UIZoom: Layout {
-  var scale: Double
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let size = subviews.first?.sizeThatFits(ProposedViewSize(
-      width: proposal.width.map { $0 / scale }, height: proposal.height.map { $0 / scale })) ?? .zero
-    guard scale != 1 else { return size }
-    // Zoomed, a pane takes the space it is offered: passing its content's minimum on, doubled at
-    // 200%, asked the split view for more than the window had and AppKit looped on constraints.
-    return CGSize(width: proposal.width ?? size.width * scale, height: proposal.height ?? size.height * scale)
-  }
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    subviews.first?.place(at: bounds.origin, anchor: .topLeading,
-      proposal: ProposedViewSize(width: bounds.width / scale, height: bounds.height / scale))
-  }
-}
-extension View {
-  func uiZoom(_ scale: Double) -> some View { UIZoom(scale: scale) { scaleEffect(scale, anchor: .topLeading) } }
-}
-
 extension NSResponder {
   @objc fileprivate func agentScreen_noResponder(for eventSelector: Selector) {}
 }

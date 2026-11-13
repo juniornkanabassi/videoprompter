@@ -33,7 +33,7 @@ enum PadPresenterLayout {
   static let topChrome: CGFloat = 84
   static let lostNoticeBand: CGFloat = 44
   static let transportRow: CGFloat = 92
-  static let setupBar: CGFloat = 100
+  static let setupBar: CGFloat = 144
   static let offNoteRow: CGFloat = 56
   static let lostCardRow: CGFloat = 84
   /// The status pill's own row on screens too narrow to share the transport's.
@@ -46,7 +46,7 @@ enum PadPresenterLayout {
   ) -> (top: CGFloat, bottom: CGFloat) {
     guard !cleanScreen else { return (0, 0) }
     let top = topChrome + (lostPaused ? lostNoticeBand : 0)
-    if setup { return (top, setupBar + (offNote ? offNoteRow : 0)) }
+    if setup { return (top, (iconOnly(width: width) ? 200 : setupBar) + (offNote ? offNoteRow : 0)) }
     let extra = lostPaused ? (lostCardStacks(width: width) ? lostCardRow : 0) : (statusStacks(width: width) ? statusRow : 0)
     return (top, transportRow + extra)
   }

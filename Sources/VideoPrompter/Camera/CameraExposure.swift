@@ -261,7 +261,7 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
   }
 }
 
-/// Here rather than in CameraGuides.swift, which the iPad app compiles without this file.
+/// Shared exposure settings keep the presenter key in step with the image processor.
 extension CameraGuides {
   var exposure: CameraExposure.Settings {
     CameraExposure.Settings(zebras: zebras, zebraLevel: zebraLevel, zebraRange: zebraRange, falseColour: falseColour, skinLevel: skinReference.level, skinRange: skinReference.range, greyCardCheck: greyCardCheck)
