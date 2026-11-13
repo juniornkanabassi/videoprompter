@@ -26,7 +26,9 @@ struct PairingScanner: View {
         if scanned || permissionFailed {
           Text(permissionFailed ? "Camera access is off. Enable it in Settings, or type the key on the Mac." : link.scanStatus ?? "Connecting…")
             .font(.title2).multilineTextAlignment(.center)
-          if link.scanStatus?.hasPrefix("Connected") == true {
+          if permissionFailed {
+            Button("Done") { dismiss() }
+          } else if link.scanStatus?.hasPrefix("Connected") == true {
             Button("Done") { dismiss() }.buttonStyle(.borderedProminent).foregroundStyle(.black)
           } else {
             Button("Scan again") { scanned = false; link.scanStatus = nil }

@@ -298,6 +298,7 @@ import VideoToolbox
 
   func requestPairing(_ device: WiFiDevice) {
     cancelPairingRequest()
+    selectedWiFiID = device.id
     usesWiFi = true
     let endpoint = NWEndpoint.service(name: device.id, type: PairingExchange.padService, domain: "local.", interface: nil)
     let connection = PairingExchange.connect(endpoint)
