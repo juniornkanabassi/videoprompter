@@ -113,26 +113,48 @@ struct PresenterScreen: View {
     }
   }
 
+  /// The setting-up note beside Camera and Mic ("Camera off: ..."); it sits above the bar, so the script leaves room for it.
+  private var showsOffNote: Bool { !store.cameraOn && macConnected || !store.micOn }
+
   /// Script, reading line, meter and the presenter-facing note: the part the glass shows back.
+  /// While controls are visible the script scrolls inside a reading viewport between them, faded at
+  /// both edges; clean screen gives the whole screen back. The viewport is worked out on the
+  /// operator's screen and handed to the turned layer the right way round, so Flip never carries
+  /// the text under the controls.
   private func scriptLayer(_ size: CGSize) -> some View {
     let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
-    let lineY = size.height * settings.guideFraction
+    let insets = PadPresenterLayout.scriptInsets(
+      width: size.width, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
+    // In the turned layer's own coordinates: Flip swaps top and bottom.
+    let top = store.flip ? insets.bottom : insets.top
+    let bottom = store.flip ? insets.top : insets.bottom
+    let height = max(size.height - top - bottom, 1)
+    let lineY = min(max(size.height * settings.guideFraction, top + 40), top + height - 40)
     let showsLine = !setup && showScript
     let showsMeter = store.micOn && isVoice
+    let fade = store.cleanScreen ? 0 : min(40, height / 4) / height
     return ZStack(alignment: .topLeading) {
       if showScript {
         ScriptCanvas(
           document: session.document, tokenIndex: session.tokenIndex,
           lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
           isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
-          // The current line sits just above the reading line.
-          layoutGuideFraction: max(0, lineY - settings.fontSize * 0.6) / max(size.height, 1),
+          // The reading rule rests just under the current line, at lineY in the layer.
+          layoutGuideFraction: (lineY - top) / height,
           style: ScriptStyle(settings), textWidth: settings.textWidth,
           manualPosition: session.isManual ? { [session] in session.manualPosition() }
             : UIAccessibility.isReduceMotionEnabled ? nil : { [session] in session.voicePosition() },
           onSeek: { session.seek(to: $0) },
           onUserScroll: { session.seekFromUserScroll(to: $0) })
-        .frame(width: size.width, height: size.height)
+        .frame(width: size.width, height: height)
+        .mask(
+          LinearGradient(
+            stops: [
+              .init(color: .clear, location: 0), .init(color: .black, location: fade),
+              .init(color: .black, location: 1 - fade), .init(color: .clear, location: 1),
+            ], startPoint: .top, endPoint: .bottom)
+        )
+        .offset(y: top)
       }
       if showsLine {
         ReadingLine(opacity: settings.guideOpacity * 0.75, trailing: showsMeter ? 96 : 24)
@@ -144,18 +166,23 @@ struct PresenterScreen: View {
         PresenterMeter(meter: store.micMeter)
           .frame(width: 64)
           .frame(maxHeight: .infinity)
-          .padding(.top, store.cleanScreen ? 48 : 96)
-          .padding(.bottom, store.cleanScreen ? 80 : 152)
+          // Clear of the controls and the Mac-lost card, wherever Flip puts them.
+          .padding(.top, store.cleanScreen ? 48 : top + 12)
+          .padding(.bottom, store.cleanScreen ? 80 : bottom + 8)
           .frame(width: size.width, height: size.height, alignment: .trailing)
           .padding(.trailing, 8)
           .allowsHitTesting(false)
       }
       if lostPaused {
+        // Its own band under the top chrome, in the viewport's reserved space (turned with the layer).
+        let band = PadPresenterLayout.lostNoticeBand
         Text("Paused · Mac disconnected")
           .font(.system(size: 30, weight: .semibold))
           .foregroundStyle(PresenterTheme.warn)
+          .lineLimit(1).minimumScaleFactor(0.7)
           .padding(.leading, ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth))
-          .padding(.top, 92)
+          .frame(width: size.width, height: band, alignment: .leading)
+          .offset(y: store.flip ? size.height - PadPresenterLayout.topChrome - band : PadPresenterLayout.topChrome)
           .allowsHitTesting(false)
       }
     }
@@ -246,18 +273,24 @@ struct PresenterScreen: View {
   // MARK: Reading controls
 
   private var readingControls: some View {
-    VStack {
-      Spacer()
-      HStack(spacing: 8) {
-        if lostPaused { lostCard } else { statusPill }
-        Spacer(minLength: 12)
-        turnGroup
-        PadButton("Back to start", icon: "arrow.counterclockwise", kind: .card, showsTitle: false) { session.restart() }
-        PadButton(primaryTitle, kind: .primary, minWidth: 128, action: primaryAction)
-        PadButton("Show controls", icon: "ellipsis", kind: .card, showsTitle: false) { setup = true }
+    GeometryReader { geometry in
+      // Narrow screens give the recovery card a row of its own above the transport.
+      let stacked = lostPaused && PadPresenterLayout.lostCardStacks(width: geometry.size.width)
+      VStack(alignment: .leading, spacing: 8) {
+        Spacer()
+        if stacked { lostCard }
+        if !lostPaused, PadPresenterLayout.statusStacks(width: geometry.size.width) { statusPill }
+        HStack(spacing: 8) {
+          if lostPaused { if !stacked { lostCard } } else if !PadPresenterLayout.statusStacks(width: geometry.size.width) { statusPill }
+          Spacer(minLength: 12)
+          turnGroup
+          PadButton("Back to start", icon: "arrow.counterclockwise", kind: .card, showsTitle: false) { session.restart() }
+          PadButton(primaryTitle, kind: .primary, minWidth: 128, action: primaryAction)
+          PadButton("Show controls", icon: "ellipsis", kind: .card, showsTitle: false) { setup = true }
+        }
+        .padding(.trailing, store.micOn && isVoice ? 112 : 24)
       }
       .padding(.leading, 24)
-      .padding(.trailing, store.micOn && isVoice ? 112 : 24)
       .padding(.bottom, 24)
     }
   }
@@ -287,12 +320,14 @@ struct PresenterScreen: View {
   private var lostCard: some View {
     HStack(spacing: 16) {
       Circle().fill(PresenterTheme.warn).frame(width: 12, height: 12)
-      Text("Lost the Mac. Paused where you were.").lineLimit(1)
+      Text("Lost the Mac. Paused where you were.").fixedSize(horizontal: false, vertical: true)
       PadButton("iPad mic", kind: .plain, height: 44) {
         store.setMicOn(true)
         startReading()
       }
+      .fixedSize()
       PadButton("Reconnect", kind: .primary, height: 44) { camera.link.start() }
+        .fixedSize()
     }
     .font(.system(size: 18))
     .foregroundStyle(PresenterTheme.text)
@@ -343,7 +378,7 @@ struct PresenterScreen: View {
     let compact = PadPresenterLayout.iconOnly(width: width)
     return VStack(alignment: .leading, spacing: 0) {
       Spacer()
-      if !store.cameraOn && macConnected || !store.micOn {
+      if showsOffNote {
         offNote.padding(.leading, compact ? 24 : 288).padding(.bottom, 12)
       }
       ScrollView(.horizontal, showsIndicators: false) {
@@ -435,7 +470,10 @@ struct PresenterScreen: View {
     ) {
       if macConnected {
         Picker("Voice from", selection: Binding(get: { store.voiceSource }, set: { store.setVoiceSource($0) })) {
-          Text("The Mac").tag("Mac")
+          // The iPad cannot start the Mac's voice relay; choosing the Mac here would leave it waiting for words.
+          // Once the Mac has started it (voiceSource is Mac), it stays selectable.
+          Text(store.voiceSource == "Mac" ? "The Mac" : "The Mac (start it from the Mac)").tag("Mac")
+            .disabled(store.voiceSource != "Mac")
           Text("This iPad").tag("iPad")
         }
       }

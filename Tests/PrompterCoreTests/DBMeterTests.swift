@@ -13,4 +13,8 @@ final class DBMeterTests: XCTestCase {
     XCTAssertEqual(DBMeter.band(-5.9), .red)
     XCTAssertEqual(DBMeter.ticks.map(DBMeter.fraction), [1, 0.9, 0.8, 0.6, 0.4, 0.2, 0])
   }
+
+  func testThresholdLabelsColourByBand() {
+    XCTAssertEqual(DBMeter.ticks.map(DBMeter.thresholdBand), [.red, .red, .yellow, nil, nil, nil, nil])
+  }
 }

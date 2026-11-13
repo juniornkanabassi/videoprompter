@@ -42,4 +42,36 @@ final class PadPresenterLayoutTests: XCTestCase {
     XCTAssertEqual(text(running: false), "Paused · word 214 of 1,062")
     XCTAssertEqual(text(countdown: 3), "Starts in 3")
   }
+
+  func testRuleStaysUnderTheCurrentLineForEveryWordOfIt() {
+    // A line of words 10...14, the next line starting at 15: first, middle and last word, paused and running.
+    for position in [10.0, 12.0, 14.0, 10.4, 12.6, 14.5] {
+      XCTAssertEqual(PadPresenterLayout.lineTransition(position: position, lastToken: 14, nextFirstToken: 15), 0, "\(position)")
+    }
+    // Only the second half of the last word glides to the next line, arriving exactly on its first word.
+    let middle = PadPresenterLayout.lineTransition(position: 14.75, lastToken: 14, nextFirstToken: 15)
+    XCTAssertGreaterThan(middle, 0.4)
+    XCTAssertLessThan(middle, 0.6)
+    XCTAssertEqual(PadPresenterLayout.lineTransition(position: 15, lastToken: 14, nextFirstToken: 15), 1)
+    XCTAssertEqual(PadPresenterLayout.lineTransition(position: 16, lastToken: 14, nextFirstToken: 15), 1)
+  }
+
+  func testScriptViewportLeavesRoomForTheControls() {
+    func insets(_ width: CGFloat = 1180, clean: Bool = false, setup: Bool = false, lost: Bool = false, note: Bool = false) -> [CGFloat] {
+      let i = PadPresenterLayout.scriptInsets(width: width, cleanScreen: clean, setup: setup, lostPaused: lost, offNote: note)
+      return [i.top, i.bottom]
+    }
+    XCTAssertEqual(insets(), [84, 92])
+    // The status pill gets its own row below 900 pt, as the card does below 1300 pt.
+    XCTAssertEqual(insets(834), [84, 152])
+    XCTAssertEqual(insets(clean: true, setup: true, lost: true), [0, 0])
+    XCTAssertEqual(insets(setup: true), [84, 100])
+    XCTAssertEqual(insets(setup: true, note: true), [84, 156])
+    // The Mac-lost notice has its own band; the card takes a row of its own only on narrower screens.
+    XCTAssertEqual(insets(1366, lost: true), [128, 92])
+    XCTAssertEqual(insets(1180, lost: true), [128, 176])
+    XCTAssertEqual(insets(834, lost: true), [128, 176])
+    XCTAssertTrue(PadPresenterLayout.lostCardStacks(width: 834))
+    XCTAssertFalse(PadPresenterLayout.lostCardStacks(width: 1366))
+  }
 }
