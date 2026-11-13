@@ -88,6 +88,10 @@ import XCTest
   func testPairingShots() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "qr-shots-\(UUID().uuidString)")!)
+    let legacyKey = store.camera.link.pairingCode
+    KnownMacs.note(name: "USB history fixture", kind: "USB-C")
+    store.camera.link.forgetMac(named: "USB history fixture")
+    XCTAssertEqual(store.camera.link.pairingCode, legacyKey, "Forgetting USB history must preserve Wi-Fi pairings")
     _ = try await render(MacControlScreen(link: store.camera.link).environmentObject(store),
       size: CGSize(width: 1180, height: 820), name: "qr-ipad-connect", directory: directory, beforeDraw: {})
     let key = Curve25519.KeyAgreement.PrivateKey()

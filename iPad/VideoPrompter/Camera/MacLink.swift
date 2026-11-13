@@ -46,7 +46,7 @@ import UIKit
   func forgetMac(named name: String) {
     let hasCredential = credentials.values.contains { $0.name == name }
     credentials = credentials.filter { $0.value.name != name }
-    if !hasCredential { newPairingCode() }
+    if !hasCredential, KnownMacs.load().contains(where: { $0.name == name && $0.kind == "Wi-Fi" }) { newPairingCode() }
     saveCredentials()
     KnownMacs.remove(name)
     receiver.dropWiFi()
