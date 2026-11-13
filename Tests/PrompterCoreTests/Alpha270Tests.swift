@@ -63,7 +63,7 @@ extension AppearanceSnapshotTests {
     recorder.inputMeter.show(peakDBFS: -14, isClipping: false)
     try await snapshot(AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, microphonesOverride: [atem, virtual], recorder: recorder), name: "alpha-270-adjust-mic", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
     // The card in other sizes and states: a narrow sheet, a wide sheet, 200% text, the Mac's default input and a live level.
-    for (name, width, zoom, uid) in [("narrow", 340.0, 1.0, "atem"), ("wide", 900.0, 1.0, "atem"), ("200", 470.0, 2.0, "atem"), ("default", 470.0, 1.0, ""), ("nosignal", 470.0, 1.0, "atem")] {
+    for (name, width, zoom, uid) in [("narrow", 340.0, 1.0, "atem"), ("standard", 470.0, 1.0, "atem"), ("wide", 900.0, 1.0, "atem"), ("200", 470.0, 2.0, "atem"), ("default", 470.0, 1.0, ""), ("nosignal", 470.0, 1.0, "atem")] {
       store.settings.audioDeviceUID = uid.isEmpty ? nil : uid
       if name == "nosignal" { recorder.inputMeter.reset() } else { recorder.inputMeter.show(peakDBFS: -14, isClipping: false) }
       let view = AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, microphonesOverride: [atem, virtual], recorder: recorder)

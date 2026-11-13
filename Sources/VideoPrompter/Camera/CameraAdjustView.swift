@@ -21,7 +21,7 @@ struct CameraAdjustView: View {
         if !shotOnly {
         Text("Camera").font(.title2.bold())
         Text("Pick the camera, then make the picture upright.")
-          .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+          .cardCaption().fixedSize(horizontal: false, vertical: true)
         ChoiceTiles(items: devices, columns: 2, minTileWidth: 300) { device in
           let info = sourceInfo(device)
           let selected = device.uid == model.selectedUID
@@ -31,21 +31,36 @@ struct CameraAdjustView: View {
               .buttonStyle(.plain)
               .accessibilityLabel(device.displayName).accessibilityValue(detail)
               .accessibilityAddTraits(selected ? .isSelected : [])
-            HStack(alignment: .top, spacing: Space.sm) {
-              Image(systemName: "video").font(.title3).frame(width: Space.xxl + Space.xs).allowsHitTesting(false)
-              VStack(alignment: .leading, spacing: Space.xs) {
-                Text(device.displayName).font(.headline).lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                if !detail.isEmpty { Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
+            HStack(alignment: .center, spacing: Space.sm) {
+              HStack(alignment: .top, spacing: Space.sm) {
+                Image(systemName: "video").font(.title3).frame(width: Space.xxl + Space.xs)
+                VStack(alignment: .leading, spacing: Space.xs) {
+                  Text(device.displayName).cardTitle().lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                  // Connection and picture format on their own lines, so neither is cut in the middle.
+                  Text(info.connectionDescription).cardCaption().fixedSize(horizontal: false, vertical: true)
+                  if let format = info.videoFormat {
+                    // Where the room is short, the size and the rate go on separate lines instead of splitting at a dot.
+                    ViewThatFits(in: .horizontal) {
+                      Text(format).cardCaption().lineLimit(1).fixedSize()
+                      VStack(alignment: .leading, spacing: 0) {
+                        ForEach(format.components(separatedBy: " · "), id: \.self) { Text($0).cardCaption() }
+                      }
+                    }
+                  }
+                }
               }.allowsHitTesting(false)
-              // Room for the pencil, which sits under the check badge.
-              Spacer(minLength: AlphaStyle.minTarget)
-            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).overlay(alignment: .bottomTrailing) {
-              // Rename is quiet: a pencil in the tile's corner, always visible, a full-size target.
+              Spacer(minLength: 0)
+              // Rename is a labelled button, centred in the row; the check badge keeps its own column to the right.
               Button { renaming = device; nickname = device.nickname ?? "" } label: {
-                Image(systemName: "pencil").font(.callout.weight(.semibold)).foregroundStyle(.primary.opacity(0.75))
-                  .frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget).contentShape(Rectangle())
+                HStack(spacing: Space.xs) {
+                  Image(systemName: "pencil")
+                  Text("Rename").lineLimit(1)
+                }.font(.system(size: 14, weight: .semibold)).padding(.horizontal, Space.sm)
+                  .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
+                  .background(.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: Space.md))
               }.buttonStyle(.plain).accessibilityLabel("Rename \(device.displayName)").help("Rename this camera")
-            }.accessibilityElement(children: .contain)
+              Color.clear.frame(width: Space.xl, height: 1).accessibilityHidden(true)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).accessibilityElement(children: .contain)
           }.modifier(ChoiceTileStyle(selected: selected, minHeight: 52))
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
         }
@@ -95,8 +110,8 @@ struct CameraAdjustView: View {
     return Button { model.setRotation(rotation) } label: {
       VStack(spacing: Space.xs) {
         ShotGlyph(rotation: rotation)
-        Text(shot.title).font(.headline).multilineTextAlignment(.center)
-        Text(shot.detail).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        Text(shot.title).cardTitle().multilineTextAlignment(.center)
+        Text(shot.detail).cardCaption().multilineTextAlignment(.center)
       }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
     }.buttonStyle(.plain).modifier(ChoiceTileStyle(selected: selected, minHeight: 96))
       .accessibilityLabel("\(shot.title), \(shot.detail)")
