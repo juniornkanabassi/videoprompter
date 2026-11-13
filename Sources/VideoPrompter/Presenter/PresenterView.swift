@@ -569,6 +569,7 @@ struct PresenterView: View {
       }
       WrapLayout(spacing: Space.sm, leading: true) {
         setupTransport(short: true, snug: true)
+        IPadButton()
         callGroup(snug: true)
         toolsGroup(words: Self.setupWordVariants[Self.setupWordVariants.count - 1])
         viewGroup(titles: false)
@@ -579,6 +580,7 @@ struct PresenterView: View {
     HStack(spacing: spacious ? PresenterBar.groupGap : words.snug ? Space.sm : Space.md) {
       HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
       Spacer(minLength: 0)
+      IPadButton()
       callGroup(snug: words.snug)
       toolsGroup(words: words)
       viewGroup(titles: words.viewTitles)
@@ -590,6 +592,7 @@ struct PresenterView: View {
       HStack(spacing: Space.md) {
         HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
         Spacer(minLength: Space.sm)
+        IPadButton()
         callGroup(snug: words.snug)
       }
       // Right-aligned under the groups above, so the one gap sits where the first row's does (under the transport).

@@ -18,10 +18,18 @@ extension AppearanceSnapshotTests {
       mode: "Manual", speed: 120, word: 20, words: PrompterDocument(markdown: markdown).spokenTokens.count,
       look: .init(horizontalMirror: true, verticalMirror: true, fontSize: 32, textWidth: 0.85),
       deviceName: "Studio iPad", appVersion: "Test", scriptPreview: "Match day", markdown: markdown)
-    for zoom in [1.0, 1.5] {
-      try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: state, startsLink: false).uiZoom(zoom),
-        name: "ipad-replica-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: 900 * zoom),
+    let imageURL = try XCTUnwrap(Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures"))
+    let image = try XCTUnwrap(NSImage(contentsOf: imageURL)?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    for variant in ["connected-reading", "paused", "not-connected", "camera-only"] {
+      var fixture = state
+      if variant == "connected-reading" { fixture.mode = "Voice"; fixture.voiceSource = "Mac" }
+      if variant == "paused" { fixture.running = false }
+      if variant == "camera-only" { fixture.cameraOnly = true; fixture.presenting = nil }
+      for zoom in [1.0, 1.5] {
+      try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: variant == "not-connected" ? nil : fixture, startsLink: false, previewOverride: variant == "camera-only" ? image : nil).uiZoom(zoom),
+        name: "ipad-\(variant)-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: 720 * zoom),
         scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(300), prepare: { host in
+          guard variant == "connected-reading" || variant == "paused" else { return }
           func texts(_ view: NSView) -> [NSTextView] {
             (view as? NSTextView).map { [$0] } ?? view.subviews.flatMap(texts)
           }
@@ -33,6 +41,7 @@ extension AppearanceSnapshotTests {
           }
           XCTAssertEqual(highlights, 1, "Exactly the current word must be highlighted at \(zoom)")
         })
+      }
     }
   }
 }

@@ -315,9 +315,11 @@ extension AppearanceSnapshotTests {
   func testSettingsUseSentenceCase() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let text = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Settings/SettingsView.swift"), encoding: .utf8)
-    for label in ["Test microphone", "Speech recognition", "Keep scripts in iCloud Drive for iPad", "Also connect over Wi-Fi"] {
+    for label in ["Test microphone", "Speech recognition", "Keep scripts in iCloud Drive for iPad"] {
       XCTAssertTrue(text.contains(label), label)
     }
+    XCTAssertFalse(text.contains("Also connect over Wi-Fi"), "Connection controls live in the iPad window")
+    XCTAssertTrue(text.contains("IPadButton()"))
   }
 
 }

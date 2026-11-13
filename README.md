@@ -120,7 +120,7 @@ Quit VidPrompt before opening Video Prompter. Once you have checked your scripts
 
 ## Video Prompter for iPad (in testing)
 
-An iPad version for teleprompters that cannot take a computer is in testing through TestFlight. It follows your voice the same way, mirrors for the glass, and takes a Bluetooth clicker or foot pedal. To share scripts with it, turn on File › Keep Scripts in iCloud Drive for iPad on the Mac. See [iPad/README.md](iPad/README.md).
+An iPad version for teleprompters that cannot take a computer is in testing through TestFlight. It follows your voice the same way, mirrors for the glass, and takes a Bluetooth clicker or foot pedal. To share scripts with it, turn on File › Keep Scripts in iCloud Drive for iPad on the Mac. Open **iPad** from the start screen, library toolbar or presenter setup bar, or use **Window › iPad… (⌥⌘I)**, to pair, choose a script and control reading. Device and picture controls live in that one window. See [iPad/README.md](iPad/README.md).
 
 ## Not included yet
 

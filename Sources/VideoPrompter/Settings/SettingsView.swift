@@ -738,17 +738,12 @@ struct PermissionRow: View {
 }
 struct IPadSettingsSection: View {
   @ObservedObject var store: AppStore
-  @ObservedObject var sender = IPadCameraSender.shared
   var body: some View {
     Section("iPad") {
       Toggle("Keep scripts in iCloud Drive for iPad", isOn: $store.keepsScriptsInICloud)
         .disabled(!ICloudScripts.isAvailable)
         .help("Copies every script to iCloud Drive › Video Prompter and keeps it in step with Video Prompter on iPad")
-      Toggle("Send camera to iPad", isOn: $sender.isOn)
-        .help("Shows this Mac's camera behind the script in Video Prompter on an iPad connected by USB-C")
-      Toggle("Also connect over Wi-Fi", isOn: $sender.usesWiFi)
-        .help("Also looks for your iPad on the same Wi-Fi, paired with the key its Settings show. The link is encrypted with that key.")
-      if sender.isOn { Text(sender.status).font(.callout) }
+      IPadButton()
     }
   }
 }
