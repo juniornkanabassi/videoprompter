@@ -1,51 +1,84 @@
+import AVFoundation
 import PrompterCore
 import SwiftUI
 import UIKit
 
-/// The full-screen presenter. The script fills the screen, mirrored for the glass when that is
-/// on; the controls stay readable for whoever is holding the iPad and fade while it runs. A
-/// Bluetooth keyboard, clicker or foot pedal drives it without touching the screen.
+/// The full-screen presenter, built from the same parts as the Mac's (PresenterControls, MicMeter,
+/// DesignTokens): a stage with the script, the reading line behind the words and the microphone
+/// meter on the right edge, and one bar along the bottom. Before reading the bar is the setup bar;
+/// while reading it is the slim reading bar. A Bluetooth keyboard, clicker or foot pedal drives it
+/// without touching the screen.
 struct PresenterScreen: View {
   @EnvironmentObject private var store: PadStore
   @ObservedObject var session: SessionStore
   @ObservedObject var camera: PadCamera
-  @State private var controlsVisible = true
-  @State private var hideTask: Task<Void, Never>?
+  @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var reading: Bool
+  /// The setup preview: the script over the camera picture, or the picture alone to check the shot.
+  @State private var scriptPreview = true
+  @State private var barRevealed = false
+  @State private var revealTask: Task<Void, Never>?
   @State private var showingSettings = false
   @State private var editing: FolderScript?
+  @State private var microphones: [AudioInputDevice] = []
+  @State private var micListening = true
+  @State private var viewport = CGSize(width: 1180, height: 820)
+  @AppStorage("presenterMicLevel251") private var showsMicLevel = true
+  /// Reading with nothing but the text, the level meter and the reading line, as on the Mac.
+  @AppStorage("presenterFocusMode") private var focusMode = false
+  /// While reading, the bar slides away and a tap brings it back.
+  @AppStorage("presenterAutoHideBar") private var autoHidesBar = false
   @FocusState private var focused: Bool
 
+  /// The width of the slim microphone strip at the right edge, as on the Mac.
+  static let meterWidth: CGFloat = 96
+
+  init(session: SessionStore, camera: PadCamera, startsReading: Bool = false) {
+    self.session = session
+    self.camera = camera
+    _reading = State(initialValue: startsReading || session.isActivelyRunning)
+  }
+
   private var settings: PrompterSettings { store.settings }
+  private var showsScript: Bool { reading || scriptPreview || !camera.isOn }
+  private var focusActive: Bool { focusMode && reading }
+  private var barOverlays: Bool { reading && (focusMode || autoHidesBar) }
+  private var readingBarHidden: Bool {
+    guard barOverlays, !barRevealed, !showingSettings, editing == nil else { return false }
+    return focusMode || session.isActivelyRunning
+  }
+  private var inputName: String {
+    MicMeterView.inputName(uid: settings.audioDeviceUID, devices: microphones, systemDefault: AudioCapture.defaultDevice()?.name)
+  }
+  private var notice: String? {
+    if let notice = session.anchorNotice { return notice }
+    if case .uncertain(let text) = session.state { return text }
+    return nil
+  }
 
   var body: some View {
     GeometryReader { geometry in
-      ZStack {
-        background
-        ScriptCanvas(
-          document: session.document, tokenIndex: session.tokenIndex,
-          lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
-          isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
-          layoutGuideFraction: settings.verticalMirror ? 1 - settings.guideFraction : settings.guideFraction,
-          style: ScriptStyle(settings), textWidth: settings.textWidth,
-          manualPosition: session.isManual ? { [session] in session.manualPosition() }
-            : UIAccessibility.isReduceMotionEnabled ? nil : { [session] in session.voicePosition() },
-          onSeek: { session.seek(to: $0) },
-          onUserScroll: { session.seekFromUserScroll(to: $0) })
-        .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
-        .ignoresSafeArea()
-        GuideLine(opacity: settings.guideOpacity)
-          .position(x: geometry.size.width / 2, y: geometry.size.height * settings.guideFraction)
-          .allowsHitTesting(false)
-        if controlsVisible {
-          controls.transition(.opacity)
-        }
-        status
-      }
-      .contentShape(Rectangle())
-      .onTapGesture { reveal(toggle: true) }
+      stage
+        .onAppear { viewport = geometry.size }
+        .onChange(of: geometry.size) { _, size in viewport = size }
     }
-    .ignoresSafeArea()
-    .statusBarHidden(!controlsVisible)
+    .background(Color(white: 0.035).ignoresSafeArea())
+    .contentShape(Rectangle())
+    .onTapGesture { if barOverlays { reveal() } }
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      if !barOverlays { controlBar }
+    }
+    .overlay(alignment: .bottom) {
+      if barOverlays && !readingBarHidden {
+        controlBar.transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+      }
+    }
+    .overlay(alignment: .top) {
+      if focusActive { exitPill("Exit Focus", revealed: barRevealed) { focusMode = false } }
+    }
+    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: readingBarHidden)
+    .statusBarHidden(true)
     .persistentSystemOverlays(.hidden)
     .focusable()
     .focused($focused)
@@ -53,9 +86,28 @@ struct PresenterScreen: View {
     .onKeyPress(phases: .down) { press in handle(press) }
     .onAppear {
       focused = true
+      refreshMicrophones()
+      micListening = session.listensToMicrophone
+    }
+    .onDisappear {
+      revealTask?.cancel()
+      if session.isTestingMicrophone { session.stopMicrophoneTest() }
+    }
+    .onReceive(session.$listensToMicrophone) { micListening = $0 }
+    .onChange(of: session.isActivelyRunning) { _, active in
+      if active { reading = true }
       reveal()
     }
-    .onChange(of: session.isActivelyRunning) { reveal() }
+    // Between takes the meter listens through the microphone test; Voice reading feeds it itself.
+    .task(id: "\(showsMicLevel)-\(micListening)-\(session.isActivelyRunning && !session.isManual)-\(settings.audioDeviceUID ?? "")") {
+      let voiceRunning = session.isActivelyRunning && !session.isManual
+      // Never asks for the microphone here: Start does, when Voice needs it.
+      guard showsMicLevel, micListening, !voiceRunning, AVAudioApplication.shared.recordPermission == .granted else {
+        if session.isTestingMicrophone { session.stopMicrophoneTest() }
+        return
+      }
+      session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
+    }
     .sheet(isPresented: $showingSettings, onDismiss: { focused = true }) {
       NavigationStack { SettingsScreen() }.environmentObject(store)
     }
@@ -64,121 +116,283 @@ struct PresenterScreen: View {
     }
   }
 
-  @ViewBuilder private var background: some View {
-    let colour = Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex))
-    if camera.isOn {
-      Group {
-        if camera.isShowingMac {
-          LinkPreview(camera: camera, link: camera.link)
-        } else {
-          CameraPreview(camera: camera)
+  // MARK: Stage
+
+  private var stage: some View {
+    GeometryReader { geometry in
+      let meterWidth = showsMicLevel ? Self.meterWidth : 0
+      let regionWidth = max(1, geometry.size.width - meterWidth)
+      HStack(alignment: .top, spacing: 0) {
+        region(width: regionWidth, height: geometry.size.height)
+        if showsMicLevel {
+          MicMeterView(meter: session.meter, micName: inputName, isListening: micListening)
+            .frame(width: Self.meterWidth, height: max(0, geometry.size.height - 2 * Space.md))
+            .padding(.vertical, Space.md)
+            .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(.vertical, Space.md) }
         }
-      }
-      .ignoresSafeArea()
-      colour.opacity(settings.videoDimming).ignoresSafeArea()
-    } else {
-      // Black underneath: a teleprompter's glass shows anything lighter as a grey haze.
-      Color.black.ignoresSafeArea()
-      colour.opacity(settings.backgroundOpacity).ignoresSafeArea()
+      }.foregroundStyle(.white)
     }
   }
 
-  @ViewBuilder private var status: some View {
-    let message: String? = {
-      if let notice = session.anchorNotice { return notice }
-      if case .uncertain(let text) = session.state { return text }
-      return nil
-    }()
-    if let message {
-      VStack {
-        Spacer()
-        Text(message)
-          .font(.callout)
-          .padding(.horizontal, 16).padding(.vertical, 8)
-          .background(.ultraThinMaterial, in: Capsule())
-          .padding(.bottom, controlsVisible ? 112 : 32)
+  /// The picture region: the camera, a backing behind the words, the reading line, then the script.
+  private func region(width: CGFloat, height: CGFloat) -> some View {
+    ZStack(alignment: .top) {
+      if camera.isOn {
+        Group {
+          if camera.isShowingMac { LinkPreview(camera: camera, link: camera.link) } else { CameraPreview(camera: camera) }
+        }.frame(maxWidth: .infinity, maxHeight: .infinity)
       }
-      .allowsHitTesting(false)
-    }
+      if showsScript {
+        Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex))
+          .opacity(reduceTransparency ? 1 : settings.backdropOpacity(withVideo: camera.isOn))
+        if camera.isOn {
+          ReadingBacking(opacity: reduceTransparency ? 0.9 : 0.45)
+            .frame(width: min(width, width * settings.textWidth + 2 * Space.xxl))
+            .padding(.vertical, Space.sm)
+        }
+        // Behind the words, so the line shows where the reading is without striking them through.
+        GuideLine(settings: settings)
+          .offset(y: ScriptCanvas.visualGuideY(height: height, fraction: settings.guideFraction) - 1)
+        ScriptCanvas(
+          document: session.document, tokenIndex: session.tokenIndex,
+          lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
+          isActivelyRunning: session.isActivelyRunning, seekRevision: session.seekRevision,
+          layoutGuideFraction: settings.verticalMirror ? 1 - settings.guideFraction : settings.guideFraction,
+          verticalMirror: settings.verticalMirror,
+          style: ScriptStyle(settings, overVideo: camera.isOn), textWidth: settings.textWidth,
+          manualPosition: session.isManual ? { [session] in session.manualPosition() }
+            : UIAccessibility.isReduceMotionEnabled ? nil : { [session] in session.voicePosition() },
+          onSeek: { session.seek(to: $0) },
+          onUserScroll: { session.seekFromUserScroll(to: $0) })
+        .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
+      }
+    }.frame(width: width, height: height).clipped()
   }
 
-  private var controls: some View {
-    VStack {
-      HStack(spacing: 12) {
-        PresenterButton("Close", systemImage: "xmark") { store.closePresenter() }
-          .keyboardShortcut(.cancelAction)
-        Spacer()
-        Text(session.activeRecord?.metadata.title ?? "")
-          .font(.headline).lineLimit(1)
-          .padding(.horizontal, 16).padding(.vertical, 8)
-          .background(.ultraThinMaterial, in: Capsule())
-        Spacer()
-        if let script = session.activeScriptID.flatMap(store.folder.script) {
-          PresenterButton("Edit", systemImage: "pencil") {
-            session.pause()
-            editing = script
-          }
-        }
-        PresenterButton("Settings", systemImage: "slider.horizontal.3") { showingSettings = true }
+  // MARK: Bar
+
+  private var controlBar: some View {
+    VStack(spacing: Space.sm) {
+      if let notice {
+        Label(notice, systemImage: "exclamationmark.circle")
+          .font(.callout).lineLimit(2).frame(maxWidth: 560, minHeight: AlphaStyle.minTarget)
+          .accessibilityLabel(notice)
       }
-      Spacer()
-      HStack(spacing: 12) {
-        PresenterButton("Back to start", systemImage: "backward.end.fill") { session.restart() }
-        PresenterButton("Previous passage", systemImage: "chevron.up") { session.previousPassage() }
-        Button {
-          session.toggle()
-        } label: {
-          Label(session.isActivelyRunning ? "Pause" : "Start",
-                systemImage: session.isActivelyRunning ? "pause.fill" : "play.fill")
-            .font(.title2.weight(.semibold))
-            .frame(minWidth: 140, minHeight: 56)
-        }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.capsule)
-        PresenterButton("Next passage", systemImage: "chevron.down") { session.nextPassage() }
-        Picker("Follow", selection: Binding(get: { settings.mode }, set: { store.settings.mode = $0 })) {
-          Text("Voice").tag("Voice")
-          Text("Manual").tag("Manual")
-        }
-        .pickerStyle(.segmented)
-        .frame(width: 180)
-        if settings.mode == "Manual" {
-          Stepper("\(Int(settings.speed)) wpm", value: Binding(
-            get: { settings.speed }, set: { store.settings.speed = min(max($0, 20), 300) }), step: 10)
-            .frame(width: 192)
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(.ultraThinMaterial, in: Capsule())
-        }
-        PresenterButton("Smaller text", systemImage: "textformat.size.smaller") { stepFont(-4) }
-        PresenterButton("Larger text", systemImage: "textformat.size.larger") { stepFont(4) }
-        PresenterButton(settings.horizontalMirror ? "Unmirror" : "Mirror", systemImage: "flip.horizontal") {
-          store.settings.horizontalMirror.toggle()
-        }
-        PresenterButton(camera.isOn ? "Hide camera" : "Show camera", systemImage: camera.isOn ? "video.slash" : "video") {
-          camera.isOn.toggle()
-        }
-      }
+      if reading { readingBar } else { setupBar }
     }
-    .padding(20)
+    .padding(.horizontal, viewport.width < 600 ? Space.sm : Space.lg)
+    .padding(.vertical, reading ? Space.sm : Space.md)
+    .frame(maxWidth: .infinity)
+    .background(PresenterBar.background.ignoresSafeArea(edges: .bottom))
+    .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.08)).frame(height: 1) }
     .foregroundStyle(.white)
-    .tint(.accentColor)
+    .accessibilityIdentifier("presenter-control-bar")
+  }
+
+  /// One row: transport on the left, then the video-call group, then the picture tools. Words give way
+  /// to icons, then the groups wrap, as the window narrows (Stage Manager, Split View).
+  private var setupBar: some View {
+    ViewThatFits(in: .horizontal) {
+      setupRow(toolTitles: true, callTitles: true)
+      setupRow(toolTitles: false, callTitles: true)
+      setupRow(toolTitles: false, callTitles: false)
+      VStack(alignment: .leading, spacing: Space.sm) {
+        HStack(spacing: Space.sm) { setupTransport }
+        HStack(spacing: Space.sm) { callGroup(titles: false); toolsGroup(titles: false) }
+      }
+    }
+  }
+
+  private func setupRow(toolTitles: Bool, callTitles: Bool) -> some View {
+    HStack(spacing: PresenterBar.groupGap) {
+      HStack(spacing: Space.sm) { setupTransport }
+      Spacer(minLength: Space.md)
+      callGroup(titles: callTitles)
+      toolsGroup(titles: toolTitles)
+    }
+  }
+
+  @ViewBuilder private var setupTransport: some View {
+    Button { reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill") }
+      .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
+      .disabled(session.activeRecord == nil)
+    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
+    closeButton(role: .secondary)
+  }
+
+  private func closeButton(role: BarButtonStyle.Role) -> some View {
+    Button { store.closePresenter() } label: { BarLabel(title: "Close", symbol: "xmark", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: role)).accessibilityLabel("Close presenter")
+  }
+
+  // MARK: Video-call group: camera, microphone, script
+
+  private var cameraValue: String { camera.devices.first { $0.id == camera.selectedID }?.name ?? "No camera chosen" }
+
+  private func callGroup(titles: Bool) -> some View {
+    BarGroup(label: "Camera, microphone and script") {
+      BarDeviceControl(title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.isOn,
+        showsTitle: titles, toggleHelp: camera.isOn ? "Turn the camera off to see just the script" : "Turn the camera on",
+        menuLabel: "Choose camera", menuValue: cameraValue, toggle: toggleCamera) { cameraMenu }
+      BarDivider()
+      micControl(titles: titles)
+      BarDivider()
+      BarToggle(title: "Script", symbol: "text.alignleft", isOn: scriptPreview || !camera.isOn, showsTitle: titles,
+        help: scriptPreview ? "Hide the script" : "Show the script over the picture") { scriptPreview.toggle() }
+        .disabled(!camera.isOn)
+    }
+  }
+
+  private func micControl(titles: Bool) -> some View {
+    BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: micListening,
+      showsTitle: titles,
+      toggleHelp: micListening ? "Turn the microphone off: Video Prompter stops listening" : "Turn the microphone on",
+      menuLabel: "Choose microphone", menuValue: inputName, toggle: toggleMicrophone) { micMenu }
+  }
+
+  private func toggleCamera() {
+    let turningOff = camera.isOn
+    camera.isOn.toggle()
+    // Camera off leaves just the script, as in a video call with the picture switched off.
+    if turningOff { scriptPreview = true }
+    announce("Camera " + (turningOff ? "off" : "on"))
+  }
+
+  private func toggleMicrophone() {
+    session.setListensToMicrophone(!micListening)
+    announce("Microphone " + (micListening ? "off" : "on"))
+  }
+
+  @ViewBuilder private var cameraMenu: some View {
+    if camera.devices.isEmpty { Text("No camera connected") }
+    ForEach(camera.devices) { device in
+      Toggle(device.isMac ? "\(device.name) (Mac link)" : device.isExternal ? "\(device.name) (USB-C)" : device.name,
+        isOn: Binding(get: { device.id == camera.selectedID }, set: { on in
+          guard on else { return }
+          camera.selectedID = device.id
+          if !camera.isOn { camera.isOn = true }
+        }))
+    }
+    Divider()
+    Button("Camera settings…") { showingSettings = true }
+  }
+
+  @ViewBuilder private var micMenu: some View {
+    Section("Input") {
+      ForEach(microphones) { device in
+        Toggle(device.name, isOn: Binding(get: { settings.audioDeviceUID == device.uid }, set: { on in
+          guard on, settings.audioDeviceUID != device.uid else { return }
+          if session.isTestingMicrophone { session.stopMicrophoneTest() }
+          store.settings.audioDeviceUID = device.uid
+        }))
+      }
+    }
+    Divider()
+    Toggle("Show level meter", isOn: $showsMicLevel)
+    Button("Microphone settings…") { showingSettings = true }
+  }
+
+  private func refreshMicrophones() { microphones = AudioCapture.inputDevices() }
+
+  // MARK: Picture tools
+
+  private func toolsGroup(titles: Bool) -> some View {
+    BarGroup(label: "Picture tools") {
+      BarToggle(title: "Guides", symbol: "squareshape.split.3x3", isOn: camera.guides.thirds, showsTitle: titles,
+        help: "Rule of thirds over the picture") { camera.guides.thirds.toggle() }
+      BarToggle(title: settings.horizontalMirror ? "Unmirror" : "Mirror", symbol: "flip.horizontal", isOn: settings.horizontalMirror,
+        showsTitle: titles, help: "Mirror the text for teleprompter glass") { store.settings.horizontalMirror.toggle() }
+      BarToggle(title: "Smaller text", symbol: "textformat.size.smaller", isOn: false, showsTitle: false,
+        help: "Smaller text", traits: []) { stepFont(-4) }
+      BarToggle(title: "Larger text", symbol: "textformat.size.larger", isOn: false, showsTitle: false,
+        help: "Larger text", traits: []) { stepFont(4) }
+      BarDivider()
+      BarToggle(title: "Adjust", symbol: "slider.horizontal.3", isOn: false, showsTitle: titles,
+        help: "Reading, text, camera and microphone settings", traits: []) { showingSettings = true }
+    }
+  }
+
+  // MARK: Reading bar
+
+  /// One slim row: a status pill, the transport in the middle, quiet options on the right.
+  private var readingBar: some View {
+    ViewThatFits(in: .horizontal) {
+      readingRow(showsPill: true)
+      readingRow(showsPill: false)
+    }
+  }
+
+  private func readingRow(showsPill: Bool) -> some View {
+    HStack(spacing: Space.md) {
+      Group {
+        if showsPill { BarStatusPill(text: readingPillText, isActive: session.isActivelyRunning) } else { Color.clear.frame(width: 0, height: 0) }
+      }.frame(maxWidth: .infinity, alignment: .leading)
+      HStack(spacing: Space.sm) { readingTransport }
+      BarGroup(label: "Reading options") {
+        micControl(titles: false)
+        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: false,
+          help: "Focus: only the text, the level meter and the reading line") { focusMode.toggle() }
+          .contextMenu { Toggle("Auto-hide these controls while reading", isOn: $autoHidesBar) }
+        Button { showingSettings = true } label: { BarLabel(title: "Reading settings", symbol: "textformat.size", showsTitle: false) }
+          .buttonStyle(BarButtonStyle()).accessibilityLabel("Reading settings")
+        if let script = session.activeScriptID.flatMap(store.folder.script) {
+          Button { session.pause(); editing = script } label: { BarLabel(title: "Edit script here", symbol: "pencil", showsTitle: false) }
+            .buttonStyle(BarButtonStyle()).accessibilityLabel("Edit script")
+        }
+        closeButton(role: .plain)
+      }.frame(maxWidth: .infinity, alignment: .trailing)
+    }
+  }
+
+  private var readingPillText: String {
+    let state = session.visibleReadingState
+    return settings.mode == "Voice" ? "Voice · \(state)" : "Automatic · \(Int(settings.speed)) wpm · \(state)"
+  }
+
+  @ViewBuilder private var readingTransport: some View {
+    let running = session.isActivelyRunning || session.isCountingDown
+    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
+    Button { session.previousPassage() } label: { BarLabel(title: "Previous passage", symbol: "chevron.up", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Previous passage")
+    Button { session.toggle() } label: { BarLabel(title: running ? "Pause" : "Start reading", symbol: running ? "pause.fill" : "play.fill") }
+      .buttonStyle(BarButtonStyle(role: running ? .secondary : .prominent))
+      .accessibilityLabel(running ? "Pause" : "Start reading")
+    Button { session.nextPassage() } label: { BarLabel(title: "Next passage", symbol: "chevron.down", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Next passage")
+    Button { session.pause(); reading = false } label: { BarLabel(title: "Set up the shot", symbol: "display", showsTitle: false) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Set up the shot")
+  }
+
+  /// The pill that leaves Focus: faded out until a tap, still reachable by keyboard.
+  private func exitPill(_ title: String, revealed: Bool, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Label(title, systemImage: "xmark")
+        .font(.system(size: 15, weight: .semibold))
+        .padding(.horizontal, Space.md).frame(minHeight: AlphaStyle.minTarget)
+        .background(.black.opacity(0.85), in: Capsule()).foregroundStyle(.white)
+        .opacity(revealed ? 1 : 0)
+    }.buttonStyle(.plain).accessibilityLabel(title).padding(Space.xxl)
+  }
+
+  private func announce(_ message: String) {
+    UIAccessibility.post(notification: .announcement, argument: message)
   }
 
   private func stepFont(_ delta: Double) {
     store.settings.fontSize = min(max(store.settings.fontSize + delta, 18), 120)
   }
 
-  /// Controls show on a tap or a pause and fade three seconds into reading.
-  private func reveal(toggle: Bool = false) {
-    hideTask?.cancel()
-    withAnimation(.easeInOut(duration: 0.2)) {
-      controlsVisible = toggle ? !controlsVisible : true
-    }
-    guard controlsVisible, session.isActivelyRunning else { return }
-    hideTask = Task {
-      try? await Task.sleep(for: .seconds(3))
-      guard !Task.isCancelled, session.isActivelyRunning else { return }
-      withAnimation(.easeInOut(duration: 0.4)) { controlsVisible = false }
+  /// A tap or a state change brings the bar back for a moment when it hides itself.
+  private func reveal() {
+    revealTask?.cancel()
+    guard barOverlays else { barRevealed = false; return }
+    barRevealed = true
+    revealTask = Task { @MainActor in
+      try? await Task.sleep(for: .seconds(2.5))
+      guard !Task.isCancelled else { return }
+      barRevealed = false
     }
   }
 
@@ -197,53 +411,17 @@ struct PresenterScreen: View {
     case .home:
       session.restart()
     case .escape:
-      store.closePresenter()
+      if focusActive { focusMode = false } else { store.closePresenter() }
     default:
       switch press.characters {
       case "+", "=": stepFont(4)
       case "-": stepFont(-4)
       case "m": store.settings.horizontalMirror.toggle()
+      case "f": focusMode.toggle()
       case "v": store.settings.mode = settings.mode == "Voice" ? "Manual" : "Voice"
       default: return .ignored
       }
     }
     return .handled
-  }
-}
-
-/// The reading line: a thin rule with a marker at each end, as on the Mac.
-struct GuideLine: View {
-  var opacity: Double
-  var body: some View {
-    HStack(spacing: 0) {
-      Image(systemName: "arrowtriangle.right.fill").font(.system(size: 14))
-      Rectangle().frame(height: 1).opacity(0.35)
-      Image(systemName: "arrowtriangle.left.fill").font(.system(size: 14))
-    }
-    .foregroundStyle(Color.accentColor)
-    .opacity(opacity)
-    .padding(.horizontal, 8)
-  }
-}
-
-private struct PresenterButton: View {
-  let title: String
-  let systemImage: String
-  let action: () -> Void
-  init(_ title: String, systemImage: String, action: @escaping () -> Void) {
-    self.title = title
-    self.systemImage = systemImage
-    self.action = action
-  }
-  var body: some View {
-    Button(action: action) {
-      Image(systemName: systemImage)
-        .font(.title3)
-        .frame(width: 48, height: 48)
-        .background(.ultraThinMaterial, in: Circle())
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(title)
-    .hoverEffect(.highlight)
   }
 }

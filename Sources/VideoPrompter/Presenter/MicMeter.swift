@@ -58,7 +58,7 @@ struct MicMeterView: View {
     TimelineView(.periodic(from: .now, by: 0.1)) { _ in
       let now = ProcessInfo.processInfo.systemUptime
       let db = isListening ? Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now)) : -.infinity
-      let fill = InputLevelMeter.position(db)
+      let fill = MeterZones.position(db)
       let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
       GeometryReader { available in
         let horizontal = available.size.height < 280
@@ -115,7 +115,7 @@ struct MicMeterView: View {
             Text(entry.label)
               .font(.system(size: 12)).monospacedDigit()
               .foregroundStyle(Palette.onDarkQuiet(contrast))
-              .offset(y: geometry.size.height * (1 - InputLevelMeter.position(entry.value)) - 8)
+              .offset(y: geometry.size.height * (1 - MeterZones.position(entry.value)) - 8)
           }
         }
       }
@@ -123,17 +123,17 @@ struct MicMeterView: View {
       GeometryReader { geometry in
         let height = geometry.size.height
         ZStack(alignment: .bottom) {
-          InputLevelMeter.zoneTrack(vertical: true).opacity(0.2)
-          InputLevelMeter.zoneTrack(vertical: true).mask(alignment: .bottom) {
+          MeterZones.zoneTrack(vertical: true).opacity(0.2)
+          MeterZones.zoneTrack(vertical: true).mask(alignment: .bottom) {
             Rectangle().frame(height: height * fill)
           }
-          ForEach([InputLevelMeter.yellowFrom, InputLevelMeter.redFrom], id: \.self) { boundary in
+          ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
             Rectangle().fill(.white.opacity(0.55)).frame(height: 1)
-              .offset(y: -height * InputLevelMeter.position(boundary))
+              .offset(y: -height * MeterZones.position(boundary))
           }
           if isListening, let peak = peakHold.value(at: now) {
             Rectangle().fill(.white).frame(height: 2)
-              .offset(y: -height * InputLevelMeter.position(peak))
+              .offset(y: -height * MeterZones.position(peak))
           }
         }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
       }
@@ -147,17 +147,17 @@ struct MicMeterView: View {
     VStack(spacing: Space.xs) {
       GeometryReader { geometry in
         ZStack(alignment: .leading) {
-          InputLevelMeter.zoneTrack(vertical: false).opacity(0.2)
-          InputLevelMeter.zoneTrack(vertical: false).mask(alignment: .leading) {
+          MeterZones.zoneTrack(vertical: false).opacity(0.2)
+          MeterZones.zoneTrack(vertical: false).mask(alignment: .leading) {
             Rectangle().frame(width: geometry.size.width * fill)
           }
-          ForEach([InputLevelMeter.yellowFrom, InputLevelMeter.redFrom], id: \.self) { boundary in
+          ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
             Rectangle().fill(.white.opacity(0.55)).frame(width: 1)
-              .offset(x: geometry.size.width * InputLevelMeter.position(boundary))
+              .offset(x: geometry.size.width * MeterZones.position(boundary))
           }
           if isListening, let peak = peakHold.value(at: now) {
             Rectangle().fill(.white).frame(width: 2)
-              .offset(x: geometry.size.width * InputLevelMeter.position(peak))
+              .offset(x: geometry.size.width * MeterZones.position(peak))
           }
         }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
       }.frame(height: Self.barWidth)
