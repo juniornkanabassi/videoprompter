@@ -149,7 +149,10 @@ struct ConfidenceMonitorView: View {
 /// Observes the meter itself, so level-only updates redraw just this.
 private struct MonitorMeter: View {
   @ObservedObject var meter: RemoteMicMeter
-  var body: some View { DBMeter(levelDB: meter.levelDB, axis: .vertical) }
+  var body: some View {
+    DBMeter(levelDB: meter.levelDB, axis: .vertical)
+      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+  }
 }
 
 private struct MonitorPicture: UIViewRepresentable {

@@ -780,6 +780,7 @@ private struct PresenterMeter: View {
   @State private var input = InputMeter()
   var body: some View {
     MicMeterView(meter: input, micName: name, showsHeading: showsHeading, isListening: isListening)
+      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
         input.show(peakDBFS: Float(meter.levelDB), isClipping: meter.levelDB >= -0.1)
       }
