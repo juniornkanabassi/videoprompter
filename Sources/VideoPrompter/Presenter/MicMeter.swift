@@ -5,7 +5,7 @@ import SwiftUI
 /// zoom wrapper scales the whole view. One dB scale in both orientations, piecewise linear so that
 /// -20 to 0 dBFS takes 60% of the length (`MeterZones.micPosition`): green is quiet to normal speech,
 /// yellow (-12 to -6 dBFS) is where the presenter should peak, red above -6 is too loud, and a
-/// separate lamp at 0 latches when the input clips. The numbers are always shown.
+/// dark lamp at 0 becomes a red "Clipped" pill for two seconds when the input clips. The numbers are always shown.
 struct MicMeterView: View {
   @ObservedObject var meter: InputMeter
   /// The input actually listened to, as the Mic menu names it.
@@ -24,8 +24,8 @@ struct MicMeterView: View {
 
   static let barWidth: CGFloat = 14
   /// Column widths of the vertical meter: the dB numbers, the bar, and the zone words beside it.
-  static let tickColumn: CGFloat = 28
-  static let zoneColumn: CGFloat = 58
+  static let tickColumn: CGFloat = 26
+  static let zoneColumn: CGFloat = 52
   /// Width of the whole vertical strip before zoom: the two text columns at `typeScale`, the bar, the gaps and edge padding.
   static func stripWidth(typeScale: CGFloat) -> CGFloat { (tickColumn + zoneColumn) * typeScale + barWidth + 4 * Space.xs }
   private var tickWidth: CGFloat { Self.tickColumn * typeScale }
@@ -87,7 +87,7 @@ struct MicMeterView: View {
   /// The horizontal meter's zone words, as large as the numbers beside them.
   static let zoneWordSize: CGFloat = 13
   /// Beside the horizontal meter's bar: the clip lamp and, in its own slot, the word "clip" or the "Clipped" pill.
-  static let clipSlotWidth: CGFloat = 68
+  static let clipSlotWidth: CGFloat = 104
   static func zoneWordCentres(width: CGFloat) -> (aim: CGFloat, loud: CGFloat) {
     let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
     let loud = min(width - zoneWordWidth / 2, width * (red + 1) / 2)
@@ -104,11 +104,12 @@ struct MicMeterView: View {
       let db = isListening ? Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now)) : -.infinity
       let fill = MeterZones.micPosition(db)
       let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
+      let clipLive = clipLit && meter.isClipping
       GeometryReader { available in
         let horizontal = available.size.width >= 180 && available.size.height < 280
         VStack(spacing: horizontal ? Space.xs : Space.sm) {
           if showsHeading { heading }
-          if horizontal { horizontalBar(fill: fill, clipLit: clipLit, now: now) } else { verticalBar(fill: fill, clipLit: clipLit, now: now) }
+          if horizontal { horizontalBar(fill: fill, db: db, clipLit: clipLit, clipLive: clipLive, now: now) } else { verticalBar(fill: fill, db: db, clipLit: clipLit, clipLive: clipLive, now: now) }
           readoutView(db: db, clipLit: clipLit).frame(maxWidth: .infinity)
           if showsHeading {
             Text(micName)
@@ -140,21 +141,38 @@ struct MicMeterView: View {
       .foregroundStyle(Palette.onDarkQuiet(contrast))
   }
 
-  /// A separate lamp at 0 dBFS: dark until the input clips, then lit for two seconds.
-  private func clipLamp(lit: Bool, horizontal: Bool) -> some View {
+  /// The lamp at 0 dBFS, dark: it is replaced by the "Clipped" pill while the input has clipped (two seconds).
+  private func clipLamp(horizontal: Bool) -> some View {
     RoundedRectangle(cornerRadius: 2)
-      .fill(MeterZones.red.opacity(lit ? 1 : 0.28))
-      .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(lit ? 0.9 : 0.25), lineWidth: 1))
+      .fill(MeterZones.red.opacity(0.28))
+      .overlay(RoundedRectangle(cornerRadius: 2).stroke(.white.opacity(0.25), lineWidth: 1))
       .frame(width: horizontal ? 8 : Self.barWidth, height: horizontal ? Self.barWidth : 8)
   }
 
-  /// The latched clip, named: a small badge that appears with the lamp and goes with it, so a past clip is
-  /// never mistaken for the live level.
-  private func clippedBadge(lit: Bool) -> some View {
-    Text(lit ? "Clipped" : "clip").font(.system(size: size(12), weight: lit ? .bold : .regular)).lineLimit(1).fixedSize()
-      .foregroundStyle(lit ? Color.white : Palette.onDarkQuiet(contrast))
-      .padding(.horizontal, lit ? Space.xs : 0).padding(.vertical, 1)
-      .background(MeterZones.red.opacity(lit ? 0.85 : 0), in: Capsule())
+  /// The clip, named, in place of the lamp: one red pill, so there is one clip signal and a past clip
+  /// (a latch that holds after the level fell) is never mistaken for the live level.
+  private func clippedPill(live: Bool) -> some View {
+    Text(live ? "Clipping" : "Clipped earlier").font(.system(size: size(12), weight: .bold)).lineLimit(1).fixedSize()
+      .foregroundStyle(Color.white)
+      .padding(.horizontal, Space.xs + 2).padding(.vertical, 1) // grid: ok a small capsule
+      .background(MeterZones.red.opacity(0.9), in: Capsule())
+  }
+
+  /// Unlit: the dark lamp and its word. Lit: the red pill alone.
+  private func clipSignal(lit: Bool, live: Bool, horizontal: Bool) -> some View {
+    HStack(spacing: Space.xs) {
+      if lit { clippedPill(live: live) }
+      else {
+        clipLamp(horizontal: horizontal)
+        Text("clip").font(.system(size: size(12))).lineLimit(1).fixedSize().foregroundStyle(Palette.onDarkQuiet(contrast))
+      }
+    }
+  }
+
+  /// The peak tick is never below the live level: a steady signal would otherwise let the held peak decay away from the bar.
+  private func peakTick(db: Float, now: TimeInterval) -> Float? {
+    guard isListening, db.isFinite, let held = peakHold.value(at: now) else { return nil }
+    return max(held, db)
   }
 
   private func readoutView(db: Float, clipLit: Bool) -> some View {
@@ -168,13 +186,18 @@ struct MicMeterView: View {
     }
   }
 
-  private func verticalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
+  private func verticalBar(fill: CGFloat, db: Float, clipLit: Bool, clipLive: Bool, now: TimeInterval) -> some View {
     VStack(spacing: Space.xs) {
-      HStack(spacing: Space.xs) {
-        Color.clear.frame(width: tickWidth, height: 1)
-        clipLamp(lit: clipLit, horizontal: false)
-        clippedBadge(lit: clipLit).frame(width: zoneWidth, alignment: .leading)
+      if clipLit {
+        clipSignal(lit: true, live: clipLive, horizontal: false).frame(maxWidth: .infinity)
+      } else {
+        HStack(spacing: Space.xs) {
+          Color.clear.frame(width: tickWidth, height: 1)
+          clipSignal(lit: false, live: false, horizontal: false)
+          Spacer(minLength: 0)
+        }
       }
+      Color.clear.frame(height: size(4)) // keeps the pill clear of the 0 dBFS number under it
       HStack(spacing: Space.xs) {
         // Each number is centred on its boundary: the label's centre, not its top, is the anchor.
         GeometryReader { geometry in
@@ -200,7 +223,7 @@ struct MicMeterView: View {
               Rectangle().fill(.black.opacity(0.5)).frame(height: 1)
                 .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(boundary)))
             }
-            if isListening, let peak = peakHold.value(at: now) {
+            if let peak = peakTick(db: db, now: now) {
               Rectangle().fill(.white).frame(height: 2)
                 .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(peak)))
             }
@@ -228,7 +251,7 @@ struct MicMeterView: View {
       .position(x: zoneWidth / 2, y: height * (1 - middle))
   }
 
-  private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
+  private func horizontalBar(fill: CGFloat, db: Float, clipLit: Bool, clipLive: Bool, now: TimeInterval) -> some View {
     HStack(alignment: .top, spacing: Space.xs) {
       VStack(spacing: Space.xs) {
         // The legend row: each word centred on its zone, with a short bracket in the zone's own colour
@@ -258,7 +281,7 @@ struct MicMeterView: View {
               Rectangle().fill(.black.opacity(0.5)).frame(width: 1)
                 .position(x: geometry.size.width * MeterZones.micPosition(boundary), y: Self.barWidth / 2)
             }
-            if isListening, let peak = peakHold.value(at: now) {
+            if let peak = peakTick(db: db, now: now) {
               Rectangle().fill(.white).frame(width: 2)
                 .position(x: geometry.size.width * MeterZones.micPosition(peak), y: Self.barWidth / 2)
             }
@@ -275,10 +298,8 @@ struct MicMeterView: View {
         }.frame(height: 16)
       }
       // At 0 dBFS, beside the bar's loud end and level with the bar: the lamp and its word or "Clipped" pill, one warning in one place.
-      HStack(spacing: Space.xs) {
-        clipLamp(lit: clipLit, horizontal: true)
-        clippedBadge(lit: clipLit).frame(width: Self.clipSlotWidth - Space.xs - 8, alignment: .leading)
-      }.padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
+      clipSignal(lit: clipLit, live: clipLive, horizontal: true).frame(width: Self.clipSlotWidth, alignment: .leading)
+        .padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
     }
     // Room for the end numbers, which are centred on -60 and 0.
     .padding(.horizontal, Space.md)

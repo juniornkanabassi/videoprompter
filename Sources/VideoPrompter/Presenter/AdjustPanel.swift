@@ -97,7 +97,6 @@ struct AdjustPanel: View {
           .toggleStyle(AccentSwitchStyle())
           .fixedSize().accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter")
       }.frame(minHeight: AlphaStyle.minTarget)
-      Text("Inputs").font(.system(size: 17, weight: .semibold))
       MicrophoneCards(store: store, devices: microphonesOverride ?? microphones, willChange: {
         store.session.stopMicrophoneTest()
         recorder.stopInputTest()

@@ -22,12 +22,14 @@ struct PresenterView: View {
   private let revealsCleanExit: Bool
   private let sourceInfoOverride: CameraSourceInfo?
   private let microphoneNameOverride: String?
+  /// How long the "Zebras off while reading" note stays after reading starts (fixtures: 0 for the steady state).
+  private let zebraChipSeconds: Double
   /// Fixtures: the inputs the Adjust mic card lists, so its selected input can be the one the side meter names.
   private let microphonesOverride: [AudioInputDevice]?
   private var sourceInfo: CameraSourceInfo? { sourceInfoOverride ?? camera.sourceInfo }
 
   init(store: AppStore, session: SessionStore, draft: PresenterDraft, hasScript: Bool = true,
-       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil, revealsCleanExit: Bool = false, sourceInfoOverride: CameraSourceInfo? = nil, microphoneNameOverride: String? = nil, microphonesOverride: [AudioInputDevice]? = nil) {
+       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil, revealsCleanExit: Bool = false, sourceInfoOverride: CameraSourceInfo? = nil, microphoneNameOverride: String? = nil, microphonesOverride: [AudioInputDevice]? = nil, zebraChipSeconds: Double = 3) {
     self.store = store
     self.session = session
     self.draft = draft
@@ -40,6 +42,7 @@ struct PresenterView: View {
     self.sourceInfoOverride = sourceInfoOverride
     self.microphoneNameOverride = microphoneNameOverride
     self.microphonesOverride = microphonesOverride
+    self.zebraChipSeconds = zebraChipSeconds
     self.recorder = recorder
     // Read now, so the meter's caption never flashes "unavailable" before the devices load.
     _microphones = State(initialValue: startsCamera ? AudioCapture.inputDevices() : [])
@@ -53,6 +56,8 @@ struct PresenterView: View {
   @State private var barTask: Task<Void, Never>?
   @State private var focusHintTask: Task<Void, Never>?
   @State private var focusHintVisible = false
+  @State private var zebraChipTask: Task<Void, Never>?
+  @State private var zebraChipVisible = false
   @State private var showsSettings = false
   @State private var showsReadingNotice = false
   @State private var cleanControlsRevealed = false
@@ -100,31 +105,33 @@ struct PresenterView: View {
   static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
     min(300, max(188, width / zoom * 0.12)) * zoom + Space.md * 2
   }
-  /// The words the setup bar shows. One rule at every size: the bar takes the richest variant that fits
-  /// (see `setupWordVariants`). Camera, Mic, Script and Start reading keep their words longest; the picture
-  /// tools get short words, then icons (they have help text), before Back to start and Open script lose theirs
-  /// ("False colour" is always "Colour" once short, as in the Adjust tab).
+  /// The words the setup bar shows. Every control keeps a word at every size: only the allowed short forms
+  /// ("Colour", "Back", "Open") and, last, Key and Clean as icons (they have help text) give way. The bar takes the
+  /// richest variant that fits, on one row; when no one-row variant fits, on two compact rows.
   struct SetupWords: Equatable {
-    /// Once the picture tools are short, every label gives up a little of its side room too.
-    var snug: Bool { shortToolTitles || !toolTitles }
+    /// Once any word is short, every label gives up a little of its side room too.
+    var snug: Bool { shortToolTitles || shortTransport }
     var viewTitles = true
-    var toolTitles = true
+    /// "False colour" is "Colour", as in the Adjust tab.
     var shortToolTitles = false
-    var transportTitles = true
+    /// "Back to start" is "Back" and "Open script" is "Open".
+    var shortTransport = false
     /// Two rows: the transport and the video-call group above, the picture tools and view options below.
     var twoRows = false
   }
-  /// One row for as long as it fits: short picture-tool words, then icons, then Back to start and Open script as icons,
-  /// then Key and Clean as icons. Only below that does the bar take a second row, where the words come back.
   static let setupWordVariants: [SetupWords] = [
     SetupWords(),
     SetupWords(shortToolTitles: true),
-    SetupWords(toolTitles: false),
-    SetupWords(toolTitles: false, transportTitles: false),
-    SetupWords(viewTitles: false, toolTitles: false, transportTitles: false),
+    SetupWords(shortToolTitles: true, shortTransport: true),
+    SetupWords(viewTitles: false, shortToolTitles: true, shortTransport: true),
     SetupWords(shortToolTitles: true, twoRows: true),
-    SetupWords(viewTitles: false, toolTitles: false, transportTitles: false, twoRows: true)
+    SetupWords(shortToolTitles: true, shortTransport: true, twoRows: true),
+    SetupWords(viewTitles: false, shortToolTitles: true, shortTransport: true, twoRows: true)
   ]
+  /// A two-row bar at a large interface size (150% and up) uses a 36 pt control (54 pt or more on screen) and a tight row gap, so it
+  /// stays a small share of the window at 200%. At 100% it keeps the 44 pt target.
+  static func compactControlHeight(zoom: Double) -> CGFloat { zoom >= 1.5 ? 36 : PresenterBar.height } // grid: ok
+  static let compactRowGap: CGFloat = 6 // grid: ok
   /// The text runs down to the bar and fades out over `ScriptTextView.fadeHeight` (a line and a half),
   /// so no extra room is kept under it and upcoming words stay in view at every interface size.
   static let readingBottomInset: CGFloat = 0
@@ -214,7 +221,7 @@ struct PresenterView: View {
             Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
               .opacity(editing ? 1 : Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
             if !editing && camera.presentsWithVideo && !focusActive {
-              ReadingBacking(opacity: reduceTransparency ? 0.94 : 0.86).frame(width: backingWidth).frame(maxHeight: .infinity)
+              ReadingBacking(opacity: reduceTransparency ? 0.96 : 0.93).frame(width: backingWidth).frame(maxHeight: .infinity)
             }
             // A soft band behind the current line and a clear full-width line under it, in the line gap.
             if !editing {
@@ -256,6 +263,9 @@ struct PresenterView: View {
               .accessibilityLabel(keyExpanded ? "Hide key" : "Show key")
               .uiZoom(controlZoom).frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
               .accessibilityIdentifier("presenter-exposure-legend")
+              // A reminder on entering reading, then gone: it fades out (or just hides with Reduce Motion).
+              .opacity(zebraChipVisible ? 1 : 0).allowsHitTesting(zebraChipVisible).accessibilityHidden(!zebraChipVisible)
+              .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: zebraChipVisible)
           }
           if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
             // Give the zoom wrapper an explicit picture-sized frame to centre within.
@@ -354,7 +364,7 @@ struct PresenterView: View {
     .onReceive(session.$manualCompleted.removeDuplicates().dropFirst()) { _ in presentation.objectWillChange.send() }
     .onChange(of: session.isActivelyRunning) { _, active in if active && !camera.cleanView { shell.reading = true } }
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
-    .onDisappear { quietTask?.cancel(); barTask?.cancel() }
+    .onDisappear { quietTask?.cancel(); barTask?.cancel(); zebraChipTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
       if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false }
       cleanControlsRevealed = false
@@ -406,6 +416,16 @@ struct PresenterView: View {
           focusHint
           exitPill("Exit Focus · ⌥⌘F", revealed: barRevealed) { focusMode = false }
         }
+      }
+    }
+    .onChange(of: shell.reading && !draft.isEditing, initial: true) { _, reading in
+      zebraChipTask?.cancel()
+      zebraChipVisible = reading && zebraChipSeconds > 0
+      guard zebraChipVisible else { return }
+      zebraChipTask = Task { @MainActor in
+        try? await Task.sleep(for: .seconds(zebraChipSeconds))
+        guard !Task.isCancelled else { return }
+        zebraChipVisible = false
       }
     }
     .onChange(of: focusActive, initial: true) { _, active in
@@ -514,16 +534,17 @@ struct PresenterView: View {
         HStack {
           Text(error).fixedSize(horizontal: false, vertical: true)
           Button("Hide") { store.shootSetupError = nil }.frame(minHeight: 44)
-        }.padding(Space.sm)
+        }.padding(Space.sm).padding(.top, Space.sm)
       }
       if hasBottomNotice {
-        if shell.reading { readingNotice } else { bottomNotice }
+        Group { if shell.reading { readingNotice } else { bottomNotice } }.padding(.top, Space.sm)
       }
       if !draft.isEditing {
         if shell.reading { readingBar } else { setupBar }
       }
     }.padding(.horizontal, viewport.width / controlZoom < 900 ? Space.sm : Space.lg)
-      .padding(.vertical, shell.reading ? Space.sm : Space.md).frame(maxWidth: .infinity)
+      // The bar's rows carry their own vertical room, so a two-row bar can keep it tight.
+      .padding(.bottom, draft.isEditing ? Space.md : 0).frame(maxWidth: .infinity)
       .background(PresenterBar.background)
       .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.08)).frame(height: 1) }
       .buttonStyle(PresenterButtonStyle()).accessibilityIdentifier("presenter-control-bar")
@@ -532,35 +553,35 @@ struct PresenterView: View {
   // MARK: Setup bar
 
   /// One row: transport on the left, then the video-call group, then the picture tools. The words follow
-  /// one rule (`setupWordVariants`, richest first): the first variant that fits shows; the groups wrap
-  /// as icons only when even the last one does not.
+  /// one rule (`setupWordVariants`, richest first): the first variant that fits shows; two compact rows when
+  /// no single row fits; a wrapping layout only in a window too narrow even for that.
   private var setupBar: some View {
     ViewThatFits(in: .horizontal) {
       ForEach(Array(Self.setupWordVariants.enumerated()), id: \.offset) { index, words in
-        if words.twoRows { setupRows(words) } else { setupRow(words, spacious: index == 0) }
+        if words.twoRows { setupRows(words) } else { setupRow(words, spacious: index == 0).padding(.vertical, Space.md) }
       }
       WrapLayout(spacing: Space.sm, leading: true) {
-        setupTransport(titled: false)
+        setupTransport(short: true, snug: true)
         callGroup(snug: true)
         toolsGroup(words: Self.setupWordVariants[Self.setupWordVariants.count - 1])
         viewGroup(titles: false)
-      }.frame(maxWidth: .infinity, alignment: .leading)
+      }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, Space.md)
     }
   }
   private func setupRow(_ words: SetupWords, spacious: Bool) -> some View {
     HStack(spacing: spacious ? PresenterBar.groupGap : words.snug ? Space.sm : Space.md) {
-      HStack(spacing: Space.sm) { setupTransport(titled: words.transportTitles, snug: words.snug) }
+      HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, snug: words.snug) }
       Spacer(minLength: 0)
       callGroup(snug: words.snug)
       toolsGroup(words: words)
       viewGroup(titles: words.viewTitles)
     }
   }
-  /// The second tier for large interface sizes: nothing loses its word, the bar just gets taller.
+  /// The second tier for large interface sizes: nothing loses its word, the bar gets taller but stays compact.
   private func setupRows(_ words: SetupWords) -> some View {
-    VStack(spacing: Space.sm) {
+    VStack(spacing: Self.compactRowGap) {
       HStack(spacing: Space.md) {
-        HStack(spacing: Space.sm) { setupTransport(titled: words.transportTitles, snug: words.snug) }
+        HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, snug: words.snug) }
         Spacer(minLength: Space.sm)
         callGroup(snug: words.snug)
       }
@@ -569,31 +590,31 @@ struct PresenterView: View {
         Spacer(minLength: Space.sm)
         viewGroup(titles: words.viewTitles)
       }
-    }
+    }.environment(\.barControlHeight, Self.compactControlHeight(zoom: controlZoom)).padding(.vertical, Space.xs)
   }
 
   /// Opens the script in the library. Plain among the quiet options, so it never looks switched on.
-  private func scriptButton(titled: Bool = false, role: BarButtonStyle.Role = .plain, label: String = "Open script", snug: Bool = false) -> some View {
-    Button { controller.openScript(store: store) } label: { BarLabel(title: label, symbol: "doc.text", showsTitle: titled, snug: snug) }
+  private func scriptButton(short: Bool = false, titled: Bool = true, role: BarButtonStyle.Role = .plain, snug: Bool = false) -> some View {
+    Button { controller.openScript(store: store) } label: { BarLabel(title: short ? "Open" : "Open script", symbol: "doc.text", showsTitle: titled, snug: snug) }
       .buttonStyle(BarButtonStyle(role: role)).accessibilityLabel("Open script")
       .help("Open this script in the library to edit its title and details")
   }
   /// Editing where the script is read: the same editor as the library, saved with Save changes.
-  private func editButton(titled: Bool = false) -> some View {
+  private func editButton(titled: Bool = true) -> some View {
     Button { controller.beginEditing() } label: { BarLabel(title: "Edit", symbol: "pencil", showsTitle: titled) }
       .buttonStyle(BarButtonStyle()).accessibilityLabel("Edit script here")
       .help("Edit the script here (⌥⌘E)").disabled(!hasScript || draft.isEditing)
   }
 
-  /// Start reading always has its words; the other two keep theirs while there is room.
-  @ViewBuilder private func setupTransport(titled: Bool, snug: Bool = false) -> some View {
+  /// Every transport button has its word; Back to start and Open script may take their short forms.
+  @ViewBuilder private func setupTransport(short: Bool, snug: Bool = false) -> some View {
     Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
       .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
-    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: titled, snug: snug) }
+    Button { session.restart() } label: { BarLabel(title: short ? "Back" : "Back to start", symbol: "arrow.counterclockwise", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton(titled: titled, role: .secondary, snug: snug)
+    scriptButton(short: short, role: .secondary, snug: snug)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -696,21 +717,20 @@ struct PresenterView: View {
   private var hasPicture: Bool { referencePicture != nil || camera.pictureSize != nil }
 
   private func toolsGroup(words: SetupWords) -> some View {
-    let titles = words.toolTitles
     let live = hasPicture
     let snug = words.shortToolTitles
     return BarGroup(label: "Picture tools", raised: false) {
-      tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, titles: titles, snug: snug,
+      tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, snug: snug,
            help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
         .opacity(live ? 1 : 0.45)
-      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, titles: titles, shortTitle: "Colour", snug: snug,
+      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, shortTitle: "Colour", snug: snug,
            help: live ? "False colour exposure (⌥⌘X). Press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
         .opacity(live ? 1 : 0.45)
-      tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, titles: titles, snug: snug,
+      tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, snug: snug,
            help: "Framing guides. Press and hold to adjust.") { camera.toggleFramingGuides() }
         .opacity(live ? 1 : 0.45)
       BarDivider()
-      tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, titles: titles, snug: snug, adjustable: false,
+      tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, snug: snug, adjustable: false,
            help: "Open the adjust panel", traits: [], value: shell.adjustTab == nil ? "Collapsed" : "Expanded") {
         shell.adjustTab = shell.adjustTab == nil ? .camera : nil
       }
@@ -728,10 +748,10 @@ struct PresenterView: View {
   }
 
   /// A picture tool: tapping toggles it, pressing and holding (or the context menu) opens its Adjust tab.
-  private func tool(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool, titles: Bool, shortTitle: String? = nil, snug: Bool = false, adjustable: Bool = true,
+  private func tool(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool, shortTitle: String? = nil, snug: Bool = false, adjustable: Bool = true,
                     help: String, traits: AccessibilityTraits = .isToggle, value: String? = nil,
                     action: @escaping () -> Void) -> some View {
-    BarToggle(title: title, symbol: symbol, isOn: on, showsTitle: titles, displayTitle: shortTitle, snug: snug, help: help, traits: traits, value: value) {
+    BarToggle(title: title, symbol: symbol, isOn: on, displayTitle: shortTitle, snug: snug, help: help, traits: traits, value: value) {
       adjustOpener = title; action()
     }
     .restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)")
@@ -746,23 +766,21 @@ struct PresenterView: View {
 
   // MARK: Reading bar
 
-  /// One slim row: a status pill, the transport in the middle, quiet options on the right. As the window gets
-  /// narrower or the interface larger, the Space hint goes, then the options (not Mic) become icons, then the
-  /// status shrinks to its short form and a dot, and only then does the bar take a second row. Restart, Pause and
-  /// Set up keep their words until the window is too narrow even for that.
+  /// One slim row: a status pill, the transport in the middle, the options on the right. Every control keeps its
+  /// word and the Space hint stays. As the window narrows or the interface grows, Open script shortens to Open,
+  /// the status shrinks to its short form, then the bar takes two compact rows (status and transport above, the options
+  /// below). Only a window too narrow even for that drops the words, and the hint, to icons.
   private var readingBar: some View {
     ViewThatFits(in: .horizontal) {
-      readingRow(pill: .full, hint: true)
-      readingRow(pill: .full, hint: false)
-      readingRow(pill: .full, hint: false, titles: false)
-      readingRow(pill: .compact, hint: false, titles: false)
-      readingRow(pill: .dot, hint: false, titles: false)
-      readingRows
-      readingRow(pill: nil, hint: false, titles: false)
+      readingRow(pill: .full, hint: true).padding(.vertical, Space.sm)
+      readingRow(pill: .full, hint: true, openShort: true).padding(.vertical, Space.sm)
+      readingRow(pill: .compact, hint: true, openShort: true).padding(.vertical, Space.sm)
+      readingRows(pill: .compact, hint: true)
+      readingRows(pill: .dot, hint: false)
+      readingRow(pill: nil, hint: false, titles: false).padding(.vertical, Space.sm)
     }
   }
-  /// Words beside the right-hand icons while there is room; they are plain buttons, lit only when on. Mic keeps its word.
-  private func readingRow(pill: BarStatusPill.Style?, hint: Bool, titles: Bool = true) -> some View {
+  private func readingRow(pill: BarStatusPill.Style?, hint: Bool, titles: Bool = true, openShort: Bool = false) -> some View {
     HStack(spacing: Space.md) {
       // The options keep their full width (a variant only fits if they do), the status takes what is left
       // and the transport sits beside the options; without a status the transport floats in the room.
@@ -771,27 +789,27 @@ struct PresenterView: View {
       // A variant fits only if the transport keeps its width; the last one has nothing to give up, so it may squeeze.
       HStack(spacing: Space.sm) { readingTransport(titles: true, hint: hint) }.fixedSize(horizontal: pill != nil, vertical: false)
       if pill == nil { Spacer(minLength: Space.md) }
-      readingOptions(titles: titles, micTitle: pill != nil).fixedSize()
+      readingOptions(titles: titles, micTitle: pill != nil, openShort: openShort).fixedSize()
     }
   }
-  /// The status and the transport on one row, the options under them: the same words, a taller bar.
-  private var readingRows: some View {
-    VStack(spacing: Space.sm) {
+  /// The status and the transport on one row, the options under them: the same words, a taller but compact bar.
+  private func readingRows(pill: BarStatusPill.Style, hint: Bool) -> some View {
+    VStack(spacing: Self.compactRowGap) {
       HStack(spacing: Space.md) {
-        readingPill(.compact)
+        readingPill(pill)
         Spacer(minLength: Space.md)
-        HStack(spacing: Space.sm) { readingTransport(titles: true, hint: false) }
+        HStack(spacing: Space.sm) { readingTransport(titles: true, hint: hint) }
       }
       HStack(spacing: 0) {
         Spacer(minLength: 0)
-        readingOptions(titles: true)
+        readingOptions(titles: true, openShort: true)
       }
-    }
+    }.environment(\.barControlHeight, Self.compactControlHeight(zoom: controlZoom)).padding(.vertical, Space.xs)
   }
   private func readingPill(_ style: BarStatusPill.Style) -> some View {
     BarStatusPill(text: readingPillText, shortText: readingPillShortText, isActive: session.isActivelyRunning, style: style)
   }
-  private func readingOptions(titles: Bool, micTitle: Bool = true) -> some View {
+  private func readingOptions(titles: Bool, micTitle: Bool = true, openShort: Bool = false) -> some View {
     BarGroup(label: "Reading options") {
       micControl(titles: micTitle, snug: !titles)
       BarDivider()
@@ -801,7 +819,7 @@ struct PresenterView: View {
       Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size", showsTitle: titles) }
         .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text size").accessibilityLabel("Reading settings")
       editButton(titled: titles)
-      scriptButton(titled: titles)
+      scriptButton(short: openShort, titled: titles)
     }
   }
   private var readingPillText: String {

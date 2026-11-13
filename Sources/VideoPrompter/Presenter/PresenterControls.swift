@@ -20,8 +20,18 @@ enum PresenterBar {
   static let warning = Color(red: 1, green: 0.45, blue: 0.42)
 }
 
+private struct BarControlHeightKey: EnvironmentKey { static let defaultValue = PresenterBar.height }
+extension EnvironmentValues {
+  /// One control height for the whole bar; a two-row bar at a large interface size lowers it to stay short.
+  var barControlHeight: CGFloat {
+    get { self[BarControlHeightKey.self] }
+    set { self[BarControlHeightKey.self] = newValue }
+  }
+}
+
 /// Icon, and the word beside it when there is room. The word stays as the accessibility label.
 struct BarLabel: View {
+  @Environment(\.barControlHeight) private var controlHeight
   let title: String
   let symbol: String
   var showsTitle = true
@@ -30,6 +40,8 @@ struct BarLabel: View {
   var accentIcon = false
   /// A little less room each side of the word, for a bar that is short of width.
   var snug = false
+  /// A longer word the button may show (Camera / Camera off): its room is kept, so the group never shifts.
+  var reserveTitle: String? = nil
   var body: some View {
     HStack(spacing: Space.xs) {
       if accentIcon {
@@ -37,9 +49,12 @@ struct BarLabel: View {
       } else {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
-      if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
+      if showsTitle {
+        Text(reserveTitle ?? title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize().hidden()
+          .overlay(alignment: .leading) { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
+      }
     }.padding(.horizontal, showsTitle ? (snug ? Space.sm : Space.md) : PresenterBar.iconPadding)
-      .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
+      .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: controlHeight)
   }
 }
 
@@ -49,12 +64,13 @@ struct BarButtonStyle: ButtonStyle {
   enum Role { case plain, secondary, on, off, muted, prominent }
   var role = Role.plain
   @Environment(\.isEnabled) private var isEnabled
+  @Environment(\.barControlHeight) private var controlHeight
 
   func makeBody(configuration: Configuration) -> some View {
     let shape = RoundedRectangle(cornerRadius: PresenterBar.corner)
     configuration.label
       .foregroundStyle(foreground)
-      .frame(minHeight: PresenterBar.height)
+      .frame(minHeight: controlHeight)
       .background(shape.fill(fill))
       .overlay { if configuration.isPressed { shape.fill(.white.opacity(0.12)) } }
       .opacity(isEnabled ? 1 : 0.4)
@@ -114,6 +130,7 @@ struct BarDeviceControl<MenuContent: View>: View {
   var showsTitle = true
   var snug = false
   var isEnabled = true
+  @Environment(\.barControlHeight) private var controlHeight
   let toggleHelp: String
   let menuLabel: String
   let menuValue: String
@@ -122,14 +139,14 @@ struct BarDeviceControl<MenuContent: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Button(action: toggle) { BarLabel(title: isOn ? title : offTitle ?? title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug) }
+      Button(action: toggle) { BarLabel(title: isOn ? title : offTitle ?? title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug, reserveTitle: offTitle) }
         .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
         .disabled(!isEnabled)
       Menu(content: menu) {
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
-          .frame(width: PresenterBar.caretWidth, height: PresenterBar.height).contentShape(Rectangle())
+          .frame(width: PresenterBar.caretWidth, height: controlHeight).contentShape(Rectangle())
       }
       .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
       .foregroundStyle(isOn ? Color.white.opacity(0.8) : offIsWarning ? PresenterBar.warning : .white.opacity(0.7))
@@ -137,10 +154,10 @@ struct BarDeviceControl<MenuContent: View>: View {
       .accessibilityLabel(menuLabel).accessibilityValue(menuValue)
     }
     .background(isOn || !offIsWarning ? Color.clear : Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
-    // A camera that is simply off is an empty, quiet outline and says "Camera off": nothing filled, so it never matches the lit Script pill.
+    // A camera that is simply off is an empty, quiet outline (the same corner and weight as its group) and says "Camera off": nothing filled, so it never matches the lit Script pill.
     .overlay {
       if !isOn && !offIsWarning {
-        RoundedRectangle(cornerRadius: PresenterBar.corner).stroke(.white.opacity(0.4), lineWidth: 1)
+        RoundedRectangle(cornerRadius: PresenterBar.corner).stroke(.white.opacity(0.35), lineWidth: 1)
       }
     }
   }
@@ -245,8 +262,11 @@ struct PresenterEditingBand: View {
   var body: some View {
     HStack(spacing: Space.md) {
       Image(systemName: "pencil").font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
-      Text("Editing").font(.system(size: 17, weight: .semibold))
-      Text("Not saved yet").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+      HStack(spacing: Space.sm) {
+        Text("Editing").font(.system(size: 17, weight: .semibold))
+        Text("·").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white.opacity(0.6))
+        Text("Not saved yet").font(.system(size: 17)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+      }
       Spacer(minLength: Space.md)
       Button(action: cancel) {
         HStack(spacing: Space.sm) {
