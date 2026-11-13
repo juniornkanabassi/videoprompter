@@ -78,6 +78,17 @@ final class PadEditingTests: XCTestCase {
     require(draft.save { written = $0; return true }, "save succeeds")
     require(written == "hello" && ends == 2 && !draft.isEditing, "save writes and releases editing lock")
     require(draft.model.markdown == "hello" && !draft.history.canUndo, "cancel restores original and clears history")
+    // Library drafts: typed text is dirty until written, a failed write keeps it, Cancel returns to the last write.
+    let typed = PadEditorDraft("one two")
+    require(!typed.isDirty, "fresh draft is clean")
+    typed.apply(typed.model.replacing(NSRange(location: 7, length: 0), with: " three")!,
+      selection: NSRange(location: 13, length: 0), previousSelection: NSRange(location: 7, length: 0))
+    require(typed.isDirty, "typing makes the draft dirty")
+    require(!typed.save { _ in false } && typed.isDirty, "failed autosave keeps the draft dirty")
+    var disk = ""
+    require(typed.save { disk = $0; return true } && disk == "one two three" && !typed.isDirty, "autosave writes the typed text")
+    typed.cancel()
+    require(typed.model.markdown == "one two three", "cancel after a save keeps the saved text")
     print("PadMarkdownEdit round-trip, Unicode, selection, formatting and cut/paste passed")
     }}
     """#.write(to: main, atomically: true, encoding: .utf8)
@@ -124,9 +135,34 @@ final class PadEditingTests: XCTestCase {
     // UIKit is not in the macOS test process: these are wiring checks, not simulated touch input.
     for call in ["onBegin: store.beginEditing", "onEnd: store.endEditing", "store.save($0, to: script)",
       "history.undo()", "history.redo()", "history.registerUndo", "UIKeyCommand.inputEscape",
-      "view.markedTextRange", "scrollRangeToVisible", "private func cancel() { draft.cancel(); markdown = record.markdown; onDone() }"] {
+      "view.markedTextRange", "scrollRangeToVisible", "private func cancel() { draft.cancel(); markdown = draft.original; onDone() }"] {
       XCTAssertTrue(source.contains(call), "Missing editor integration: \(call)")
     }
+  }
+
+  /// What the library does when typed text is still unsaved: the editor writes it as it goes away or
+  /// the app backgrounds, Open presenter writes it first, and the library never takes the on-the-fly lock.
+  func testLibraryDraftIsSavedBeforeSwitchingOrPresenting() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let editor = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Library/ScriptEditor.swift"), encoding: .utf8)
+    let library = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Library/LibraryScreen.swift"), encoding: .utf8)
+    for call in ["if !onTheFly { _ = flush() }", "flusher?.flush = flush", "phase != .active, !onTheFly", "mode: .library, flusher: flusher"] {
+      XCTAssertTrue(editor.contains(call), "Missing autosave wiring: \(call)")
+    }
+    for call in ["if flusher.flush?() ?? true { store.present(script) }", "ScriptEditor(script: script, flusher: flusher)", "of: store.presentingID"] {
+      XCTAssertTrue(library.contains(call), "Missing library wiring: \(call)")
+    }
+    XCTAssertFalse(library.contains(".onTheFly"), "The library must never take the on-the-fly lock")
+  }
+
+  /// Open presenter reads the folder, so after the autosave it presents the edited text, not the old file.
+  func testPresentingAfterAutosaveShowsTheEditedText() throws {
+    let (folder, script) = try fixture()
+    let saved = try folder.save("one **two** three four five", to: script)
+    let session = SessionStore(defaults: freshDefaults("PadEditingPresent"))
+    session.present(record: try folder.record(for: script), settings: PrompterSettings())
+    XCTAssertEqual(session.activeRecord?.markdown, saved.markdown)
+    XCTAssertTrue(session.document.spokenTokens.contains { $0.text == "five" })
   }
 
   private func fixture() throws -> (Folder, FolderScript) {

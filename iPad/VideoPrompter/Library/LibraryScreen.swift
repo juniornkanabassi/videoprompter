@@ -389,6 +389,7 @@ private struct ScriptDetail: View {
   @State private var confirmingOverwrite = false
   @State private var updateNote: String?
   @State private var explainingCopy = false
+  @State private var flusher = PadDraftFlusher()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -396,13 +397,15 @@ private struct ScriptDetail: View {
       LibraryTheme.line.frame(height: 1)
       if script.isDownloaded {
         // The editing view, with its own formatting row, is the script editor's.
-        ScriptEditor(script: script)
+        ScriptEditor(script: script, flusher: flusher)
       } else {
         ProgressView("Downloading from iCloud…").frame(maxWidth: .infinity, maxHeight: .infinity)
       }
       LibraryTheme.line.frame(height: 1)
       footer
     }
+    // A presentation started elsewhere (the Mac) still shows what is on screen here.
+    .onChange(of: store.presentingID) { _, id in if id != nil { _ = flusher.flush?() } }
     .confirmationDialog(
       "This script was edited since it came from Google Docs", isPresented: $confirmingOverwrite, titleVisibility: .visible
     ) {
@@ -454,7 +457,8 @@ private struct ScriptDetail: View {
         .accessibilityLabel("Connected to \(connection.name)")
       }
       Button {
-        store.present(script)
+        // Present what is on screen: an unsaved draft is written first, and a failed save stops here.
+        if flusher.flush?() ?? true { store.present(script) }
       } label: {
         Label("Open presenter", systemImage: "play.fill")
           .font(.body.weight(.semibold))

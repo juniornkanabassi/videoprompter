@@ -170,7 +170,8 @@ struct PadMarkdownEdit {
 /// One independent undo stack per editor, shared by typing and toolbar commands.
 @MainActor
 final class PadEditorDraft {
-  let original: String
+  /// The last text written to disk (or loaded), which Cancel returns to.
+  private(set) var original: String
   private(set) var model: PadMarkdownEdit
   let history = UndoManager()
   var onChange: ((PadMarkdownEdit, NSRange) -> Void)?
@@ -181,8 +182,10 @@ final class PadEditorDraft {
     editingEnded = onEnd; onBegin()
   }
   func endEditing() { let end = editingEnded; editingEnded = nil; end?() }
+  var isDirty: Bool { model.markdown != original }
   @discardableResult func save(_ write: (String) -> Bool) -> Bool {
     guard write(model.markdown) else { return false }
+    original = model.markdown
     endEditing(); return true
   }
   init(_ markdown: String) { original = markdown; model = PadMarkdownEdit(markdown) }
@@ -203,16 +206,22 @@ import PrompterCore
 import SwiftUI
 import UIKit
 
+/// Lets the library write the visible draft before it presents or changes script.
+final class PadDraftFlusher {
+  var flush: (() -> Bool)?
+}
+
 /// Compatibility for existing sheet callers. New inline hosts use ScriptEditorView directly.
 struct ScriptEditor: View {
   @EnvironmentObject private var store: PadStore
   @Environment(\.dismiss) private var dismiss
   let script: FolderScript
+  var flusher: PadDraftFlusher?
   @State private var record: ScriptRecord?
   var body: some View {
     NavigationStack {
       if let record {
-        ScriptEditorView(record: record, mode: .library) { dismiss() } // only the presenter's Edit button may lock the iPad
+        ScriptEditorView(record: record, mode: .library, flusher: flusher) { dismiss() } // only the presenter's Edit button may lock the iPad
           .navigationTitle(script.title).navigationBarTitleDisplayMode(.inline)
       } else { ProgressView().onAppear { record = store.record(for: script) } }
     }
@@ -226,54 +235,104 @@ struct ScriptEditorView: View {
   @EnvironmentObject private var store: PadStore
   let record: ScriptRecord
   let mode: ScriptEditorMode
+  var flusher: PadDraftFlusher?
   var onDone: () -> Void
   @State private var markdown: String
+  @State private var saved: String
   @State private var command: PadEditorCommand?
   @State private var error: String?
   @State private var draft: PadEditorDraft
 
-  init(record: ScriptRecord, mode: ScriptEditorMode, onDone: @escaping () -> Void) {
-    self.record = record; self.mode = mode; self.onDone = onDone
+  init(record: ScriptRecord, mode: ScriptEditorMode, flusher: PadDraftFlusher? = nil, onDone: @escaping () -> Void) {
+    self.record = record; self.mode = mode; self.flusher = flusher; self.onDone = onDone
     _markdown = State(initialValue: record.markdown)
+    _saved = State(initialValue: record.markdown)
     _draft = State(initialValue: PadEditorDraft(record.markdown))
   }
 
+  @Environment(\.scenePhase) private var scenePhase
+  private var onTheFly: Bool { mode == .onTheFly }
+  private var dirty: Bool { markdown != saved }
+  private let band = Color(red: 0x2B / 255, green: 0x26 / 255, blue: 0x10 / 255)
+
   var body: some View {
     VStack(spacing: 0) {
-      HStack(spacing: 8) {
-        if mode == .onTheFly { Text("Editing").font(.headline) }
-        Button { command = PadEditorCommand(action: .undo) } label: {
-          Image(systemName: "arrow.uturn.backward").frame(minWidth: 44, minHeight: 44)
-        }.accessibilityLabel("Undo")
-        Button { command = PadEditorCommand(action: .redo) } label: {
-          Image(systemName: "arrow.uturn.forward").frame(minWidth: 44, minHeight: 44)
-        }.accessibilityLabel("Redo")
-        ForEach(Array([("Bold", "bold"), ("Italic", "italic"), ("Heading", "textformat.size")].enumerated()), id: \.offset) { index, item in
-          Button { command = PadEditorCommand(action: [.bold, .italic, .heading][index]) } label: {
-            Image(systemName: item.1).frame(minWidth: 44, minHeight: 44)
-          }.accessibilityLabel(item.0)
-        }
-        Spacer()
-        Text((mode == .onTheFly ? "Reading paused · " : "") + (markdown == record.markdown ? "Saved" : "Not saved yet"))
-          .font(.footnote).foregroundStyle(LibraryTheme.muted).lineLimit(1)
-        Button("Cancel", action: cancel).frame(minHeight: 44)
-        Button("Save", action: save).buttonStyle(.borderedProminent).foregroundStyle(LibraryTheme.ink).frame(minHeight: 44)
-          .keyboardShortcut("s", modifiers: .command)
-      }.padding(.horizontal, 12).background(LibraryTheme.card)
+      toolbar
       if let error { Text(error).font(.callout).foregroundStyle(LibraryTheme.warn).padding(8).accessibilityAddTraits(.updatesFrequently) }
-      FormattedScriptTextView(markdown: $markdown, draft: draft, command: command,
-        sourceOffset: mode == .onTheFly ? readingOffset : nil,
-        fontName: store.settings.fontName, fontSize: mode == .onTheFly ? store.settings.fontSize : 20,
-        onSave: save, onCancel: cancel,
-        onError: { error = $0 })
+      if onTheFly {
+        // The mockup's bounded reading column, so lines break where they will on the glass.
+        GeometryReader { proxy in
+          textView(inset: 28)
+            .background(Color.white.opacity(0.03))
+            .clipShape(RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(LibraryTheme.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .padding(.horizontal, proxy.size.width * 0.12)
+            .padding(.vertical, 16)
+        }
+      } else {
+        textView(inset: 20)
+      }
     }
-    .background(mode == .onTheFly ? Color.black : LibraryTheme.background).tint(LibraryTheme.accent)
+    .background(onTheFly ? Color.black : LibraryTheme.background).tint(LibraryTheme.accent)
     .preferredColorScheme(.dark)
-    .interactiveDismissDisabled(markdown != record.markdown)
+    .interactiveDismissDisabled(dirty)
     .onAppear {
-      if mode == .onTheFly { draft.beginEditing(onBegin: store.beginEditing, onEnd: store.endEditing) }
+      if onTheFly { draft.beginEditing(onBegin: store.beginEditing, onEnd: store.endEditing) }
+      else { flusher?.flush = flush }
     }
-    .onDisappear { draft.endEditing() }
+    .onDisappear {
+      // The library keeps what was typed: switching script or leaving the screen saves it.
+      if !onTheFly { _ = flush() }
+      flusher?.flush = nil
+      draft.endEditing()
+    }
+    .onChange(of: scenePhase) { _, phase in if phase != .active, !onTheFly { _ = flush() } }
+  }
+
+  private func textView(inset: Double) -> some View {
+    FormattedScriptTextView(markdown: $markdown, draft: draft, command: command,
+      sourceOffset: onTheFly ? readingOffset : nil,
+      fontName: store.settings.fontName, fontSize: onTheFly ? store.settings.fontSize : 20,
+      horizontalInset: inset, onSave: save, onCancel: cancel,
+      onError: { error = $0 })
+  }
+
+  private var toolbar: some View {
+    HStack(spacing: 8) {
+      if onTheFly {
+        Image(systemName: "pencil").font(.title3)
+        Text("Editing").font(.title3.weight(.semibold))
+        Text("Reading paused · mirror off while you type · " + (dirty ? "not saved yet" : "saved"))
+          .font(.callout).foregroundStyle(LibraryTheme.muted).lineLimit(2)
+        Spacer(minLength: 8)
+      }
+      tool("Undo", icon: "arrow.uturn.backward", .undo, text: onTheFly)
+      tool("Redo", icon: "arrow.uturn.forward", .redo, text: onTheFly)
+      tool("Bold", icon: "bold", .bold)
+      tool("Italic", icon: "italic", .italic)
+      if !onTheFly { tool("Heading", icon: "textformat.size", .heading) }
+      if !onTheFly {
+        Spacer()
+        Text(dirty ? "Not saved yet" : "Saved").font(.footnote).foregroundStyle(LibraryTheme.muted).lineLimit(1)
+      }
+      Button("Cancel", action: cancel).padding(.horizontal, onTheFly ? 8 : 0).frame(minHeight: 44)
+        .modifier(BandChip(on: onTheFly))
+      Button("Save", action: save).buttonStyle(.borderedProminent).foregroundStyle(LibraryTheme.ink).frame(minHeight: 44)
+        .keyboardShortcut("s", modifiers: .command)
+    }
+    .padding(.horizontal, onTheFly ? 28 : 12)
+    .frame(minHeight: onTheFly ? 72 : nil)
+    .background { (onTheFly ? band : LibraryTheme.card).ignoresSafeArea(edges: .top) }
+    .overlay(alignment: .bottom) { if onTheFly { LibraryTheme.accent.opacity(0.4).frame(height: 1) } }
+  }
+
+  private func tool(_ title: String, icon: String, _ action: PadEditorCommand.Action, text: Bool = false) -> some View {
+    Button { command = PadEditorCommand(action: action) } label: {
+      if text { Text(title).padding(.horizontal, 12) } else { Image(systemName: icon) }
+    }
+    .frame(minWidth: 44, minHeight: 44)
+    .modifier(BandChip(on: onTheFly))
+    .accessibilityLabel(title)
   }
 
   private var readingOffset: Int? {
@@ -281,13 +340,28 @@ struct ScriptEditorView: View {
     let index = store.session.tokenIndex
     return tokens.indices.contains(index) ? tokens[index].sourceRange.location : nil
   }
-  private func cancel() { draft.cancel(); markdown = record.markdown; onDone() }
+  private func cancel() { draft.cancel(); markdown = draft.original; onDone() }
   private func save() {
+    if flush() { onDone() }
+  }
+  /// Writes the draft if it changed. True when nothing is left unsaved.
+  private func flush() -> Bool {
     // Commit any in-progress keyboard composition before reading the draft.
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    guard let script = store.folder.script(record.metadata.id) else { error = "This script is no longer in the folder."; return }
-    guard draft.save({ $0 == record.markdown || store.save($0, to: script) }) else { error = store.errorMessage; return }
-    onDone()
+    guard let script = store.folder.script(record.metadata.id) else { error = "This script is no longer in the folder."; return false }
+    guard draft.save({ $0 == draft.original || store.save($0, to: script) }) else { error = store.errorMessage; return false }
+    saved = draft.original
+    return true
+  }
+}
+
+/// The editing band's buttons: a quiet chip on the band, plain in the library toolbar.
+private struct BandChip: ViewModifier {
+  let on: Bool
+  func body(content: Content) -> some View {
+    if on {
+      content.buttonStyle(.plain).padding(.horizontal, 4).background(LibraryTheme.card2, in: RoundedRectangle(cornerRadius: 12))
+    } else { content }
   }
 }
 
@@ -337,6 +411,7 @@ struct FormattedScriptTextView: UIViewRepresentable {
   var sourceOffset: Int?
   var fontName = "Lexend Deca"
   var fontSize = 20.0
+  var horizontalInset = 20.0
   var onSave: () -> Void
   var onCancel: () -> Void
   var onError: (String?) -> Void
@@ -349,7 +424,7 @@ struct FormattedScriptTextView: UIViewRepresentable {
     view.adjustsFontForContentSizeCategory = true
     view.keyboardDismissMode = .interactive
     view.keyboardLayoutGuide.followsUndockedKeyboard = true
-    view.textContainerInset = UIEdgeInsets(top: 16, left: 20, bottom: 32, right: 20)
+    view.textContainerInset = UIEdgeInsets(top: 16, left: horizontalInset, bottom: 32, right: horizontalInset)
     view.delegate = context.coordinator
     view.history = context.coordinator.draft.history
     view.format = { [weak coordinator = context.coordinator, weak view] action in
