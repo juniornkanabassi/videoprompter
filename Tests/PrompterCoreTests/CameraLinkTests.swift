@@ -81,8 +81,8 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(sender.unpairedDeviceName, "iPad")
     sender.pair(key: "FEDCBA9876543210")
     let codes = defaults.dictionary(forKey: "sendCameraPairingCodes")
-    XCTAssertEqual(codes?[a] as? String, "0123456789ABCDEF")
-    XCTAssertEqual(codes?[b] as? String, "FEDCBA9876543210")
+    XCTAssertEqual(codes?[a] as? String, CameraLinkSecurity.normalised("0123456789ABCDEF"))
+    XCTAssertEqual(codes?[b] as? String, CameraLinkSecurity.normalised("FEDCBA9876543210"))
     sender.wifiChanged([endpoint("Renamed", a), endpoint("iPad", b)])
     sender.selectedWiFiID = a
     XCTAssertNil(sender.unpairedDeviceName)
@@ -102,7 +102,7 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(sender.pairingCode(id: "first", name: "Renamed"), "0123456789ABCDEF")
     XCTAssertEqual(sender.unpairedDeviceName, "Other iPad")
     sender.pair(key: "FEDCBA9876543210")
-    XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), "FEDCBA9876543210")
+    XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), CameraLinkSecurity.normalised("FEDCBA9876543210"))
     XCTAssertEqual(defaults.dictionary(forKey: "sendCameraPairingCodes")?["iPad"] as? String, "0123456789ABCDEF")
   }
 

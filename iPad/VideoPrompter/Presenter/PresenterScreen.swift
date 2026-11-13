@@ -169,9 +169,8 @@ struct PresenterScreen: View {
   private func scriptLayer(_ size: CGSize) -> some View {
     let insets = PadPresenterLayout.scriptInsets(
       width: size.width / hudScale, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
-    // Reserve both control bands at either end, so turning the layer cannot cover the controls.
-    let top = max(insets.top, insets.bottom) * hudScale
-    let bottom = top
+    let top = insets.top * hudScale
+    let bottom = insets.bottom * hudScale
     let height = max(size.height - top - bottom, 1)
     let side = setup && !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
     let scriptWidth = max(1, size.width - side * 2)
