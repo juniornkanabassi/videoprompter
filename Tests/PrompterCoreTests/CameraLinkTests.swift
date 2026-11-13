@@ -105,8 +105,13 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(codes[a] ?? nil, CameraLinkSecurity.normalised("0123456789ABCDEF"))
     XCTAssertEqual(codes[b] ?? nil, CameraLinkSecurity.normalised("FEDCBA9876543210"))
     sender.wifiChanged([endpoint("Renamed", a), endpoint("iPad", b)])
-    sender.selectedWiFiID = a
+    sender.searchesForIPad = false
+    sender.requestPairing(.init(id: a, name: "Renamed"))
+    XCTAssertEqual(sender.selectedWiFiID, a)
+    XCTAssertTrue(sender.controlsIPad)
+    XCTAssertNil(sender.pairingRequestName, "A paired iPad reconnects without another pairing handshake")
     XCTAssertNil(sender.unpairedDeviceName)
+    sender.disconnect()
   }
 
   @MainActor

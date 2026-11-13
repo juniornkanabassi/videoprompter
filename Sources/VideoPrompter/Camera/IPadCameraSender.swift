@@ -370,16 +370,12 @@ import VideoToolbox
 
   func requestPairing(_ device: WiFiDevice) {
     cancelPairingRequest()
-    if pairingCode(id: device.id, name: device.name) != nil {
-      // A selected USB connection must also yield to an explicit Wi-Fi device choice.
-      disconnect()
-      selectedWiFiID = device.id
-      usesWiFi = true
-      controlsIPad = true
-      return
-    }
+    // A selected USB connection must also yield to an explicit Wi-Fi device choice.
+    disconnect()
     selectedWiFiID = device.id
     usesWiFi = true
+    controlsIPad = true
+    if pairingCode(id: device.id, name: device.name) != nil { return }
     let endpoint = NWEndpoint.service(name: device.id, type: PairingExchange.padService, domain: "local.", interface: nil)
     let connection = PairingExchange.connect(endpoint)
     requestConnection = connection; pairingRequestName = device.name; pairingFailure = nil
