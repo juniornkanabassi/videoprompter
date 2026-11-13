@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import PrompterCore
 import XCTest
 @testable import VideoPrompter
 
@@ -169,6 +170,61 @@ import XCTest
     XCTAssertEqual(MicMeterView.visibleScale(width: 300).map(\.value), MicMeterView.visibleScale(height: 300).map(\.value))
   }
 
+  func testMicScaleGivesTheLoudHalfAtLeastHalfTheLength() {
+    XCTAssertEqual(MeterZones.micPosition(-60), 0)
+    XCTAssertEqual(MeterZones.micPosition(0), 1)
+    XCTAssertEqual(MeterZones.micPosition(-20), 0.4, accuracy: 0.0001)
+    XCTAssertGreaterThanOrEqual(1 - MeterZones.micPosition(-20), 0.5, "-20 to 0 dBFS takes at least half the meter")
+    XCTAssertEqual(MeterZones.micPosition(-90), 0)
+    XCTAssertEqual(MeterZones.micPosition(6), 1)
+    XCTAssertEqual(MeterZones.micPosition(-.infinity), 0)
+    XCTAssertEqual(MeterZones.micPosition(.nan), 0)
+    var last: CGFloat = -1
+    for db in stride(from: Float(-60), through: 0, by: 1) {
+      XCTAssertGreaterThan(MeterZones.micPosition(db), last, "the scale only rises (\(db))"); last = MeterZones.micPosition(db)
+    }
+    // The red zone is a clear share of the bar, and the yellow band sits inside the loud half.
+    XCTAssertGreaterThanOrEqual(1 - MeterZones.micPosition(MeterZones.redFrom), 0.15)
+    XCTAssertGreaterThan(MeterZones.micPosition(MeterZones.yellowFrom), 0.5)
+  }
+
+  func testHorizontalZoneWordsStayOnTheirZonesAndClearEachOther() {
+    for width in [160.0, 200, 260, 320, 480, 720] as [CGFloat] {
+      let centres = MicMeterView.zoneWordCentres(width: width)
+      let half = MicMeterView.zoneWordWidth / 2
+      XCTAssertLessThanOrEqual(centres.loud + half, width + 0.001, "too loud stays inside the bar at \(width)")
+      XCTAssertLessThanOrEqual(centres.aim + half, centres.loud - half, "the words never overlap at \(width)")
+      XCTAssertGreaterThanOrEqual(centres.aim - half, 0)
+    }
+    let wide = MicMeterView.zoneWordCentres(width: 720)
+    XCTAssertEqual(wide.aim, 720 * (MeterZones.micPosition(-12) + MeterZones.micPosition(-6)) / 2, accuracy: 0.001, "centred on the yellow band")
+    XCTAssertEqual(wide.loud, 720 * (MeterZones.micPosition(-6) + 1) / 2, accuracy: 0.001, "centred on the red band")
+  }
+
+  func testSetupBarWordsFollowOneRuleByWidth() {
+    XCTAssertEqual(PresenterView.barTier(width: 2560), .full)
+    XCTAssertEqual(PresenterView.barTier(width: 1600), .standard, "picture tools keep their words at 1600")
+    XCTAssertEqual(PresenterView.barTier(width: 1280), .standard, "and at 1280")
+    XCTAssertEqual(PresenterView.barTier(width: 1100), .compact, "icons only below about 1100 to 1150")
+    XCTAssertEqual(PresenterView.barTier(width: 800), .compact)
+  }
+
+  func testBlankLinesShrinkWithoutChangingTheText() {
+    let text = NSMutableAttributedString(string: "One.\n\nTwo.\n\n\nThree.", attributes: [.paragraphStyle: NSParagraphStyle.default])
+    let before = text.string
+    ScriptTextView.Coordinator.shrinkBlankLines(in: text, fontSize: 50)
+    XCTAssertEqual(text.string, before, "no character is added or removed")
+    func height(at index: Int) -> CGFloat { (text.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle)?.maximumLineHeight ?? -1 }
+    XCTAssertEqual(height(at: 5), 50 * ScriptTextView.Coordinator.blankLineHeight, "the blank line is shortened")
+    XCTAssertEqual(height(at: 0), 0, "text lines are untouched")
+    XCTAssertEqual(height(at: 4), 0, "even the newline that ends a text line")
+    XCTAssertEqual(height(at: 11), 50 * ScriptTextView.Coordinator.blankLineHeight)
+    XCTAssertEqual(height(at: 12), 50 * ScriptTextView.Coordinator.blankLineHeight)
+    XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 20), ReadingViewportMask.fadeHeight)
+    XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 52), 52 * 1.6, accuracy: 0.001)
+    XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 200), 160)
+  }
+
   // MARK: Editing
 
   func testEditingHasABandWithSaveAndCancelAndNoMicMeter() async throws {
@@ -190,15 +246,23 @@ import XCTest
 // MARK: - Snapshots
 
 extension AppearanceSnapshotTests {
-  func testPresenterChromeRound3Snapshots() async throws {
+  /// About 4,500 characters: past the editor's fitted-height limit, so the editing box fills the room.
+  static let presenterLongScript: String = {
+    let paragraph = "Arsenal pressed high from the first whistle and Saliba stepped out to meet every ball that came through the middle. When it went wide, the back three slid across together, and that is why the space behind never opened."
+    return (1...20).map { "\($0). " + paragraph }.joined(separator: "\n\n")
+  }()
+
+  func testPresenterChromeRound4Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let destination = URL(fileURLWithPath: output)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = freshDefaults("PresenterRound2Snapshots")
+    let defaults = freshDefaults("PresenterRound4Snapshots")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Matchday", markdown: "Arsenal went to Anfield with a plan.\n\nAnd that is why the back three changed everything this season.\n\nWatch where Saliba stands when the ball goes wide.")
+    let longRecord = try await store.createScript(title: "Long", markdown: Self.presenterLongScript)
+    XCTAssertGreaterThan(Self.presenterLongScript.count, 4000)
     store.settings.mode = "Voice"
     store.settings.fontSize = 52
     store.settings.videoDimming = 0.35
@@ -214,13 +278,15 @@ extension AppearanceSnapshotTests {
     store.session.meter.show(peakDBFS: -9, isClipping: false)
 
     func present(_ name: String, size: CGSize, reading: Bool = false, editing: Bool = false, preview: Bool = false, noCamera: Bool = false,
-                 zoom: Double = 1, focus: Bool = false, autoHide: Bool = false, adjust: AdjustTab? = nil) async throws {
+                 zoom: Double = 1, focus: Bool = false, autoHide: Bool = false, adjust: AdjustTab? = nil, script: ScriptRecord? = nil) async throws {
+      let script = script ?? record
       store.uiZoom = zoom
+      store.session.present(record: script, settings: store.settings)
       recorder.inputMeter.show(peakDBFS: -9, isClipping: false)
       defaults.set(focus, forKey: "presenterFocusMode")
       defaults.set(autoHide, forKey: "presenterAutoHideBar")
       if reading { store.session.play(captureAudio: false) } else { store.session.pause() }
-      let draft = PresenterDraft(record: record)
+      let draft = PresenterDraft(record: script)
       if editing { draft.begin(session: store.session) }
       let view = PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder,
         shell: PresenterShell(reading: reading, adjustTab: adjust, scriptPreview: preview), referencePicture: noCamera ? nil : picture,
@@ -228,55 +294,69 @@ extension AppearanceSnapshotTests {
       try await snapshot(view, name: name, size: size, scheme: .dark, destination: destination, settleDelay: .milliseconds(300))
       if editing { draft.cancel() }
     }
-    let wide = CGSize(width: 1600, height: 1000), laptop = CGSize(width: 1280, height: 800), uhd = CGSize(width: 3840, height: 2160)
-    camera.setRotation(.none)
-    // Setup with no camera: one centred empty state, one clear button.
+    let wide = CGSize(width: 1600, height: 1000), laptop = CGSize(width: 1280, height: 800), narrow = CGSize(width: 1000, height: 700), uhd = CGSize(width: 3840, height: 2160)
+    // The picture is a portrait one, so the camera is turned for vertical: the card says the same.
+    camera.setRotation(.quarter)
+    // Setup with no camera: one centred empty state, one clear button, no exposure key.
     camera.displayMode = .prompterWithVideo
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r3-setup-nocamera-\(label)", size: size, noCamera: true)
+      try await present("r4-setup-nocamera-\(label)", size: size, noCamera: true)
     }
-    try await present("r3-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
-    // Setup with the camera on, then off (just the script).
-    try await present("r3-setup-camera-1600", size: wide)
+    try await present("r4-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
+    // Setup with the camera on: the same words at 1600, 1280 and 4K, icons only when narrow.
+    for (label, size) in [("1600", wide), ("1280", laptop), ("1000", narrow), ("4k", uhd)] {
+      try await present("r4-setup-camera-\(label)", size: size)
+    }
+    try await present("r4-setup-camera-200", size: wide, zoom: 2)
+    // Camera off (just the script): a neutral off button, not an alarm.
     camera.displayMode = .prompterOnly
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r3-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
+      try await present("r4-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
     }
     camera.displayMode = .prompterWithVideo
-    try await present("r3-setup-camera-4k", size: uhd)
-    try await present("r3-setup-camera-200", size: wide, zoom: 2)
-    try await present("r3-adjust-mic-1600", size: wide, adjust: .mic)
-    // Reading: soft backing, the reading line, one status pill, the meter with numbers.
+    try await present("r4-adjust-mic-1600", size: wide, adjust: .mic)
+    // Reading: a soft band and a clear line, no column edges, a faded bottom at every size.
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r3-reading-\(label)", size: size, reading: true)
+      try await present("r4-reading-\(label)", size: size, reading: true)
     }
-    try await present("r3-reading-200", size: wide, reading: true, zoom: 2)
-    try await present("r3-reading-autohide-1600", size: wide, reading: true, autoHide: true)
-    // Clean full screen: only the text, the audio meter and the reading line.
-    try await present("r3-reading-focus-1600", size: wide, reading: true, focus: true)
-    try await present("r3-reading-focus-1280", size: laptop, reading: true, focus: true)
-    // Editing: a top band, an editable surface, no meter.
+    try await present("r4-reading-200", size: wide, reading: true, zoom: 2)
+    try await present("r4-reading-long-1280", size: laptop, reading: true, script: longRecord)
+    try await present("r4-reading-autohide-1600", size: wide, reading: true, autoHide: true)
+    // Focus: only the text, the audio meter and the reading line, with a short "Esc to exit".
+    for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
+      try await present("r4-reading-focus-\(label)", size: size, reading: true, focus: true)
+    }
+    // Editing: Save and Cancel on the editor's own edge, at every size and with a long script.
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r3-editing-\(label)", size: size, editing: true)
+      try await present("r4-editing-\(label)", size: size, editing: true)
     }
-    try await present("r3-editing-200", size: wide, editing: true, zoom: 2)
-    try await present("r3-editing-4k", size: uhd, editing: true)
-    try await present("r3-reading-focus-4k", size: uhd, reading: true, focus: true)
+    try await present("r4-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r4-editing-4k", size: uhd, editing: true)
+    try await present("r4-editing-long-1600", size: wide, editing: true, script: longRecord)
+    try await present("r4-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
     store.session.pause()
     store.uiZoom = 1
     defaults.set(false, forKey: "presenterFocusMode")
   }
 
-  func testMicMeterRound2States() async throws {
+  func testMicMeterRound4States() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let meter = InputMeter()
-    for (name, peak, clipping, listening) in [("quiet", Float(-48), false, true), ("speech", Float(-20), false, true), ("peaking", Float(-9), false, true),
+    // Peaking sits in the yellow band at about -8; hot has the clip lamp lit; the rest are the quiet states.
+    for (name, peak, clipping, listening) in [("quiet", Float(-48), false, true), ("speech", Float(-20), false, true), ("peaking", Float(-8), false, true),
                                               ("hot", Float(-2), true, true), ("nosignal", nil, false, true), ("off", Float(-9), false, false)] as [(String, Float?, Bool, Bool)] {
       meter.reset()
       if let peak { meter.show(peakDBFS: peak, isClipping: clipping) }
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM ISO", isListening: listening).frame(width: 96, height: 420).padding(Space.md).background(Color(white: 0.035)),
-                         name: "r2-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: URL(fileURLWithPath: output))
+                         name: "r4-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: URL(fileURLWithPath: output))
+    }
+    // The horizontal meter (the Adjust mic card) keeps the same scale and centred words.
+    for (name, peak, clipping) in [("peaking", Float(-8), false), ("hot", Float(-2), true)] {
+      meter.reset()
+      meter.show(peakDBFS: peak, isClipping: clipping)
+      try await snapshot(MicMeterView(meter: meter, micName: "ATEM ISO", showsHeading: false).frame(width: 360, height: 96).padding(Space.md).background(Color(white: 0.12)),
+                         name: "r4-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: URL(fileURLWithPath: output))
     }
     meter.reset()
   }

@@ -45,7 +45,12 @@ struct ScriptTextView: View {
   }
   var body: some View {
     ScriptTextCanvas(configuration: self)
-      .mask { ReadingViewportMask(flipped: verticalMirror) }
+      .mask { ReadingViewportMask(flipped: verticalMirror, fadeHeight: Self.fadeHeight(fontSize: fontSize)) }
+  }
+  /// The bottom fade is about a line and a half, so the last visible line dims gradually at every text
+  /// and interface size instead of the next one vanishing at once.
+  static func fadeHeight(fontSize: Double) -> CGFloat {
+    min(160, max(ReadingViewportMask.fadeHeight, CGFloat(fontSize * 1.6)))
   }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -299,6 +304,28 @@ struct ScriptTextView: View {
       renderedStyle = style
       return true
     }
+    /// The blank line between two paragraphs is a whole line of height on top of the paragraph spacing,
+    /// which pushed upcoming words out of view. Reading draws it at 40% of a line: still a clear break,
+    /// with no character added or removed, so the file and every offset stay as they are.
+    static func shrinkBlankLines(in text: NSMutableAttributedString, fontSize: Double) {
+      let plain = text.string as NSString
+      var blanks: [NSRange] = []
+      var location = 0
+      while location < plain.length {
+        let range = plain.paragraphRange(for: NSRange(location: location, length: 0))
+        if range.length == 1, plain.character(at: range.location) == 10 { blanks.append(range) }
+        location = max(location + 1, NSMaxRange(range))
+      }
+      for range in blanks {
+        let style = ((text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle) ?? .default)
+          .mutableCopy() as! NSMutableParagraphStyle
+        style.minimumLineHeight = fontSize * blankLineHeight
+        style.maximumLineHeight = fontSize * blankLineHeight
+        text.addAttribute(.paragraphStyle, value: style, range: range)
+      }
+    }
+    static let blankLineHeight = 0.4
+
     func render(document: PrompterDocument, fontName: String, fontSize: Double, textOpacity: Double,
       fontWeight: String = "Regular", textColorHex: String = "#FFFFFF", lineSpacing: Double = 0.16,
       paragraphSpacing: Double = 0.34, alignment: String = "Left",
@@ -319,6 +346,7 @@ struct ScriptTextView: View {
           lineSpacing: max(3, fontSize * lineSpacing), paragraphSpacing: max(10, fontSize * paragraphSpacing),
           alignment: NSTextAlignment(setting: alignment))))
       let full = NSRange(location: 0, length: attributed.length)
+      Self.shrinkBlankLines(in: attributed, fontSize: fontSize)
       if overVideo {
         let halo = NSShadow()
         halo.shadowColor = NSColor.black.withAlphaComponent(0.6)
@@ -764,6 +792,7 @@ struct ScriptTextCanvas: NSViewRepresentable {
 struct ReadingViewportMask: View {
   static let fadeHeight: CGFloat = 48
   let flipped: Bool
+  var fadeHeight = Self.fadeHeight
   var body: some View {
     VStack(spacing: 0) {
       if flipped { fade }
@@ -773,6 +802,6 @@ struct ReadingViewportMask: View {
   }
   private var fade: some View {
     LinearGradient(colors: flipped ? [.clear, .black] : [.black, .clear], startPoint: .top, endPoint: .bottom)
-      .frame(height: Self.fadeHeight)
+      .frame(height: fadeHeight)
   }
 }

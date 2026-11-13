@@ -7,15 +7,27 @@ enum MeterZones {
     dBFS.isFinite ? CGFloat(min(1, max(0, (dBFS + 60) / 60))) : 0
   }
 
-  /// Green is normal speech, yellow is where Junior should peak, red is near clipping.
+  /// Green is normal speech, yellow is where Junior should peak, red is too loud (and near clipping).
   static let yellowFrom: Float = -12
   static let redFrom: Float = -6
 
-  static func zoneTrack(vertical: Bool = false) -> some View {
+  /// The presenter's mic meter gives the range that matters, -20 to 0 dBFS, 60% of its length: the
+  /// quiet half of the scale (-60 to -20) shares the rest. Piecewise linear, so the zones stay straight.
+  static let micKnee: Float = -20
+  static let micKneePosition: CGFloat = 0.4
+  static func micPosition(_ dBFS: Float) -> CGFloat {
+    guard dBFS.isFinite else { return 0 }
+    let level = min(0, max(-60, dBFS))
+    if level >= micKnee { return micKneePosition + (1 - micKneePosition) * CGFloat((level - micKnee) / -micKnee) }
+    return micKneePosition * CGFloat((level + 60) / (micKnee + 60))
+  }
+
+  /// `scale` maps dBFS to a position: the OBS-style linear one, or `micPosition`.
+  static func zoneTrack(vertical: Bool = false, scale: (Float) -> CGFloat = position) -> some View {
     LinearGradient(stops: [
-      .init(color: .green, location: 0), .init(color: .green, location: position(yellowFrom)),
-      .init(color: .yellow, location: position(yellowFrom)), .init(color: .yellow, location: position(redFrom)),
-      .init(color: .red, location: position(redFrom)), .init(color: .red, location: 1)
+      .init(color: .green, location: 0), .init(color: .green, location: scale(yellowFrom)),
+      .init(color: .yellow, location: scale(yellowFrom)), .init(color: .yellow, location: scale(redFrom)),
+      .init(color: .red, location: scale(redFrom)), .init(color: .red, location: 1)
     ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
   }
 }

@@ -41,7 +41,8 @@ struct BarLabel: View {
 
 /// One style for every bar button, so Start reading, the call group and the picture tools line up.
 struct BarButtonStyle: ButtonStyle {
-  enum Role { case plain, secondary, on, off, prominent }
+  /// `muted` is a device that is simply switched off: crossed icon on a quiet grey, not an alarm.
+  enum Role { case plain, secondary, on, off, muted, prominent }
   var role = Role.plain
   @Environment(\.isEnabled) private var isEnabled
 
@@ -59,6 +60,7 @@ struct BarButtonStyle: ButtonStyle {
     switch role {
     case .prominent: AlphaStyle.onAccent
     case .off: PresenterBar.warning
+    case .muted: .white.opacity(0.7)
     default: .white
     }
   }
@@ -67,7 +69,7 @@ struct BarButtonStyle: ButtonStyle {
     case .prominent: AlphaStyle.accent
     case .on: .white.opacity(0.2)
     case .off: Color.red.opacity(0.18)
-    case .secondary: .white.opacity(0.08)
+    case .muted, .secondary: .white.opacity(0.08)
     case .plain: .clear
     }
   }
@@ -103,6 +105,8 @@ struct BarDivider: View {
 
 /// A video-call style split button: the main part turns the device on or off, the caret lists the choices.
 struct BarDeviceControl<MenuContent: View>: View {
+  /// Off is a warning (the microphone: Voice stops following) or just a choice (the camera).
+  var offIsWarning = true
   let title: String
   let onSymbol: String
   let offSymbol: String
@@ -118,7 +122,7 @@ struct BarDeviceControl<MenuContent: View>: View {
   var body: some View {
     HStack(spacing: 0) {
       Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle) }
-        .buttonStyle(BarButtonStyle(role: isOn ? .plain : .off))
+        .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
         .disabled(!isEnabled)
@@ -127,11 +131,11 @@ struct BarDeviceControl<MenuContent: View>: View {
           .frame(width: PresenterBar.caretWidth, height: PresenterBar.height).contentShape(Rectangle())
       }
       .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-      .foregroundStyle(isOn ? Color.white.opacity(0.8) : PresenterBar.warning)
+      .foregroundStyle(isOn ? Color.white.opacity(0.8) : offIsWarning ? PresenterBar.warning : .white.opacity(0.7))
       .help(menuLabel)
       .accessibilityLabel(menuLabel).accessibilityValue(menuValue)
     }
-    .background(isOn ? Color.clear : Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
+    .background(isOn ? Color.clear : offIsWarning ? Color.red.opacity(0.18) : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
   }
 }
 
@@ -164,14 +168,35 @@ struct GuideLine: View {
   }
 }
 
-/// A dark column behind the text, the full height of the picture, with a visible edge, so the picture
-/// and the zebras stop showing through the words and no bright strip of video is left above or below.
+/// A dark column behind the text, the full height of the picture, so the picture and the zebras stop
+/// showing through the words. No edge lines (they read as a frame): the sides just soften.
 struct ReadingBacking: View {
   let opacity: Double
+  static let feather = Space.md
   var body: some View {
     Rectangle().fill(Color.black.opacity(opacity))
-      .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.28)).frame(width: 1) }
-      .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.28)).frame(width: 1) }
+      .mask {
+        HStack(spacing: 0) {
+          LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: Self.feather)
+          Color.black
+          LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: Self.feather)
+        }
+      }
+      .allowsHitTesting(false).accessibilityHidden(true)
+  }
+}
+
+/// The Mac presenter's reading line: a soft band that lifts the current line about 11% above the
+/// backing, and under it a clear full-width line, in the gap between lines so it never crosses a letter.
+struct PresenterReadingLine: View {
+  let settings: PrompterSettings
+  /// A line box and the gap under it: the line sits on the band's lower edge.
+  static func bandHeight(fontSize: Double) -> CGFloat { fontSize * 1.3 } // grid: ok follows the line height
+  var body: some View {
+    ZStack(alignment: .bottom) {
+      Rectangle().fill(.white.opacity(0.11))
+      Rectangle().fill(Color.cyan.opacity(max(0.7, settings.guideOpacity))).frame(height: 2)
+    }.frame(height: Self.bandHeight(fontSize: settings.fontSize))
       .allowsHitTesting(false).accessibilityHidden(true)
   }
 }
