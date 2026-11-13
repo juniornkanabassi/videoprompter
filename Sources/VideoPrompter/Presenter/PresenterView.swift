@@ -363,8 +363,8 @@ struct PresenterView: View {
           HStack(spacing: Space.md) { Spacer(minLength: 0); readingTransport; Spacer(minLength: 0) }
         }
         ViewThatFits(in: .horizontal) {
-          HStack { readingStatus; readingSettings; scriptButton; keyboardHint }
-          VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings; scriptButton }; keyboardHint }
+          HStack { readingStatus; readingSettings; scriptButton; editButton; keyboardHint }
+          VStack(spacing: Space.xs) { HStack { readingStatus; readingSettings; scriptButton; editButton }; keyboardHint }
         }
       } else {
         ViewThatFits(in: .horizontal) {
@@ -391,6 +391,16 @@ struct PresenterView: View {
         .frame(minHeight: ceil(AlphaStyle.minTarget / controlZoom))
         .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
     }.buttonStyle(.plain).accessibilityLabel("Open script")
+  }
+  /// Editing where the script is read: the same editor as the library, saved with Save changes.
+  private var editButton: some View {
+    Button { controller.beginEditing() } label: {
+      Label("Edit", systemImage: "pencil")
+        .font(.system(size: 14, weight: .semibold))
+        .padding(.horizontal, Space.sm)
+        .frame(minHeight: ceil(AlphaStyle.minTarget / controlZoom))
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }.buttonStyle(.plain).accessibilityLabel("Edit script here").disabled(!hasScript || draft.isEditing)
   }
 
   @ViewBuilder private var setupTransport: some View {

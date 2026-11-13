@@ -136,6 +136,17 @@ import SwiftUI
     panel?.orderFrontRegardless()
     panel?.makeKey()
   }
+  /// Edits the script in place, in the presenter, with the caret where the reader was. The
+  /// reading pauses and carries on from the same passage when the edit is saved or cancelled.
+  func beginEditing() {
+    guard let draft, let session = activeSession, panel?.isVisible == true, !draft.isEditing,
+      !isShowingWithoutScript, !ReferenceMonitor.shared.isActive, session.activeRecord != nil
+    else { return }
+    draft.begin(session: session)
+    // The panel never activates the app by itself, and the Edit menu needs it active.
+    panel?.makeKey()
+    NSApp.activateUnlessAgentScreen()
+  }
   /// The Prompter menu's Start or Pause. Nothing starts while the script is out of sight.
   func toggleReading(store: AppStore) {
     if store.session.isActivelyRunning || store.session.isCountingDown { store.session.pause() } else if canStartReading { store.session.startReading() }
@@ -602,6 +613,7 @@ class PresenterPanel: NSPanel {
   @Published var errorMessage: String?
   @Published var noticeMessage: String?
   private weak var session: SessionStore?
+  private var recordObserver: AnyCancellable?
   private var resumeAfterEdit = false
   private var closeAction: (() -> Void)?
   private var originalMarkdown: String
@@ -631,6 +643,25 @@ class PresenterPanel: NSPanel {
     isEditing = true
     errorMessage = nil
     noticeMessage = nil
+    // A change from outside (Obsidian saved the file, the library editor typed) joins the draft.
+    recordObserver = session.$activeRecord.dropFirst().sink { [weak self] record in
+      MainActor.assumeIsolated { self?.absorb(record) }
+    }
+  }
+  /// Brings an outside change to this script into the open draft. Without typed changes the
+  /// draft simply follows the file; with them, both are kept when they touch different lines.
+  /// Where they touch the same lines nothing changes here, and saving reports the conflict.
+  func absorb(_ record: ScriptRecord?, duringSave: Bool = false) {
+    guard isEditing, !isSaving || duringSave, let record, record.id == recordID,
+      record.metadata.contentFingerprint != expectedFingerprint || record.metadata.revision != expectedRevision,
+      let merged = LineMerge.merge(base: originalMarkdown, mine: markdown, theirs: record.markdown)
+    else { return }
+    let hadEdits = hasEdits
+    expectedFingerprint = record.metadata.contentFingerprint
+    expectedRevision = record.metadata.revision
+    originalMarkdown = record.markdown
+    if markdown != merged { markdown = merged }
+    if hadEdits { noticeMessage = "This script changed outside Video Prompter. The change was merged into your edit." }
   }
   /// Leaves editing; also how a save that went through finishes.
   func cancel(resuming: Bool = true) {
@@ -638,6 +669,7 @@ class PresenterPanel: NSPanel {
     finishEditing(resuming: resuming)
   }
   private func finishEditing(resuming: Bool = true) {
+    recordObserver = nil
     isEditing = false
     closeRequested = false
     closeAction = nil
@@ -686,9 +718,12 @@ class PresenterPanel: NSPanel {
   }
   func confirm(store: AppStore, resuming: Bool = true) async {
     guard !isSaving else { return }
-    let submitted = markdown
     isSaving = true
     defer { isSaving = false }
+    // Typing from the library editor that is still on its way to disk lands first, then joins.
+    _ = await store.flushPendingSaves()
+    absorb(store.scripts.first { $0.id == recordID }, duringSave: true)
+    let submitted = markdown
     do {
       try await store.savePresentedMarkdown(
         submitted, for: recordID, expectedFingerprint: expectedFingerprint,

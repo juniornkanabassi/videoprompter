@@ -18,14 +18,66 @@ struct EditorTypography {
 
 private final class FormattingTextView: NSTextView {
   var onFormat: ((EditorFormatAction) -> Void)?
+  /// Runs once, when the view is in a window and has its real size: takes focus and puts the
+  /// caret where the reader was. Doing it any earlier (a main-queue hop after SwiftUI made the
+  /// view) found no window or a zero-height pane, so editing started unfocused or off the guide.
+  var onReady: (() -> Void)?
 
   /// Width autoresizing adds the clip view's change, which drifts once a zoomed pane rescales
   /// the scroll view: zoomed out, the text wrapped short of the pane and its right strip took
-  /// no clicks. The text is always exactly as wide as what shows it.
+  /// no clicks. The text is always exactly as wide as what shows it. It is also never shorter
+  /// than the pane, so a click or drag below a short script still lands in the text, as in a
+  /// word processor, instead of dragging the window.
   override func setFrameSize(_ newSize: NSSize) {
     var size = newSize
-    if !isHorizontallyResizable, let clip = superview as? NSClipView { size.width = clip.bounds.width }
+    if let clip = superview as? NSClipView {
+      if !isHorizontallyResizable { size.width = clip.bounds.width }
+      size.height = max(size.height, clip.bounds.height)
+    }
     super.setFrameSize(size)
+    fireReadyIfNeeded()
+  }
+  override func viewDidMoveToWindow() {
+    super.viewDidMoveToWindow()
+    fireReadyIfNeeded()
+  }
+  func fireReadyIfNeeded() {
+    guard let onReady, window != nil, frame.width > 0, (enclosingScrollView?.contentView.bounds.height ?? 0) > 0 else { return }
+    self.onReady = nil
+    // Not inside the layout pass that got us here.
+    DispatchQueue.main.async(execute: onReady)
+  }
+
+  /// Script text is pasted, dragged in and copied out as plain text. Rich text from a web page or
+  /// Word brought its own fonts, colours and pictures into a script that has none, and a copy
+  /// out of the presenter went to other apps as white, 44 pt text.
+  /// AppKit's text types are the legacy "NSStringPboardType", not `.string`; `writeSelection`
+  /// refuses anything else, so the lists are the ones AppKit built, cut down to plain text.
+  private static let plainText = NSPasteboard.PasteboardType("NSStringPboardType")
+  override var readablePasteboardTypes: [NSPasteboard.PasteboardType] { super.readablePasteboardTypes.filter { $0 == Self.plainText } }
+  override var writablePasteboardTypes: [NSPasteboard.PasteboardType] { super.writablePasteboardTypes.filter { $0 == Self.plainText } }
+  override var acceptableDragTypes: [NSPasteboard.PasteboardType] { super.acceptableDragTypes.filter { $0 == Self.plainText } }
+  override func paste(_ sender: Any?) { pasteAsPlainText(sender) }
+
+  /// Cut, copy, paste, select all, undo and redo normally arrive through the Edit menu. The
+  /// presenter is a non-activating panel, so while another app (OBS) is in front, or when the app
+  /// has no menu bar at all, they never did. The focused editor answers them itself.
+  override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    guard isEditable, window?.firstResponder === self, event.type == .keyDown,
+      let key = event.charactersIgnoringModifiers?.lowercased()
+    else { return super.performKeyEquivalent(with: event) }
+    switch (key, event.modifierFlags.intersection([.command, .shift, .option, .control])) {
+    case ("x", [.command]): cut(nil)
+    case ("c", [.command]): copy(nil)
+    case ("v", [.command]), ("v", [.command, .shift, .option]): pasteAsPlainText(nil)
+    case ("a", [.command]): selectAll(nil)
+    case ("z", [.command]): undoManager?.undo()
+    case ("z", [.command, .shift]): undoManager?.redo()
+    // Move to Trash owns Command-Delete in the library menu; in text it deletes to the line start.
+    case ("\u{7F}", [.command]): deleteToBeginningOfLine(nil)
+    default: return super.performKeyEquivalent(with: event)
+    }
+    return true
   }
 
   override func menu(for event: NSEvent) -> NSMenu? {
@@ -129,15 +181,16 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
     view.textContainerInset = NSSize(width: typography.horizontalInset, height: 8)
     context.coordinator.configure(view, markdown: markdown, fontName: fontName, fontSize: fontSize, typography: typography,
       readThrough: readThroughSourceOffset)
-    if focusesOnAppear {
-      DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
-    }
-    if let anchorSourceOffset {
-      DispatchQueue.main.async { [guideFraction, verticalMirror] in
-        context.coordinator.scrollToAnchor(
-          view, sourceOffset: anchorSourceOffset, guideFraction: guideFraction,
-          verticalMirror: verticalMirror)
+    if focusesOnAppear || anchorSourceOffset != nil {
+      view.onReady = { [weak view, coordinator = context.coordinator, focusesOnAppear, anchorSourceOffset, guideFraction, verticalMirror] in
+        guard let view else { return }
+        if focusesOnAppear { view.window?.makeFirstResponder(view) }
+        if let anchorSourceOffset {
+          coordinator.scrollToAnchor(
+            view, sourceOffset: anchorSourceOffset, guideFraction: guideFraction, verticalMirror: verticalMirror)
+        }
       }
+      DispatchQueue.main.async { [weak view] in view?.fireReadyIfNeeded() }
     }
     return root
   }
@@ -171,6 +224,12 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       // Keep links legible on the actual editor surface, including the dark presenter.
       view.linkTextAttributes = [.foregroundColor: typography.textColor,
         .underlineStyle: NSUnderlineStyle.single.rawValue]
+      // The presenter's own surface: the system caret is black in a light-mode Mac, on a dark
+      // page, and its selection colour is pale behind pale text.
+      if typography.textColor != EditorTypography().textColor {
+        view.insertionPointColor = typography.textColor.withAlphaComponent(1)
+        view.selectedTextAttributes = [.backgroundColor: NSColor.controlAccentColor.withAlphaComponent(0.5)]
+      }
       let changedReading = self.readThrough?.offset != readThrough
       // Kept with the text it was measured in, so edits before it move the grey edge with them.
       if changedReading { self.readThrough = readThrough.map { ($0, markdown) } }
