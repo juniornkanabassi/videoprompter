@@ -50,7 +50,8 @@ struct MicrophoneCards: View {
           Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(name).accessibilityValue(detail).accessibilityAddTraits(selected ? .isSelected : [])
-      if selected, let device, device.channels > 1 {
+      // A saved Left or Right stays changeable even if the input now reports one channel.
+      if selected, let device, device.channels > 1 || AudioChannel.load(device.uid, defaults: store.defaults) != .both {
         Picker("Channel", selection: Binding(get: { _ = revision; return AudioChannel.load(device.uid, defaults: store.defaults) }, set: {
           let testing = store.session.isTestingMicrophone
           willChange(); $0.save(device.uid, defaults: store.defaults); revision += 1

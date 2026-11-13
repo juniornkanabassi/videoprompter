@@ -112,9 +112,17 @@ public final class AudioCapture: @unchecked Sendable {
       try session.setPreferredInput(port)
       try session.setActive(true)
     } catch { throw AudioCaptureError.engineFailure(error.localizedDescription) }
+    // Ask for two input channels when the port has them, then check what really arrived: the session's
+    // count and the tap format must both be 2 or more, or Right could silently be a mono or mixed stream.
+    let available = session.maximumInputNumberOfChannels
+    if channel != .both, available >= 2 { try? session.setPreferredInputNumberOfChannels(min(2, available)) }
     let node = engine.inputNode
     let native = node.outputFormat(forBus: 0)
     guard native.sampleRate > 0 else { throw AudioCaptureError.conversionUnavailable }
+    let delivered = min(session.inputNumberOfChannels, Int(native.channelCount))
+    guard channel.capturePlan(hardwareChannels: available, tapChannels: delivered) == .useTap else {
+      throw AudioCaptureError.engineFailure(channel.separateChannelsMessage)
+    }
     try prepareConverter(sampleRate: native.sampleRate)
     bufferHandler = onBuffer
     stopHandler = onStop

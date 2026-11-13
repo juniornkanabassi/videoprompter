@@ -18,9 +18,18 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable {
   }
 }
 
-public enum AudioCaptureError: Error, Equatable, Sendable {
+public enum AudioCaptureError: Error, Equatable, Sendable, LocalizedError {
   case permissionDenied, deviceUnavailable, conversionUnavailable, deviceLost
   case engineFailure(String)
+  public var errorDescription: String? {
+    switch self {
+    case .permissionDenied: "Microphone permission is required."
+    case .deviceUnavailable: "The selected microphone is not connected."
+    case .conversionUnavailable: "The microphone's audio format is not supported."
+    case .deviceLost: "The selected microphone was disconnected."
+    case .engineFailure(let reason): reason
+    }
+  }
 }
 
 public final class AudioCapture: @unchecked Sendable {
@@ -152,10 +161,18 @@ public final class AudioCapture: @unchecked Sendable {
         unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id,
         UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
     else { throw AudioCaptureError.deviceUnavailable }
-    let native = node.outputFormat(forBus: 0)
-    // Better to say so than to hand the recogniser a mix the user told us to exclude.
-    guard channel.canIsolate(tapChannels: Int(native.channelCount), deviceChannels: selectedDevice.channels) else {
-      throw AudioCaptureError.engineFailure("This microphone delivers its channels mixed together, so \(channel.rawValue) cannot be used. Choose Both or another input.")
+    var native = node.outputFormat(forBus: 0)
+    // The device's own stream configuration and the node's hardware side say how many channels really exist.
+    let hardwareChannels = max(selectedDevice.channels, Int(node.inputFormat(forBus: 0).channelCount))
+    switch channel.capturePlan(hardwareChannels: hardwareChannels, tapChannels: Int(native.channelCount)) {
+    case .useTap: break
+    case .requestSeparateChannels:
+      // The tap came back with fewer channels than the hardware has, which can mean a mix. Ask the input unit
+      // for hardware channels 1 and 2 as two client channels, then read the format again.
+      Self.requestSeparateChannels(on: unit, sampleRate: native.sampleRate)
+      native = node.outputFormat(forBus: 0)
+      guard native.channelCount >= 2 else { throw AudioCaptureError.engineFailure(channel.separateChannelsMessage) }
+    case .cannotIsolate: throw AudioCaptureError.engineFailure(channel.separateChannelsMessage)
     }
     try prepareConverter(sampleRate: native.sampleRate)
     bufferHandler = onBuffer
@@ -228,6 +245,16 @@ public final class AudioCapture: @unchecked Sendable {
       defer { self?.stateLock.withLock { self?.pendingBuffers -= 1 } }
       self?.convertAndDeliver(copy, time: time)
     }
+  }
+
+  /// Two non-interleaved float client channels, mapped to hardware channels 1 and 2 (indices 0 and 1).
+  private static func requestSeparateChannels(on unit: AudioUnit, sampleRate: Double) {
+    var format = AudioStreamBasicDescription(mSampleRate: sampleRate, mFormatID: kAudioFormatLinearPCM,
+      mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked | kAudioFormatFlagIsNonInterleaved,
+      mBytesPerPacket: 4, mFramesPerPacket: 1, mBytesPerFrame: 4, mChannelsPerFrame: 2, mBitsPerChannel: 32, mReserved: 0)
+    _ = AudioUnitSetProperty(unit, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output, 1, &format, UInt32(MemoryLayout<AudioStreamBasicDescription>.size))
+    var map: [Int32] = [0, 1]
+    _ = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_ChannelMap, kAudioUnitScope_Output, 1, &map, UInt32(MemoryLayout<Int32>.size * map.count))
   }
 
   /// Every consumer downstream gets the chosen channel as mono float, so the converter always starts from it.

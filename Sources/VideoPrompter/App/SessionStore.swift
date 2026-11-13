@@ -542,7 +542,7 @@ final class SessionStore: ObservableObject {
                 self.meter.reset()
                 self.microphoneTestNotice = error == .deviceLost
                   ? "The selected microphone was disconnected."
-                  : "Microphone test stopped: \(error)"
+                  : "Microphone test stopped: \(error.localizedDescription)"
               }
             }
           })
@@ -555,7 +555,7 @@ final class SessionStore: ObservableObject {
         self.audioCapture = nil
         self.microphoneTestTask = nil
         self.isTestingMicrophone = false
-        self.microphoneTestNotice = "Could not test the microphone: \(error)"
+        self.microphoneTestNotice = "Could not test the microphone: \(error.localizedDescription)"
       }
     }
   }
