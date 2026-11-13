@@ -114,7 +114,7 @@ struct PairingPermissionView: View {
 struct PairingPresentation: ViewModifier {
   @ObservedObject var link: MacLink
   func body(content: Content) -> some View {
-    content.overlay {
+    content.accessibilityHidden(link.pendingPermission != nil).overlay {
       if link.pendingPermission != nil {
         ZStack {
           Color.black.opacity(0.65).ignoresSafeArea()
