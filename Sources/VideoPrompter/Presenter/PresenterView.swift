@@ -776,7 +776,7 @@ struct PresenterView: View {
 
 /// The script being edited, on a visible editable surface, so it reads as a text field and not as the
 /// reading view with a caret in it. Its text has exactly the reading column's width, font, size and
-/// spacing, so no line re-wraps when switching; the box hugs the text with a sensible minimum.
+/// spacing, so no line re-wraps when switching; the box fills the room, so no empty black is left below it.
 /// Editing behaviour is `PresenterEditorView`'s.
 struct PresenterEditingSurface: View {
   @ObservedObject var session: SessionStore
@@ -792,39 +792,15 @@ struct PresenterEditingSurface: View {
   private static let inset = Space.xl
   /// The header row above the text: the same height as the Save and Cancel buttons plus their padding.
   static let headerHeight = PresenterBar.height + 2 * Space.sm
-  /// A short script still gets a calm, roomy box: never less than this share of the room there is.
-  static let minimumShare = 0.7
-
-  /// Measure rendered Markdown with the same fonts and spacing as the editor.
-  static func contentHeight(markdown: String, textWidth: CGFloat, settings: PrompterSettings) -> CGFloat {
-    // shortcut: long scripts fill the viewport; measure them only if fitted long-script editing is needed.
-    guard markdown.count < 4000 else { return .infinity }
-    let storage = NSTextStorage(attributedString: FormattedMarkdownEditModel(markdown: markdown).rendered(
-      fontName: settings.fontName, fontSize: settings.fontSize,
-      typography: EditorTypography(
-        lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
-        paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
-        bold: settings.fontWeight == "Bold")))
-    let layout = NSLayoutManager()
-    let container = NSTextContainer(size: NSSize(width: textWidth, height: .greatestFiniteMagnitude))
-    container.lineFragmentPadding = 0
-    storage.addLayoutManager(layout)
-    layout.addTextContainer(container)
-    layout.ensureLayout(for: container)
-    return ceil(layout.usedRect(for: container).height)
-  }
 
   var body: some View {
     let measure = ScriptTextView.measureCappedFraction(width: width, textWidth: settings.textWidth, fontSize: settings.fontSize)
     let columnInset = ScriptTextView.sideInset(width: width, textWidth: measure)
-    let textWidth = max(1, width - 2 * columnInset - 10)
     let shape = RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)
     let boxWidth = max(1, width - 2 * max(0, columnInset - Self.inset))
     GeometryReader { geometry in
       let header = Self.headerHeight * zoom
       let available = max(1, geometry.size.height - Space.xl - Space.xxl - header)
-      let content = Self.contentHeight(markdown: draft.markdown, textWidth: textWidth, settings: settings)
-      let height = min(available, max(settings.fontSize * 3, available * Self.minimumShare, content + Space.md + Space.xl))
       // One box: its header (Save and Cancel at the editor's own right edge), then the text.
       VStack(spacing: 0) {
         PresenterEditingBand(isSaving: isSaving, compact: boxWidth / zoom < 560, save: save, cancel: cancel)
@@ -833,7 +809,7 @@ struct PresenterEditingSurface: View {
           .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
           .rotationEffect(.degrees(Double(settings.rotation)))
           .padding(.top, Space.md)
-          .frame(height: height)
+          .frame(height: available)
       }
       .background(shape.fill(.white.opacity(0.07)))
       .clipShape(shape)
@@ -843,7 +819,7 @@ struct PresenterEditingSurface: View {
       .padding(.horizontal, max(0, columnInset - Self.inset))
       .padding(.top, Space.xl)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }.accessibilityIdentifier("presenter-editing-surface")
+    }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-editing-surface")
   }
 }
 
