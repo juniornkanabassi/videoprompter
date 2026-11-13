@@ -127,9 +127,9 @@ private struct ShotGlyph: View {
   var body: some View {
     let size = portrait ? CGSize(width: 30, height: 44) : CGSize(width: 44, height: 30)
     let sideMark = markAlignment == .leading || markAlignment == .trailing
-    RoundedRectangle(cornerRadius: 5).stroke(.primary, lineWidth: 2).frame(width: size.width, height: size.height)
+    RoundedRectangle(cornerRadius: 5).stroke(.primary, lineWidth: 2).frame(width: size.width, height: size.height) // grid: ok glyph drawing
       .overlay(alignment: markAlignment) {
-        Capsule().fill(.primary).frame(width: sideMark ? 4 : 18, height: sideMark ? 18 : 4).padding(Space.xs)
+        Capsule().fill(.primary).frame(width: sideMark ? 4 : 18, height: sideMark ? 18 : 4).padding(Space.xs) // grid: ok glyph drawing
       }
       .frame(height: 48).accessibilityHidden(true)
   }

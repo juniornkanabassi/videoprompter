@@ -118,10 +118,14 @@ struct PresenterView: View {
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
       let meterWidth = meterReserved ? Self.meterWidth * controlZoom : 0
       let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
-      // A fixed column for the side cards, then the picture fills the rest up to the meter: no empty gutter.
-      let cardColumn = setup && (keyVisible || sourceInfo != nil) ? Self.cardColumnWidth(width: geometry.size.width, zoom: controlZoom) : 0
-      // The script sits in the picture region: the stage less the card column and the meter.
-      let regionWidth = max(1, geometry.size.width - cardColumn - meterWidth)
+      let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
+      let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
+        (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
+      // Setup keeps equal sides so the picture stays centred: the card column on the left, the meter (plus any rest) on the right.
+      let fixedColumn = setup && (keyVisible || sourceInfo != nil) ? Self.cardColumnWidth(width: geometry.size.width, zoom: controlZoom) : 0
+      let cardColumn = setup ? max(meterWidth, min(fixedColumn, pictureAspect > 1 ? geometry.size.width * 0.25 : fixedColumn)) : 0
+      // The script sits in the picture region: the stage less the setup sides, or less the meter while reading.
+      let regionWidth = max(1, setup ? geometry.size.width - 2 * cardColumn : geometry.size.width - meterWidth)
       let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
       let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
       let backingWidth = max(1, min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl))
@@ -160,7 +164,7 @@ struct PresenterView: View {
             if !editing {
               GuideLine(settings: store.settings)
                 .mask { HStack(spacing: 0) { Rectangle().frame(width: 8); Spacer(minLength: 0); Rectangle().frame(width: 8) } }
-                .frame(width: backingWidth, height: store.settings.fontSize * 1.3)
+                .frame(width: backingWidth, height: store.settings.fontSize * 1.3) // grid: ok band follows the line height
                 .background(Color.cyan.opacity(store.settings.guideOpacity * 0.06))
                 .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: store.settings.guideFraction)
                   - store.settings.fontSize * 0.65)
@@ -217,6 +221,7 @@ struct PresenterView: View {
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
           .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
+        if setup { Color.clear.frame(width: max(0, cardColumn - meterWidth)) }
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening)
             .frame(width: Self.meterWidth, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
