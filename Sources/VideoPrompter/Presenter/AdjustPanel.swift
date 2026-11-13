@@ -75,11 +75,8 @@ struct AdjustPanel: View {
     Button { selection = tab } label: {
       VStack(spacing: Space.xs) {
         Image(systemName: tab.symbol).font(.system(size: 16, weight: .semibold)).frame(height: Space.xl)
-        // The full name when it fits on one line, else the short one; VoiceOver always hears the full name.
-        ViewThatFits(in: .horizontal) {
-          tabTitle(tab.rawValue).fixedSize(horizontal: true, vertical: false)
-          tabTitle(tab == .falseColour ? "Colour" : tab.rawValue).minimumScaleFactor(0.7)
-        }.padding(.horizontal, Space.xs)
+        // "Colour" is the one visible word for the false colour tool; VoiceOver hears the full name.
+        tabTitle(tab == .falseColour ? "Colour" : tab.rawValue).minimumScaleFactor(0.7).padding(.horizontal, Space.xs)
       }.frame(maxWidth: .infinity, minHeight: 52)
         // Navigation stays quieter than the content: the open tab is yellow, the others are plain.
         .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white.opacity(0.8))

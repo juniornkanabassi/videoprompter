@@ -35,6 +35,12 @@ final class Alpha270Tests: XCTestCase {
     AudioChannel.both.save("atem", defaults: defaults)
     XCTAssertEqual(AudioChannel.load("atem", defaults: defaults), .both)
   }
+  func testChannelCountIsSingularForOne() {
+    var device = AudioInputDevice(id: 1, uid: "a", name: "A")
+    XCTAssertTrue(device.detail.contains("1 channel ·"), device.detail)
+    device.channels = 2
+    XCTAssertTrue(device.detail.contains("2 channels ·"), device.detail)
+  }
   func testWelcomeLanguagesAndNewDefaults() {
     XCTAssertEqual(ScriptLanguage.detect(WelcomeScript.monitorMarkdown), .english)
     XCTAssertEqual(PrompterSettings().mode, "Voice")
@@ -59,6 +65,8 @@ extension AppearanceSnapshotTests {
     atem.channels = 2; atem.connection = "Thunderbolt"
     var virtual = AudioInputDevice(id: 2, uid: "loopback", name: "Loopback Audio")
     virtual.channels = 2; virtual.connection = "Virtual"
+    var builtIn = AudioInputDevice(id: 3, uid: "builtin", name: "MacBook Pro Microphone")
+    builtIn.connection = "Built in"
     // A speaking level, like the presenter's side meter in the other fixtures.
     recorder.inputMeter.show(peakDBFS: -14, isClipping: false)
     try await snapshot(AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, microphonesOverride: [atem, virtual], recorder: recorder), name: "alpha-270-adjust-mic", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
@@ -66,9 +74,16 @@ extension AppearanceSnapshotTests {
     for (name, width, zoom, uid) in [("narrow", 340.0, 1.0, "atem"), ("standard", 470.0, 1.0, "atem"), ("wide", 900.0, 1.0, "atem"), ("200", 470.0, 2.0, "atem"), ("default", 470.0, 1.0, ""), ("nosignal", 470.0, 1.0, "atem")] {
       store.settings.audioDeviceUID = uid.isEmpty ? nil : uid
       if name == "nosignal" { recorder.inputMeter.reset() } else { recorder.inputMeter.show(peakDBFS: -14, isClipping: false) }
-      let view = AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, microphonesOverride: [atem, virtual], recorder: recorder)
+      let view = AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, microphonesOverride: [builtIn, atem, virtual], recorder: recorder)
       try await snapshot(view, name: "alpha-cards-mic-\(name)", size: .init(width: width * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
     }
+    // The loud state with the same input the side meter names: -3 dBFS, and the clip lamp lit a moment ago.
+    store.settings.audioDeviceUID = "atem"
+    recorder.inputMeter.show(peakDBFS: -2, isClipping: true)
+    Task { @MainActor in try? await Task.sleep(for: .milliseconds(50)); recorder.inputMeter.show(peakDBFS: -3, isClipping: false) }
+    let clipView = AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, microphonesOverride: [builtIn, atem, virtual], recorder: recorder)
+    try await snapshot(clipView, name: "alpha-cards-mic-clip", size: .init(width: 470, height: 900), scheme: .dark, destination: destination, settleDelay: .milliseconds(300))
+    recorder.inputMeter.show(peakDBFS: -14, isClipping: false)
     store.settings.audioDeviceUID = "atem"
     camera.displayMode = .videoOnly
     for zoom in [1.0, 1.5, 2.0] {

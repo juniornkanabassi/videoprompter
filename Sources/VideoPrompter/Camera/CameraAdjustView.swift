@@ -50,18 +50,18 @@ struct CameraAdjustView: View {
                 }
               }.allowsHitTesting(false)
               Spacer(minLength: 0)
-              // Rename is a labelled button, centred in the row; the check badge keeps its own column to the right.
+              // Rename is a quiet text button and the check sits beside it, so every row ends on one right edge.
               Button { renaming = device; nickname = device.nickname ?? "" } label: {
                 HStack(spacing: Space.xs) {
                   Image(systemName: "pencil")
                   Text("Rename").lineLimit(1)
-                }.font(.system(size: 14, weight: .semibold)).padding(.horizontal, Space.sm)
+                }.font(.system(size: 14, weight: .medium)).foregroundStyle(.primary.opacity(0.75))
                   .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
-                  .background(.primary.opacity(0.10), in: RoundedRectangle(cornerRadius: Space.md))
               }.buttonStyle(.plain).accessibilityLabel("Rename \(device.displayName)").help("Rename this camera")
-              Color.clear.frame(width: Space.xl, height: 1).accessibilityHidden(true)
+              Image(systemName: "checkmark.circle.fill").cardTitle().foregroundStyle(AlphaStyle.accent)
+                .opacity(selected ? 1 : 0).frame(width: Space.xl).accessibilityHidden(true)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).accessibilityElement(children: .contain)
-          }.modifier(ChoiceTileStyle(selected: selected, minHeight: 52))
+          }.modifier(ChoiceTileStyle(selected: selected, minHeight: 52, showsBadge: false))
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
         }
         if showsShotHeading { Text("Shot").font(.system(size: 17, weight: .semibold)) }
@@ -123,8 +123,9 @@ struct CameraAdjustView: View {
 struct ChoiceTileStyle: ViewModifier {
   var selected: Bool
   var minHeight: CGFloat = 120
+  var showsBadge = true
   func body(content: Content) -> some View {
-    content.frame(maxWidth: .infinity, minHeight: minHeight).modifier(InputCardStyle(selected: selected))
+    content.frame(maxWidth: .infinity, minHeight: minHeight).modifier(InputCardStyle(selected: selected, showsBadge: showsBadge))
   }
 }
 
