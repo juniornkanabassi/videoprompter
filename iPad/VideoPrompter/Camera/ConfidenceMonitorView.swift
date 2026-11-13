@@ -84,6 +84,7 @@ struct ConfidenceMonitorView: View {
                       }
                 .padding(16)
               }
+              .clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
               .position(x: area.size.width / 2, y: area.size.height / 2)
               .clipped()
           }
@@ -149,7 +150,10 @@ struct ConfidenceMonitorView: View {
 /// Observes the meter itself, so level-only updates redraw just this.
 private struct MonitorMeter: View {
   @ObservedObject var meter: RemoteMicMeter
-  var body: some View { DBMeter(levelDB: meter.levelDB, axis: .vertical) }
+  var body: some View {
+    DBMeter(levelDB: meter.levelDB, axis: .vertical)
+      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+  }
 }
 
 private struct MonitorPicture: UIViewRepresentable {
@@ -167,6 +171,8 @@ private struct MonitorPicture: UIViewRepresentable {
       super.init(frame: .zero)
       backgroundColor = .black
       clipsToBounds = true
+      display.cornerRadius = AlphaStyle.cardCorner
+      display.masksToBounds = true
       display.removeFromSuperlayer()
       self.layer.addSublayer(display)
     }

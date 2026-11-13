@@ -17,7 +17,7 @@ struct DBMeter: View {
   nonisolated static func thresholdBand(_ tick: Double) -> Band? { tick >= -6 ? .red : tick >= -12 ? .yellow : nil }
   private static let colours: [Color] = [Color(red: 0.37, green: 0.76, blue: 0.54), Color(red: 0.96, green: 0.81, blue: 0.29), Color(red: 0.89, green: 0.41, blue: 0.36)]
   private static func colour(_ band: Band) -> Color { colours[band == .green ? 0 : band == .yellow ? 1 : 2] }
-  private static let quiet = Color(white: 1, opacity: 0.62)
+  private static let quiet = Color.white
   /// Half a label's height, kept free above and below the bar so the end numbers are never clipped.
   private static let labelRoom: CGFloat = 10
 

@@ -263,6 +263,7 @@ struct CameraPreview: UIViewRepresentable {
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     private let guideLayer = CAShapeLayer()
     private let shadeLayer = CAShapeLayer()
+    private let pictureMask = CAShapeLayer()
     private var coordinator: AVCaptureDevice.RotationCoordinator?
     private var observation: NSKeyValueObservation?
     private var deviceID: String?
@@ -275,6 +276,7 @@ struct CameraPreview: UIViewRepresentable {
       shadeLayer.fillRule = .evenOdd
       guideLayer.fillColor = nil
       guideLayer.lineWidth = 1.5
+      layer.mask = pictureMask
       layer.addSublayer(shadeLayer)
       layer.addSublayer(guideLayer)
     }
@@ -319,6 +321,7 @@ struct CameraPreview: UIViewRepresentable {
       guideLayer.frame = bounds
       let picture = previewLayer.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
       let rect = picture.isEmpty || picture.isInfinite ? bounds : picture
+      pictureMask.path = UIBezierPath(roundedRect: rect, cornerRadius: AlphaStyle.cardCorner).cgPath
       guideLayer.path = CameraOverlay.guidePath(picture: rect, guides: guides)
       guideLayer.strokeColor = guides.strokeColor
       shadeLayer.path = guides.marker == nil ? nil : CameraOverlay.shadePath(picture: rect, guides: guides)

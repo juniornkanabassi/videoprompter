@@ -80,6 +80,14 @@ struct MicMeterView: View {
     return (aim, loud)
   }
 
+  private var labelColour: Color {
+    #if os(iOS)
+    .white
+    #else
+    Palette.onDarkQuiet(contrast)
+    #endif
+  }
+
   private var aimColour: Color { MeterZones.yellow }
   private var loudColour: Color { Color(red: 1, green: 0.5, blue: 0.46) }
 
@@ -105,7 +113,7 @@ struct MicMeterView: View {
               .font(.system(size: size(12.5))).multilineTextAlignment(.center).lineLimit(2).truncationMode(.tail).minimumScaleFactor(0.85)
               .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
               .help(micName)
-              .foregroundStyle(Palette.onDarkQuiet(contrast))
+              .foregroundStyle(labelColour)
           }
         }
         .padding(.horizontal, Space.xs)
@@ -128,7 +136,7 @@ struct MicMeterView: View {
   private var heading: some View {
     Text("MIC")
       .font(.system(size: size(14), weight: .semibold))
-      .foregroundStyle(Palette.onDarkQuiet(contrast))
+      .foregroundStyle(labelColour)
   }
 
   /// The lamp at 0 dBFS: dark, or lit red for the two seconds after the input clipped.
@@ -171,7 +179,7 @@ struct MicMeterView: View {
     HStack(spacing: Space.xs) {
       clipLamp(horizontal: horizontal, lit: lit)
       Text("clip").font(.system(size: size(12))).lineLimit(1).fixedSize()
-        .foregroundStyle(lit ? loudColour : Palette.onDarkQuiet(contrast))
+        .foregroundStyle(lit ? loudColour : labelColour)
     }
   }
 
@@ -217,7 +225,7 @@ struct MicMeterView: View {
         .font(.system(size: size(db.isFinite && isListening ? 22 : 15), weight: .semibold)).monospacedDigit()
         .foregroundStyle(isListening ? MeterZones.readoutColour(db, loud: loudColour) : .white.opacity(0.7))
         .minimumScaleFactor(0.7).lineLimit(1)
-      Text("dBFS").font(.system(size: size(13))).foregroundStyle(Palette.onDarkQuiet(contrast))
+      Text("dBFS").font(.system(size: size(13))).foregroundStyle(labelColour)
         .opacity(db.isFinite && isListening ? 1 : 0)
     }
   }
@@ -233,7 +241,7 @@ struct MicMeterView: View {
             ForEach(Self.scale, id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: size(13))).monospacedDigit()
-                .foregroundStyle(Palette.onDarkQuiet(contrast))
+                .foregroundStyle(labelColour)
                 .frame(width: tickWidth, alignment: .trailing)
                 .position(x: tickWidth / 2, y: geometry.size.height * (1 - MeterZones.micPosition(entry.value)))
             }
@@ -324,7 +332,7 @@ struct MicMeterView: View {
           ZStack {
             ForEach(Self.scale, id: \.value) { entry in
               Text(entry.label)
-                .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.onDarkQuiet(contrast)).fixedSize()
+                .font(.system(size: 13)).monospacedDigit().foregroundStyle(labelColour).fixedSize()
                 .position(x: geometry.size.width * MeterZones.micPosition(entry.value), y: 8)
             }
           }
