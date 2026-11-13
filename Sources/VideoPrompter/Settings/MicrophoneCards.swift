@@ -2,14 +2,17 @@ import SwiftUI
 
 struct InputCardStyle: ViewModifier {
   var selected: Bool
+  /// Content and the check badge both sit this far inside the border, clear of the rounded corner.
+  static let inset = Space.md
   func body(content: Content) -> some View {
-    content.padding(Space.sm)
+    content.padding(Self.inset)
       .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
       .overlay(alignment: .topTrailing) {
         if selected {
-          Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent)
-            .padding(Space.xs).accessibilityHidden(true)
+          // Headline-sized, so it shares the title row's height and line.
+          Image(systemName: "checkmark.circle.fill").font(.headline).foregroundStyle(AlphaStyle.accent)
+            .padding(Self.inset).accessibilityHidden(true)
         }
       }
   }
@@ -49,7 +52,7 @@ struct MicrophoneCards: View {
           VStack(alignment: .leading, spacing: Space.xs) {
             Text(name).font(.headline).fixedSize(horizontal: false, vertical: true)
             Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-          }.padding(.trailing, Space.lg)
+          }.padding(.trailing, Space.xxl)
           Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, minHeight: hasControls ? 0 : 60, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(name).accessibilityValue(detail).accessibilityAddTraits(selected ? .isSelected : [])
@@ -58,7 +61,7 @@ struct MicrophoneCards: View {
         VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
           // A saved Left or Right stays changeable even if the input now reports one channel.
           if let device, device.channels > 1 || AudioChannel.load(device.uid, defaults: store.defaults) != .both { channelPicker(device) }
-          if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 96).padding(.horizontal, -Space.sm) }
+          if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 96).padding(.horizontal, -InputCardStyle.inset) }
         }.padding(.leading, Space.xxl + Space.sm)
       }
     }.modifier(InputCardStyle(selected: selected))

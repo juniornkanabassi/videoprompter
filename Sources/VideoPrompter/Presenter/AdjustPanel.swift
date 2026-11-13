@@ -35,7 +35,7 @@ struct AdjustPanel: View {
     VStack(spacing: 0) {
         HStack(spacing: Space.xs) {
           ForEach(AdjustTab.sources, id: \.self) { tabButton($0) }
-          Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: 36).padding(.horizontal, Space.xs).accessibilityHidden(true)
+          Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: 28).padding(.horizontal, Space.xs).accessibilityHidden(true)
           ForEach(AdjustTab.pictureTools, id: \.self) { tabButton($0) }
         }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
         .padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
@@ -59,7 +59,7 @@ struct AdjustPanel: View {
       }
     }.padding(AlphaStyle.panelInset)
     }
-      if selection == .mic { micFooter }
+      if selection == .mic || selection == .camera { footer }
     }.frame(maxWidth: 560).frame(maxWidth: .infinity) // grid: ok A wide sheet keeps the panel's proportions.
       .uiZoom(zoom).frame(width: width).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
@@ -68,21 +68,22 @@ struct AdjustPanel: View {
   private func tabButton(_ tab: AdjustTab) -> some View {
     Button { selection = tab } label: {
       VStack(spacing: Space.xs) {
-        Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold)).frame(height: Space.xxl)
+        Image(systemName: tab.symbol).font(.system(size: 16, weight: .semibold)).frame(height: Space.xl)
         // The full name when it fits on one line, else the short one; VoiceOver always hears the full name.
         ViewThatFits(in: .horizontal) {
           tabTitle(tab.rawValue).fixedSize(horizontal: true, vertical: false)
           tabTitle(tab == .falseColour ? "Colour" : tab.rawValue).minimumScaleFactor(0.7)
         }.padding(.horizontal, Space.xs)
-      }.frame(maxWidth: .infinity, minHeight: 60)
-        .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white)
-        .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+      }.frame(maxWidth: .infinity, minHeight: 52)
+        // Navigation stays quieter than the content: the open tab is yellow, the others are plain.
+        .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white.opacity(0.8))
+        .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
     }.buttonStyle(.plain).accessibilityLabel(tab.rawValue).accessibilityAddTraits(selection == tab ? .isSelected : [])
   }
   private func tabTitle(_ title: String) -> some View { Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1) }
   @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
   private var keyToggle: some View {
-    Toggle("Show key", isOn: $keyExpanded).toggleStyle(.switch).frame(minHeight: AlphaStyle.minTarget)
+    Toggle("Show key", isOn: $keyExpanded).toggleStyle(AccentSwitchStyle()).frame(minHeight: AlphaStyle.minTarget)
   }
   private var mic: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
@@ -90,7 +91,8 @@ struct AdjustPanel: View {
         Text("Microphone").font(.title2.bold())
         Spacer(minLength: Space.sm)
         Toggle(isOn: $showsMic) { Text("Show meter").font(.callout).foregroundStyle(.secondary) }
-          .toggleStyle(.switch).fixedSize().accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter")
+          .toggleStyle(AccentSwitchStyle())
+          .fixedSize().accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter")
       }.frame(minHeight: AlphaStyle.minTarget)
       MicrophoneCards(store: store, devices: microphonesOverride ?? microphones, willChange: {
         store.session.stopMicrophoneTest()
@@ -98,12 +100,30 @@ struct AdjustPanel: View {
       }, meter: recorder.inputMeter)
     }.onAppear { microphones = AudioCapture.inputDevices() }
   }
-  private var micFooter: some View {
+  private var footer: some View {
     HStack {
-      Text("Speak to check your level.").foregroundStyle(.secondary)
+      Text(selection == .mic ? "Speak to check your level." : "Remembered for each camera.").foregroundStyle(.secondary)
       Spacer(minLength: Space.sm)
       SettingsLink { HStack(spacing: Space.xs) { Text("More in Settings"); Image(systemName: "chevron.right") } }
         .buttonStyle(.plain).frame(minHeight: AlphaStyle.minTarget)
     }.padding(.horizontal, AlphaStyle.panelInset).overlay(alignment: .top) { Divider() }
+  }
+}
+
+/// A switch that is yellow whenever it is on, even in a window that is not frontmost (the system switch goes
+/// grey there). VoiceOver still hears an ordinary switch.
+struct AccentSwitchStyle: ToggleStyle {
+  func makeBody(configuration: Configuration) -> some View {
+    Button { configuration.isOn.toggle() } label: {
+      HStack(spacing: Space.sm) {
+        configuration.label
+        Spacer(minLength: Space.sm)
+        Capsule().fill(configuration.isOn ? AlphaStyle.accent : Color.white.opacity(0.25)).frame(width: 44, height: 26) // grid: ok switch drawing
+          .overlay(alignment: configuration.isOn ? .trailing : .leading) {
+            Circle().fill(configuration.isOn ? AlphaStyle.onAccent : Color.white).padding(3).frame(width: 26, height: 26) // grid: ok switch drawing
+          }
+      }.frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
+    }.buttonStyle(.plain).animation(.easeInOut(duration: 0.15), value: configuration.isOn)
+      .accessibilityRepresentation { Toggle(isOn: configuration.$isOn) { configuration.label } }
   }
 }
