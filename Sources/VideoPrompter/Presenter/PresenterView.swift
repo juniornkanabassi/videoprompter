@@ -48,6 +48,8 @@ struct PresenterView: View {
   @State private var cameraSection = "Camera"
   @State private var quietTask: Task<Void, Never>?
   @State private var barTask: Task<Void, Never>?
+  @State private var focusHintTask: Task<Void, Never>?
+  @State private var focusHintVisible = false
   @State private var showsSettings = false
   @State private var showsReadingNotice = false
   @State private var cleanControlsRevealed = false
@@ -80,12 +82,20 @@ struct PresenterView: View {
   }
   /// The width of the slim microphone strip at the right edge, before zoom: dB numbers, bar and zone words.
   static let meterWidth: CGFloat = 120
-  /// One fixed width for the side cards (exposure key, camera), with their padding, so they line up.
+  /// One width for the side cards (exposure key, camera), with their padding, so they line up. It is a
+  /// share of the window (12%, between 188 and 300 points before zoom), so the column stays in
+  /// proportion from a laptop to a 4K screen instead of leaving a wide empty strip.
   static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
-    (width / zoom >= 1400 ? 248 : 188) * zoom + Space.md * 2
+    min(300, max(188, width / zoom * 0.12)) * zoom + Space.md * 2
   }
-  /// Room kept under the text so the last visible line fades out clear of the bar, at every interface size.
-  static let readingBottomInset: CGFloat = Space.section
+  /// How much of the setup bar shows words, decided by one rule at every size: the window's width in
+  /// points, before interface zoom and the 4K boost. Picture tools keep their words above `standard`.
+  enum BarTier { case full, standard, compact }
+  static func barTier(width: CGFloat) -> BarTier { width >= 1700 ? .full : width >= 1150 ? .standard : .compact }
+  private var barTier: BarTier { Self.barTier(width: viewport.width / controlZoom) }
+  /// The text runs down to the bar and fades out over `ScriptTextView.fadeHeight` (a line and a half),
+  /// so no extra room is kept under it and upcoming words stay in view at every interface size.
+  static let readingBottomInset: CGFloat = 0
   /// The strip stays reserved while editing, so the editor wraps its lines exactly as reading does.
   private var meterReserved: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
   @State private var viewport = CGSize(width: 1600, height: 1000)
@@ -115,7 +125,9 @@ struct PresenterView: View {
   private var readingStage: some View {
     GeometryReader { geometry in
       let editing = draft.isEditing
-      let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
+      // The key explains the picture's zebras or false colour, so it needs a picture.
+      let hasPicture = referencePicture != nil || camera.pictureSize != nil
+      let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && hasPicture && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
       let meterWidth = meterReserved ? Self.meterWidth * controlZoom : 0
       let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
       let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
@@ -152,36 +164,37 @@ struct PresenterView: View {
               if let referencePicture { Image(nsImage: referencePicture).resizable().scaledToFit() }
               else { CameraPreview(model: camera, presenter: true) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              // Focus keeps the picture running (a take may be on) but out of sight: no zebras, false colour or guides behind the words.
+              .opacity(focusActive ? 0 : 1)
               .task { if startsCamera { camera.start() } }
           }
           if showsScript {
             Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
               .opacity(editing ? 1 : Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
-            if !editing && camera.presentsWithVideo {
+            if !editing && camera.presentsWithVideo && !focusActive {
               ReadingBacking(opacity: reduceTransparency ? 0.94 : 0.86).frame(width: backingWidth).frame(maxHeight: .infinity)
             }
-            // Only the edge marks are bright; the soft band cannot strike through letterforms.
+            // A soft band behind the current line and a clear full-width line under it, in the line gap.
             if !editing {
-              GuideLine(settings: store.settings)
-                .mask { HStack(spacing: 0) { Rectangle().frame(width: 8); Spacer(minLength: 0); Rectangle().frame(width: 8) } }
-                .frame(width: backingWidth, height: store.settings.fontSize * 1.3) // grid: ok band follows the line height
-                .background(Color.cyan.opacity(store.settings.guideOpacity * 0.06))
+              PresenterReadingLine(settings: store.settings)
+                .frame(width: backingWidth)
                 .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: store.settings.guideFraction)
-                  - store.settings.fontSize * 0.65)
+                  - PresenterReadingLine.bandHeight(fontSize: store.settings.fontSize) / 2)
             }
-            Group {
-              if editing {
-                PresenterEditingSurface(session: session, draft: draft, settings: store.settings, width: regionWidth, zoom: controlZoom) {
-                  editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
-                }
-              } else {
-                PresenterScriptView(session: session, settings: store.settings,
-                  sideInset: columnInset,
-                  overVideo: camera.presentsWithVideo,
-                  topInset: scriptTopInset, bottomInset: bottomInset)
+            if editing {
+              // Save and Cancel stay upright; only the text itself follows the mirror and rotation settings.
+              PresenterEditingSurface(session: session, draft: draft, settings: store.settings, width: regionWidth, zoom: controlZoom,
+                isSaving: draft.isSaving, save: { Task { await draft.confirm(store: store) } }, cancel: { draft.requestCancel() }) {
+                editorNotice = "That change could not be applied safely. Your text is unchanged. Try a smaller selection."
               }
-            }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
-              .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
+            } else {
+              PresenterScriptView(session: session, settings: store.settings,
+                sideInset: columnInset,
+                overVideo: camera.presentsWithVideo,
+                topInset: scriptTopInset, bottomInset: bottomInset)
+                .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
+                .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
+            }
           }
           if keyVisible && shell.reading && !editing {
             Button { keyExpanded.toggle() } label: {
@@ -226,7 +239,6 @@ struct PresenterView: View {
           MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening)
             .frame(width: Self.meterWidth, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
             .frame(width: meterWidth).padding(.vertical, Space.md)
-            .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(.vertical, Space.md) }
         } else if meterWidth > 0 {
           // Editing keeps the strip, so the text wraps as in reading; it takes the editor's backdrop.
           Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).frame(width: meterWidth)
@@ -255,7 +267,7 @@ struct PresenterView: View {
         Text(sourceInfo?.displayName ?? "").fontWeight(.semibold)
         if let connection = sourceInfo?.connectionDescription { Text(connection).foregroundStyle(.white.opacity(0.7)) }
         if let format = sourceInfo?.videoFormat { Text(format).foregroundStyle(.white.opacity(0.7)).lineLimit(1).minimumScaleFactor(0.6) }
-        Text(shotLabel).foregroundStyle(AlphaStyle.accent)
+        Text(shotLabel).foregroundStyle(.white.opacity(0.7))
       }.font(.system(size: 15, weight: .regular)).multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
         .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
@@ -336,13 +348,6 @@ struct PresenterView: View {
         .rotationEffect(.degrees(Double(store.settings.rotation)))
       }
     }
-    .safeAreaInset(edge: .top, spacing: 0) {
-      if draft.isEditing && showsChrome {
-        PresenterEditingBand(isSaving: draft.isSaving, compact: viewport.width / controlZoom < 700,
-          save: { Task { await draft.confirm(store: store) } }, cancel: { draft.requestCancel() })
-          .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true).environment(\.colorScheme, .dark)
-      }
-    }
     .safeAreaInset(edge: .trailing, spacing: 0) {
       if shell.adjustTab != nil, !camera.cleanView, !adjustIsSheet {
         adjustPanel(width: 470 * controlZoom)
@@ -353,7 +358,20 @@ struct PresenterView: View {
         exitPill("Exit Clean · Esc", revealed: cleanControlsRevealed || cleanExitFocused || revealsCleanExit) { camera.cleanView = false }
           .focused($cleanExitFocused)
       } else if focusActive {
-        exitPill("Exit Focus · ⌥⌘F", revealed: barRevealed) { focusMode = false }
+        ZStack {
+          focusHint
+          exitPill("Exit Focus · ⌥⌘F", revealed: barRevealed) { focusMode = false }
+        }
+      }
+    }
+    .onChange(of: focusActive, initial: true) { _, active in
+      focusHintTask?.cancel()
+      focusHintVisible = active
+      guard active else { return }
+      focusHintTask = Task { @MainActor in
+        try? await Task.sleep(for: .seconds(3.5))
+        guard !Task.isCancelled else { return }
+        focusHintVisible = false
       }
     }
     .onContinuousHover { phase in
@@ -396,6 +414,16 @@ struct PresenterView: View {
     .onChange(of: draft.errorMessage) { _, value in if let value { announce(value) } }
     .onChange(of: draft.markdown) { editorNotice = nil }
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
+  }
+
+  /// On entering Focus: a small reminder of the way out, which fades after a few seconds.
+  private var focusHint: some View {
+    Text("Esc to exit").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.85))
+      .padding(.horizontal, Space.md).frame(minHeight: 32)
+      .background(.black.opacity(0.6), in: Capsule())
+      .opacity(focusHintVisible && !barRevealed ? 1 : 0)
+      .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: focusHintVisible)
+      .padding(Space.xxl).allowsHitTesting(false).accessibilityHidden(true)
   }
 
   /// The pill that leaves Clean or Focus: faded out until the pointer moves, still reachable by keyboard.
@@ -459,28 +487,28 @@ struct PresenterView: View {
 
   // MARK: Setup bar
 
-  /// One row: transport on the left, then the video-call group, then the picture tools. Words give way
-  /// to icons, then the groups wrap, as the window narrows or the interface size grows.
+  /// One row: transport on the left, then the video-call group, then the picture tools. The words follow
+  /// one rule (`barTier`, the window's width in points): the picture tools keep theirs longest and only
+  /// go to icons below about 1150 points; below that the groups wrap if they still do not fit.
   private var setupBar: some View {
-    ViewThatFits(in: .horizontal) {
-      setupRow(toolTitles: true, callTitles: true)
-      setupRow(toolTitles: false, callTitles: true)
-      setupRow(toolTitles: false, callTitles: false)
+    let tier = barTier
+    return ViewThatFits(in: .horizontal) {
+      setupRow(tier: tier)
       WrapLayout(spacing: Space.sm, leading: true) {
-        setupTransport
+        setupTransport(titled: false)
         callGroup(titles: false)
         toolsGroup(titles: false)
         viewGroup(titles: false)
       }.frame(maxWidth: .infinity, alignment: .leading)
     }
   }
-  private func setupRow(toolTitles: Bool, callTitles: Bool) -> some View {
-    HStack(spacing: PresenterBar.groupGap) {
-      HStack(spacing: Space.sm) { setupTransport }
+  private func setupRow(tier: BarTier) -> some View {
+    HStack(spacing: tier == .full ? PresenterBar.groupGap : Space.lg) {
+      HStack(spacing: Space.sm) { setupTransport(titled: tier == .full) }
       Spacer(minLength: Space.md)
-      callGroup(titles: callTitles)
-      toolsGroup(titles: toolTitles)
-      viewGroup(titles: toolTitles)
+      callGroup(titles: tier == .full)
+      toolsGroup(titles: tier != .compact)
+      viewGroup(titles: tier == .full)
     }
   }
 
@@ -497,14 +525,15 @@ struct PresenterView: View {
       .help("Edit the script here (⌥⌘E)").disabled(!hasScript || draft.isEditing)
   }
 
-  @ViewBuilder private var setupTransport: some View {
+  /// Start reading always has its words; the other two keep theirs while there is room.
+  @ViewBuilder private func setupTransport(titled: Bool) -> some View {
     Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill") }
       .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
       .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
-    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise") }
+    Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: titled) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton(titled: true, role: .secondary)
+    scriptButton(titled: titled, role: .secondary)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -514,7 +543,7 @@ struct PresenterView: View {
 
   private func callGroup(titles: Bool) -> some View {
     BarGroup(label: "Camera, microphone and script") {
-      BarDeviceControl(title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.presentsWithVideo,
+      BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.presentsWithVideo,
         showsTitle: titles, isEnabled: hasScript,
         toggleHelp: camera.presentsWithVideo ? "Turn the camera off to see just the script" : "Turn the camera on",
         menuLabel: "Choose camera", menuValue: cameraValue, toggle: toggleCamera) { cameraMenu }
@@ -660,7 +689,7 @@ struct PresenterView: View {
       Group {
         if showsPill { BarStatusPill(text: readingPillText, isActive: session.isActivelyRunning) } else { Color.clear.frame(width: 0, height: 0) }
       }.frame(maxWidth: .infinity, alignment: .leading)
-      HStack(spacing: Space.sm) { readingTransport }
+      HStack(spacing: Space.sm) { readingTransport(titles: titles) }
       BarGroup(label: "Reading options") {
         micControl(titles: false)
         BarDivider()
@@ -679,7 +708,7 @@ struct PresenterView: View {
     return store.settings.mode == "Voice" ? "Voice · \(state)" : "Automatic · \(Int(store.settings.speed)) wpm · \(state)"
   }
 
-  @ViewBuilder private var readingTransport: some View {
+  @ViewBuilder private func readingTransport(titles: Bool) -> some View {
     let running = session.isActivelyRunning || session.isCountingDown
     Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise", showsTitle: false) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start").help("Back to the first word (Home)")
@@ -690,8 +719,10 @@ struct PresenterView: View {
       }
     }.buttonStyle(BarButtonStyle(role: running ? .secondary : .prominent))
       .accessibilityLabel(running ? "Pause" : "Start reading").help((running ? "Pause" : "Start reading") + " (Space)")
-    Button { session.pause(); shell.reading = false } label: { BarLabel(title: "Set up the shot", symbol: "display", showsTitle: false) }
-      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Set up the shot").help("Back to setting up the shot (Esc)")
+    // Leaves reading for the setup screen (camera, picture tools, levels): named, since an icon alone read as a display setting.
+    Button { session.pause(); shell.reading = false } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder", showsTitle: titles) }
+      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Set up the shot")
+      .help("Back to setting up the shot: camera, picture tools and microphone (Esc)")
   }
 
   private func announce(_ message: String) {
@@ -746,7 +777,7 @@ struct PresenterView: View {
 
 /// The script being edited, on a visible editable surface, so it reads as a text field and not as the
 /// reading view with a caret in it. Its text has exactly the reading column's width, font, size and
-/// spacing, so no line re-wraps when switching; the box hugs the text with a sensible minimum.
+/// spacing, so no line re-wraps when switching; the box fills the room, so no empty black is left below it.
 /// Editing behaviour is `PresenterEditorView`'s.
 struct PresenterEditingSurface: View {
   @ObservedObject var session: SessionStore
@@ -755,48 +786,41 @@ struct PresenterEditingSurface: View {
   /// The width the reading text column is centred in.
   let width: CGFloat
   var zoom = 1.0
+  var isSaving = false
+  var save: () -> Void = {}
+  var cancel: () -> Void = {}
   var onUnsupportedEdit: () -> Void
   private static let inset = Space.xl
-
-  /// Measure rendered Markdown with the same fonts and spacing as the editor.
-  static func contentHeight(markdown: String, textWidth: CGFloat, settings: PrompterSettings) -> CGFloat {
-    // shortcut: long scripts fill the viewport; measure them only if fitted long-script editing is needed.
-    guard markdown.count < 4000 else { return .infinity }
-    let storage = NSTextStorage(attributedString: FormattedMarkdownEditModel(markdown: markdown).rendered(
-      fontName: settings.fontName, fontSize: settings.fontSize,
-      typography: EditorTypography(
-        lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
-        paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
-        bold: settings.fontWeight == "Bold")))
-    let layout = NSLayoutManager()
-    let container = NSTextContainer(size: NSSize(width: textWidth, height: .greatestFiniteMagnitude))
-    container.lineFragmentPadding = 0
-    storage.addLayoutManager(layout)
-    layout.addTextContainer(container)
-    layout.ensureLayout(for: container)
-    return ceil(layout.usedRect(for: container).height)
-  }
+  /// The header row above the text: the same height as the Save and Cancel buttons plus their padding.
+  static let headerHeight = PresenterBar.height + 2 * Space.sm
 
   var body: some View {
     let measure = ScriptTextView.measureCappedFraction(width: width, textWidth: settings.textWidth, fontSize: settings.fontSize)
     let columnInset = ScriptTextView.sideInset(width: width, textWidth: measure)
-    let textWidth = max(1, width - 2 * columnInset - 10)
     let shape = RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)
+    let boxWidth = max(1, width - 2 * max(0, columnInset - Self.inset))
     GeometryReader { geometry in
-      let available = max(1, geometry.size.height - Space.xl - Space.xxl)
-      let content = Self.contentHeight(markdown: draft.markdown, textWidth: textWidth, settings: settings)
-      let height = min(available, max(settings.fontSize * 3, content + Space.md + Space.xl))
-      PresenterEditorView(session: session, draft: draft, settings: settings, sideInset: Self.inset, onUnsupportedEdit: onUnsupportedEdit)
-        .padding(.top, Space.md)
-        .frame(height: height)
-        .background(shape.fill(.white.opacity(0.07)))
-        .clipShape(shape)
-        .overlay(shape.stroke(.white.opacity(0.35), lineWidth: 1))
-        .overlay(shape.inset(by: 1).stroke(AlphaStyle.accent, lineWidth: 2))
-        .padding(.horizontal, max(0, columnInset - Self.inset))
-        .padding(.top, Space.xl)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    }.accessibilityIdentifier("presenter-editing-surface")
+      let header = Self.headerHeight * zoom
+      let available = max(1, geometry.size.height - Space.xl - Space.xxl - header)
+      // One box: its header (Save and Cancel at the editor's own right edge), then the text.
+      VStack(spacing: 0) {
+        PresenterEditingBand(isSaving: isSaving, compact: boxWidth / zoom < 560, save: save, cancel: cancel)
+          .uiZoom(zoom).fixedSize(horizontal: false, vertical: true).environment(\.colorScheme, .dark)
+        PresenterEditorView(session: session, draft: draft, settings: settings, sideInset: Self.inset, onUnsupportedEdit: onUnsupportedEdit)
+          .scaleEffect(x: settings.horizontalMirror ? -1 : 1, y: settings.verticalMirror ? -1 : 1)
+          .rotationEffect(.degrees(Double(settings.rotation)))
+          .padding(.top, Space.md)
+          .frame(height: available)
+      }
+      .background(shape.fill(.white.opacity(0.07)))
+      .clipShape(shape)
+      // A plain 1 pt edge, and a soft yellow ring for focus, so Save keeps the strongest yellow.
+      .overlay(shape.stroke(.white.opacity(0.3), lineWidth: 1))
+      .overlay(shape.inset(by: -3).stroke(AlphaStyle.accent.opacity(0.35), lineWidth: 2))
+      .padding(.horizontal, max(0, columnInset - Self.inset))
+      .padding(.top, Space.xl)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }.accessibilityElement(children: .contain).accessibilityIdentifier("presenter-editing-surface")
   }
 }
 

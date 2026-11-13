@@ -14,6 +14,7 @@ import XCTest
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .videoOnly
     camera.guides.falseColour = true
+    camera.pictureSizeOverride = CGSize(width: 1920, height: 1080) // the key needs a picture
     let recorder = CameraRecorder(defaults: defaults)
     let shell = PresenterShell()
     func view() -> some View {
@@ -116,6 +117,7 @@ extension AppearanceSnapshotTests {
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .videoOnly
     camera.guides.falseColour = true
+    camera.pictureSizeOverride = CGSize(width: 1920, height: 1080) // the key needs a picture
     let recorder = CameraRecorder(defaults: defaults)
     let picture = NSImage(contentsOf: Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures")!)
     for state in ["key-shown", "key-collapsed", "adjust-mic"] {

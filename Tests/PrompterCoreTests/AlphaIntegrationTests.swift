@@ -140,6 +140,7 @@ import XCTest
     store.session.present(record: record, settings: store.settings)
     let model = camera()
     model.displayMode = .prompterWithVideo
+    model.pictureSizeOverride = CGSize(width: 1920, height: 1080) // the key needs a picture
     for enabled in [false, true] {
       defaults.set(enabled, forKey: "presenterExposureKey")
       for reading in [false, true] {

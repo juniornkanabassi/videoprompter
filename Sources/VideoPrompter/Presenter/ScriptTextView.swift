@@ -45,7 +45,12 @@ struct ScriptTextView: View {
   }
   var body: some View {
     ScriptTextCanvas(configuration: self)
-      .mask { ReadingViewportMask(flipped: verticalMirror) }
+      .mask { ReadingViewportMask(flipped: verticalMirror, fadeHeight: Self.fadeHeight(fontSize: fontSize)) }
+  }
+  /// The bottom fade is about a line and a half, so the last visible line dims gradually at every text
+  /// and interface size instead of the next one vanishing at once.
+  static func fadeHeight(fontSize: Double) -> CGFloat {
+    min(160, max(ReadingViewportMask.fadeHeight, CGFloat(fontSize * 1.6)))
   }
   func makeCoordinator() -> Coordinator { Coordinator(onSeek: onSeek) }
   static func dismantleNSView(_ scroll: NSScrollView, coordinator: Coordinator) {
@@ -764,6 +769,7 @@ struct ScriptTextCanvas: NSViewRepresentable {
 struct ReadingViewportMask: View {
   static let fadeHeight: CGFloat = 48
   let flipped: Bool
+  var fadeHeight = Self.fadeHeight
   var body: some View {
     VStack(spacing: 0) {
       if flipped { fade }
@@ -773,6 +779,6 @@ struct ReadingViewportMask: View {
   }
   private var fade: some View {
     LinearGradient(colors: flipped ? [.clear, .black] : [.black, .clear], startPoint: .top, endPoint: .bottom)
-      .frame(height: Self.fadeHeight)
+      .frame(height: fadeHeight)
   }
 }

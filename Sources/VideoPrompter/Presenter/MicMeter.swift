@@ -2,10 +2,10 @@ import SwiftUI
 
 /// Slim vertical microphone meter for the presenter's right edge, used on setup, reading and the
 /// Adjust mic card. It reads the shared `InputMeter` and scales with the interface zoom, because the
-/// zoom wrapper scales the whole view. One dB scale in both orientations, linear from -60 to 0 like
-/// `InputLevelMeter`: green is quiet to normal speech, yellow (-12 to -6 dBFS) is where the presenter
-/// should peak, red above -6 is too loud, and a separate lamp at 0 latches when the input clips.
-/// The numbers are always shown.
+/// zoom wrapper scales the whole view. One dB scale in both orientations, piecewise linear so that
+/// -20 to 0 dBFS takes 60% of the length (`MeterZones.micPosition`): green is quiet to normal speech,
+/// yellow (-12 to -6 dBFS) is where the presenter should peak, red above -6 is too loud, and a
+/// separate lamp at 0 latches when the input clips. The numbers are always shown.
 struct MicMeterView: View {
   @ObservedObject var meter: InputMeter
   /// The input actually listened to, as the Mic menu names it.
@@ -72,10 +72,14 @@ struct MicMeterView: View {
     }
   }
 
-  /// Where the horizontal "aim here" word ends: over the yellow zone, but clear of "too loud".
-  static let zoneWordWidth: CGFloat = 60
-  static func aimLabelTrailing(width: CGFloat, tooLoudWidth: CGFloat = 52) -> CGFloat {
-    min(width * MeterZones.position(MeterZones.redFrom) - 3, width - tooLoudWidth - 6)
+  /// The horizontal zone words are centred on their zones: "too loud" is held inside the bar's end,
+  /// and "aim here" clear of it, however narrow the meter.
+  static let zoneWordWidth: CGFloat = 52
+  static func zoneWordCentres(width: CGFloat) -> (aim: CGFloat, loud: CGFloat) {
+    let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
+    let loud = min(width - zoneWordWidth / 2, width * (red + 1) / 2)
+    let aim = min(loud - zoneWordWidth - Space.xs, width * (yellow + red) / 2)
+    return (aim, loud)
   }
 
   private var aimColour: Color { Color(red: 1, green: 0.84, blue: 0.3) }
@@ -85,7 +89,7 @@ struct MicMeterView: View {
     TimelineView(.periodic(from: .now, by: 0.1)) { _ in
       let now = ProcessInfo.processInfo.systemUptime
       let db = isListening ? Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now)) : -.infinity
-      let fill = MeterZones.position(db)
+      let fill = MeterZones.micPosition(db)
       let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
       GeometryReader { available in
         let horizontal = available.size.width >= 180 && available.size.height < 280
@@ -159,7 +163,7 @@ struct MicMeterView: View {
                 .font(.system(size: 13)).monospacedDigit()
                 .foregroundStyle(Palette.onDarkQuiet(contrast))
                 .frame(width: Self.tickColumn, alignment: .trailing)
-                .position(x: Self.tickColumn / 2, y: geometry.size.height * (1 - MeterZones.position(entry.value)))
+                .position(x: Self.tickColumn / 2, y: geometry.size.height * (1 - MeterZones.micPosition(entry.value)))
             }
           }
         }
@@ -167,17 +171,17 @@ struct MicMeterView: View {
         GeometryReader { geometry in
           let height = geometry.size.height
           ZStack {
-            MeterZones.zoneTrack(vertical: true).opacity(0.28)
-            MeterZones.zoneTrack(vertical: true).mask(alignment: .bottom) {
+            MeterZones.zoneTrack(vertical: true, scale: MeterZones.micPosition).opacity(0.28)
+            MeterZones.zoneTrack(vertical: true, scale: MeterZones.micPosition).mask(alignment: .bottom) {
               Rectangle().frame(height: height * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(height: 1)
-                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.position(boundary)))
+                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(boundary)))
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(height: 2)
-                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.position(peak)))
+                .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(peak)))
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }
@@ -185,8 +189,9 @@ struct MicMeterView: View {
         GeometryReader { geometry in
           let height = geometry.size.height
           ZStack {
-            zoneWord("aim here", colour: aimColour, middle: (MeterZones.yellowFrom + MeterZones.redFrom) / 2, height: height)
-            zoneWord("too loud", colour: loudColour, middle: MeterZones.redFrom / 2, height: height)
+            // Each word sits on the middle of its zone, as drawn, not of its dB range.
+            zoneWord("aim here", colour: aimColour, middle: (MeterZones.micPosition(MeterZones.yellowFrom) + MeterZones.micPosition(MeterZones.redFrom)) / 2, height: height)
+            zoneWord("too loud", colour: loudColour, middle: (MeterZones.micPosition(MeterZones.redFrom) + 1) / 2, height: height)
           }
         }
         .frame(width: Self.zoneColumn)
@@ -196,39 +201,37 @@ struct MicMeterView: View {
     .frame(minHeight: 160, maxHeight: .infinity)
   }
 
-  private func zoneWord(_ text: String, colour: Color, middle: Float, height: CGFloat) -> some View {
+  private func zoneWord(_ text: String, colour: Color, middle: CGFloat, height: CGFloat) -> some View {
     Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(colour).lineLimit(1)
       .frame(width: Self.zoneColumn, alignment: .leading)
-      .position(x: Self.zoneColumn / 2, y: height * (1 - MeterZones.position(middle)))
+      .position(x: Self.zoneColumn / 2, y: height * (1 - middle))
   }
 
   private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
     HStack(alignment: .top, spacing: Space.xs) {
       VStack(spacing: Space.xs) {
         GeometryReader { geometry in
+          let centres = Self.zoneWordCentres(width: geometry.size.width)
           ZStack {
-            // Each word is right-aligned in a fixed box that ends where the word should end.
             Text("aim here").font(.system(size: 12, weight: .medium)).foregroundStyle(aimColour).lineLimit(1)
-              .frame(width: Self.zoneWordWidth, alignment: .trailing)
-              .position(x: Self.aimLabelTrailing(width: geometry.size.width) - Self.zoneWordWidth / 2, y: 8)
+              .frame(width: Self.zoneWordWidth).position(x: centres.aim, y: 8)
             Text("too loud").font(.system(size: 12, weight: .medium)).foregroundStyle(loudColour).lineLimit(1)
-              .frame(width: Self.zoneWordWidth, alignment: .trailing)
-              .position(x: geometry.size.width - Self.zoneWordWidth / 2, y: 8)
+              .frame(width: Self.zoneWordWidth).position(x: centres.loud, y: 8)
           }
         }.frame(height: 16)
         GeometryReader { geometry in
           ZStack {
-            MeterZones.zoneTrack(vertical: false).opacity(0.28)
-            MeterZones.zoneTrack(vertical: false).mask(alignment: .leading) {
+            MeterZones.zoneTrack(vertical: false, scale: MeterZones.micPosition).opacity(0.28)
+            MeterZones.zoneTrack(vertical: false, scale: MeterZones.micPosition).mask(alignment: .leading) {
               Rectangle().frame(width: geometry.size.width * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.white.opacity(0.7)).frame(width: 1)
-                .position(x: geometry.size.width * MeterZones.position(boundary), y: Self.barWidth / 2)
+                .position(x: geometry.size.width * MeterZones.micPosition(boundary), y: Self.barWidth / 2)
             }
             if isListening, let peak = peakHold.value(at: now) {
               Rectangle().fill(.white).frame(width: 2)
-                .position(x: geometry.size.width * MeterZones.position(peak), y: Self.barWidth / 2)
+                .position(x: geometry.size.width * MeterZones.micPosition(peak), y: Self.barWidth / 2)
             }
           }.clipShape(RoundedRectangle(cornerRadius: Space.xs))
         }.frame(height: Self.barWidth)
@@ -237,7 +240,7 @@ struct MicMeterView: View {
             ForEach(Self.visibleScale(width: geometry.size.width), id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.onDarkQuiet(contrast)).fixedSize()
-                .position(x: geometry.size.width * MeterZones.position(entry.value), y: 8)
+                .position(x: geometry.size.width * MeterZones.micPosition(entry.value), y: 8)
             }
           }
         }.frame(height: 16)
