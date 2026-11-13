@@ -350,6 +350,8 @@ struct FormattedMarkdownEditModel {
     }
   }
 
+  var visibleLength: Int { renderedSource.length }
+
   /// First visible character at or after a markdown offset, for placing a guide.
   func visibleIndex(forSourceOffset offset: Int) -> Int? {
     sourceOffsets.firstIndex { $0.map { $0 >= offset } ?? false }

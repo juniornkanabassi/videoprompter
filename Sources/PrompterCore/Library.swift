@@ -438,13 +438,14 @@ public actor MarkdownLibrary {
         let original = try Data(contentsOf: target)
         do {
           _ = try writeConflict(external, for: metadata, label: "file")
-          try MarkdownText.encode(local, like: original).write(to: target)
+          try Self.replaceLinked(MarkdownText.encode(local, like: original), at: target)
           index.scripts[position].linkedPath = url.path
-          index.scripts[position].linkedBookmark = bookmark
+          // The replace gave the file a new identity, so the bookmark is taken again.
+          index.scripts[position].linkedBookmark = Self.bookmark(for: target) ?? bookmark
           index.scripts[position].linkedFingerprint = Self.fingerprint(local)
           do { try persistIndex() } catch {
             index = old
-            try? original.write(to: target)
+            try? Self.replaceLinked(original, at: target)
             throw error
           }
           return RelinkOutcome(current: ScriptRecord(metadata: index.scripts[position], markdown: local))
@@ -595,7 +596,8 @@ public actor MarkdownLibrary {
       }
     } else if diskPrint == metadata.linkedFingerprint {
       guard canWrite else { return true }
-      try MarkdownText.encode(local, like: original).write(to: target)
+      try Self.replaceLinked(MarkdownText.encode(local, like: original), at: target)
+      index.scripts[position].linkedBookmark = Self.bookmark(for: target) ?? metadata.linkedBookmark
       seenDate = nil
       index.scripts[position].linkedFingerprint = localPrint
       try persistIndex()
@@ -620,7 +622,8 @@ public actor MarkdownLibrary {
         guard let disk = MarkdownText.decode(original), Self.fingerprint(disk) == metadata.linkedFingerprint else { return }
         let local = try readText(validatedURL(metadata.fileName, in: scriptsURL))
         guard try canWriteLinked(original, disk: disk, local: local, metadata: metadata) else { return }
-        try MarkdownText.encode(local, like: original).write(to: target)
+        try Self.replaceLinked(MarkdownText.encode(local, like: original), at: target)
+        index.scripts[position].linkedBookmark = Self.bookmark(for: target) ?? metadata.linkedBookmark
         index.scripts[position].linkedFingerprint = Self.fingerprint(local)
         try persistIndex()
       }
@@ -792,6 +795,23 @@ public actor MarkdownLibrary {
   }
   private static func writeAtomic(_ value: String, to url: URL, coordinated: Bool) throws {
     try coordinatedWrite(Data(value.utf8), to: url, coordinated: coordinated, atomic: true)
+  }
+  /// A linked file is the person's real script, so it is replaced whole and never truncated and
+  /// refilled: a write that fails halfway (disk full, app killed) leaves it as it was. The
+  /// system's replace keeps the file's identity (permissions, tags, file ID), so the bookmark
+  /// still finds it. shortcut: in a folder that cannot be written the replace is refused, and the
+  /// file is then written in place, as before; upgrade if such folders turn out to matter.
+  static func replaceLinked(_ data: Data, at target: URL) throws {
+    let fm = FileManager.default
+    do {
+      let folder = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
+      defer { try? fm.removeItem(at: folder) }
+      let staged = folder.appendingPathComponent(target.lastPathComponent)
+      try data.write(to: staged)
+      _ = try fm.replaceItemAt(target, withItemAt: staged)
+    } catch let error as CocoaError where [.fileWriteNoPermission, .fileWriteVolumeReadOnly].contains(error.code) {
+      try data.write(to: target)
+    }
   }
   /// Managed files are atomic; external relink writes preserve bookmark identity.
   private static func coordinatedWrite(_ data: Data, to url: URL, coordinated: Bool, atomic: Bool) throws {

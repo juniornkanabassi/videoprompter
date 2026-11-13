@@ -201,6 +201,110 @@ final class ScriptEditingTests: XCTestCase {
     XCTAssertFalse(rig.window.performKeyEquivalent(with: key("a", .command, in: rig.window)), "an unfocused editor does not grab keys")
   }
 
+  // MARK: The app's menus
+
+  @MainActor private final class MenuSpy: NSObject {
+    var trashed = 0
+    var edits: [String] = []
+    var window: NSWindow?
+    @objc func trash(_ sender: Any?) { if AppStore.canTrashSelection(in: window) { trashed += 1 } }
+    @objc func menuCut(_ sender: Any?) { edits.append("cut") }
+    @objc func menuUndo(_ sender: Any?) { edits.append("undo") }
+    @objc func menuSelectAll(_ sender: Any?) { edits.append("selectAll") }
+  }
+
+  /// The Edit menu and the library's File > Move to Trash (Command-Delete) both exist while the
+  /// presenter edits. AppKit asks the key window first and the menu bar only if nobody took the
+  /// key, so the editor must take Command-Delete, Command-X, Command-Z and Command-A itself.
+  /// Built here as the menu bar has them: the Edit items, and Move to Trash behind the same
+  /// guard (`AppStore.canTrashSelection`) the real command uses. (SwiftUI builds the real menu
+  /// bar only in a running app, so this is the same items and keys, not the SwiftUI objects.)
+  func testCommandDeleteInThePresenterEditorDeletesTextAndNeverTrashesTheScript() async throws {
+    let rig = try await makeRig()
+    let spy = MenuSpy()
+    spy.window = rig.window
+    let menu = NSMenu(title: "Main")
+    let edit = NSMenu(title: "Edit")
+    func item(_ title: String, _ action: Selector, _ key: String, _ mask: NSEvent.ModifierFlags) -> NSMenuItem {
+      let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+      item.keyEquivalentModifierMask = mask
+      item.target = spy
+      return item
+    }
+    edit.addItem(item("Cut", #selector(MenuSpy.menuCut), "x", .command))
+    edit.addItem(item("Undo", #selector(MenuSpy.menuUndo), "z", .command))
+    edit.addItem(item("Select All", #selector(MenuSpy.menuSelectAll), "a", .command))
+    let file = NSMenu(title: "File")
+    file.addItem(item("Move to Trash", #selector(MenuSpy.trash), "\u{7F}", .command))
+    for submenu in [edit, file] {
+      let top = NSMenuItem(title: submenu.title, action: nil, keyEquivalent: "")
+      top.submenu = submenu
+      menu.addItem(top)
+    }
+    // What NSApplication does with a key equivalent: the key window first, then the menu bar.
+    func route(_ event: NSEvent) -> Bool { rig.window.performKeyEquivalent(with: event) || menu.performKeyEquivalent(with: event) }
+
+    let before = rig.draft.markdown
+    rig.caret(after: "Two bold")
+    XCTAssertTrue(route(key("\u{7F}", .command, in: rig.window)))
+    XCTAssertLessThan(rig.draft.markdown.count, before.count, "Command-Delete deleted text")
+    XCTAssertEqual(spy.trashed, 0, "and the script was not trashed")
+    for (character, name) in [("x", "cut"), ("z", "undo"), ("a", "selectAll")] {
+      XCTAssertTrue(route(key(character, .command, in: rig.window)))
+      XCTAssertFalse(spy.edits.contains(name), "the editor answered Command-\(character) before the menu bar was asked")
+    }
+    // The control: with no editor focused the very same menu does take Command-Delete, so the
+    // result above is the editor's doing and not a menu that never matches.
+    rig.window.makeFirstResponder(nil)
+    XCTAssertTrue(route(key("\u{7F}", .command, in: rig.window)))
+    XCTAssertEqual(spy.trashed, 1)
+    XCTAssertTrue(route(key("x", .command, in: rig.window)))
+    XCTAssertEqual(spy.edits, ["cut"])
+  }
+
+  /// Option-Command-E (Edit script in presenter) and every other shortcut in the app is declared
+  /// once. Read from the source, since SwiftUI builds the menus only in a running app.
+  func testNoShortcutIsDeclaredTwiceAndOptionCommandEIsFree() throws {
+    let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+      .appendingPathComponent("Sources/VideoPrompter")
+    func modifiers(_ text: String?) -> String {
+      let found = ["command", "option", "control", "shift"].filter { text?.contains(".\($0)") == true }
+      return (found.isEmpty ? ["command"] : found).sorted().joined(separator: "+")
+    }
+    let table = try NSRegularExpression(pattern: #"static let (\w+) = KeyboardShortcut\("([^"]+)", modifiers: ([^)]*)\)"#)
+    let use = try NSRegularExpression(pattern: #"\.keyboardShortcut\(\s*(?:ScriptShortcuts\.(\w+)|"([^"]+)")(?:\s*,\s*modifiers:\s*(\[[^\]]*\]|\.\w+))?\s*\)"#)
+    func capture(_ match: NSTextCheckingResult, _ index: Int, in text: String) -> String? {
+      Range(match.range(at: index), in: text).map { String(text[$0]) }
+    }
+    let files = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+      .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }
+    var constants: [String: String] = [:]
+    var declared: [String: [String]] = [:]
+    for file in files {
+      let text = try String(contentsOf: file, encoding: .utf8)
+      for match in table.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+        constants[capture(match, 1, in: text)!] = "\(capture(match, 2, in: text)!.lowercased())|\(modifiers(capture(match, 3, in: text)))"
+      }
+    }
+    for file in files {
+      let text = try String(contentsOf: file, encoding: .utf8)
+      for match in use.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+        let combo = capture(match, 1, in: text).flatMap { constants[$0] }
+          ?? "\(capture(match, 2, in: text)!.lowercased())|\(modifiers(capture(match, 3, in: text)))"
+        declared[combo, default: []].append(file.lastPathComponent)
+      }
+    }
+    XCTAssertEqual(declared["e|command+option"], ["VideoPrompterApp.swift"], "Option-Command-E is declared once")
+    XCTAssertGreaterThan(declared.count, 20, "the scan found the shortcuts")
+    // Command-X, C, V, A and Z belong to the Edit menu.
+    for reserved in ["x", "c", "v", "a", "z"] { XCTAssertNil(declared["\(reserved)|command"], "Command-\(reserved) belongs to Edit") }
+    // New, Import and Duplicate are in both the File menu and the library's own buttons, for the
+    // same action; nothing else may repeat.
+    let doubled = declared.filter { $0.value.count > 1 && Set($0.value) != ["VideoPrompterApp.swift", "LibraryView.swift"] }
+      .map { "\($0.key) in \($0.value)" }.sorted()
+    XCTAssertEqual(doubled, [], "shortcuts declared more than once")
+  }
+
   // MARK: Selecting, deleting, cutting, copying, pasting
 
   func testDoubleAndTripleClickSelectAWordAndAParagraph() async throws {
@@ -424,32 +528,66 @@ final class ScriptEditingTests: XCTestCase {
   }
 
   /// Root cause: a file changed by Obsidian while the presenter edit was open could only be
-  /// kept or lost (Save as Separate Script). Changes to different lines now merge into the draft.
-  func testExternalChangeToAnotherLineMergesIntoTheOpenEditWithoutLosingTyping() async throws {
+  /// kept or lost (Save as Separate Script). Different lines now merge at Save; until then the
+  /// draft, its undo history and the caret are left alone.
+  func testExternalChangeWhileTypingWaitsAndMergesAtSaveKeepingUndo() async throws {
     let rig = try await makeRig(linked: true)
     let file = try XCTUnwrap(rig.file)
     rig.select("sentence")
     rig.type("line")
     let typed = rig.draft.markdown
     XCTAssertTrue(typed.contains("One line."))
+    let caret = rig.view.selectedRange()
     // Obsidian saves a change to the last line.
     let external = Self.rich.replacingOccurrences(of: "Last line.", with: "Last line, rewritten in Obsidian.")
     try Data(external.utf8).write(to: file, options: .atomic)
     await rig.store.refreshExternalChanges()
-    for _ in 0..<20 where !rig.draft.markdown.contains("Obsidian") {
-      try? await Task.sleep(for: .milliseconds(20))
-      await rig.settle()
-    }
-    XCTAssertTrue(rig.draft.markdown.contains("One line."), "the typing is still there")
-    XCTAssertTrue(rig.draft.markdown.contains("rewritten in Obsidian"), "the outside change joined it")
-    XCTAssertTrue(rig.view.string.contains("One line.") && rig.view.string.contains("rewritten in Obsidian"), "and the editor shows both")
-    XCTAssertNotNil(rig.draft.noticeMessage)
-    XCTAssertFalse(rig.draft.hasExternalChange(in: rig.store), "so saving is not a conflict")
+    try? await Task.sleep(for: .milliseconds(100))
+    await rig.settle()
+    XCTAssertEqual(rig.draft.markdown, typed, "typing is not touched while it is being typed")
+    XCTAssertEqual(rig.view.selectedRange(), caret, "and the caret does not move")
+    XCTAssertEqual(rig.draft.noticeMessage, "Updated outside Video Prompter. It will be merged when you save.")
+    XCTAssertTrue(rig.draft.hasExternalChange(in: rig.store))
+    // Undo and redo still work after the outside change.
+    XCTAssertTrue(rig.view.undoManager?.canUndo == true)
+    rig.view.undoManager?.undo()
+    XCTAssertEqual(rig.draft.markdown, Self.rich)
+    rig.view.undoManager?.redo()
+    XCTAssertEqual(rig.draft.markdown, typed)
     await rig.draft.confirm(store: rig.store)
     XCTAssertNil(rig.draft.errorMessage)
-    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), typed.replacingOccurrences(of: "Last line.", with: "Last line, rewritten in Obsidian."))
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), typed.replacingOccurrences(of: "Last line.", with: "Last line, rewritten in Obsidian."), "both changes are in the file")
     await rig.store.refreshExternalChanges()
     XCTAssertNil(rig.store.errorMessage)
+  }
+
+  /// With nothing typed the editor follows the file, and the caret stays on the same words even
+  /// though an earlier paragraph got longer. Typing carries on there, and undo only takes that typing back.
+  func testLiveExternalChangeAboveTheCaretKeepsTheCaretOnItsWords() async throws {
+    let rig = try await makeRig(linked: true)
+    let file = try XCTUnwrap(rig.file)
+    rig.caret(after: "Last line.")
+    let external = Self.rich.replacingOccurrences(of: "One sentence.", with: "One sentence, now a good deal longer than it was, so everything below moves.")
+    try Data(external.utf8).write(to: file, options: .atomic)
+    await rig.store.refreshExternalChanges()
+    for _ in 0..<40 where rig.draft.markdown != external { try? await Task.sleep(for: .milliseconds(20)) }
+    XCTAssertEqual(rig.draft.markdown, external)
+    await rig.settle()
+    let lastLine = (rig.view.string as NSString).range(of: "Last line.")
+    XCTAssertEqual(rig.view.selectedRange(), NSRange(location: NSMaxRange(lastLine), length: 0), "caret still after Last line.")
+    rig.type(" Typed.")
+    XCTAssertTrue(rig.draft.markdown.hasSuffix("Last line. Typed."), rig.draft.markdown)
+    XCTAssertTrue(rig.draft.markdown.contains("so everything below moves."))
+    rig.view.undoManager?.undo()
+    XCTAssertEqual(rig.draft.markdown, external, "undo takes back the typing and nothing else")
+    // A selection moves the same way.
+    rig.select("second item")
+    let again = external.replacingOccurrences(of: "# Title", with: "# A much longer title than before")
+    try Data(again.utf8).write(to: file, options: .atomic)
+    await rig.store.refreshExternalChanges()
+    for _ in 0..<40 where rig.draft.markdown != again { try? await Task.sleep(for: .milliseconds(20)) }
+    await rig.settle()
+    XCTAssertEqual((rig.view.string as NSString).substring(with: rig.view.selectedRange()), "second item")
   }
 
   func testExternalChangeWithNoTypingJustUpdatesTheEditorAndASameLineConflictKeepsTheDraft() async throws {
@@ -480,14 +618,12 @@ final class ScriptEditingTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), second, "the outside version is not overwritten")
   }
 
-  func testLibraryEditorTypingWhileThePresenterEditIsOpenMergesToo() async throws {
+  func testLibraryEditorTypingWhileThePresenterEditIsOpenMergesAtSave() async throws {
     let rig = try await makeRig()
     rig.select("first item")
     rig.type("opening item")
     // Typed in the library editor at the same time, on a different line.
     rig.store.updateMarkdown(Self.rich.replacingOccurrences(of: "Last line.", with: "Last line (library)."), for: rig.record.id)
-    for _ in 0..<20 where !rig.draft.markdown.contains("(library)") { try? await Task.sleep(for: .milliseconds(20)) }
-    XCTAssertTrue(rig.draft.markdown.contains("opening item") && rig.draft.markdown.contains("(library)"))
     await rig.draft.confirm(store: rig.store)
     XCTAssertNil(rig.draft.errorMessage)
     let flushed = await rig.store.flushPendingSaves()
@@ -501,7 +637,13 @@ final class ScriptEditingTests: XCTestCase {
     XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nB\nc\nd\ne", theirs: "a\nb\nc\nd\nE"), "a\nB\nc\nd\nE")
     XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nb\nc\nd\ne", theirs: "a\nb\nc\nnew\nd\ne"), "a\nb\nc\nnew\nd\ne", "untouched draft follows the file")
     XCTAssertEqual(LineMerge.merge(base: base, mine: "x\na\nb\nc\nd\ne", theirs: "a\nb\nc\nd\ne\ny"), "x\na\nb\nc\nd\ne\ny", "insertions at both ends")
-    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nb\nc\nd", theirs: "a\nb\nc\nd\ne\nf"), nil, "a deleted line touching an added one")
+    // Neighbouring lines are different lines.
+    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nB\nc\nd\ne", theirs: "a\nb\nC\nd\ne"), "a\nB\nC\nd\ne", "adjacent replacements")
+    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nc\nd\ne", theirs: "a\nb\nC\nd\ne"), "a\nC\nd\ne", "a deletion beside a replacement")
+    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nB\nc\nd\ne", theirs: "a\nc\nd\ne"), nil, "the same line deleted and changed")
+    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nb\nc\nd", theirs: "a\nb\nc\nd\ne\nf"), "a\nb\nc\nd\nf", "a deletion beside an insertion at its edge")
+    XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nnew\nb\nc\nd\ne", theirs: "a\nB\nc\nd\ne"), "a\nnew\nB\nc\nd\ne", "an insertion before a replaced line")
+    XCTAssertNil(LineMerge.merge(base: base, mine: "a\nx\nb\nc\nd\ne", theirs: "a\ny\nb\nc\nd\ne"), "two different insertions at one spot")
     XCTAssertNil(LineMerge.merge(base: base, mine: "a\nB\nc\nd\ne", theirs: "a\nBB\nc\nd\ne"), "same line changed twice")
     XCTAssertEqual(LineMerge.merge(base: base, mine: "a\nB\nc\nd\ne", theirs: "a\nB\nc\nd\ne"), "a\nB\nc\nd\ne", "same change on both sides")
     XCTAssertEqual(LineMerge.merge(base: "x\n", mine: "x\nmine\n", theirs: "x\n"), "x\nmine\n")

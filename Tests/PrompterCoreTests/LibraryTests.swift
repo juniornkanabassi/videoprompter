@@ -295,10 +295,11 @@ final class LinkedFileTests: XCTestCase {
     XCTAssertTrue(conflicts.isEmpty)
   }
 
-  /// The write back is the one path that runs under `NSFileCoordinator` in the real app, and it
-  /// must leave the file itself in place: staging a sibling and replacing the item changed the
-  /// file's identity, which breaks bookmarks and other apps' open handles.
-  func testCoordinatedWriteBackKeepsTheFileItself() async throws {
+  /// The write back is the one path that runs under `NSFileCoordinator` in the real app. It
+  /// replaces the file whole (a failed write can no longer truncate the person's script), so the
+  /// file gets a new identity as it does when Obsidian saves; the library takes its bookmark
+  /// again, and an older bookmark still finds the file by its path.
+  func testCoordinatedWriteBackReplacesTheFileWholeAndTheLinkKeepsWorking() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "VideoPrompter-linked-\(UUID().uuidString)", isDirectory: true)
     let outside = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -321,8 +322,9 @@ final class LinkedFileTests: XCTestCase {
     var stale = false
     let resolved = try URL(
       resolvingBookmarkData: bookmark, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
-    XCTAssertFalse(stale, "the write back invalidated the bookmark")
-    XCTAssertEqual(resolved.standardizedFileURL.path, file.standardizedFileURL.path)
+    XCTAssertEqual(resolved.standardizedFileURL.path, file.standardizedFileURL.path, "an older bookmark still finds the file")
+    let state = try await library.linkState(for: record.id)
+    guard case .resolved = state else { return XCTFail("the library's own bookmark is stale after the write back: \(state)") }
     XCTAssertEqual(try String(contentsOf: resolved, encoding: .utf8), "typed in the app")
     XCTAssertEqual(
       try FileManager.default.contentsOfDirectory(atPath: outside.path), ["script.md"],

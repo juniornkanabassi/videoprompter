@@ -248,13 +248,26 @@ struct FormattedMarkdownEditor: NSViewRepresentable {
       // or a new text size (Zoom In): what is on screen stays where it is.
       let old = model
       let top = viewportTop(of: view, in: old)
+      var selection = view.selectedRange()
       if old.markdown != markdown {
         editorUndoManager.removeAllActions()
         model = FormattedMarkdownEditModel.cached(markdown: markdown)
+        // The caret and selection stay on the same words, not at the same numbers: a change
+        // above them moves them down with the text.
+        let start = carried(selection.location, from: old)
+        let end = carried(NSMaxRange(selection), from: old)
+        selection = NSRange(location: start, length: max(0, end - start))
       }
-      render(view, keeping: view.selectedRange())
+      render(view, keeping: selection)
       applyEmptyTypingAttributes(to: view)
       if let top { restoreViewport(view, top, from: old.markdown) }
+    }
+
+    /// Where the visible position `index` of the old text lands in the current model's text.
+    private func carried(_ index: Int, from old: FormattedMarkdownEditModel) -> Int {
+      let source = old.sourceOffset(forVisibleIndex: index) ?? old.markdown.utf16.count
+      let moved = Self.mappedOffset(source, from: old.markdown, to: model.markdown)
+      return model.visibleIndex(forSourceOffset: moved) ?? model.visibleLength
     }
 
     /// The source offset of the first line showing, and how far below the top edge that line sits.

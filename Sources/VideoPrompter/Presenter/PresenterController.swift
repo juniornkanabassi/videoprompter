@@ -649,13 +649,19 @@ class PresenterPanel: NSPanel {
     }
   }
   /// Brings an outside change to this script into the open draft. Without typed changes the
-  /// draft simply follows the file; with them, both are kept when they touch different lines.
-  /// Where they touch the same lines nothing changes here, and saving reports the conflict.
+  /// draft simply follows the file. With them it is left alone, so the editor keeps its undo
+  /// history and the caret does not move under the typing; the change is merged at Save, where
+  /// both are kept if they touch different lines. Where they touch the same lines nothing changes
+  /// and saving reports the conflict.
   func absorb(_ record: ScriptRecord?, duringSave: Bool = false) {
     guard isEditing, !isSaving || duringSave, let record, record.id == recordID,
-      record.metadata.contentFingerprint != expectedFingerprint || record.metadata.revision != expectedRevision,
-      let merged = LineMerge.merge(base: originalMarkdown, mine: markdown, theirs: record.markdown)
+      record.metadata.contentFingerprint != expectedFingerprint || record.metadata.revision != expectedRevision
     else { return }
+    if hasEdits, !duringSave {
+      noticeMessage = "Updated outside Video Prompter. It will be merged when you save."
+      return
+    }
+    guard let merged = LineMerge.merge(base: originalMarkdown, mine: markdown, theirs: record.markdown) else { return }
     let hadEdits = hasEdits
     expectedFingerprint = record.metadata.contentFingerprint
     expectedRevision = record.metadata.revision
