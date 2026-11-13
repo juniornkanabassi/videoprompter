@@ -233,7 +233,7 @@ struct IPadRemoteView: View {
               Text("Off").tag(PadRemote.PictureMode.off)
               Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
               Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
-            }.pickerStyle(.segmented)
+            }.pickerStyle(.segmented).labelsHidden()
             Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
               Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
               Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
