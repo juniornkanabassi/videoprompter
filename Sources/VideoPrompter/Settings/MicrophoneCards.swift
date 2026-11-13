@@ -11,6 +11,8 @@ extension View {
 
 struct InputCardStyle: ViewModifier {
   var selected: Bool
+  /// False where the card draws its own check, as the camera rows do beside Rename.
+  var showsBadge = true
   /// Content and the check badge both sit this far inside the border, clear of the rounded corner.
   static let inset = Space.md
   func body(content: Content) -> some View {
@@ -18,7 +20,7 @@ struct InputCardStyle: ViewModifier {
       .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
       .overlay(alignment: .topTrailing) {
-        if selected {
+        if selected && showsBadge {
           // Title-sized, so it shares the title row's height and line.
           Image(systemName: "checkmark.circle.fill").cardTitle().foregroundStyle(AlphaStyle.accent)
             .padding(Self.inset).accessibilityHidden(true)

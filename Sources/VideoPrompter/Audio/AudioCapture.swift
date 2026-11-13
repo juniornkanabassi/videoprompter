@@ -10,7 +10,7 @@ public struct AudioInputDevice: Identifiable, Hashable, Sendable {
   public var sampleRate: Double = 48000
   public var connection: String = "Built in"
   public var isOther: Bool { ["Virtual", "Aggregate"].contains(connection) }
-  public var detail: String { "\(connection) · \(channels) channels · \((sampleRate / 1000).formatted(.number.precision(.fractionLength(0...1)))) kHz" }
+  public var detail: String { "\(connection) · \(channels) \(channels == 1 ? "channel" : "channels") · \((sampleRate / 1000).formatted(.number.precision(.fractionLength(0...1)))) kHz" }
   public init(id: AudioDeviceID, uid: String, name: String) {
     self.id = id
     self.uid = uid
