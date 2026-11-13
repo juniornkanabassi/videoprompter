@@ -245,8 +245,7 @@ struct PresenterView: View {
                 sideInset: columnInset,
                 overVideo: camera.presentsWithVideo,
                 topInset: scriptTopInset, bottomInset: bottomInset)
-                .scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
-                .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
+                .clipped()
             }
           }
           if keyVisible && shell.reading && !editing {
@@ -300,6 +299,8 @@ struct PresenterView: View {
           Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).frame(width: meterWidth)
         }
       }.foregroundStyle(.white)
+        .scaleEffect(x: !editing && store.settings.horizontalMirror ? -1 : 1, y: !editing && store.settings.verticalMirror ? -1 : 1)
+        .rotationEffect(.degrees(editing ? 0 : Double(store.settings.rotation)))
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
     }.background(Color.black) // One colour under the picture, the side columns and the meter: no grey strip beside a black picture.
 

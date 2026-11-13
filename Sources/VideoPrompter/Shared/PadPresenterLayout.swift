@@ -46,9 +46,16 @@ enum PadPresenterLayout {
   ) -> (top: CGFloat, bottom: CGFloat) {
     guard !cleanScreen else { return (0, 0) }
     let top = topChrome + (lostPaused ? lostNoticeBand : 0)
-    if setup { return (top, (iconOnly(width: width) ? 200 : setupBar) + (offNote ? offNoteRow : 0)) }
-    let extra = lostPaused ? (lostCardStacks(width: width) ? lostCardRow : 0) : (statusStacks(width: width) ? statusRow : 0)
-    return (top, transportRow + extra)
+    let bottom: CGFloat
+    if setup {
+      bottom = (iconOnly(width: width) ? 200 : setupBar) + (offNote ? offNoteRow : 0)
+    } else {
+      let extra = lostPaused ? (lostCardStacks(width: width) ? lostCardRow : 0) : (statusStacks(width: width) ? statusRow : 0)
+      bottom = transportRow + extra
+    }
+    // The entire picture/text layer turns: reserve either control band at both ends.
+    let inset = max(top, bottom)
+    return (inset, inset)
   }
 
   static func lostCardStacks(width: CGFloat) -> Bool { width < lostCardFitsBesideTransport }

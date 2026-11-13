@@ -61,17 +61,18 @@ final class PadPresenterLayoutTests: XCTestCase {
       let i = PadPresenterLayout.scriptInsets(width: width, cleanScreen: clean, setup: setup, lostPaused: lost, offNote: note)
       return [i.top, i.bottom]
     }
-    XCTAssertEqual(insets(), [84, 92])
+    XCTAssertEqual(insets(), [92, 92])
+    // Symmetric clearance keeps the complete picture/text layer registered through every turn.
     // The status pill gets its own row below 900 pt, as the card does below 1300 pt.
-    XCTAssertEqual(insets(834), [84, 152])
+    XCTAssertEqual(insets(834), [152, 152])
     XCTAssertEqual(insets(clean: true, setup: true, lost: true), [0, 0])
-    XCTAssertEqual(insets(setup: true), [84, 144])
-    XCTAssertEqual(insets(834, setup: true), [84, 200])
-    XCTAssertEqual(insets(setup: true, note: true), [84, 200])
+    XCTAssertEqual(insets(setup: true), [144, 144])
+    XCTAssertEqual(insets(834, setup: true), [200, 200])
+    XCTAssertEqual(insets(setup: true, note: true), [200, 200])
     // The Mac-lost notice has its own band; the card takes a row of its own only on narrower screens.
-    XCTAssertEqual(insets(1366, lost: true), [128, 92])
-    XCTAssertEqual(insets(1180, lost: true), [128, 176])
-    XCTAssertEqual(insets(834, lost: true), [128, 176])
+    XCTAssertEqual(insets(1366, lost: true), [128, 128])
+    XCTAssertEqual(insets(1180, lost: true), [176, 176])
+    XCTAssertEqual(insets(834, lost: true), [176, 176])
     XCTAssertTrue(PadPresenterLayout.lostCardStacks(width: 834))
     XCTAssertFalse(PadPresenterLayout.lostCardStacks(width: 1366))
   }
