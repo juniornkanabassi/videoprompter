@@ -64,6 +64,10 @@ class CaptureSafetyTests(unittest.TestCase):
         build = (ROOT / 'build.sh').read_text()
         install = (ROOT / 'install.sh').read_text()
         self.assertIn('Set :CFBundleIdentifier $REAL_ID.development', build)
+        # Alpha and Beta keep their exact IDs under local signing; only a plain local build gets ".development".
+        self.assertIn('Set :CFBundleIdentifier $REAL_ID.$CHANNEL', build)
+        self.assertIn('if (( ! DEVELOPER_ID_AVAILABLE )) && [[ -z $CHANNEL ]]; then', build)
+        self.assertIn('VIDEOPROMPTER_BETA', build)
         self.assertIn('"$ACTUAL_ID" == "$EXPECTED_ID"', install)
 
     def test_checks_use_only_authorised_launcher(self):

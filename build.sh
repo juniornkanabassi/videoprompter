@@ -7,10 +7,14 @@ OUTPUT_ROOT="${VIDEOPROMPTER_OUTPUT_ROOT:-$ROOT/../Outputs}"
 mkdir -p "$BUILD_ROOT"
 [[ ! -L "$BUILD_ROOT" && -O "$BUILD_ROOT" ]] || { print -u2 "Unsafe build cache $BUILD_ROOT"; exit 1; }
 VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$ROOT/Resources/Info.plist")
-# VIDEOPROMPTER_ALPHA=1 builds "Video Prompter Alpha": its own identity, settings, data folder and icon,
-# installed beside the real app rather than over it.
-NAME="Video Prompter"; ICON="VideoPrompter"
-[[ -z ${VIDEOPROMPTER_ALPHA:-} ]] || { NAME="Video Prompter Alpha"; ICON="VideoPrompterAlpha"; }
+# VIDEOPROMPTER_ALPHA=1 builds "Video Prompter Alpha" (orange icon) and VIDEOPROMPTER_BETA=1 builds "Video Prompter Beta"
+# (blue icon): each has its own identity, settings, data folder and icon, installed beside the real app rather than over it.
+NAME="Video Prompter"; ICON="VideoPrompter"; CHANNEL=""
+[[ -z ${VIDEOPROMPTER_ALPHA:-} ]] || { CHANNEL=alpha; NAME="Video Prompter Alpha"; ICON="VideoPrompterAlpha"; }
+if [[ -n ${VIDEOPROMPTER_BETA:-} ]]; then
+  [[ -z $CHANNEL ]] || { print -u2 "Set only one of VIDEOPROMPTER_ALPHA and VIDEOPROMPTER_BETA"; exit 1; }
+  CHANNEL=beta; NAME="Video Prompter Beta"; ICON="VideoPrompterBeta"
+fi
 ARCHIVE="$OUTPUT_ROOT/$NAME $VERSION.zip"
 WORK=$(mktemp -d "$BUILD_ROOT/videoprompter-package.XXXXXX")
 APP="$WORK/$NAME.app"
@@ -39,13 +43,14 @@ SIGN_FLAGS=(--force --options runtime --sign "$SIGN_ID")
 /usr/bin/codesign "${SIGN_FLAGS[@]}" "$APP/Contents/Helpers/videoprompter"
 /usr/bin/codesign --verify --strict "$APP/Contents/Helpers/videoprompter"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
-if [[ -n ${VIDEOPROMPTER_ALPHA:-} ]]; then
+if [[ -n $CHANNEL ]]; then
   REAL_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
-  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.alpha" -c "Set :CFBundleName $NAME" -c "Set :CFBundleDisplayName $NAME" "$APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.$CHANNEL" -c "Set :CFBundleName $NAME" -c "Set :CFBundleDisplayName $NAME" "$APP/Contents/Info.plist"
 fi
 # Local/ad-hoc builds are development copies, never another instance of the installed TCC identity.
 # install.sh deliberately refuses this identifier, so a local build cannot replace the real app.
-if (( ! DEVELOPER_ID_AVAILABLE )); then
+# Alpha and Beta keep their exact IDs (AgentMode treats any other ID as an agent copy and hides its windows).
+if (( ! DEVELOPER_ID_AVAILABLE )) && [[ -z $CHANNEL ]]; then
   REAL_ID=$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Contents/Info.plist")
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.development" "$APP/Contents/Info.plist"
 fi
@@ -63,9 +68,9 @@ STATUS=$("$GIT" -C "$ROOT" status --porcelain --untracked-files=all) || { print 
 # Updates only in a Developer ID build with a real public key. Any other build has no feed, so the app starts no
 # updater and shows no Check for Updates item (Updates.swift), and can never replace itself with a release.
 PUBLIC_KEY=$(/usr/libexec/PlistBuddy -c 'Print SUPublicEDKey' "$APP/Contents/Info.plist" 2>/dev/null || true)
-if (( ! DEVELOPER_ID_AVAILABLE )) || [[ -z "$PUBLIC_KEY" || "$PUBLIC_KEY" == REPLACE_WITH_* ]]; then
+if (( ! DEVELOPER_ID_AVAILABLE )) || [[ -n $CHANNEL || -z "$PUBLIC_KEY" || "$PUBLIC_KEY" == REPLACE_WITH_* ]]; then
   /usr/libexec/PlistBuddy -c "Delete :SUFeedURL" -c "Delete :SUPublicEDKey" "$APP/Contents/Info.plist"
-  print "Updates off in this build (no Developer ID identity, or SUPublicEDKey is not set)"
+  print "Updates off in this build (no Developer ID identity, an Alpha or Beta channel, or SUPublicEDKey is not set)"
 fi
 # Sparkle's nested code inside-out, as its documentation gives for apps outside the App Store, then the framework.
 # The XPC services keep their own entitlements. No --deep on the app: it would re-sign all of this and the helper.

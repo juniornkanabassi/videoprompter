@@ -172,11 +172,13 @@ public enum ControlProtocol {
   public static func dataRoot(bundleIdentifier: String?, arguments: [String],
                               applicationSupport: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]) -> URL {
     if let i = arguments.firstIndex(of: "--data-directory"), i + 1 < arguments.count { return URL(fileURLWithPath: arguments[i + 1]) }
-    // The Alpha and local development builds keep their own library and control socket,
+    // The Alpha, Beta and local development builds keep their own library and control socket,
     // so they never edit the release app's data.
     switch bundleIdentifier {
     case bundleID + ".alpha", bundleID + ".alpha.development":
       return applicationSupport.appendingPathComponent("Video Prompter Alpha", isDirectory: true)
+    case bundleID + ".beta", bundleID + ".beta.development":
+      return applicationSupport.appendingPathComponent("Video Prompter Beta", isDirectory: true)
     case bundleID + ".development":
       return applicationSupport.appendingPathComponent("Video Prompter Development", isDirectory: true)
     default: break

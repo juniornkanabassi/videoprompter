@@ -52,6 +52,12 @@ final class AgentModeTests: XCTestCase {
     XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: nil, underTest: false), "a bare debug build is hidden")
     XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.alphaBundleID, underTest: false), "the Alpha runs normally")
     XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: AgentMode.alphaBundleID, underTest: false))
+    XCTAssertEqual(AgentMode.betaBundleID, "com.juniornkanabassi.VidPrompt.beta")
+    XCTAssertFalse(AgentMode.rule(arguments: ["app"], bundleID: AgentMode.betaBundleID, underTest: false), "the Beta runs normally")
+    XCTAssertTrue(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: AgentMode.betaBundleID, underTest: false))
+    for channel in [AgentMode.alphaBundleID, AgentMode.betaBundleID] {
+      XCTAssertTrue(AgentMode.rule(arguments: ["app"], bundleID: channel + ".development", underTest: false), "a channel ID with .development is an agent copy, so build.sh never adds it to Alpha or Beta")
+    }
     XCTAssertFalse(AgentMode.rule(arguments: ["app", "--agent-screen"], bundleID: nil, underTest: true))
   }
 }

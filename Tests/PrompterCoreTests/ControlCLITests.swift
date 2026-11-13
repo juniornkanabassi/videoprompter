@@ -98,6 +98,13 @@ final class ControlCLITests: XCTestCase {
     XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID + ".alpha.development", arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter Alpha").path, "a local Alpha build never opens the release library")
     XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID + ".development", arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter Development").path, "a local build never opens the release library")
     XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID, arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter").path)
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID + ".beta", arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter Beta").path, "the Beta keeps its own library")
+    XCTAssertEqual(ControlProtocol.dataRoot(bundleIdentifier: ControlProtocol.bundleID + ".beta.development", arguments: ["app"], applicationSupport: support).path, support.appendingPathComponent("Video Prompter Beta").path, "a local Beta build never opens the release library")
+    var channelRoots = Set<String>()
+    for id in [ControlProtocol.bundleID, ControlProtocol.bundleID + ".alpha", ControlProtocol.bundleID + ".beta"] {
+      channelRoots.insert(ControlProtocol.dataRoot(bundleIdentifier: id, arguments: ["app"], applicationSupport: support).path)
+    }
+    XCTAssertEqual(channelRoots.count, 3, "release, Alpha and Beta never share a data folder")
     XCTAssertEqual(ControlCLI.manifest()["serverInfo"] as? [String: String], ["name": "videoprompter", "version": "dev"])
     let tools = try XCTUnwrap(ControlCLI.manifest()["tools"] as? [[String: Any]])
     XCTAssertEqual(tools.count, ControlProtocol.commands.count)

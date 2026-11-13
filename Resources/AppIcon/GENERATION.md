@@ -1,6 +1,6 @@
 # Video Prompter icon
 
-Renamed from VidPrompt to Video Prompter on 8 October 2026; the same white microphone master is now `VideoPrompter.png`/`VideoPrompter.icns`. Earlier, on 1 October 2026, it was renamed from JuniorPrompter to VidPrompt and the amber Alpha variant was retired with the Alpha channel.
+Renamed from VidPrompt to Video Prompter on 8 October 2026; the same white microphone master is now `VideoPrompter.png`/`VideoPrompter.icns`. Earlier, on 1 October 2026, it was renamed from JuniorPrompter to VidPrompt.
 
 Approved by Junior on 5 September 2026. Use the current white microphone-and-script master and ICNS going forward.
 
@@ -24,3 +24,15 @@ Junior approved an amber tile retaining the dark microphone and white script as 
 Created `VideoPrompterAlpha.png` at 1254 x 1254 in RGBA using Python/Pillow pixel recolouring of `VideoPrompter.png`. Foreground masks retain the original microphone, script page and coral marker; the tile is warm amber/orange, with the original shading and composition preserved. The source's baked-black exterior was converted to real transparency with an antialiased tile edge. No text or badges were added.
 
 Resized with `sips` to 16, 32, 128, 256 and 512 point icons at 1x and 2x. `iconutil` rejected ICNS creation with “Invalid Iconset”, including a round-trip of the existing stable icon, so the ten representations were packed directly into standard lossless ICNS chunks (legacy RGB plus alpha masks for 16/32 pixels, PNG for the remaining sizes). Successfully extracted the finished `VideoPrompterAlpha.icns` with `iconutil` and verified all ten images pixel-for-pixel against the resized originals, including transparent corners. Checked the master alpha channel and visually compared the variant beside the stable icon at 32 pixels.
+
+## Channel colours (13 Nov 2026)
+
+Junior's decision: the full release is the white icon (`VideoPrompter`), the Beta channel has a blue tile (`VideoPrompterBeta`) and the Alpha channel keeps the orange tile (`VideoPrompterAlpha`). Alpha is the one he tests most. `build.sh` picks the icon from `VIDEOPROMPTER_ALPHA=1` or `VIDEOPROMPTER_BETA=1`, and the iPad app has matching `AppIconAlpha` and `AppIconBeta` sets (see `iPad/README.md`).
+
+## Beta variant (13 Nov 2026)
+
+Created `VideoPrompterBeta.png` at 1254 x 1254 in RGBA from `VideoPrompter.png` with the same Pillow pixel recolouring as the Alpha. The Alpha tint is a plain multiply of the tile by (1, 0.70, 0.31), so the Alpha file shows exactly which pixels are tile and how much: per pixel, the tile weight is the share of that multiply the Alpha pixel took. That weight is the foreground mask, so the microphone, script page and coral marker stay untouched and antialiased edges blend correctly. The tile is then multiplied by (0.235, 0.51, 0.965), which turns the white tile into about #3B7EEF (hue 218, clearly blue, not purple) and keeps all the original shading. The exterior alpha channel is the Alpha's, so the corners are real transparency.
+
+The ten ICNS representations are packed exactly as for the Alpha: `sips` resizes to 16, 32, 128, 256 and 512 point at 1x and 2x, then lossless chunks are written directly (`is32`/`s8mk` and `il32`/`l8mk` for 16 and 32 pixels, PNG `ic11`, `ic12`, `ic07`, `ic13`, `ic08`, `ic14`, `ic09`, `ic10` for the rest, because `iconutil` still refuses to build an ICNS). `iconutil -c iconset` extracts all ten images and each matches the resized PNG pixel for pixel, transparent corners included. Compared beside the white and orange icons at 128, 64, 32 and 16 pixels: the blue stays distinct from both.
+
+The iPad sets `AppIconAlpha` and `AppIconBeta` hold the same masters resized to 1024 x 1024 with Lanczos on black, exactly how the existing `AppIcon-1024.png` was made from `VideoPrompter.png`.
