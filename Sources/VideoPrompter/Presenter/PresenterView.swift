@@ -53,6 +53,7 @@ struct PresenterView: View {
   @State private var cleanControlsRevealed = false
   @State private var barRevealed = false
   @State private var barHovered = false
+  @State private var controlBarHeight: CGFloat = 0
   @StateObject private var shell: PresenterShell
   private var showsChrome: Bool { !camera.cleanView }
   @AppStorage("presenterExposureKey") private var exposureKeyEnabled = true
@@ -77,8 +78,16 @@ struct PresenterView: View {
   private var controlZoom: Double {
     Self.controlZoom(store.uiZoom) * Self.sizeBoost(width: viewport.width / Self.controlZoom(store.uiZoom))
   }
-  /// The width of the slim microphone strip at the right edge, before zoom.
-  static let meterWidth: CGFloat = 96
+  /// The width of the slim microphone strip at the right edge, before zoom: dB numbers, bar and zone words.
+  static let meterWidth: CGFloat = 120
+  /// One fixed width for the side cards (exposure key, camera), with their padding, so they line up.
+  static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
+    (width / zoom >= 1400 ? 248 : 188) * zoom + Space.md * 2
+  }
+  /// Room kept under the text so the last visible line fades out clear of the bar, at every interface size.
+  static let readingBottomInset: CGFloat = Space.section
+  /// The strip stays reserved while editing, so the editor wraps its lines exactly as reading does.
+  private var meterReserved: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
   @State private var viewport = CGSize(width: 1600, height: 1000)
   @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
   @ObservedObject private var recorder: CameraRecorder
@@ -107,22 +116,20 @@ struct PresenterView: View {
     GeometryReader { geometry in
       let editing = draft.isEditing
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
-      let meterWidth = micLevelVisible ? Self.meterWidth * controlZoom : 0
+      let meterWidth = meterReserved ? Self.meterWidth * controlZoom : 0
       let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
-      let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
-      let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
-        (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
-      let pictureWidth = min(geometry.size.width, geometry.size.height * pictureAspect)
-      let availableGutter = (geometry.size.width - pictureWidth) / 2
-      let roomyGutter = availableGutter >= (280 * controlZoom + Space.md * 2)
-      let columnWidth = (roomyGutter ? 280 : 144) * controlZoom + Space.md * 2
-      let gutterWidth = setup ? max(meterWidth, min(columnWidth, pictureAspect > 1 ? geometry.size.width * 0.25 : columnWidth)) : 0
-      // The script sits in the picture region: the stage less the setup gutters and the meter.
-      let regionWidth = max(1, setup ? geometry.size.width - 2 * gutterWidth : geometry.size.width - meterWidth)
-      let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: store.settings.textWidth)
+      // A fixed column for the side cards, then the picture fills the rest up to the meter: no empty gutter.
+      let cardColumn = setup && (keyVisible || sourceInfo != nil) ? Self.cardColumnWidth(width: geometry.size.width, zoom: controlZoom) : 0
+      // The script sits in the picture region: the stage less the card column and the meter.
+      let regionWidth = max(1, geometry.size.width - cardColumn - meterWidth)
+      let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
+      let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
+      let backingWidth = max(1, min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl))
       let scriptTopInset = keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0
+      let bottomInset = Self.readingBottomInset + (barOverlays && !focusActive ? max(controlBarHeight, 60 * controlZoom) : 0)
+      let scriptHeight = max(1, geometry.size.height - scriptTopInset - bottomInset)
       HStack(alignment: .top, spacing: 0) {
-        if setup {
+        if cardColumn > 0 {
           ScrollView(.vertical) {
           VStack(alignment: .leading, spacing: Space.md) {
             if keyVisible {
@@ -133,7 +140,7 @@ struct PresenterView: View {
               .accessibilityIdentifier("presenter-source-status")
           }.frame(maxWidth: .infinity, alignment: .leading)
             .padding(Space.md)
-          }.frame(width: gutterWidth, height: geometry.size.height, alignment: .topLeading)
+          }.frame(width: cardColumn, height: geometry.size.height, alignment: .topLeading)
         }
         ZStack(alignment: .top) {
           if camera.presentsWithVideo || camera.cleanView {
@@ -147,14 +154,16 @@ struct PresenterView: View {
             Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
               .opacity(editing ? 1 : Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
             if !editing && camera.presentsWithVideo {
-              ReadingBacking(opacity: reduceTransparency ? 0.9 : 0.45)
-                .frame(width: min(regionWidth, regionWidth * store.settings.textWidth + 2 * Space.xxl))
-                .padding(.vertical, Space.sm)
+              ReadingBacking(opacity: reduceTransparency ? 0.94 : 0.86).frame(width: backingWidth).frame(maxHeight: .infinity)
             }
-            // Behind the words, so the line shows where the reading is without striking them through.
+            // Only the edge marks are bright; the soft band cannot strike through letterforms.
             if !editing {
               GuideLine(settings: store.settings)
-                .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: geometry.size.height - scriptTopInset, fraction: store.settings.guideFraction) - 1)
+                .mask { HStack(spacing: 0) { Rectangle().frame(width: 8); Spacer(minLength: 0); Rectangle().frame(width: 8) } }
+                .frame(width: backingWidth, height: store.settings.fontSize * 1.3)
+                .background(Color.cyan.opacity(store.settings.guideOpacity * 0.06))
+                .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: store.settings.guideFraction)
+                  - store.settings.fontSize * 0.65)
             }
             Group {
               if editing {
@@ -165,7 +174,7 @@ struct PresenterView: View {
                 PresenterScriptView(session: session, settings: store.settings,
                   sideInset: columnInset,
                   overVideo: camera.presentsWithVideo,
-                  topInset: scriptTopInset)
+                  topInset: scriptTopInset, bottomInset: bottomInset)
               }
             }.scaleEffect(x: store.settings.horizontalMirror ? -1 : 1, y: store.settings.verticalMirror ? -1 : 1)
               .rotationEffect(.degrees(Double(store.settings.rotation))).clipped()
@@ -189,8 +198,10 @@ struct PresenterView: View {
               .accessibilityIdentifier("presenter-exposure-legend")
           }
           if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
+            // Give the zoom wrapper an explicit picture-sized frame to centre within.
             CameraRecoveryView(model: camera, prominent: true) { adjustOpener = "Camera"; shell.adjustTab = .camera }
-              .uiZoom(controlZoom).frame(maxWidth: .infinity, maxHeight: .infinity)
+              .frame(width: regionWidth / controlZoom, height: geometry.size.height / controlZoom)
+              .uiZoom(controlZoom)
           }
           if !hasScript, camera.displayMode != .videoOnly, !camera.cleanView {
             Text("No script yet. Choose one in the library, then open the prompter.")
@@ -206,12 +217,14 @@ struct PresenterView: View {
           }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
           .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
-        if setup { Color.clear.frame(width: max(0, gutterWidth - meterWidth)) }
         if micLevelVisible {
           MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening)
             .frame(width: Self.meterWidth, height: max(0, geometry.size.height / controlZoom - 32)).uiZoom(controlZoom)
             .frame(width: meterWidth).padding(.vertical, Space.md)
             .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.08)).frame(width: 1).padding(.vertical, Space.md) }
+        } else if meterWidth > 0 {
+          // Editing keeps the strip, so the text wraps as in reading; it takes the editor's backdrop.
+          Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black).frame(width: meterWidth)
         }
       }.foregroundStyle(.white)
         .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-visible-stage")
@@ -238,7 +251,7 @@ struct PresenterView: View {
         if let connection = sourceInfo?.connectionDescription { Text(connection).foregroundStyle(.white.opacity(0.7)) }
         if let format = sourceInfo?.videoFormat { Text(format).foregroundStyle(.white.opacity(0.7)).lineLimit(1).minimumScaleFactor(0.6) }
         Text(shotLabel).foregroundStyle(AlphaStyle.accent)
-      }.font(.system(size: 14, weight: .regular)).multilineTextAlignment(.leading)
+      }.font(.system(size: 15, weight: .regular)).multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
         .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
     }.buttonStyle(.plain).uiZoom(controlZoom).help("Camera and shot settings")
@@ -256,7 +269,7 @@ struct PresenterView: View {
     }
   }
 
-  private var micLevelVisible: Bool { showsMicLevel && !camera.cleanView && !draft.isEditing && (shell.adjustTab == nil || viewport.width >= 1200) }
+  private var micLevelVisible: Bool { meterReserved && !draft.isEditing }
   private var trackedStage: some View {
     stage
     // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
@@ -395,6 +408,7 @@ struct PresenterView: View {
   private var controlBar: some View {
     barContent.environment(\.colorScheme, .dark)
       .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
+      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlBarHeight = $0 }
   }
 
   /// Pointer or key activity: Clean's exit pill, and the bar while it is sliding away.
@@ -451,6 +465,7 @@ struct PresenterView: View {
         setupTransport
         callGroup(titles: false)
         toolsGroup(titles: false)
+        viewGroup(titles: false)
       }.frame(maxWidth: .infinity, alignment: .leading)
     }
   }
@@ -460,18 +475,19 @@ struct PresenterView: View {
       Spacer(minLength: Space.md)
       callGroup(titles: callTitles)
       toolsGroup(titles: toolTitles)
+      viewGroup(titles: toolTitles)
     }
   }
 
-  private var scriptButton: some View {
-    Button { controller.openScript(store: store) } label: { BarLabel(title: "Open script", symbol: "doc.text", showsTitle: false) }
-      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Open script")
-      .help("Open this script in the library")
+  /// Opens the script in the library. Plain among the quiet options, so it never looks switched on.
+  private func scriptButton(titled: Bool = false, role: BarButtonStyle.Role = .plain) -> some View {
+    Button { controller.openScript(store: store) } label: { BarLabel(title: "Open script", symbol: "doc.text", showsTitle: titled) }
+      .buttonStyle(BarButtonStyle(role: role)).accessibilityLabel("Open script")
+      .help("Open this script in the library to edit its title and details")
   }
   /// Editing where the script is read: the same editor as the library, saved with Save changes.
-  /// Editing where the script is read: the same editor as the library, saved with Save changes.
-  private var editButton: some View {
-    Button { controller.beginEditing() } label: { BarLabel(title: "Edit script here", symbol: "pencil", showsTitle: false) }
+  private func editButton(titled: Bool = false) -> some View {
+    Button { controller.beginEditing() } label: { BarLabel(title: "Edit", symbol: "pencil", showsTitle: titled) }
       .buttonStyle(BarButtonStyle()).accessibilityLabel("Edit script here")
       .help("Edit the script here (⌥⌘E)").disabled(!hasScript || draft.isEditing)
   }
@@ -483,7 +499,7 @@ struct PresenterView: View {
     Button { session.restart() } label: { BarLabel(title: "Back to start", symbol: "arrow.counterclockwise") }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton
+    scriptButton(titled: true, role: .secondary)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -581,22 +597,26 @@ struct PresenterView: View {
   // MARK: Picture tools
 
   private func toolsGroup(titles: Bool) -> some View {
-    BarGroup(label: "Picture tools") {
+    BarGroup(label: "Picture tools", caption: titles ? "Picture" : nil, raised: false) {
       tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: camera.effectiveZebras, titles: titles,
            help: "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
       tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: camera.effectiveFalseColour, titles: titles,
            help: "False colour exposure (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
       tool("Guides", "squareshape.split.3x3", tab: .guides, on: camera.framingIsVisible, titles: titles,
            help: "Framing guides. Press and hold to adjust.") { camera.toggleFramingGuides() }
-      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled && camera.exposureIsConfigured, showsTitle: titles,
-                help: camera.exposureIsConfigured ? "Show or hide the exposure key" : "Turn on Zebras or False colour to use the key") {
-        exposureKeyEnabled.toggle()
-      }.disabled(!camera.exposureIsConfigured)
       BarDivider()
       tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, titles: titles, adjustable: false,
            help: "Open the adjust panel", traits: [], value: shell.adjustTab == nil ? "Collapsed" : "Expanded") {
         shell.adjustTab = shell.adjustTab == nil ? .camera : nil
       }
+    }
+  }
+
+  private func viewGroup(titles: Bool) -> some View {
+    BarGroup(label: "View options", raised: false) {
+      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled, showsTitle: titles,
+        help: "Show or hide the exposure key") { exposureKeyEnabled.toggle() }
+        .disabled(!camera.exposureIsConfigured)
       BarToggle(title: "Clean", symbol: "rectangle", isOn: false, showsTitle: titles,
                 help: CameraModel.cleanViewExplanation, traits: [], value: nil) { camera.cleanView = true }
     }
@@ -624,11 +644,13 @@ struct PresenterView: View {
   /// One slim row: a status pill, the transport in the middle, quiet options on the right.
   private var readingBar: some View {
     ViewThatFits(in: .horizontal) {
-      readingRow(showsPill: true)
-      readingRow(showsPill: false)
+      readingRow(showsPill: true, titles: true)
+      readingRow(showsPill: true, titles: false)
+      readingRow(showsPill: false, titles: false)
     }
   }
-  private func readingRow(showsPill: Bool) -> some View {
+  /// Words beside the right-hand icons while there is room; they are plain buttons, lit only when on.
+  private func readingRow(showsPill: Bool, titles: Bool) -> some View {
     HStack(spacing: Space.md) {
       Group {
         if showsPill { BarStatusPill(text: readingPillText, isActive: session.isActivelyRunning) } else { Color.clear.frame(width: 0, height: 0) }
@@ -636,13 +658,14 @@ struct PresenterView: View {
       HStack(spacing: Space.sm) { readingTransport }
       BarGroup(label: "Reading options") {
         micControl(titles: false)
-        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: false,
+        BarDivider()
+        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: titles,
                   help: "Focus: only the text, the level meter and the reading line (⌥⌘F)") { focusMode.toggle() }
           .contextMenu { Toggle("Auto-hide these controls while reading", isOn: $autoHidesBar) }
-        Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Reading settings", symbol: "textformat.size", showsTitle: false) }
-          .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text").accessibilityLabel("Reading settings")
-        editButton
-        scriptButton
+        Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size", showsTitle: titles) }
+          .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text size").accessibilityLabel("Reading settings")
+        editButton(titled: titles)
+        scriptButton(titled: titles)
       }.frame(maxWidth: .infinity, alignment: .trailing)
     }
   }
@@ -716,26 +739,59 @@ struct PresenterView: View {
 
 }
 
-/// The script being edited, on a visible editable surface with a normal top margin, so it reads as a
-/// text field and not as the reading view with a caret in it. Editing behaviour is `PresenterEditorView`'s.
+/// The script being edited, on a visible editable surface, so it reads as a text field and not as the
+/// reading view with a caret in it. Its text has exactly the reading column's width, font, size and
+/// spacing, so no line re-wraps when switching; the box hugs the text with a sensible minimum.
+/// Editing behaviour is `PresenterEditorView`'s.
 struct PresenterEditingSurface: View {
   @ObservedObject var session: SessionStore
   @ObservedObject var draft: PresenterDraft
   let settings: PrompterSettings
+  /// The width the reading text column is centred in.
   let width: CGFloat
   var zoom = 1.0
   var onUnsupportedEdit: () -> Void
+  private static let inset = Space.xl
+
+  /// Measure rendered Markdown with the same fonts and spacing as the editor.
+  static func contentHeight(markdown: String, textWidth: CGFloat, settings: PrompterSettings) -> CGFloat {
+    // shortcut: long scripts fill the viewport; measure them only if fitted long-script editing is needed.
+    guard markdown.count < 4000 else { return .infinity }
+    let storage = NSTextStorage(attributedString: FormattedMarkdownEditModel(markdown: markdown).rendered(
+      fontName: settings.fontName, fontSize: settings.fontSize,
+      typography: EditorTypography(
+        lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
+        paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
+        bold: settings.fontWeight == "Bold")))
+    let layout = NSLayoutManager()
+    let container = NSTextContainer(size: NSSize(width: textWidth, height: .greatestFiniteMagnitude))
+    container.lineFragmentPadding = 0
+    storage.addLayoutManager(layout)
+    layout.addTextContainer(container)
+    layout.ensureLayout(for: container)
+    return ceil(layout.usedRect(for: container).height)
+  }
 
   var body: some View {
-    let margin = max(Space.xl, width * (1 - CGFloat(settings.textWidth)) / 2 - Space.xl)
+    let measure = ScriptTextView.measureCappedFraction(width: width, textWidth: settings.textWidth, fontSize: settings.fontSize)
+    let columnInset = ScriptTextView.sideInset(width: width, textWidth: measure)
+    let textWidth = max(1, width - 2 * columnInset - 10)
     let shape = RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)
-    PresenterEditorView(session: session, draft: draft, settings: settings, sideInset: Space.xl, onUnsupportedEdit: onUnsupportedEdit)
-      .padding(.top, Space.md)
-      .background(shape.fill(.white.opacity(0.06)))
-      .clipShape(shape)
-      .overlay(shape.stroke(AlphaStyle.accent.opacity(0.45), lineWidth: 1.5))
-      .padding(.horizontal, margin).padding(.top, Space.xxl).padding(.bottom, Space.xl)
-      .accessibilityIdentifier("presenter-editing-surface")
+    GeometryReader { geometry in
+      let available = max(1, geometry.size.height - Space.xl - Space.xxl)
+      let content = Self.contentHeight(markdown: draft.markdown, textWidth: textWidth, settings: settings)
+      let height = min(available, max(settings.fontSize * 3, content + Space.md + Space.xl))
+      PresenterEditorView(session: session, draft: draft, settings: settings, sideInset: Self.inset, onUnsupportedEdit: onUnsupportedEdit)
+        .padding(.top, Space.md)
+        .frame(height: height)
+        .background(shape.fill(.white.opacity(0.07)))
+        .clipShape(shape)
+        .overlay(shape.stroke(.white.opacity(0.35), lineWidth: 1))
+        .overlay(shape.inset(by: 1).stroke(AlphaStyle.accent, lineWidth: 2))
+        .padding(.horizontal, max(0, columnInset - Self.inset))
+        .padding(.top, Space.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }.accessibilityIdentifier("presenter-editing-surface")
   }
 }
 
@@ -768,7 +824,8 @@ struct PresenterEditorView: View {
       lineSpacing: max(3, settings.fontSize * settings.lineSpacing),
       paragraphSpacing: max(10, settings.fontSize * settings.paragraphSpacing),
       horizontalInset: sideInset,
-      alignment: NSTextAlignment(setting: settings.alignment))
+      alignment: NSTextAlignment(setting: settings.alignment),
+      bold: settings.fontWeight == "Bold")
   }
 }
 
@@ -779,6 +836,7 @@ private struct PresenterScriptView: View {
   let sideInset: CGFloat
   var overVideo = false
   var topInset: CGFloat = 0
+  var bottomInset: CGFloat = 0
 
   var body: some View {
     ScriptTextView(
@@ -798,7 +856,7 @@ private struct PresenterScriptView: View {
       onSeek: session.seek, onUserScroll: session.seekFromUserScroll
     )
       .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-script-content")
-      .padding(.top, topInset)
+      .padding(.top, topInset).padding(.bottom, bottomInset)
   }
 }
 

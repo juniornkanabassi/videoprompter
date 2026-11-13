@@ -5,7 +5,7 @@ enum PresenterBar {
   static let height = AlphaStyle.minTarget
   static let corner: CGFloat = 12 // grid: ok Matches the Alpha tile corner.
   /// Between the transport, the video-call group and the picture tools.
-  static let groupGap = Space.lg
+  static let groupGap = Space.section
   static let background = Color(white: 0.08)
   /// Fingers need 44 pt each way; the pointer's icon-only button is a little narrower.
   #if os(iOS)
@@ -24,9 +24,15 @@ struct BarLabel: View {
   let symbol: String
   var showsTitle = true
   var weight = Font.Weight.semibold
+  /// A tool that is on keeps a neutral fill and shows it with a yellow icon, so only Start reading is yellow-filled.
+  var accentIcon = false
   var body: some View {
     HStack(spacing: Space.xs) {
-      Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
+      if accentIcon {
+        Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24).foregroundStyle(AlphaStyle.accent)
+      } else {
+        Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
+      }
       if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
     }.padding(.horizontal, showsTitle ? Space.md : Space.sm)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
@@ -45,7 +51,6 @@ struct BarButtonStyle: ButtonStyle {
       .foregroundStyle(foreground)
       .frame(minHeight: PresenterBar.height)
       .background(shape.fill(fill))
-      .overlay { if role == .on { shape.stroke(AlphaStyle.accent.opacity(0.75), lineWidth: 1.5) } }
       .overlay { if configuration.isPressed { shape.fill(.white.opacity(0.12)) } }
       .opacity(isEnabled ? 1 : 0.4)
       .contentShape(shape)
@@ -53,7 +58,6 @@ struct BarButtonStyle: ButtonStyle {
   private var foreground: Color {
     switch role {
     case .prominent: AlphaStyle.onAccent
-    case .on: AlphaStyle.accent
     case .off: PresenterBar.warning
     default: .white
     }
@@ -61,7 +65,7 @@ struct BarButtonStyle: ButtonStyle {
   private var fill: Color {
     switch role {
     case .prominent: AlphaStyle.accent
-    case .on: AlphaStyle.selectedFill
+    case .on: .white.opacity(0.2)
     case .off: Color.red.opacity(0.18)
     case .secondary: .white.opacity(0.08)
     case .plain: .clear
@@ -69,13 +73,24 @@ struct BarButtonStyle: ButtonStyle {
   }
 }
 
-/// A named run of controls on one soft backing: the video-call group, the picture tools.
+/// A named run of controls on one soft backing: the video-call group, the picture tools. The picture
+/// tools are a quieter, outlined group with a caption, so the two read as different kinds of control.
 struct BarGroup<Content: View>: View {
   let label: String
+  var caption: String? = nil
+  var raised = true
   @ViewBuilder var content: () -> Content
   var body: some View {
-    HStack(spacing: 0, content: content)
-      .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
+    let shape = RoundedRectangle(cornerRadius: PresenterBar.corner)
+    HStack(spacing: 0) {
+      if let caption {
+        Text(caption).font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.65))
+          .padding(.horizontal, Space.md).accessibilityHidden(true)
+      }
+      content()
+    }
+      .background(shape.fill(.white.opacity(raised ? 0.1 : 0)))
+      .overlay(shape.stroke(.white.opacity(raised ? 0.1 : 0.22), lineWidth: 1))
       .accessibilityElement(children: .contain).accessibilityLabel(label)
   }
 }
@@ -131,7 +146,7 @@ struct BarToggle: View {
   var value: String? = nil
   let action: () -> Void
   var body: some View {
-    Button(action: action) { BarLabel(title: title, symbol: symbol, showsTitle: showsTitle) }
+    Button(action: action) { BarLabel(title: title, symbol: symbol, showsTitle: showsTitle, accentIcon: isOn) }
       .buttonStyle(BarButtonStyle(role: isOn ? .on : .plain))
       .help(help ?? title)
       .accessibilityLabel(title)
@@ -149,14 +164,14 @@ struct GuideLine: View {
   }
 }
 
-/// A soft dark panel behind a narrower text column, so the picture and the zebras stop fighting the words.
+/// A dark column behind the text, the full height of the picture, with a visible edge, so the picture
+/// and the zebras stop showing through the words and no bright strip of video is left above or below.
 struct ReadingBacking: View {
   let opacity: Double
   var body: some View {
-    RoundedRectangle(cornerRadius: AlphaStyle.cardCorner + Space.sm)
-      .fill(Color.black.opacity(opacity))
-      .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner + Space.sm).stroke(.white.opacity(0.06)))
-      .shadow(color: .black.opacity(0.35), radius: Space.xl)
+    Rectangle().fill(Color.black.opacity(opacity))
+      .overlay(alignment: .leading) { Rectangle().fill(.white.opacity(0.28)).frame(width: 1) }
+      .overlay(alignment: .trailing) { Rectangle().fill(.white.opacity(0.28)).frame(width: 1) }
       .allowsHitTesting(false).accessibilityHidden(true)
   }
 }
@@ -187,20 +202,20 @@ struct PresenterEditingBand: View {
     HStack(spacing: Space.md) {
       Image(systemName: "pencil").font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
       Text("Editing").font(.system(size: 17, weight: .semibold))
-      Text("not saved yet").font(.system(size: 15)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+      Text("Not saved yet").font(.system(size: 16, weight: .medium)).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
       Spacer(minLength: Space.md)
       Button(action: cancel) {
-        HStack(spacing: Space.xs) {
+        HStack(spacing: Space.sm) {
           Text("Cancel").font(.system(size: 15, weight: .semibold))
-          if !compact { Text("esc").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.6)) }
+          if !compact { keycap("esc", dark: false) }
         }.padding(.horizontal, Space.md).frame(minHeight: PresenterBar.height)
       }.buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Cancel editing").disabled(isSaving)
         .help("Discard this draft (Esc)")
       Button(action: save) {
-        HStack(spacing: Space.xs) {
+        HStack(spacing: Space.sm) {
           Image(systemName: "checkmark").font(.system(size: 15, weight: .bold))
           Text("Save").font(.system(size: 15, weight: .bold))
-          if !compact { Text("⌘↩").font(.system(size: 12, weight: .medium)).foregroundStyle(AlphaStyle.onAccent.opacity(0.65)) }
+          if !compact { keycap("⌘↩", dark: true) }
         }.padding(.horizontal, Space.md).frame(minHeight: PresenterBar.height)
       }.buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Save changes").disabled(isSaving)
         .keyboardShortcut(.return, modifiers: .command)
@@ -209,8 +224,16 @@ struct PresenterEditingBand: View {
     .foregroundStyle(.white)
     .padding(.horizontal, Space.lg).padding(.vertical, Space.sm)
     .frame(maxWidth: .infinity)
-    .background(Color(white: 0.07).overlay(AlphaStyle.accent.opacity(0.12)))
-    .overlay(alignment: .bottom) { Rectangle().fill(AlphaStyle.accent.opacity(0.4)).frame(height: 1) }
+    .background(Color(white: 0.15))
+    .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.22)).frame(height: 1) }
     .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-editing-band")
+  }
+
+  /// A key hint in a small outlined capsule: 14 pt, readable at a glance.
+  private func keycap(_ text: String, dark: Bool) -> some View {
+    Text(text).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
+      .foregroundStyle(dark ? AlphaStyle.onAccent.opacity(0.85) : .white.opacity(0.9))
+      .padding(.horizontal, Space.sm).padding(.vertical, 2)
+      .overlay(RoundedRectangle(cornerRadius: 6).stroke(dark ? AlphaStyle.onAccent.opacity(0.45) : .white.opacity(0.45), lineWidth: 1))
   }
 }

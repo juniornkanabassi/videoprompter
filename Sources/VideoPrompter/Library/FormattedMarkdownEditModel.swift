@@ -383,7 +383,7 @@ struct FormattedMarkdownEditModel {
       let traits = prior.map { NSFontManager.shared.traits(of: $0) } ?? []
       let family = prior?.fontName.lowercased().contains("mono") == true
         ? NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular) : base
-      let styled = NSFontManager.shared.convert(family, toHaveTrait: traits)
+      let styled = NSFontManager.shared.convert(family, toHaveTrait: typography.bold ? traits.union(.boldFontMask) : traits)
       output.addAttribute(.font, value: styled, range: range)
     }
     // PresentationIntent is read as a typed Foundation Markdown attribute above.
