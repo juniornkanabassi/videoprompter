@@ -216,14 +216,16 @@ public enum PadRemote {
     public var connectionKind: String?
     /// Finite dBFS, clamped to -60...0. Nil means no sample in this update.
     public var micLevelDB: Double?
+    /// Frames skipped by the Mac encoder since the current picture started.
+    public var framesSkipped: Int?
     public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
       microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
       recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
-      micLevelDB: Double? = nil) {
+      micLevelDB: Double? = nil, framesSkipped: Int? = nil) {
       self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn
       self.microphones = microphones; self.selectedMicrophone = selectedMicrophone; self.micOn = micOn
       self.recording = recording; self.displayName = displayName; self.connectionKind = connectionKind
-      self.micLevelDB = micLevelDB
+      self.micLevelDB = micLevelDB; self.framesSkipped = framesSkipped
     }
   }
 
@@ -317,6 +319,9 @@ public enum PadRemote {
     /// The microphone choices for the active voice source.
     public var microphoneSources: [Source]?
     public var selectedMicrophone: String?
+    public var deviceName: String?
+    public var appVersion: String?
+    public var scriptPreview: String?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
       version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
@@ -324,8 +329,9 @@ public enum PadRemote {
       editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
       macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
-      selectedID: UUID? = nil
+      selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil
     ) {
+      self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
       self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay

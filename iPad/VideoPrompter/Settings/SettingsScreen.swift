@@ -49,7 +49,7 @@ struct SettingsScreen: View {
   private var macControl: some View {
     Section {
       NavigationLink {
-        MacControlScreen(link: store.camera.link)
+        MacControlScreen(link: store.camera.link, failure: store.camera.link.pairingFailure)
       } label: {
         VStack(alignment: .leading, spacing: 4) {
           Text("Control from a Mac")
@@ -271,8 +271,7 @@ enum KnownMacs {
 struct MacControlScreen: View {
   @EnvironmentObject private var store: PadStore
   @ObservedObject var link: MacLink
-  /// Why the last Mac's pairing failed, to show above the key. Nothing reports this yet: the link
-  /// only reports a Mac once it is connected, so this stays nil until it does.
+  /// An optional preview override; live failures come from the observed link.
   var failure: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
@@ -307,7 +306,7 @@ struct MacControlScreen: View {
             .buttonStyle(.plain)
         }
         ways
-        if let failure { notice(failure, colour: LibraryTheme.bad) }
+        if let failure = failure ?? link.pairingFailure { notice(failure, colour: LibraryTheme.bad) }
         if connection == nil {
           notice("Not connected. Plug in the USB-C cable, or on the Mac choose File › Control iPad… and type the key below when asked.", colour: LibraryTheme.warn)
         }
@@ -435,13 +434,7 @@ struct MacControlScreen: View {
       }
       Spacer(minLength: 12)
       if now {
-        // Only a Wi-Fi Mac can be let go from here (by stopping Wi-Fi sharing); the iPad has no
-        // way yet to end a cable connection.
-        if connection?.kind == "Wi-Fi" {
-          pill("Disconnect", colour: LibraryTheme.text) { link.allowsWiFi = false }
-        } else {
-          Text("Unplug to disconnect").font(.footnote).foregroundStyle(LibraryTheme.muted)
-        }
+        pill("Disconnect", colour: LibraryTheme.text) { link.disconnect() }
       } else {
         pill("Remove", colour: LibraryTheme.bad) {
           KnownMacs.remove(mac.name)

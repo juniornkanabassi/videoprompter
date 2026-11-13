@@ -12,6 +12,7 @@ struct IPadRemoteView: View {
   @State private var pictureOpen = true
   @State private var pendingSend: (UUID, String)?
   @State private var message: String?
+  @State private var pairingKey = ""
   private let yellow = Color(red: 245/255, green: 207/255, blue: 74/255)
 
   var body: some View {
@@ -34,7 +35,7 @@ struct IPadRemoteView: View {
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
     .tint(yellow).preferredColorScheme(.dark)
     .frame(width: 760)
-    .frame(minHeight: 500, idealHeight: 850, maxHeight: 900)
+    .frame(minHeight: 500, idealHeight: 848, maxHeight: 900)
     .onAppear { if startsLink { link.controlsIPad = true } }
     .onDisappear { if startsLink { link.controlsIPad = false } }
     .onReceive(link.$iPadState) { state in
@@ -54,15 +55,33 @@ struct IPadRemoteView: View {
   private var connection: some View {
     card {
       HStack {
-        Circle().fill(link.iPadState == nil ? Color.orange : Color.green).frame(width: 10, height: 10)
+        Circle().fill(link.iPadState == nil ? Color.orange : Color.green).frame(width: 12, height: 12)
         VStack(alignment: .leading) {
-          Text(link.iPadState == nil ? "Not connected" : "iPad connected").bold()
-          Text(link.iPadState == nil ? link.status : "Connected by \(link.transport ?? "USB-C") · protocol \(link.iPadState?.version ?? 2)")
+          Text(link.iPadState == nil ? "Not connected" : link.iPadState?.deviceName ?? "iPad connected").bold()
+          Text(link.iPadState == nil ? link.status : "Connected by \(link.transport ?? "USB-C") · Video Prompter \(link.iPadState?.appVersion ?? "unknown")")
             .foregroundStyle(.secondary)
         }
         Spacer()
-        if link.iPadState != nil { Button("Disconnect") { link.controlsIPad = false } }
+        if link.iPadState != nil { Button("Disconnect") { link.disconnect() } }
         else { Toggle("Wi-Fi", isOn: $link.usesWiFi).toggleStyle(.checkbox); if !link.controlsIPad { Button("Connect") { link.controlsIPad = true } } }
+      }
+      if link.iPadState == nil, let name = link.unpairedDeviceName {
+        Text("Pair with \(name)").font(.headline)
+        HStack {
+          TextField("Pairing key from the iPad", text: $pairingKey)
+          Button("Pair") { link.pair(key: pairingKey) }.disabled(pairingKey.isEmpty)
+        }
+      }
+      if let failure = link.pairingFailure { Text(failure).foregroundStyle(.orange) }
+      if let state = link.iPadState {
+        HStack(spacing: 12) {
+          if link.isOn, state.pictureMode != .off, let image = link.previewImage {
+            Image(decorative: image, scale: 1).resizable().scaledToFit()
+              .scaleEffect(x: link.mirror ? -1 : 1, y: link.flip ? -1 : 1)
+              .frame(width: 160, height: 92).clipped()
+          }
+          Text(state.scriptPreview ?? "No script open").lineLimit(3).foregroundStyle(.secondary)
+        }.accessibilityLabel("Preview of the iPad")
       }
     }
   }
@@ -113,12 +132,12 @@ struct IPadRemoteView: View {
         Text("Follow voice from").frame(width: 120, alignment: .leading)
         Picker("Follow voice from", selection: Binding(get: { state.mode == "Manual" ? "off" : state.voiceSource == "Mac" ? "mac" : "ipad" }, set: { setVoice($0, state) })) {
           Text("This Mac").tag("mac"); Text("iPad").tag("ipad"); Text("Off (scroll)").tag("off")
-        }.pickerStyle(.segmented).labelsHidden().frame(width: 250)
+        }.pickerStyle(.segmented).labelsHidden().frame(width: 252)
       }
       HStack {
         Text("Mic level").frame(width: 120, alignment: .leading)
         Text(link.microphoneSources.first { $0.id == link.selectedMicrophone }?.name ?? "Microphone").foregroundStyle(.secondary)
-        DBMeter(levelDB: link.micLevelDB, axis: .horizontal).frame(maxWidth: 350)
+        DBMeter(levelDB: link.micLevelDB, axis: .horizontal).frame(maxWidth: 352)
       }
       HStack {
         Text("Scroll speed").frame(width: 120, alignment: .leading)
@@ -194,7 +213,7 @@ struct IPadRemoteView: View {
     }
   }
   private func lookSlider(_ title: String, value: Double, range: ClosedRange<Double>, set: @escaping (Double) -> Void) -> some View {
-    HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 55) }
+    HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 56) }
   }
 }
 #endif

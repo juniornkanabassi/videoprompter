@@ -24,7 +24,7 @@ struct DBMeter: View {
       GeometryReader { geometry in
         let length = vertical ? geometry.size.height : geometry.size.width
         ZStack(alignment: vertical ? .bottomLeading : .leading) {
-          RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.12))
+          RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.12))
           // Segments retain their fixed scale positions as the signal changes.
           ForEach(0..<3) { index in
             let starts = [0.0, 0.8, 0.9]
@@ -39,7 +39,7 @@ struct DBMeter: View {
               .frame(width: vertical ? nil : 2, height: vertical ? 2 : nil)
               .offset(x: vertical ? 0 : min(length - 2, length * Self.fraction(peakDB)), y: vertical ? -min(length - 2, length * Self.fraction(peakDB)) : 0)
           }
-        }.clipShape(RoundedRectangle(cornerRadius: 3))
+        }.clipShape(RoundedRectangle(cornerRadius: 4))
       }
       .frame(width: vertical ? 12 : nil, height: vertical ? nil : 12)
       .overlay(alignment: vertical ? .leading : .bottomLeading) {

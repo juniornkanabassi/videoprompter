@@ -6,6 +6,10 @@ import UIKit
 struct ConfidenceMonitorView: View {
   @EnvironmentObject private var store: PadStore
   @ObservedObject var camera: PadCamera
+  @ObservedObject private var link: MacLink
+
+  init(camera: PadCamera) { self.camera = camera; self.link = camera.link }
+
   @State private var fill = false
   @State private var showScript = false
 
@@ -35,10 +39,10 @@ struct ConfidenceMonitorView: View {
   }
 
   var body: some View {
-    GeometryReader { geometry in
+    GeometryReader { _ in
       VStack(spacing: 0) {
-        HStack(spacing: 10) {
-          HStack(spacing: 10) {
+        HStack(spacing: 12) {
+          HStack(spacing: 12) {
             chip(tally, colour: tallyColour)
             chip("\(source) · \(resolution)", colour: Color(white: 0.15))
           }
@@ -62,6 +66,16 @@ struct ConfidenceMonitorView: View {
                   Rectangle().strokeBorder(tallyColour, lineWidth: store.recordingState == .recording ? 8 : 5)
                 }
               }
+              .overlay(alignment: .bottomLeading) {
+                TimelineView(.periodic(from: .now, by: 0.1)) { context in
+                  let age = context.date.timeIntervalSince(link.lastFrameTime ?? .distantPast)
+                  let paused = age > 0.3
+                  let status = paused ? "Picture paused · last frame \(link.lastFrameTime == nil ? "unknown" : "\(Int(max(0, age))) s ago")"
+                    : link.transportKind == "Wi-Fi" && link.framesSkipped > 0 ? "Wi-Fi · \(link.framesSkipped) frames skipped" : "Live"
+                  chip(status, colour: paused ? amber : Color(white: 0.15))
+                }
+                .padding(16)
+              }
               .position(x: area.size.width / 2, y: area.size.height / 2)
               .clipped()
           }
@@ -69,7 +83,7 @@ struct ConfidenceMonitorView: View {
             .frame(width: 60).padding(.vertical, 16)
             .scaleEffect(x: orientationX, y: orientationY)
         }
-        if showScript { scriptLine.frame(height: min(180, geometry.size.height * 0.18)) }
+        if showScript { scriptLine.frame(height: 180) }
       }
       .background(.black)
     }
@@ -95,7 +109,7 @@ struct ConfidenceMonitorView: View {
     }
     .padding(.horizontal, 40)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .overlay(alignment: .top) { Rectangle().fill(Color.yellow.opacity(0.6)).frame(height: 3) }
+    .overlay(alignment: .top) { Rectangle().fill(Color.yellow.opacity(0.6)).frame(height: 4) }
     .clipped()
     .scaleEffect(x: orientationX, y: orientationY)
   }
@@ -106,14 +120,14 @@ struct ConfidenceMonitorView: View {
   }
   private func button(_ title: String, active: Bool = false, action: @escaping () -> Void) -> some View {
     Button(title, action: action).font(.system(size: 16, weight: .medium))
-      .padding(.horizontal, 14).frame(minHeight: 48)
+      .padding(.horizontal, 16).frame(minHeight: 48)
       .foregroundStyle(active ? Color.yellow : Color.white)
-      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
   }
   private func icon(_ name: String, label: String, active: Bool, action: @escaping () -> Void) -> some View {
     Button(action: action) { Image(systemName: name).frame(width: 48, height: 48) }
       .foregroundStyle(active ? Color.yellow : Color.white)
-      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+      .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
       .accessibilityLabel(label).accessibilityValue(active ? "On" : "Off")
   }
 }

@@ -1,9 +1,79 @@
+@preconcurrency import AVFoundation
 import Combine
+import Network
 import XCTest
 
 @testable import PrompterCore
 
 final class CameraLinkTests: XCTestCase {
+  func testDeviceDetailsRemainOptionalAndRoundTrip() throws {
+    let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
+    var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
+    XCTAssertNil(state.deviceName)
+    XCTAssertNil(state.appVersion)
+    XCTAssertNil(state.scriptPreview)
+    state.deviceName = "Studio iPad"
+    state.appVersion = "2.5.1"
+    state.scriptPreview = "The current script line"
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(CameraLink.Message.state(state).encoded()), [.state(state)])
+  }
+
+  @MainActor
+  func testInlinePairingValidatesAndStoresTheDiscoveredIPadKey() {
+    let defaults = freshDefaults()
+    let sender = IPadCameraSender(defaults: defaults)
+    sender.searchesForIPad = false
+    sender.wifiChanged([.service(name: "Studio iPad", type: CameraLink.bonjourType, domain: "local.", interface: nil)])
+    XCTAssertEqual(sender.unpairedDeviceName, "Studio iPad")
+    sender.pair(key: "wrong")
+    XCTAssertNotNil(sender.pairingFailure)
+    XCTAssertNil(defaults.dictionary(forKey: "sendCameraPairingCodes")?["Studio iPad"])
+    let key = CameraLinkSecurity.newCode()
+    sender.pair(key: key)
+    XCTAssertNil(sender.pairingFailure)
+    XCTAssertEqual(defaults.dictionary(forKey: "sendCameraPairingCodes")?["Studio iPad"] as? String, CameraLinkSecurity.normalised(key))
+    sender.disconnect()
+    XCTAssertFalse(sender.controlsIPad)
+    XCTAssertNil(sender.pipe)
+  }
+
+  @MainActor
+  func testDisconnectSendsGoodbyeAndClosesThePipe() throws {
+    final class Pipe: LinkPipe, @unchecked Sendable {
+      var bytes = Data()
+      var didClose = false
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) { bytes.append(data); done() }
+      override func close() { didClose = true }
+    }
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.controlsIPad = true
+    let pipe = Pipe(name: "USB-C")
+    sender.pipe = pipe
+    sender.disconnect()
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(pipe.bytes), [.goodbye])
+    XCTAssertTrue(pipe.didClose)
+    XCTAssertNil(sender.pipe)
+    XCTAssertFalse(sender.controlsIPad)
+  }
+
+  func testEncoderReportsSkippedFramesWithoutEncodingAThumbnail() throws {
+    let encoder = LinkEncoder()
+    let pipe = LinkPipe(name: "stalled")
+    encoder.attach(pipe)
+    pipe.queued(4_000_000)
+    let sample = try CameraLinkLatencyTests.noisyFrame(16, 16, 0)
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: sample, from: CameraLinkPipelineTests.connection)
+    XCTAssertEqual(encoder.framesSkipped, 1)
+    let status = PadRemote.MacStatus(framesSkipped: encoder.framesSkipped)
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(CameraLink.Message.command(.macStatus(status)).encoded()), [.command(.macStatus(status))])
+    encoder.attach(nil)
+    XCTAssertEqual(encoder.framesSkipped, 0)
+  }
+
   private let messages: [CameraLink.Message] = [
     .hello(name: "Junior's MacBook Pro", version: CameraLink.protocolVersion),
     .format(width: 1920, height: 1080, parameterSets: [Data([0x67, 0x64, 0x00, 0x28]), Data([0x68, 0xEE])]),

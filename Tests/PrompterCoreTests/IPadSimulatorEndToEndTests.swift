@@ -34,6 +34,8 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
 
     defer { pipe.close() }
     let first = try state("fixture state on connect") { $0.scripts.contains(where: { $0.title == expectedTitle }) }
+    XCTAssertFalse(try XCTUnwrap(first.deviceName).isEmpty)
+    XCTAssertFalse(try XCTUnwrap(first.appVersion).isEmpty)
     let checksURL = URL(fileURLWithPath: try XCTUnwrap(environment["VP_IPAD_E2E_CONTAINER"]))
       .appendingPathComponent("Documents/vp-e2e-contract-checks.json")
     let checks = try JSONDecoder().decode([String: Bool].self, from: Data(contentsOf: checksURL))
@@ -49,6 +51,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     _ = try state("manual at 240") { $0.mode == "Manual" && $0.speed == 240 && $0.presenting == nil }
     send(.present(script.id))
     let open = try state("presenting") { $0.presenting == script.id && $0.words > 5 }
+    XCTAssertFalse(try XCTUnwrap(open.scriptPreview).isEmpty)
     send(.seek(word: open.words / 2))
     _ = try state("seeked") { $0.word == open.words / 2 }
     send(.backToStart)

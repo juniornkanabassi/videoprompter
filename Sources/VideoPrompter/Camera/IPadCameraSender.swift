@@ -2,6 +2,7 @@
 @preconcurrency import AVFoundation
 import AppKit
 import Combine
+import CoreImage
 import Darwin
 import Network
 import PrompterCore
@@ -125,7 +126,7 @@ import VideoToolbox
       microphones: microphones,
       selectedMicrophone: relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID,
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
-      displayName: macName, connectionKind: pipe?.name)
+      displayName: macName, connectionKind: pipe?.name, framesSkipped: encoder.framesSkipped)
     if next != macStatus { macStatus = next }
     var update = next
     update.micLevelDB = micMeter.levelDB
@@ -167,14 +168,35 @@ import VideoToolbox
   private var relayActive = false
   /// What the menu shows under the toggles.
   @Published private(set) var status = "Off"
-  /// Off by default: USB-C needs no trust decision, while Wi-Fi is unencrypted and anything on
-  /// the network can advertise itself as an iPad.
+  /// Off by default: Wi-Fi requires the key shown on the iPad; USB-C uses the trusted cable.
   @Published var usesWiFi: Bool {
     didSet {
       defaults.set(usesWiFi, forKey: "sendCameraOverWiFi")
       if linkOn { usesWiFi ? startBrowsing() : stopBrowsing() }
     }
   }
+  @Published private(set) var unpairedDeviceName: String?
+  @Published private(set) var pairingFailure: String?
+  @Published private(set) var previewImage: CGImage?
+
+  func disconnect() {
+    controlsIPad = false
+    isOn = false
+    linkOn = false
+    stopLink()
+  }
+
+  func pair(key: String) {
+    guard let name = unpairedDeviceName else { return }
+    guard let code = CameraLinkSecurity.normalised(key) else {
+      pairingFailure = "Enter the full pairing key shown on the iPad."
+      return
+    }
+    codes[name] = code
+    pairingFailure = nil
+    connectIfNeeded()
+  }
+
   /// The pairing code for each iPad the user has paired over Wi-Fi, by its Bonjour name.
   private var codes: [String: String] {
     didSet { defaults.set(codes, forKey: "sendCameraPairingCodes") }
@@ -185,10 +207,10 @@ import VideoToolbox
     self.defaults = defaults
     usesWiFi = defaults.bool(forKey: "sendCameraOverWiFi")
     codes = defaults.dictionary(forKey: "sendCameraPairingCodes") as? [String: String] ?? [:]
+    encoder.onPreview = { [weak self] image in
+      Task { @MainActor in if self?.isOn == true { self?.previewImage = image } }
+    }
   }
-
-  /// Asked about and refused in this run, so the question is not repeated.
-  private var declinedNames = Set<String>()
 
   private let output = AVCaptureVideoDataOutput()
   private let encoder = LinkEncoder()
@@ -273,6 +295,7 @@ import VideoToolbox
   }
 
   private func stopCamera() {
+    previewImage = nil
     if let pipe {
       if iPadState != nil {
         // Still connected for the remote: the iPad goes back to its own camera once the last
@@ -325,6 +348,8 @@ import VideoToolbox
     browser?.cancel()
     browser = nil
     wifiTargets = []
+    unpairedDeviceName = nil
+    pairingFailure = nil
     if pipe?.name == "Wi-Fi" { pipe?.close() }
   }
 
@@ -335,7 +360,6 @@ import VideoToolbox
     mux = nil
     stopBrowsing()
     usbDevices = []
-    declinedNames = []
     pipe?.send(CameraLink.Message.goodbye.encoded())
     pipe?.close()
     pipe = nil
@@ -347,6 +371,7 @@ import VideoToolbox
     macMicOn = true
     macStatus = PadRemote.MacStatus()
     iPadState = nil
+    previewImage = nil
     status = "Off"
   }
 
@@ -358,27 +383,10 @@ import VideoToolbox
   }
 
   /// Only paired iPads are sent to. A new one is paired once, with the code its Settings show.
-  private func wifiChanged(_ endpoints: [NWEndpoint]) {
-    // A headless launch, for the CLI, never stops to ask.
-    for name in endpoints.compactMap(Self.serviceName) where codes[name] == nil && !declinedNames.contains(name) && !Headless.shared.active {
-      if let code = Self.askForCode(name) { codes[name] = code } else { declinedNames.insert(name) }
-    }
-    wifiTargets = endpoints.filter { Self.serviceName($0).map { codes[$0] != nil } ?? false }
+  func wifiChanged(_ endpoints: [NWEndpoint]) {
+    wifiTargets = endpoints
+    unpairedDeviceName = endpoints.compactMap(Self.serviceName).first { codes[$0] == nil }
     connectIfNeeded()
-  }
-
-  private static func askForCode(_ name: String) -> String? {
-    let alert = NSAlert()
-    alert.messageText = "Pair with “\(name)” over Wi-Fi"
-    alert.informativeText = "Type the pairing key shown on the iPad in Settings › Camera from a Mac. Only pair with your own iPad; the picture is encrypted with this key."
-    let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 220, height: 24))
-    field.placeholderString = "XXXX-XXXX-XXXX-XXXX"
-    alert.accessoryView = field
-    alert.window.initialFirstResponder = field
-    alert.addButton(withTitle: "Pair")
-    alert.addButton(withTitle: "Not Now")
-    guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-    return CameraLinkSecurity.normalised(field.stringValue)
   }
 
   private static func serviceName(_ endpoint: NWEndpoint) -> String? {
@@ -411,6 +419,8 @@ import VideoToolbox
           case .refused:
             // The iPad has a different code now: pair again next time it is seen.
             codes[name] = nil
+            unpairedDeviceName = name
+            pairingFailure = "Pairing failed. Check the key on the iPad and try again."
           case .unreachable:
             break
           }
@@ -438,6 +448,8 @@ import VideoToolbox
 
   private func use(_ pipe: LinkPipe) {
     self.pipe = pipe
+    unpairedDeviceName = nil
+    pairingFailure = nil
     macName = Host.current().localizedName ?? "Mac"
     refreshSources()
     statusTicks = 0
@@ -457,6 +469,13 @@ import VideoToolbox
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
     }
     pipe.onMessage = { [weak self, weak pipe] message in
+      if case .goodbye = message {
+        Task { @MainActor in
+          guard let self, let pipe, self.pipe === pipe else { return }
+          self.disconnect()
+        }
+        return
+      }
       if case .command(let command) = message {
         Task { @MainActor in
           if let self, let pipe, self.pipe === pipe { self.receive(command) }
@@ -508,6 +527,7 @@ import VideoToolbox
     macMicOn = true
     macStatus = PadRemote.MacStatus()
     iPadState = nil
+    previewImage = nil
     guard linkOn else { return }
     if oldIPad, !isOn {
       status = "Update Video Prompter on the iPad, then open Control iPad again"
@@ -559,11 +579,17 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   /// The parameter sets last sent, so they go again only when they change.
   private let lastSets = Mutex<[Data]>([])
   private var forceKeyFrame = false
+  var onPreview: (@Sendable (CGImage) -> Void)?
+  private lazy var previewContext = CIContext(options: [.cacheIntermediates: false])
+  private var lastPreviewTime: CFTimeInterval = 0
+  private let skipped = Atomic<Int>(0)
+  var framesSkipped: Int { skipped.load(ordering: .relaxed) }
   /// Frames inside the encoder, not yet queued on the pipe. Counted with the pipe's waiting frames
   /// when deciding to admit a frame, so two frames cannot both pass while a write is stalled.
   private let encoding = Mutex(0)
 
   func attach(_ pipe: LinkPipe?, bitRate: Int = 10_000_000, longSide: Int = 1920) {
+    skipped.store(0, ordering: .relaxed)
     target.withLock {
       $0.pipe = pipe
       $0.bitRate = bitRate
@@ -585,8 +611,17 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     // written, counting the one still being encoded; a second would only be older by the time it
     // went. Dropped before encoding, so no encoded reference frame is ever lost.
     if pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) || !admit(pipe) {
+      skipped.add(1, ordering: .relaxed)
       forceKeyFrame = true
       return
+    }
+    let now = CACurrentMediaTime()
+    if let onPreview, now - lastPreviewTime >= 0.5 {
+      lastPreviewTime = now
+      let source = CIImage(cvPixelBuffer: image)
+      let scale = min(1, 320 / max(source.extent.width, source.extent.height))
+      let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+      if let thumbnail = previewContext.createCGImage(small, from: small.extent) { onPreview(thumbnail) }
     }
     let size = CMVideoDimensions(width: Int32(CVPixelBufferGetWidth(image)), height: Int32(CVPixelBufferGetHeight(image)))
     if session == nil || generation != sessionGeneration || sessionSize.map({ $0.width != size.width || $0.height != size.height }) == true {
@@ -594,7 +629,7 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       makeSession(size: size, bitRate: bitRate, longSide: longSide)
       sessionGeneration = generation
     }
-    guard let session else { release(); return }
+    guard let session else { skipped.add(1, ordering: .relaxed); release(); return }
     let options: CFDictionary? = forceKeyFrame ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
     forceKeyFrame = false
     let status = VTCompressionSessionEncodeFrame(
@@ -604,11 +639,11 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       guard let self else { return }
       // Released after it is queued, so the frame is always counted in one place or the other.
       defer { self.release() }
-      guard status == noErr, let encoded else { return }
+      guard status == noErr, let encoded else { self.skipped.add(1, ordering: .relaxed); return }
       self.send(encoded, to: pipe)
     }
     // The handler never runs for a frame VideoToolbox refused.
-    if status != noErr { release() }
+    if status != noErr { skipped.add(1, ordering: .relaxed); release() }
   }
 
   /// Reserves the encoder slot unless a frame is already encoding or waiting to be written.
