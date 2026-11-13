@@ -512,22 +512,44 @@ struct RecordingInputLevel: View {
 /// The camera's next step belongs on its picture, in both camera surfaces.
 struct CameraRecoveryView: View {
   @ObservedObject var model: CameraModel
+  /// The presenter's empty state: centred in the picture, one clear yellow button, large text.
+  var prominent = false
   var chooseCamera: () -> Void
   var body: some View {
-    VStack(spacing: Space.sm) {
-      Label(title, systemImage: "video.slash").font(.headline)
-      Text(message).font(.callout).multilineTextAlignment(.center)
+    VStack(spacing: prominent ? Space.md : Space.sm) {
+      if prominent {
+        Image(systemName: "video.slash").font(.system(size: 44, weight: .regular)).foregroundStyle(.white.opacity(0.55)) // grid: ok Large decorative empty-state glyph.
+        Text(title).font(.system(size: 28, weight: .semibold)) // grid: ok Empty-state heading size.
+      } else {
+        Label(title, systemImage: "video.slash").font(.headline)
+      }
+      Text(message).font(prominent ? .system(size: 17) : .callout).multilineTextAlignment(.center) // grid: ok Empty-state body size.
+        .foregroundStyle(prominent ? .white.opacity(0.75) : .white)
         .fixedSize(horizontal: false, vertical: true)
-      if model.authorization == .denied || model.authorization == .restricted {
-        Button("Allow Camera in System Settings") {
-          NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
-        }.initialPopoverFocus()
-      } else if model.authorization == .notDetermined {
-        Button("Allow Camera Access") { model.start() }.initialPopoverFocus()
-      } else { Button("Choose Camera", action: chooseCamera).initialPopoverFocus() }
+      Group {
+        if model.authorization == .denied || model.authorization == .restricted {
+          Button("Allow Camera in System Settings") {
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera")!)
+          }
+        } else if model.authorization == .notDetermined {
+          Button("Allow Camera Access") { model.start() }
+        } else { Button(prominent ? "Choose camera" : "Choose Camera", action: chooseCamera) }
+      }
+      .modifier(RecoveryButton(prominent: prominent)).initialPopoverFocus()
     }.foregroundStyle(.white).padding(Space.md)
-      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: 12))
-      .frame(maxWidth: 420).accessibilityIdentifier("camera-recovery")
+      .background(prominent ? Color.clear : Surfaces.scrim, in: RoundedRectangle(cornerRadius: 12))
+      .frame(maxWidth: prominent ? 520 : 420).accessibilityIdentifier("camera-recovery") // grid: ok Readable empty-state measure.
+  }
+  private struct RecoveryButton: ViewModifier {
+    let prominent: Bool
+    func body(content: Content) -> some View {
+      if prominent {
+        content.buttonStyle(.plain).font(.system(size: 18, weight: .semibold)) // grid: ok Empty-state button size.
+          .padding(.horizontal, Space.xl).frame(minHeight: 52) // grid: ok One clear primary button.
+          .foregroundStyle(AlphaStyle.onAccent)
+          .background(AlphaStyle.accent, in: RoundedRectangle(cornerRadius: 16))
+      } else { content }
+    }
   }
   private var title: String {
     if model.authorization == .denied || model.authorization == .restricted { return "Camera access is off" }

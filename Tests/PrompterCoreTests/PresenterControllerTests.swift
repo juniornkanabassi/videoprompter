@@ -1463,7 +1463,8 @@ final class PresenterControllerTests: XCTestCase {
       renderer.scale = 1
       let image = try XCTUnwrap(renderer.cgImage)
       let bitmap = NSBitmapImageRep(cgImage: image)
-      XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 50, y: 1)).alphaComponent, 0, "The guide leaves the script area clear")
+      // A full-width line, as the first versions drew it: the same opacity at the edge and in the middle.
+      XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 50, y: 1)).alphaComponent, try XCTUnwrap(bitmap.colorAt(x: 4, y: 1)).alphaComponent, accuracy: 0.02, "The reading line runs the full width")
       return try XCTUnwrap(bitmap.colorAt(x: 4, y: 1)).alphaComponent
     }
     XCTAssertEqual(try drawnAlpha(reopened), 0.25, accuracy: 0.02)

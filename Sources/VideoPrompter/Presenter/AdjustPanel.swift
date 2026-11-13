@@ -19,6 +19,7 @@ struct AdjustPanel: View {
   @Binding var selection: AdjustTab
   @Binding var showsMic: Bool
   @State private var microphones: [AudioInputDevice] = []
+  @State private var defaultMicrophoneName: String?
   @ObservedObject var camera: CameraModel
   @ObservedObject var store: AppStore
   let startsMeter: Bool

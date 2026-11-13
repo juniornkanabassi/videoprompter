@@ -42,7 +42,7 @@ extension AppearanceSnapshotTests {
             XCTAssertFalse(chipFrame.intersects(scriptFrame), "Chip must not cover the reading viewport at \(size), \(zoom)")
           }
           if state == "setup" {
-            let cameraButton = try XCTUnwrap(LibraryAX.named("Camera", in: host).first)
+            let cameraButton = try XCTUnwrap(LibraryAX.named("Choose camera", in: host).first)
             XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Turned right for vertical")
             let stage = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-visible-stage" })
             let pictureRegion = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-picture-region" })
