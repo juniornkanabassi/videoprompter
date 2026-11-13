@@ -89,6 +89,12 @@ final class PadEditingTests: XCTestCase {
     require(typed.save { disk = $0; return true } && disk == "one two three" && !typed.isDirty, "autosave writes the typed text")
     typed.cancel()
     require(typed.model.markdown == "one two three", "cancel after a save keeps the saved text")
+    typed.apply(typed.model.replacing(NSRange(location: 13, length: 0), with: " four")!,
+      selection: NSRange(location: 18, length: 0), previousSelection: NSRange(location: 13, length: 0))
+    typed.adopt("the Mac text")
+    require(typed.model.markdown == "the Mac text" && !typed.isDirty && !typed.history.canUndo, "adopting newer saved text leaves a clean draft")
+    typed.cancel()
+    require(typed.model.markdown == "the Mac text", "cancel returns to the adopted text")
     print("PadMarkdownEdit round-trip, Unicode, selection, formatting and cut/paste passed")
     }}
     """#.write(to: main, atomically: true, encoding: .utf8)
@@ -133,7 +139,7 @@ final class PadEditingTests: XCTestCase {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let source = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Library/ScriptEditor.swift"), encoding: .utf8)
     // UIKit is not in the macOS test process: these are wiring checks, not simulated touch input.
-    for call in ["onBegin: store.beginEditing", "onEnd: store.endEditing", "store.save($0, to: script)",
+    for call in ["onBegin: store.beginEditing", "onEnd: store.endEditing", "store.save(text, to: script, basis: draft.original)",
       "history.undo()", "history.redo()", "history.registerUndo", "UIKeyCommand.inputEscape",
       "view.markedTextRange", "scrollRangeToVisible", "private func cancel() { draft.cancel(); markdown = draft.original; onDone() }"] {
       XCTAssertTrue(source.contains(call), "Missing editor integration: \(call)")
@@ -146,12 +152,18 @@ final class PadEditingTests: XCTestCase {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let editor = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Library/ScriptEditor.swift"), encoding: .utf8)
     let library = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Library/LibraryScreen.swift"), encoding: .utf8)
-    for call in ["if !onTheFly { _ = flush() }", "flusher?.flush = flush", "phase != .active, !onTheFly", "mode: .library, flusher: flusher"] {
+    for call in ["if !onTheFly, !flush(), draft.isDirty", "store.draftFlusher.flush = flush", "phase != .active, !onTheFly",
+      "(try? store.folder.saveCopy(draft.model.markdown, of: script)) != nil", "case .keptAsCopy: keptAsCopy = true; return true"] {
       XCTAssertTrue(editor.contains(call), "Missing autosave wiring: \(call)")
     }
-    for call in ["if flusher.flush?() ?? true { store.present(script) }", "ScriptEditor(script: script, flusher: flusher)", "of: store.presentingID"] {
+    for call in ["if store.draftFlusher.resolve() { store.present(script) }", "of: store.presentingID",
+      "Button { select(script.id) }", "if store.draftFlusher.resolve() { store.selectedID = id }", "{ select(nil) }"] {
       XCTAssertTrue(library.contains(call), "Missing library wiring: \(call)")
     }
+    // A Mac Send or Open settles the typed draft first, and is refused if the draft cannot be written.
+    let store = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/App/PadStore.swift"), encoding: .utf8)
+    XCTAssertTrue(store.contains("case .present, .sendScript:\n      // Another version is about to be received or shown"))
+    XCTAssertTrue(store.contains("if !draftFlusher.resolve() {"))
     XCTAssertFalse(library.contains(".onTheFly"), "The library must never take the on-the-fly lock")
   }
 

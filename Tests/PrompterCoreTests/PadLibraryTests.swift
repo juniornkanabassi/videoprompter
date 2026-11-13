@@ -151,6 +151,34 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertEqual(folder.origin(of: try XCTUnwrap(folder.script(sent.id))), .fromMac)
   }
 
+  /// An unsaved iPad draft, then the Mac sends and opens a newer version: the draft is judged against the
+  /// text it began from, so it lands in a copy and the Mac's text is not overwritten.
+  func testAStaleDraftAfterAMacSendKeepsBothVersions() throws {
+    let (folder, _) = try folder()
+    let mac = UUID()
+    let sent = try XCTUnwrap(folder.receive(.init(macID: mac, title: "Draft", markdown: "v1 text", basis: nil, present: false)))
+    let began = try folder.record(for: sent).markdown
+    let updated = try XCTUnwrap(folder.receive(.init(
+      macID: mac, title: "Draft", markdown: "v2 from the Mac", basis: MarkdownLibrary.fingerprint(began), present: true)))
+    // Presenting reads the file, which moves the folder's own baseline to the Mac's text.
+    _ = try folder.record(for: updated)
+    XCTAssertThrowsError(try folder.save("my unsaved edit", to: updated, basis: MarkdownLibrary.fingerprint(began))) { error in
+      guard case ScriptFolderError.changedElsewhere = error else { return XCTFail("\(error)") }
+    }
+    XCTAssertEqual(try Folder.read(updated.url), "v2 from the Mac")
+    let copy = try XCTUnwrap(folder.scripts.first { $0.title.contains("iPad copy") })
+    XCTAssertEqual(try Folder.read(copy.url), "my unsaved edit")
+  }
+
+  func testAnUnwritableDraftCanStillBeKeptBesideItsScript() throws {
+    let (folder, _) = try folder()
+    let script = try add("Keep", "original", in: folder)
+    let name = try folder.saveCopy("typed but unsaved", of: script)
+    XCTAssertEqual(try Folder.read(script.url), "original")
+    let copy = try XCTUnwrap(folder.scripts.first { $0.relativePath == name })
+    XCTAssertEqual(try Folder.read(copy.url), "typed but unsaved")
+  }
+
   func testAFileOfTheUsersOwnIsLabelledByWhereItIsSaved() throws {
     let (folder, _) = try folder()
     let own = try add("Mine", "words here", in: folder)

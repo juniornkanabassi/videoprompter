@@ -82,7 +82,7 @@ struct LibraryScreen: View {
       if let connection { KnownMacs.note(name: connection.name, kind: connection.kind) }
     }
     .fileImporter(isPresented: $importing, allowedContentTypes: Self.importTypes, allowsMultipleSelection: true) { result in
-      guard case .success(let urls) = result else { return }
+      guard case .success(let urls) = result, store.draftFlusher.resolve() else { return }
       Task { for url in urls { await store.importFile(url) } }
     }
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
@@ -109,7 +109,7 @@ struct LibraryScreen: View {
         Text("Scripts").font(.title.weight(.semibold))
         Spacer()
         Menu {
-          Button("New Script", systemImage: "square.and.pencil") { store.newScript(); scope = .all; showingSidebar = false }
+          Button("New Script", systemImage: "square.and.pencil") { guard store.draftFlusher.resolve() else { return }; store.newScript(); scope = .all; showingSidebar = false }
           Button("Import from Files…", systemImage: "square.and.arrow.down") { importing = true }
           Button("From Google Docs…", systemImage: "doc.richtext") { showingGoogle = true }
         } label: {
@@ -223,7 +223,7 @@ struct LibraryScreen: View {
       ForEach(visible) { script in
         let selected = store.selectedID == script.id
         let label = folder.listLabel(for: script)
-        Button { store.selectedID = script.id } label: {
+        Button { select(script.id) } label: {
           VStack(alignment: .leading, spacing: 4) {
             Text(label.title).font(.body.weight(.semibold)).multilineTextAlignment(.leading)
             Text(folder.metaLine(for: script)).font(.subheadline).foregroundStyle(LibraryTheme.muted).multilineTextAlignment(.leading)
@@ -305,12 +305,17 @@ struct LibraryScreen: View {
         ContentUnavailableView("Recently Deleted", systemImage: "trash", description: Text("Restore a script to read or present it. Deleted scripts are kept for 30 days."))
       } else if let script = store.selected {
         // Fresh state per script, so a refresh still answering for one never asks about another.
-        ScriptDetail(script: script, back: back ? { store.selectedID = nil } : nil, delete: delete).id(script.id)
+        ScriptDetail(script: script, back: back ? { select(nil) } : nil, delete: delete).id(script.id)
       } else {
         ContentUnavailableView("Choose a script", systemImage: "doc.text", description: Text("Pick a script on the left, then press Open presenter."))
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  /// Moves to another script only once the one being edited is saved. A draft that cannot be written stays on screen.
+  private func select(_ id: UUID?) {
+    if store.draftFlusher.resolve() { store.selectedID = id }
   }
 
   // MARK: Delete and undo
@@ -389,7 +394,6 @@ private struct ScriptDetail: View {
   @State private var confirmingOverwrite = false
   @State private var updateNote: String?
   @State private var explainingCopy = false
-  @State private var flusher = PadDraftFlusher()
 
   var body: some View {
     VStack(spacing: 0) {
@@ -397,7 +401,7 @@ private struct ScriptDetail: View {
       LibraryTheme.line.frame(height: 1)
       if script.isDownloaded {
         // The editing view, with its own formatting row, is the script editor's.
-        ScriptEditor(script: script, flusher: flusher)
+        ScriptEditor(script: script)
       } else {
         ProgressView("Downloading from iCloud…").frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -405,7 +409,7 @@ private struct ScriptDetail: View {
       footer
     }
     // A presentation started elsewhere (the Mac) still shows what is on screen here.
-    .onChange(of: store.presentingID) { _, id in if id != nil { _ = flusher.flush?() } }
+    .onChange(of: store.presentingID) { _, id in if id != nil { _ = store.draftFlusher.resolve() } }
     .confirmationDialog(
       "This script was edited since it came from Google Docs", isPresented: $confirmingOverwrite, titleVisibility: .visible
     ) {
@@ -458,7 +462,7 @@ private struct ScriptDetail: View {
       }
       Button {
         // Present what is on screen: an unsaved draft is written first, and a failed save stops here.
-        if flusher.flush?() ?? true { store.present(script) }
+        if store.draftFlusher.resolve() { store.present(script) }
       } label: {
         Label("Open presenter", systemImage: "play.fill")
           .font(.body.weight(.semibold))

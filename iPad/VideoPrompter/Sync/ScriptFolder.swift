@@ -328,23 +328,31 @@ enum ScriptFolderError: LocalizedError {
       markdown: markdown)
   }
 
-  /// Saves an edit in place. If the file moved on since it was read here, the edit goes to a
+  /// Saves an edit in place. If the file moved on since the edit began, the edit goes to a
   /// conflict copy beside it instead, as the Mac does for linked files, and nothing is lost.
+  /// `basis` is the fingerprint of the text the edit started from. The editor passes it so another
+  /// read of the file here (presenting it, say) cannot move the point the conflict is judged from.
   @discardableResult
-  func save(_ markdown: String, to script: FolderScript) throws -> ScriptRecord {
+  func save(_ markdown: String, to script: FolderScript, basis: String? = nil) throws -> ScriptRecord {
     let current = try Self.read(script.url)
-    if let baseline = baselines[script.id], MarkdownLibrary.fingerprint(current) != baseline,
+    if let baseline = basis ?? baselines[script.id], MarkdownLibrary.fingerprint(current) != baseline,
       current != markdown
     {
-      let copyName = "\(script.title) (iPad copy \(Self.stamp())).md"
-      try Self.write(markdown, to: script.url.deletingLastPathComponent().appendingPathComponent(copyName))
-      refresh()
-      throw ScriptFolderError.changedElsewhere(conflictCopy: copyName)
+      throw ScriptFolderError.changedElsewhere(conflictCopy: try saveCopy(markdown, of: script))
     }
     try Self.write(markdown, to: script.url)
     if current != markdown, editedHere.insert(script.id).inserted { saveEditedHere() }
     refresh()
     return try record(for: self.script(script.id) ?? script)
+  }
+
+  /// Puts text beside its script as an iPad copy, leaving the script itself alone. Returns the copy's name.
+  @discardableResult
+  func saveCopy(_ markdown: String, of script: FolderScript) throws -> String {
+    let copyName = "\(script.title) (iPad copy \(Self.stamp())).md"
+    try Self.write(markdown, to: script.url.deletingLastPathComponent().appendingPathComponent(copyName))
+    refresh()
+    return copyName
   }
 
   func create(title: String, markdown: String) throws -> FolderScript {

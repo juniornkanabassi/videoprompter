@@ -189,6 +189,8 @@ final class PadEditorDraft {
     endEditing(); return true
   }
   init(_ markdown: String) { original = markdown; model = PadMarkdownEdit(markdown) }
+  /// Takes new saved text as both the draft and what Cancel returns to.
+  func adopt(_ markdown: String) { original = markdown; reset(markdown) }
   func reset(_ markdown: String) { model = PadMarkdownEdit(markdown); history.removeAllActions() }
   func apply(_ next: PadMarkdownEdit, selection: NSRange, previousSelection: NSRange) {
     let previous = model
@@ -206,9 +208,12 @@ import PrompterCore
 import SwiftUI
 import UIKit
 
-/// Lets the library write the visible draft before it presents or changes script.
-final class PadDraftFlusher {
+/// Lets the library write the visible draft before it presents, receives or changes script.
+@MainActor final class PadDraftFlusher {
   var flush: (() -> Bool)?
+  var owner: UUID?
+  /// True when there is no draft, or it is saved or kept as a copy. False when it could not be written.
+  func resolve() -> Bool { flush?() ?? true }
 }
 
 /// Compatibility for existing sheet callers. New inline hosts use ScriptEditorView directly.
@@ -216,12 +221,11 @@ struct ScriptEditor: View {
   @EnvironmentObject private var store: PadStore
   @Environment(\.dismiss) private var dismiss
   let script: FolderScript
-  var flusher: PadDraftFlusher?
   @State private var record: ScriptRecord?
   var body: some View {
     NavigationStack {
       if let record {
-        ScriptEditorView(record: record, mode: .library, flusher: flusher) { dismiss() } // only the presenter's Edit button may lock the iPad
+        ScriptEditorView(record: record, mode: .library) { dismiss() } // only the presenter's Edit button may lock the iPad
           .navigationTitle(script.title).navigationBarTitleDisplayMode(.inline)
       } else { ProgressView().onAppear { record = store.record(for: script) } }
     }
@@ -235,16 +239,16 @@ struct ScriptEditorView: View {
   @EnvironmentObject private var store: PadStore
   let record: ScriptRecord
   let mode: ScriptEditorMode
-  var flusher: PadDraftFlusher?
   var onDone: () -> Void
   @State private var markdown: String
   @State private var saved: String
+  @State private var reload = UUID()
   @State private var command: PadEditorCommand?
   @State private var error: String?
   @State private var draft: PadEditorDraft
 
-  init(record: ScriptRecord, mode: ScriptEditorMode, flusher: PadDraftFlusher? = nil, onDone: @escaping () -> Void) {
-    self.record = record; self.mode = mode; self.flusher = flusher; self.onDone = onDone
+  init(record: ScriptRecord, mode: ScriptEditorMode, onDone: @escaping () -> Void) {
+    self.record = record; self.mode = mode; self.onDone = onDone
     _markdown = State(initialValue: record.markdown)
     _saved = State(initialValue: record.markdown)
     _draft = State(initialValue: PadEditorDraft(record.markdown))
@@ -278,12 +282,16 @@ struct ScriptEditorView: View {
     .interactiveDismissDisabled(dirty)
     .onAppear {
       if onTheFly { draft.beginEditing(onBegin: store.beginEditing, onEnd: store.endEditing) }
-      else { flusher?.flush = flush }
+      else { store.draftFlusher.flush = flush; store.draftFlusher.owner = record.metadata.id }
     }
     .onDisappear {
       // The library keeps what was typed: switching script or leaving the screen saves it.
-      if !onTheFly { _ = flush() }
-      flusher?.flush = nil
+      if !onTheFly, !flush(), draft.isDirty, let script = store.folder.script(record.metadata.id),
+        (try? store.folder.saveCopy(draft.model.markdown, of: script)) != nil {
+        // Last resort: a draft that cannot be written is still never dropped.
+        store.errorMessage = "Your edit could not be saved, so it was kept as a copy beside the script."
+      }
+      if store.draftFlusher.owner == record.metadata.id { store.draftFlusher.flush = nil; store.draftFlusher.owner = nil }
       draft.endEditing()
     }
     .onChange(of: scenePhase) { _, phase in if phase != .active, !onTheFly { _ = flush() } }
@@ -295,6 +303,7 @@ struct ScriptEditorView: View {
       fontName: store.settings.fontName, fontSize: onTheFly ? store.settings.fontSize : 20,
       horizontalInset: inset, onSave: save, onCancel: cancel,
       onError: { error = $0 })
+      .id(reload)
   }
 
   private var toolbar: some View {
@@ -344,12 +353,25 @@ struct ScriptEditorView: View {
   private func save() {
     if flush() { onDone() }
   }
-  /// Writes the draft if it changed. True when nothing is left unsaved.
+  /// Writes the draft if it changed. True when it is no longer only here: saved, or kept as a copy
+  /// because the script changed meanwhile (the editor then shows the script as it is now).
   private func flush() -> Bool {
     // Commit any in-progress keyboard composition before reading the draft.
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     guard let script = store.folder.script(record.metadata.id) else { error = "This script is no longer in the folder."; return false }
-    guard draft.save({ $0 == draft.original || store.save($0, to: script) }) else { error = store.errorMessage; return false }
+    var keptAsCopy = false
+    let written = draft.save { text in
+      if text == draft.original { return true }
+      switch store.save(text, to: script, basis: draft.original) {
+      case .saved: return true
+      case .keptAsCopy: keptAsCopy = true; return true
+      case .failed: return false
+      }
+    }
+    guard written else { error = store.errorMessage; return false }
+    if keptAsCopy, let current = store.record(for: script)?.markdown {
+      draft.adopt(current); markdown = current; reload = UUID()
+    }
     saved = draft.original
     return true
   }

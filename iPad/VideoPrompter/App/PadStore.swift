@@ -68,6 +68,8 @@ import UIKit
   let google = GoogleDocs()
   @Published var selectedID: UUID?
   @Published var presentingID: UUID?
+  /// The library editor's unsaved draft, which anything about to change or present a script resolves first.
+  let draftFlusher = PadDraftFlusher()
   @Published var errorMessage: String?
   @Published var settings = PrompterSettings() {
     didSet {
@@ -196,9 +198,10 @@ import UIKit
     }
   }
 
-  func save(_ markdown: String, to script: FolderScript) -> Bool {
+  /// `basis` is the text the edit began from, so a change that landed since goes to a conflict copy.
+  func save(_ markdown: String, to script: FolderScript, basis: String? = nil) -> DraftSave {
     do {
-      let record = try folder.save(markdown, to: script)
+      let record = try folder.save(markdown, to: script, basis: basis.map(MarkdownLibrary.fingerprint))
       if session.activeScriptID == script.id {
         // The Mac's voice relay holds the old text and cannot follow the new one, so this iPad's own
         // microphone takes over, and the reader is told why.
@@ -207,10 +210,14 @@ import UIKit
         session.applyEditedRecord(record)
         if relayed { errorMessage = "The script changed, so the Mac's voice stopped following. The iPad's own microphone is selected. Choose the Mac's voice again from the Mac." }
       }
-      return true
+      return .saved
+    } catch let error as ScriptFolderError {
+      errorMessage = error.localizedDescription
+      if case .changedElsewhere = error { return .keptAsCopy }
+      return .failed
     } catch {
       errorMessage = error.localizedDescription
-      return false
+      return .failed
     }
   }
 
@@ -454,6 +461,18 @@ extension PadStore {
   }
 
   func perform(_ command: PadRemote.Command) {
+    switch command {
+    case .present, .sendScript:
+      // Another version is about to be received or shown: settle the typed draft first, so it
+      // is saved or kept as a copy and never lands on top of the Mac's text.
+      if !draftFlusher.resolve() {
+        rejectionReason = "Save your edit on the iPad first"
+        lastSent = remoteState
+        camera.link.send(lastSent!)
+        return
+      }
+    default: break
+    }
     if editing {
       var blocked = false
       switch command {
@@ -568,3 +587,6 @@ extension PadStore {
     }
   }
 }
+
+/// What became of an editor draft: written, kept beside a script that changed meanwhile, or not written.
+enum DraftSave { case saved, keptAsCopy, failed }
