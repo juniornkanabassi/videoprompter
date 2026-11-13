@@ -46,4 +46,12 @@ private actor CloudPollGate {
     XCTAssertFalse(overlapped, "Cloud sync must not run while external refresh is working")
   }
 
+
+  /// Tests never reach the real iCloud Drive, even with no override set.
+  func testTestsNeverResolveTheRealICloudDrive() {
+    let previous = ICloudScripts.cloudDocsOverride
+    ICloudScripts.cloudDocsOverride = nil
+    defer { ICloudScripts.cloudDocsOverride = previous }
+    XCTAssertFalse(ICloudScripts.cloudDocs.path.contains("Mobile Documents"))
+  }
 }
