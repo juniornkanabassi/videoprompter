@@ -12,6 +12,16 @@ public struct PadIdentity: Equatable, Sendable {
     name = defaults.string(forKey: "macLinkDeviceName") ?? Self.cleanName(modelName)
   }
 
+  /// Model families from Xcode's device profiles. Unknown future models retain the generic name.
+  public static func modelName(machine: String) -> String {
+    let pro: [String: ClosedRange<Int>] = ["iPad6": 3...8, "iPad7": 1...4, "iPad8": 1...12,
+      "iPad13": 4...11, "iPad14": 3...6, "iPad16": 3...6, "iPad17": 1...4]
+    let parts = machine.split(separator: ",")
+    guard parts.count == 2, let number = Int(parts[1]), let range = pro[String(parts[0])], range.contains(number),
+      machine != "iPad6,5", machine != "iPad6,6" else { return "iPad" }
+    return "iPad Pro"
+  }
+
   public static func cleanName(_ value: String) -> String {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     // Bonjour names are at most 63 bytes; leave room for the identity suffix.

@@ -142,7 +142,7 @@ struct IPadRemoteView: View {
     }.frame(minWidth: 320)
   }
   private func deviceMenu(_ state: PadRemote.State) -> some View {
-    Button { devicesOpen.toggle() } label: {
+    Button { if startsLink { link.usesWiFi = true }; devicesOpen.toggle() } label: {
       HStack { Label(state.deviceName ?? "iPad", systemImage: "ipad"); Image(systemName: "chevron.down") }
     }.fixedSize()
       .popover(isPresented: $devicesOpen) { deviceChoices(state).padding(Space.lg).uiZoom(store.uiZoom) }

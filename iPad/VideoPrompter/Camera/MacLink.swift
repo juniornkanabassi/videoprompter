@@ -169,7 +169,14 @@ import UIKit
   func disconnect() { receiver.disconnect() }
 
   let deviceID = PadIdentity(defaults: .standard).id
-  @Published var deviceName = PadIdentity(defaults: .standard, modelName: UIDevice.current.model).name {
+  @Published var deviceName = {
+    var info = utsname()
+    uname(&info)
+    let machine = withUnsafeBytes(of: &info.machine) { bytes in
+      String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+    }
+    return PadIdentity(defaults: .standard, modelName: PadIdentity.modelName(machine: machine)).name
+  }() {
     didSet {
       let clean = PadIdentity.cleanName(deviceName)
       UserDefaults.standard.set(clean, forKey: "macLinkDeviceName")

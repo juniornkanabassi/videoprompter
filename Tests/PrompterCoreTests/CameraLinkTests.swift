@@ -67,6 +67,9 @@ final class CameraLinkTests: XCTestCase {
     defer { a.removePersistentDomain(forName: suiteA); b.removePersistentDomain(forName: suiteB) }
     let first = PadIdentity(defaults: a, modelName: "iPad Pro")
     XCTAssertEqual(first.name, "iPad Pro")
+    XCTAssertEqual(PadIdentity.modelName(machine: "iPad13,18"), "iPad")
+    XCTAssertEqual(PadIdentity.modelName(machine: "iPad16,3"), "iPad Pro")
+    XCTAssertEqual(PadIdentity.modelName(machine: "future"), "iPad")
     XCTAssertEqual(PadIdentity.cleanName("  Footballco Studio iPad \n"), "Footballco Studio iPad")
     a.set("Studio", forKey: "macLinkDeviceName")
     b.set("Studio", forKey: "macLinkDeviceName")
