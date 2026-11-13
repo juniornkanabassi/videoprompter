@@ -3,6 +3,7 @@
 import AppKit
 import Combine
 import CoreImage
+import CryptoKit
 import Darwin
 import Network
 import PrompterCore
@@ -246,6 +247,85 @@ import VideoToolbox
   @Published private(set) var pairingFailure: String?
   @Published private(set) var previewImage: CGImage?
 
+  @Published private(set) var pairingOffer: PairingOffer?
+  @Published private(set) var pairingRequestName: String?
+  @Published private(set) var pairingRequestCode: String?
+  private var pairingListener: NWListener?
+  private var pairingRedemption = PairingRedemption()
+  private var requestConnection: NWConnection?
+  private var pairingMacID: UUID {
+    if let value = defaults.string(forKey: "pairingMacID"), let id = UUID(uuidString: value) { return id }
+    let id = UUID(); defaults.set(id.uuidString, forKey: "pairingMacID"); return id
+  }
+
+  func refreshPairingOffer() {
+    pairingListener?.cancel()
+    let offer = PairingOffer(macID: pairingMacID, name: Host.current().localizedName ?? "Mac", service: pairingMacID.uuidString)
+    pairingOffer = offer
+    guard (!CaptureAccess.isAgentOrTest || ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1"),
+      let listener = try? NWListener(using: CameraLinkSecurity.parameters(code: offer.secret)) else { return }
+    listener.service = .init(name: offer.service, type: PairingExchange.macService)
+    listener.newConnectionHandler = { [weak self] connection in
+      Task { @MainActor in
+        guard let self else { connection.cancel(); return }
+        connection.start(queue: .main); PairingExchange.expire(connection)
+        defer { connection.cancel() }
+        do {
+          let request = try JSONDecoder().decode(PairingExchange.Request.self, from: await PairingExchange.receive(on: connection))
+          guard let received = request.offer, let code = request.code, code.hasPrefix("QR:"), code.count == 75,
+            UUID(uuidString: request.id) != nil, let current = self.pairingOffer else { throw PairingOffer.Failure.foreign }
+          try self.pairingRedemption.redeem(received, expected: current)
+          try await PairingExchange.send(JSONEncoder().encode(PairingExchange.Reply(id: offer.macID.uuidString, name: offer.name, code: "accepted")), on: connection)
+          self.acceptedPairing(id: request.id, code: code)
+          self.usesWiFi = true
+          self.selectedWiFiID = request.id
+          self.refreshPairingOffer()
+        } catch { self.pairingFailure = "That code has expired or could not be verified. Choose New code and scan again." }
+      }
+    }
+    listener.start(queue: .main)
+    pairingListener = listener
+  }
+
+  func stopPairingOffer() {
+    pairingListener?.cancel(); pairingListener = nil; pairingOffer = nil
+    cancelPairingRequest()
+  }
+
+  func cancelPairingRequest() {
+    requestConnection?.cancel(); requestConnection = nil; pairingRequestName = nil; pairingRequestCode = nil
+  }
+
+  func requestPairing(_ device: WiFiDevice) {
+    cancelPairingRequest()
+    usesWiFi = true
+    let endpoint = NWEndpoint.service(name: device.id, type: PairingExchange.padService, domain: "local.", interface: nil)
+    let connection = PairingExchange.connect(endpoint)
+    requestConnection = connection; pairingRequestName = device.name; pairingFailure = nil
+    Task {
+      defer { if requestConnection === connection { cancelPairingRequest() } }
+      do {
+        let key = Curve25519.KeyAgreement.PrivateKey()
+        let request = PairingExchange.Request(id: pairingMacID.uuidString, name: Host.current().localizedName ?? "Mac", publicKeyCommitment: PairingExchange.commitment(key.publicKey.rawRepresentation))
+        try await PairingExchange.send(JSONEncoder().encode(request), on: connection)
+        let commitment = try await PairingExchange.receive(on: connection)
+        guard commitment.count == 32 else { throw PairingOffer.Failure.foreign }
+        try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
+        let publicKey = try await PairingExchange.receive(on: connection)
+        guard PairingExchange.commitment(publicKey) == commitment, requestConnection === connection else { throw PairingOffer.Failure.foreign }
+        let shared = try PairingExchange.key(key, peer: publicKey)
+        pairingRequestCode = PairingExchange.confirmationCode(shared)
+        let data = try await PairingExchange.receive(on: connection)
+        guard requestConnection === connection else { return }
+        let reply = try PairingExchange.open(data, key: shared)
+        guard reply.id == device.id, reply.code.hasPrefix("QR:") else { throw PairingOffer.Failure.foreign }
+        acceptedPairing(id: device.id, code: reply.code)
+        selectedWiFiID = device.id
+        connectIfNeeded()
+      } catch { if requestConnection === connection { pairingFailure = "Could not connect. Check the iPad and try again, or type its key." } }
+    }
+  }
+
   func disconnect() {
     automaticallyLinks = false
     controlsIPad = false
@@ -485,6 +565,7 @@ import VideoToolbox
     // A plugged or swapped iPad may be an updated one.
     if devices != usbDevices { oldIPad = false }
     usbDevices = devices
+    if !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
     connectIfNeeded()
   }
 

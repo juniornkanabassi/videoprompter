@@ -29,7 +29,7 @@
 	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Video Prompter shows a camera picture behind your script so you can frame yourself while reading.</string>
+	<string>Video Prompter uses the camera to scan a Mac pairing code when you tap Scan, and to show a picture behind your script.</string>
 	<key>GoogleClientID</key>
 	<string></string>
 	<key>NSLocalNetworkUsageDescription</key>
@@ -37,6 +37,8 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_vpcamera._tcp</string>
+        <string>_vppairmac._tcp</string>
+        <string>_vppairpad._tcp</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Video Prompter listens to your voice so the script follows you as you read.</string>

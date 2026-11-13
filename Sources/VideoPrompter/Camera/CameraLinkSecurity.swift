@@ -36,16 +36,19 @@ enum CameraLinkSecurity {
   }
 
   /// TCP with TLS 1.2 PSK keyed by the pairing key, stretched through HMAC to full length.
-  static func parameters(code: String) -> NWParameters {
+  static func parameters(code: String, additionalCodes: [String] = []) -> NWParameters {
     let tcp = NWProtocolTCP.Options()
     tcp.noDelay = true
     let tls = NWProtocolTLS.Options()
-    let salt = SymmetricKey(data: Data("Video Prompter camera link".utf8))
-    let key = HMAC<SHA256>.authenticationCode(for: Data(code.utf8), using: salt)
-    let keyData = key.withUnsafeBytes { DispatchData(bytes: $0) }
-    let identity = Data("VideoPrompter".utf8).withUnsafeBytes { DispatchData(bytes: $0) }
-    sec_protocol_options_add_pre_shared_key(
-      tls.securityProtocolOptions, keyData as __DispatchData, identity as __DispatchData)
+    for credential in [code] + additionalCodes {
+      let salt = SymmetricKey(data: Data("Video Prompter camera link".utf8))
+      let key = HMAC<SHA256>.authenticationCode(for: Data(credential.utf8), using: salt)
+      let keyData = key.withUnsafeBytes { DispatchData(bytes: $0) }
+      let label = credential.hasPrefix("QR:") ? SHA256.hash(data: Data(credential.utf8)).description : "VideoPrompter"
+      let identity = Data(label.utf8).withUnsafeBytes { DispatchData(bytes: $0) }
+      sec_protocol_options_add_pre_shared_key(
+        tls.securityProtocolOptions, keyData as __DispatchData, identity as __DispatchData)
+    }
     sec_protocol_options_append_tls_ciphersuite(
       tls.securityProtocolOptions, tls_ciphersuite_t(rawValue: UInt16(TLS_PSK_WITH_AES_128_GCM_SHA256))!)
     sec_protocol_options_set_max_tls_protocol_version(tls.securityProtocolOptions, .TLSv12)

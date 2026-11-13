@@ -14,7 +14,6 @@ struct IPadRemoteView: View {
   @State private var pictureOpen = true
   @State private var pendingSend: (UUID, String)?
   @State private var message: String?
-  @State private var pairingKey = ""
   private let yellow = Color(red: 245/255, green: 207/255, blue: 74/255)
 
   var body: some View {
@@ -29,8 +28,7 @@ struct IPadRemoteView: View {
             picture
             look(state)
           } else {
-            let empty = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Manual", speed: 120, word: 0, words: 0)
-            Group { scripts(empty); reading(empty); picture; look(empty) }.disabled(true).opacity(0.4)
+            IPadConnectPanel(link: link)
           }
         }
       }.padding(20)
@@ -80,13 +78,6 @@ struct IPadRemoteView: View {
           ForEach(link.wifiDevices) { device in
             Text(device.name).tag(Optional(device.id))
           }
-        }
-      }
-      if let name = link.unpairedDeviceName {
-        Text("Pair with \(name)").font(.headline)
-        HStack {
-          TextField("Pairing key from the iPad", text: $pairingKey)
-          Button("Pair") { link.pair(key: pairingKey) }.disabled(pairingKey.isEmpty)
         }
       }
       if let failure = link.pairingFailure { Text(failure).foregroundStyle(.orange) }

@@ -27,6 +27,8 @@
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_vpcamera._tcp</string>
+        <string>_vppairmac._tcp</string>
+        <string>_vppairpad._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>Video Prompter shows a live preview of your camera so you can frame yourself while reading.</string>

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        ABCDEF123456789000000001 /* PairingExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCDEF123456789000000002; };
 		F4E97043B1774B2D8FDD0011 /* CameraExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */; };
 		A11111111111111111111111 /* DBMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22222222222222222222222 /* DBMeter.swift */; };
 		B11111111111111111111111 /* PadPresenterLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22222222222222222222222 /* PadPresenterLayout.swift */; };
@@ -31,6 +32,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+        ABCDEF123456789000000002 /* PairingExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/PairingExchange.swift; sourceTree = "<group>"; };
 		F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraExposure.swift; sourceTree = "<group>"; };
 		A22222222222222222222222 /* DBMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DBMeter.swift; sourceTree = "<group>"; };
 		B22222222222222222222222 /* PadPresenterLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/PadPresenterLayout.swift; sourceTree = "<group>"; };
@@ -107,6 +109,7 @@
 				09486326B37D8BA3B702E4C6 /* CameraGuides.swift */,
 				769C15FD7A37A8313944BCE7 /* CameraOrientation.swift */,
 				4EE90C47688233922A31CB96 /* CameraLinkSecurity.swift */,
+                ABCDEF123456789000000002 /* PairingExchange.swift */,
 				1942F7D66DD34C0F923060B7 /* DesignTokens.swift */,
 				278E07ECB9F62B78AF720BE8 /* MicMeter.swift */,
 				CB0512639610DBC42A9C6994 /* MeterZones.swift */,
@@ -279,6 +282,7 @@
 				A698447D355A4D7944783966 /* CameraGuides.swift in Sources */,
 				311A254346AB16E9BD68CF7E /* CameraOrientation.swift in Sources */,
 				2680F8803644F172471E1491 /* CameraLinkSecurity.swift in Sources */,
+                ABCDEF123456789000000001 /* PairingExchange.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

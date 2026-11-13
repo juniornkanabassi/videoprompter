@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Synchronization
+import Network
 import XCTest
 
 @testable import PrompterCore
@@ -10,6 +11,37 @@ import XCTest
 /// usbmuxd's tunnel. Runs only with VP_IPAD_E2E=1 and the app open in a booted Simulator with
 /// at least one script; `checks/ipad-link-e2e.sh` sets that up headless.
 final class IPadSimulatorEndToEndTests: XCTestCase {
+  @MainActor func testZInjectedQRPairing() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let documents = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents")
+    let defaults = freshDefaults()
+    let sender = IPadCameraSender(defaults: defaults)
+    sender.searchesForIPad = false
+    sender.refreshPairingOffer()
+    defer { sender.stopPairingOffer(); sender.disconnect() }
+    let offer = try XCTUnwrap(sender.pairingOffer)
+    try offer.encoded().write(to: documents.appendingPathComponent("vp-qr-payload.txt"), atomically: true, encoding: .utf8)
+    let result = documents.appendingPathComponent("vp-qr-result.txt")
+    for _ in 0..<400 where !FileManager.default.fileExists(atPath: result.path) {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertTrue(try String(contentsOf: result, encoding: .utf8).hasPrefix("Paired with"))
+    let codes = try XCTUnwrap(defaults.dictionary(forKey: "sendCameraPairingCodes") as? [String: String])
+    let padID = try XCTUnwrap(codes.keys.first)
+    let code = try XCTUnwrap(codes[padID])
+    let name = "iPad \(padID.prefix(4))"
+    let endpoint = NWEndpoint.service(name: "\(name) [\(padID)]", type: CameraLink.bonjourType, domain: "local.", interface: nil)
+    for _ in 0..<2 {
+      guard case .opened(let pipe) = await NetworkPipe.open(endpoint, code: code) else { return XCTFail("Paired TLS link did not reconnect") }
+      pipe.startReading()
+      pipe.send(CameraLink.Message.hello(name: "QR test Mac", version: CameraLink.protocolVersion).encoded())
+      try await Task.sleep(for: .milliseconds(200))
+      pipe.close()
+      try await Task.sleep(for: .milliseconds(200))
+    }
+  }
+
   @MainActor
   func testAIdleSenderAnswersCameraOnlyAndReconnects() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
@@ -310,6 +342,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       process.arguments = ["simctl"] + arguments
       var childEnvironment = environment
       childEnvironment["SIMCTL_CHILD_VP_IPAD_E2E_PORT"] = String(port)
+      childEnvironment["SIMCTL_CHILD_VP_IPAD_E2E_QR"] = "1"
       process.environment = childEnvironment
       process.standardOutput = FileHandle.nullDevice
       process.standardError = FileHandle.nullDevice

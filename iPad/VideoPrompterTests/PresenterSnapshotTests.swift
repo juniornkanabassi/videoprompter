@@ -1,4 +1,6 @@
 import PrompterCore
+import CryptoKit
+import Network
 import SwiftUI
 import UIKit
 import XCTest
@@ -81,6 +83,27 @@ import XCTest
       }
     }
     session.pause()
+  }
+
+  func testPairingShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "qr-shots-\(UUID().uuidString)")!)
+    _ = try await render(MacControlScreen(link: store.camera.link).environmentObject(store),
+      size: CGSize(width: 1180, height: 820), name: "qr-ipad-connect", directory: directory, beforeDraw: {})
+    let key = Curve25519.KeyAgreement.PrivateKey()
+    store.camera.link.pendingPermission = .init(request: .init(id: UUID().uuidString, name: "Studio Mac",
+      publicKeyCommitment: PairingExchange.commitment(key.publicKey.rawRepresentation)),
+      connection: NWConnection(host: "127.0.0.1", port: 9, using: .tcp), privateKey: key,
+      peerPublicKey: key.publicKey.rawRepresentation, confirmationCode: "482916")
+    _ = try await render(MacControlScreen(link: store.camera.link).environmentObject(store)
+      .modifier(PairingPresentation(link: store.camera.link)),
+      size: CGSize(width: 1180, height: 820), name: "qr-ipad-allow", directory: directory, beforeDraw: {})
+    store.camera.link.approvePairing(false)
+    _ = try await render(PairingScanner(link: store.camera.link),
+      size: CGSize(width: 1180, height: 820), name: "qr-ipad-scanner", directory: directory, beforeDraw: {})
+    store.camera.link.scanStatus = "That code has expired. On the Mac, choose New code, then scan again."
+    _ = try await render(MacControlScreen(link: store.camera.link, failure: store.camera.link.scanStatus).environmentObject(store),
+      size: CGSize(width: 1180, height: 820), name: "qr-ipad-expired", directory: directory, beforeDraw: {})
   }
 
   /// A window the size of the iPad (or a Stage Manager window), drawn into a PNG once SwiftUI has laid out.
