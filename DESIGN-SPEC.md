@@ -710,3 +710,7 @@ More holds picture mode, quality, mirror, flip, clean screen and countdown. A se
 The Camera and Mic carets open touch popovers with the Mac Adjust card vocabulary. The Mac name and yellow Mac badge precede its devices; This iPad follows with a Fallback badge. A disconnected Mac keeps a quiet section with Connect to a Mac. Cards have a 64 pt minimum and segments a 44 pt minimum. The selected card has a yellow border and tick. The microphone card holds Show meter and Channel choices, where available.
 
 Choosing a microphone also selects the voice follower. Capability-advertising Macs accept the iPad's microphone request and follow the exact presented script; local microphone selection ends that relay. Older peers keep their existing protocol behaviour. Camera identity, connection, format and shot remain beside the presenter.
+
+## Mac iPad operator console (13 November 2026 live demo)
+
+The top holds only device name and script choice. The live Mac capture is the main picture in Camera Only and monitor mode, behind the transparent replica in Behind the script, and a thumbnail otherwise. Transport remains above a bottom setup bar, using the presenter camera/microphone split controls, live dB meter and iPad menu. The iPad menu lists nearby and paired devices, Rename, Forget and Disconnect. Adjust retains picture, text, exposure and framing controls; all changes are acknowledged by iPad state.

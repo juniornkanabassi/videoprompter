@@ -7,6 +7,21 @@ import XCTest
 @testable import PrompterCore
 
 final class CameraLinkTests: XCTestCase {
+  func testConsoleCommandsAndOptionalState() throws {
+    for command in [PadRemote.Command.rename("Footballco Studio iPad"),
+      .microphoneLevel(-18),
+      .cameraGuides(.init(zebras: true, falseColour: true, thirds: true, centre: true, marker: "9:16", exposureKey: false))] {
+      XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: JSONEncoder().encode(command)), command)
+    }
+    let legacy = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
+    let state = try JSONDecoder().decode(PadRemote.State.self, from: legacy)
+    XCTAssertNil(state.guides)
+    XCTAssertNil(state.micLevelDB)
+    let partial = try JSONDecoder().decode(PadRemote.Guides.self, from: Data(#"{"zebras":true}"#.utf8))
+    XCTAssertEqual(partial.zebras, true)
+    XCTAssertNil(partial.falseColour)
+  }
+
   func testReplicaStateAndSeekAreCompatibleWithOlderPeers() throws {
     let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
     var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
@@ -50,7 +65,12 @@ final class CameraLinkTests: XCTestCase {
     let a = UserDefaults(suiteName: suiteA)!
     let b = UserDefaults(suiteName: suiteB)!
     defer { a.removePersistentDomain(forName: suiteA); b.removePersistentDomain(forName: suiteB) }
-    let first = PadIdentity(defaults: a)
+    let first = PadIdentity(defaults: a, modelName: "iPad Pro")
+    XCTAssertEqual(first.name, "iPad Pro")
+    XCTAssertEqual(PadIdentity.modelName(machine: "iPad13,18"), "iPad")
+    XCTAssertEqual(PadIdentity.modelName(machine: "iPad16,3"), "iPad Pro")
+    XCTAssertEqual(PadIdentity.modelName(machine: "future"), "iPad")
+    XCTAssertEqual(PadIdentity.cleanName("  Footballco Studio iPad \n"), "Footballco Studio iPad")
     a.set("Studio", forKey: "macLinkDeviceName")
     b.set("Studio", forKey: "macLinkDeviceName")
     let renamed = PadIdentity(defaults: a)
@@ -75,6 +95,7 @@ final class CameraLinkTests: XCTestCase {
     }
     sender.wifiChanged([endpoint("iPad", a), endpoint("iPad", b)])
     XCTAssertEqual(sender.wifiDevices.count, 2)
+    XCTAssertEqual(Set(sender.pairingDevices.map { sender.displayName(for: $0) }).count, 2)
     sender.selectedWiFiID = a
     sender.pair(key: "0123456789ABCDEF")
     sender.selectedWiFiID = b
@@ -84,8 +105,13 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(codes[a] ?? nil, CameraLinkSecurity.normalised("0123456789ABCDEF"))
     XCTAssertEqual(codes[b] ?? nil, CameraLinkSecurity.normalised("FEDCBA9876543210"))
     sender.wifiChanged([endpoint("Renamed", a), endpoint("iPad", b)])
-    sender.selectedWiFiID = a
+    sender.searchesForIPad = false
+    sender.requestPairing(.init(id: a, name: "Renamed"))
+    XCTAssertEqual(sender.selectedWiFiID, a)
+    XCTAssertTrue(sender.controlsIPad)
+    XCTAssertNil(sender.pairingRequestName, "A paired iPad reconnects without another pairing handshake")
     XCTAssertNil(sender.unpairedDeviceName)
+    sender.disconnect()
   }
 
   @MainActor

@@ -169,7 +169,14 @@ import UIKit
   func disconnect() { receiver.disconnect() }
 
   let deviceID = PadIdentity(defaults: .standard).id
-  @Published var deviceName = PadIdentity(defaults: .standard).name {
+  @Published var deviceName = {
+    var info = utsname()
+    uname(&info)
+    let machine = withUnsafeBytes(of: &info.machine) { bytes in
+      String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
+    }
+    return PadIdentity(defaults: .standard, modelName: PadIdentity.modelName(machine: machine)).name
+  }() {
     didSet {
       let clean = PadIdentity.cleanName(deviceName)
       UserDefaults.standard.set(clean, forKey: "macLinkDeviceName")
@@ -320,7 +327,7 @@ import UIKit
       let parameters = CameraLinkSecurity.parameters(code: pairingCode, additionalCodes: credentials.values.map(\.code))
       parameters.includePeerToPeer = false
       guard let listener = try? NWListener(using: parameters) else { return }
-      listener.service = NWListener.Service(name: PadIdentity(defaults: .standard).serviceName, type: CameraLink.bonjourType)
+      listener.service = NWListener.Service(name: PadIdentity(defaults: .standard, modelName: deviceName).serviceName, type: CameraLink.bonjourType)
       // Before it starts, so the receiver knows it before any of its connections arrive.
       receiver.adoptWiFi(listener)
       configure(listener, wifi: true)

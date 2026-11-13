@@ -12,6 +12,11 @@ extension AppearanceSnapshotTests {
     let defaults = freshDefaults("IPadReplica")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let link = IPadCameraSender(defaults: defaults)
+    link.searchesForIPad = false
+    link.micMeter.show(-18)
+    link.iPadMicMeter.show(-18)
+    link.acceptedPairing(id: "personal", code: "0123456789ABCDEF")
+    link.acceptedPairing(id: "studio", code: "FEDCBA9876543210")
     let id = UUID()
     let markdown = "# Match day\n\nThe opening passage sets the scene for everyone watching at home.\n\nThe midfield is finding space between the lines and moving the ball with confidence.\n\nWatch the runner on the far side as the next passage begins.\n\nThere is still time to change the game."
     let state = PadRemote.State(scripts: [.init(id: id, title: "Match day")], presenting: id, running: true,
@@ -20,13 +25,16 @@ extension AppearanceSnapshotTests {
       deviceName: "Studio iPad", appVersion: "Test", scriptPreview: "Match day", markdown: markdown)
     let imageURL = try XCTUnwrap(Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures"))
     let image = try XCTUnwrap(NSImage(contentsOf: imageURL)?.cgImage(forProposedRect: nil, context: nil, hints: nil))
-    for variant in ["connected-reading", "paused", "not-connected", "camera-only"] {
+    for variant in ["connected-reading", "paused", "not-connected", "camera-only", "devices", "adjust", "text"] {
       var fixture = state
+      fixture.pictureMode = .behindScript
       if variant == "connected-reading" { fixture.mode = "Voice"; fixture.voiceSource = "Mac" }
       if variant == "paused" { fixture.running = false }
       if variant == "camera-only" { fixture.cameraOnly = true; fixture.presenting = nil }
       for zoom in [1.0, 1.5] {
-      try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: variant == "not-connected" ? nil : fixture, startsLink: false, previewOverride: variant == "camera-only" ? image : nil).uiZoom(zoom),
+      try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: variant == "not-connected" ? nil : fixture, startsLink: false, previewOverride: image,
+        panelOverride: ["devices", "adjust", "text"].contains(variant) ? variant : nil,
+        devicesOverride: [.init(id: "personal", name: "Junior’s iPad Pro"), .init(id: "studio", name: "Footballco Studio iPad")]).uiZoom(zoom),
         name: "ipad-\(variant)-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: 720 * zoom),
         scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(300), prepare: { host in
           guard variant == "connected-reading" || variant == "paused" else { return }

@@ -9,6 +9,11 @@ struct IPadRemoteView: View {
   private var currentState: PadRemote.State? { stateOverride ?? link.iPadState }
   var startsLink = true
   var previewOverride: CGImage?
+  var panelOverride: String?
+  var devicesOverride: [IPadCameraSender.WiFiDevice]?
+  @State private var devicesOpen = false
+  @State private var renaming = false
+  @State private var newName = ""
   @State private var selectedMac: UUID?
   @State private var dragging: Double?
   @State private var moreOpen = false
@@ -22,37 +27,31 @@ struct IPadRemoteView: View {
     VStack(spacing: Space.md) {
       if let state = currentState {
         status(state)
-        if state.cameraOnly == true || state.presenting == nil {
-          GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
-              Color.black
-              if let image = previewOverride ?? link.previewImage {
-                Image(decorative: image, scale: 1).resizable().scaledToFit()
-                  .scaleEffect(x: link.mirror ? -1 : 1, y: link.flip ? -1 : 1)
-                  .frame(width: geometry.size.width, height: geometry.size.height)
-              } else {
-                Label("Camera preview unavailable", systemImage: "video")
-                  .foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
-              }
-              Text(state.cameraOnly == true ? "On the iPad · Camera Only" : "Open a script to begin")
-                .font(.callout).padding(Space.md).background(.black.opacity(0.6))
-            }.clipShape(RoundedRectangle(cornerRadius: Space.md))
+        ZStack(alignment: .bottomTrailing) {
+          if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly {
+            liveCamera
+          } else {
+            if state.pictureMode == .behindScript { liveCamera.opacity(0.55) }
+            VStack(spacing: 0) {
+              IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
+              HStack(spacing: Space.md) {
+                Text("Reading position").font(.caption).foregroundStyle(.secondary)
+                Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }), in: 1...Double(max(2, state.words))) { editing in
+                  if !editing, let value = dragging { link.send(.seek(word: Int(value.rounded()))); dragging = nil }
+                }.labelsHidden().accessibilityLabel("Reading position")
+                  .disabled(state.words < 2 || state.editing == true)
+              }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
+            }
+            if state.pictureMode != .behindScript {
+              liveCamera.frame(width: 192, height: 108).padding(Space.md) // grid: ok 16:9 camera thumbnail
+            }
           }
-        } else {
-          VStack(spacing: 0) {
-            IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
-            HStack(spacing: Space.md) {
-              Text("Reading position").font(.caption).foregroundStyle(.secondary)
-              Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }), in: 1...Double(max(2, state.words))) { editing in
-                if !editing, let value = dragging { link.send(.seek(word: Int(value.rounded()))); dragging = nil }
-              }.labelsHidden().accessibilityLabel("Reading position")
-                .disabled(state.words < 2 || state.editing == true)
-            }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
-          }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
-        }
+        }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
+
         transport(state)
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
         RelayNotice(relay: link.relay)
+        setupBar(state)
       } else {
         IPadConnectPanel(link: link).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -67,10 +66,24 @@ struct IPadRemoteView: View {
     }
     .frame(width: geometry.size.width, height: geometry.size.height)
     }
+    .overlay(alignment: .bottomTrailing) {
+      if let state = currentState, let panelOverride {
+        Group {
+          if panelOverride == "devices" { deviceChoices(state).padding(Space.lg).frame(width: 400) }
+          else { ScrollView { adjustControls(state).padding(Space.lg) }.frame(width: 460, height: 560) }
+        }.background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: Space.md))
+          .shadow(radius: Space.md).padding(Space.lg)
+      }
+    }
     .padding(Space.md)
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
     .tint(yellow).preferredColorScheme(.dark)
     .frame(minWidth: 760, idealWidth: 960, maxWidth: .infinity, minHeight: 500, idealHeight: 720, maxHeight: .infinity)
+    .alert("Rename iPad", isPresented: $renaming) {
+      TextField("iPad name", text: $newName)
+      Button("Rename") { link.send(.rename(PadIdentity.cleanName(newName))) }
+      Button("Cancel", role: .cancel) {}
+    } message: { Text("The name is saved on the iPad and shown to nearby Macs.") }
     .onAppear { if startsLink { link.controlsIPad = true } }
     .onDisappear { if startsLink { link.controlsIPad = false } }
     .onReceive(link.$iPadState) { state in
@@ -82,54 +95,74 @@ struct IPadRemoteView: View {
     }
   }
 
-  private func status(_ state: PadRemote.State) -> some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: Space.sm) { deviceMenu(state); voiceMenu(state); cameraMenu; Spacer(minLength: 0); scriptMenu(state) }
-      VStack(spacing: Space.sm) {
-        HStack { deviceMenu(state); Spacer(); scriptMenu(state) }
-        HStack { voiceMenu(state); cameraMenu; Spacer() }
-      }
-    }
+  private func setupBar(_ state: PadRemote.State) -> some View {
+        HStack(spacing: Space.md) {
+          BarGroup(label: "Camera and microphone") {
+            BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: link.cameraOn,
+              showsTitle: true, toggleHelp: "Turn camera on or off", menuLabel: "Choose camera", menuValue: link.selectedCamera ?? "Default",
+              toggle: { link.setCameraOn(!link.cameraOn) }) {
+              ForEach(link.cameraSources) { source in Button(source.name) { link.selectCamera(source.id) } }
+            }
+            BarDivider()
+            BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: state.micOn ?? true,
+              showsTitle: true, toggleHelp: "Turn microphone on or off", menuLabel: "Choose microphone", menuValue: link.selectedMicrophone ?? "Default",
+              toggle: { link.setMicOn(!link.micOn) }) { voiceMenu(state) }
+          }
+          CompactRemoteMeter(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter)
+          Spacer(minLength: 0)
+          deviceMenu(state)
+        }.padding(Space.sm).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: Space.md))
   }
-  private func deviceMenu(_ state: PadRemote.State) -> some View {
-    Menu {
-      Button("Disconnect") { link.disconnect() }
-      Button("Connect another iPad") { link.disconnect() }
-      if link.wifiDevices.count > 1 {
-        Picker("Wi-Fi iPad", selection: $link.selectedWiFiID) {
-          Text("Automatic").tag(String?.none)
-          ForEach(link.wifiDevices) { Text($0.name).tag(Optional($0.id)) }
+  private var liveCamera: some View {
+    Group {
+      if let image = previewOverride {
+        Image(decorative: image, scale: 1).resizable().scaledToFit()
+      } else if startsLink && link.cameraOn {
+        CameraPreview(model: CameraModel.shared, presenter: true)
+      } else {
+        Color.black.overlay { Label("Camera off", systemImage: "video.slash").foregroundStyle(.secondary) }
+      }
+    }.frame(maxWidth: .infinity, maxHeight: .infinity).clipped()
+  }
+  private func status(_ state: PadRemote.State) -> some View {
+    HStack { Text(state.deviceName ?? "iPad").font(.headline); Spacer(); scriptMenu(state) }
+  }
+  private func deviceChoices(_ state: PadRemote.State) -> some View {
+    VStack(alignment: .leading, spacing: Space.md) {
+      Text("iPads").font(.headline)
+      ForEach(devicesOverride ?? link.pairingDevices) { device in
+        HStack {
+          Button { devicesOpen = false; link.requestPairing(device) } label: {
+            Label(link.displayName(for: device), systemImage: "ipad")
+          }
+          Spacer()
+          if link.pairingCode(id: device.id, name: device.name) != nil {
+            Button("Forget") { link.forgetIPad(id: device.id) }
+          }
         }
       }
-    } label: {
-      HStack(spacing: Space.sm) {
-        Circle().fill(.green).frame(width: Space.sm, height: Space.sm)
-        Text(state.deviceName ?? "iPad")
-        Text(link.transport ?? "USB-C").foregroundStyle(.secondary)
-      }.fixedSize()
+      Divider()
+      HStack {
+        Button("Rename…") { devicesOpen = false; newName = state.deviceName ?? "iPad"; renaming = true }
+        Spacer()
+        Button("Disconnect") { devicesOpen = false; link.disconnect() }
+      }
+    }.frame(minWidth: 320)
+  }
+  private func deviceMenu(_ state: PadRemote.State) -> some View {
+    Button { if startsLink { link.usesWiFi = true }; devicesOpen.toggle() } label: {
+      HStack { Label(state.deviceName ?? "iPad", systemImage: "ipad"); Image(systemName: "chevron.down") }
     }.fixedSize()
+      .popover(isPresented: $devicesOpen) { deviceChoices(state).padding(Space.lg).uiZoom(store.uiZoom) }
   }
   private func voiceMenu(_ state: PadRemote.State) -> some View {
-    Menu {
+    Group {
       Button("This Mac") { setVoice("mac", state) }
       Button("iPad") { setVoice("ipad", state) }
       Button("Off (scroll)") { setVoice("off", state) }
       Divider()
-      Button(link.micOn ? "Turn microphone off" : "Turn microphone on") { link.setMicOn(!link.micOn) }
       ForEach(link.microphoneSources) { source in Button(source.name) { link.selectMicrophone(source.id) } }
-    } label: {
-      HStack(spacing: Space.sm) {
-        Label(state.mode == "Voice" ? "Voice from \(state.voiceSource ?? "iPad")" : "Voice off", systemImage: "mic")
-        if state.mode == "Voice", state.voiceSource == "Mac" { CompactRemoteMeter(meter: link.micMeter) }
-      }.fixedSize()
-    }.fixedSize()
-  }
-  private var cameraMenu: some View {
-    Menu {
-      Button(link.cameraOn ? "Turn camera off" : "Turn camera on") { link.setCameraOn(!link.cameraOn) }
-      ForEach(link.cameraSources) { source in Button(source.name) { link.selectCamera(source.id) } }
-    } label: { Label(link.cameraOn ? "Camera on" : "Camera off", systemImage: link.cameraOn ? "video" : "video.slash") }
-      .fixedSize()
+    }
   }
   private func scriptMenu(_ state: PadRemote.State, title: String? = nil) -> some View {
     Menu {
@@ -175,9 +208,18 @@ struct IPadRemoteView: View {
   private func moreButton(_ state: PadRemote.State) -> some View {
     Button("More", systemImage: "slider.horizontal.3") { moreOpen.toggle() }.fixedSize()
       .popover(isPresented: $moreOpen) {
+        ScrollView { adjustControls(state).padding(Space.lg) }
+          .frame(width: 460, height: textPage ? 340 : 560).uiZoom(store.uiZoom)
+      }
+  }
+  func adjustControls(_ state: PadRemote.State) -> some View {
         VStack(alignment: .leading, spacing: Space.md) {
-          if textPage {
+          if textPage || panelOverride == "text" {
             Button("Back", systemImage: "chevron.left") { textPage = false }
+            Picker("Font", selection: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) })) {
+              ForEach(Array(Set(AvailableFonts.presenter + [state.look?.fontName ?? "Lexend Deca"])).sorted(), id: \.self) { Text($0).tag($0) }
+            }
+            lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
             lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
             lookSlider("Text width", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
             lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
@@ -187,26 +229,35 @@ struct IPadRemoteView: View {
             }
           } else {
             Text("Picture on the iPad").font(.headline)
-            Picker("Picture", selection: Binding(get: { link.pictureMode }, set: link.setPictureMode)) {
+            Picker("Picture", selection: Binding(get: { state.pictureMode ?? .off }, set: link.setPictureMode)) {
               Text("Off").tag(PadRemote.PictureMode.off)
               Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
               Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
-            }.pickerStyle(.segmented)
-            Picker("Quality", selection: Binding(get: { link.picturePriority }, set: link.setPicturePriority)) {
+            }.pickerStyle(.segmented).labelsHidden()
+            Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
               Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
               Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
             }
             Divider()
-            Toggle("Mirror left to right", isOn: Binding(get: { link.mirror }, set: link.setMirror))
-            Toggle("Flip upside down", isOn: Binding(get: { link.flip }, set: link.setFlip))
-            Toggle("Clean screen", isOn: Binding(get: { link.cleanScreen }, set: link.setCleanScreen))
+            Toggle("Zebras", isOn: Binding(get: { state.guides?.zebras ?? false }, set: { link.send(.cameraGuides(.init(zebras: $0))) }))
+            Toggle("False colour", isOn: Binding(get: { state.guides?.falseColour ?? false }, set: { link.send(.cameraGuides(.init(falseColour: $0))) }))
+            Toggle("Thirds", isOn: Binding(get: { state.guides?.thirds ?? false }, set: { link.send(.cameraGuides(.init(thirds: $0))) }))
+            Toggle("Centre", isOn: Binding(get: { state.guides?.centre ?? false }, set: { link.send(.cameraGuides(.init(centre: $0))) }))
+            Picker("Frame marker", selection: Binding(get: { state.guides?.marker ?? "Off" }, set: { link.send(.cameraGuides(.init(marker: $0))) })) {
+              Text("Off").tag("Off")
+              ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
+            }
+            Toggle("Show key", isOn: Binding(get: { state.guides?.exposureKey ?? true }, set: { link.send(.cameraGuides(.init(exposureKey: $0))) }))
+            Divider()
+            Toggle("Mirror left to right", isOn: Binding(get: { state.look?.horizontalMirror ?? false }, set: link.setMirror))
+            Toggle("Flip upside down", isOn: Binding(get: { state.look?.verticalMirror ?? false }, set: link.setFlip))
+            Toggle("Clean screen", isOn: Binding(get: { state.cleanScreen ?? false }, set: link.setCleanScreen))
             Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
               Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
             }
             Button("Text size, width, spacing and presets", systemImage: "chevron.right") { textPage = true }
           }
-        }.padding(Space.lg).frame(width: 420).uiZoom(store.uiZoom)
-      }
+        }
   }
   private func sendSelected() {
     guard let record = store.scripts.first(where: { $0.id == selectedMac }), record.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes, record.metadata.title.count <= PadRemote.Transfer.maximumTitleLength else { return }
@@ -242,8 +293,8 @@ private struct RelayNotice: View {
 private struct CompactRemoteMeter: View {
   @ObservedObject var meter: RemoteMicMeter
   var body: some View {
-    ProgressView(value: max(0, min(1, (meter.levelDB + 60) / 60)))
-      .frame(width: 48).accessibilityLabel("Mac microphone level")
+    DBMeter(levelDB: meter.levelDB, axis: .horizontal, showsScale: false)
+      .frame(width: 96).accessibilityLabel("Microphone level")
   }
 }
 

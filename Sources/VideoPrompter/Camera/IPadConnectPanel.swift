@@ -45,7 +45,7 @@ struct IPadConnectPanel: View {
             HStack {
               Image(systemName: "ipad")
               VStack(alignment: .leading) {
-                Text(device.name)
+                Text(link.displayName(for: device))
                 if link.pairingRequestName == device.name { Text(link.pairingRequestCode.map { "Check \($0) matches, then tap Allow" } ?? "Waiting for the iPad…").font(.caption).foregroundStyle(.secondary) }
               }
               Spacer()
