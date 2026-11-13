@@ -55,7 +55,7 @@ import UIKit
   }
   private var permissionListener: NWListener?
   private let credentialStore = PairingKeyStore(service: "VideoPrompter.camera-pairing")
-  private var credentials: [String: Credential] = {
+  @Published private var credentials: [String: Credential] = {
     PairingKeyStore(service: "VideoPrompter.camera-pairing").load([String: Credential].self, key: "pairedMacCredentials", defaults: .standard) ?? [:]
   }()
 
@@ -73,9 +73,6 @@ import UIKit
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
   func forgetTypedKey() { newPairingCode() }
-  private func saveCredentials() {
-    credentialStore.save(credentials, key: "pairedMacCredentials")
-  }
   private func remember(_ id: String, name: String, code: String) throws {
     var next = credentials
     next[id] = Credential(name: name, code: code)

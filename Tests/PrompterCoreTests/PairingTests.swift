@@ -97,6 +97,11 @@ final class PairingTests: XCTestCase {
     let store = PairingKeyStore.ephemeral()
     XCTAssertEqual(store.load([String: String].self, key: "keys", defaults: defaults), ["one": "secret"])
     XCTAssertNil(defaults.object(forKey: "keys"))
+    defaults.set("typed-secret", forKey: "macLinkKey")
+    XCTAssertEqual(store.load(String.self, key: "macLinkKey", defaults: defaults), "typed-secret")
+    defaults.set(try! JSONEncoder().encode(["mac-id": ["name": "Mac", "code": "QR:secret"]]), forKey: "pairedMacCredentials")
+    XCTAssertEqual(store.load([String: [String: String]].self, key: "pairedMacCredentials", defaults: defaults)?["mac-id"]?["code"], "QR:secret")
+    XCTAssertNil(defaults.object(forKey: "pairedMacCredentials"))
     XCTAssertEqual(store.load([String: String].self, key: "keys", defaults: defaults), ["one": "secret"])
   }
   @MainActor func testFakeNearbyIPadCannotPairWithoutNumbersMatch() async throws {
