@@ -45,8 +45,68 @@ import XCTest
       XCTAssertEqual(paragraph.paragraphSpacing, max(10, size * style.paragraphSpacing))
       XCTAssertTrue(rendered.text.string.contains("\n\n"))
     }
+    XCTAssertEqual(ScriptCanvas.sideInset(width: 1366, textWidth: 1, fontSize: 24), (1366 - 720) / 2)
     for width: CGFloat in [1180, 1366] {
       XCTAssertEqual(ScriptCanvas.sideInset(width: width, textWidth: 0.8), max(42, width * 0.1), accuracy: 0.001)
+    }
+  }
+
+  func testDisplayLinkScrollSmoothness() async throws {
+    let start = CACurrentMediaTime()
+    let document = PrompterDocument(markdown: Array(repeating: "Reading", count: 120).joined(separator: "\n\n"))
+    let canvas = ScriptCanvas(document: document, tokenIndex: 0, isActivelyRunning: true,
+      layoutGuideFraction: 0.35, style: ScriptStyle(), textWidth: 0.75,
+      manualPosition: { floor((CACurrentMediaTime() - start) * 8) }, onSeek: { _ in })
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let window = UIWindow(windowScene: scene)
+    window.frame = CGRect(x: 0, y: 0, width: 1180, height: 820)
+    window.rootViewController = UIHostingController(rootView: canvas)
+    window.isHidden = false
+    defer { window.isHidden = true; window.rootViewController = nil }
+    window.layoutIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    func findText(_ view: UIView) -> UITextView? {
+      if let text = view as? UITextView { return text }
+      return view.subviews.compactMap(findText).first
+    }
+    let text = try XCTUnwrap(findText(window))
+    let probe = ScrollFrameProbe(text: text)
+    let link = CADisplayLink(target: probe, selector: #selector(ScrollFrameProbe.sample(_:)))
+    link.add(to: .main, forMode: .common)
+    try await Task.sleep(for: .seconds(4))
+    link.invalidate()
+    let samples = Array(probe.samples.dropFirst(20))
+    if let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] {
+      let rows = probe.samples.map { ["time": $0.time, "offset": Double($0.y)] }
+      let data = try JSONSerialization.data(withJSONObject: rows, options: .prettyPrinted)
+      try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent("scroll-frames.json"))
+    }
+    XCTAssertGreaterThan(samples.count, 60)
+    var stalls = 0
+    for (before, after) in zip(samples, samples.dropFirst()) {
+      XCTAssertGreaterThanOrEqual(after.y - before.y, -0.01, "Backwards jump")
+      stalls = after.y - before.y < 0.01 ? stalls + 1 : 0
+      XCTAssertLessThanOrEqual(stalls, 2, "Offset stalled for more than two refreshes")
+      XCTAssertLessThan(after.time - before.time, 3.0 / 60, "Main thread missed more than two 60 Hz refreshes")
+    }
+  }
+
+  func testTextParityShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    var settings = PrompterSettings()
+    settings.fontSize = 48
+    settings.highlightActiveWord = true
+    let document = PrompterDocument(markdown: Self.script)
+    for (name, size) in Self.sizes.prefix(2) {
+      let canvas = ScriptCanvas(document: document, tokenIndex: 24, lastConfirmedTokenIndex: 23,
+        layoutGuideFraction: 0.35, style: ScriptStyle(settings), textWidth: settings.textWidth, onSeek: { _ in })
+      _ = try await render(ZStack(alignment: .top) {
+        Color.black
+        PresenterReadingLine(settings: settings)
+          .frame(width: size.width - 2 * ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth) + 64)
+          .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
+        canvas
+      }, size: size, name: "ipad-text-" + name, directory: directory, beforeDraw: {})
     }
   }
 
@@ -196,5 +256,14 @@ import XCTest
     let data = try XCTUnwrap(image.pngData())
     try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(name + ".png"))
     return image
+  }
+}
+
+@MainActor private final class ScrollFrameProbe: NSObject {
+  weak var text: UITextView?
+  var samples: [(time: Double, y: CGFloat)] = []
+  init(text: UITextView) { self.text = text }
+  @objc func sample(_ link: CADisplayLink) {
+    if let text { samples.append((link.timestamp, text.contentOffset.y)) }
   }
 }
