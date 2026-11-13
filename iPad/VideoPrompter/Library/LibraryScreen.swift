@@ -164,7 +164,7 @@ struct LibraryScreen: View {
 
   private func scopeRow(_ row: LibraryScope, _ title: String) -> some View {
     let selected = scope == row
-    return Button { scope = row; showingSidebar = false } label: {
+    return Button { if store.draftFlusher.resolve() { scope = row; showingSidebar = false } } label: {
       HStack {
         Text(title).lineLimit(1)
         Spacer()

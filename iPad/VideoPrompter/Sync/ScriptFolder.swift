@@ -349,10 +349,11 @@ enum ScriptFolderError: LocalizedError {
   /// Puts text beside its script as an iPad copy, leaving the script itself alone. Returns the copy's name.
   @discardableResult
   func saveCopy(_ markdown: String, of script: FolderScript) throws -> String {
-    let copyName = "\(script.title) (iPad copy \(Self.stamp())).md"
-    try Self.write(markdown, to: script.url.deletingLastPathComponent().appendingPathComponent(copyName))
+    // Numbered and exclusive, so a second copy in the same minute never replaces the first.
+    let url = try ScriptTransfer.createFile(
+      title: script.title, tag: " (iPad copy \(Self.stamp()))", markdown: markdown, in: script.url.deletingLastPathComponent())
     refresh()
-    return copyName
+    return url.lastPathComponent
   }
 
   func create(title: String, markdown: String) throws -> FolderScript {

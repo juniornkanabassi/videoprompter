@@ -179,6 +179,16 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertEqual(try Folder.read(copy.url), "typed but unsaved")
   }
 
+  func testTwoCopiesInTheSameMinuteKeepBothTexts() throws {
+    let (folder, _) = try folder()
+    let script = try add("Twice", "original", in: folder)
+    let first = try folder.saveCopy("first draft", of: script)
+    let second = try folder.saveCopy("second draft", of: script)
+    XCTAssertNotEqual(first, second)
+    XCTAssertEqual(try Folder.read(XCTUnwrap(folder.scripts.first { $0.relativePath == first }).url), "first draft")
+    XCTAssertEqual(try Folder.read(XCTUnwrap(folder.scripts.first { $0.relativePath == second }).url), "second draft")
+  }
+
   func testAFileOfTheUsersOwnIsLabelledByWhereItIsSaved() throws {
     let (folder, _) = try folder()
     let own = try add("Mine", "words here", in: folder)
