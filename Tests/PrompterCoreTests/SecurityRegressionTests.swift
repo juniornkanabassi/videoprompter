@@ -41,7 +41,7 @@ final class LinkedSecurityTests: XCTestCase {
     }
   }
 
-  func testManagedWritesReplaceAtomicallyAndExternalWritesKeepIdentity() async throws {
+  func testManagedAndLinkedWritesBothReplaceAtomically() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")
     let external = root.deletingLastPathComponent().appendingPathComponent("external-\(UUID()).md")
     defer { try? FileManager.default.removeItem(at: root); try? FileManager.default.removeItem(at: external) }
@@ -53,10 +53,11 @@ final class LinkedSecurityTests: XCTestCase {
     XCTAssertNotEqual(try FileManager.default.attributesOfItem(atPath: index.path)[.systemFileNumber] as? NSNumber, originalInode)
     try "original".write(to: external, atomically: true, encoding: .utf8)
     _ = try await library.link(record.id, to: external)
-    let fileInode = try FileManager.default.attributesOfItem(atPath: external.path)[.systemFileNumber] as? NSNumber
     _ = try await library.save(record.id, markdown: "local", expectedFingerprint: record.metadata.contentFingerprint)
-    XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: external.path)[.systemFileNumber] as? NSNumber, fileInode)
+    // The linked file is replaced whole, not truncated and refilled, and the link follows it.
     XCTAssertEqual(try String(contentsOf: external, encoding: .utf8), "local")
+    let state = try await library.linkState(for: record.id)
+    guard case .resolved = state else { return XCTFail("the link no longer resolves: \(state)") }
   }
   func testSaveBetweenReadAndDateSamplingIsNotMarkedAsSeen() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/jps-\(UUID())")

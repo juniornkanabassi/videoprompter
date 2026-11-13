@@ -503,7 +503,7 @@ struct PresenterView: View {
     VStack(spacing: Space.sm) {
       Button("Reading mode and speed") { settingsTab = .reading; showsSettings = true }.initialPopoverFocus()
       if draft.isEditing, draft.hasExternalChange(in: store) {
-        Label("This script changed outside Video Prompter. Finishing will keep this draft and show a conflict instead of overwriting it.", systemImage: "exclamationmark.triangle.fill")
+        Label("Updated outside Video Prompter. Saving merges it with your changes, or keeps this draft and shows a conflict if they touch the same lines.", systemImage: "exclamationmark.triangle.fill")
           .foregroundStyle(.primary)
       }
       if let error = draft.errorMessage {
