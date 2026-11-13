@@ -74,3 +74,28 @@ extension AppearanceSnapshotTests {
     }
   }
 }
+
+extension AppearanceSnapshotTests {
+  /// Round 4: the camera cards at the narrow, standard and wide panel and at 200% text, and the Advanced section opened.
+  func testRound4CameraSnapshots() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("Round4Camera")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
+    let devices = [CameraDevice(uid: "fx3", name: "Sony FX3"), CameraDevice(uid: "mac", name: "MacBook Pro Camera")]
+    camera.selectedUID = "fx3"
+    let destination = URL(fileURLWithPath: output)
+    for (name, width, zoom) in [("narrow", 340.0, 1.0), ("standard", 470.0, 1.0), ("wide", 900.0, 1.0), ("200", 470.0, 2.0)] {
+      camera.setRotation(.none)
+      let view = AdjustPanel(selection: .constant(.camera), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, devicesOverride: devices, recorder: recorder)
+      try await snapshot(view, name: "round4-camera-\(name)", size: .init(width: width * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
+    }
+    camera.setRotation(.threeQuarters)
+    let advanced = CameraAdjustView(model: camera, devicesOverride: devices, initiallyAdvanced: true).padding(AlphaStyle.panelInset)
+      .frame(width: 470, height: 900, alignment: .top).background(Color(white: 0.07)).environment(\.colorScheme, .dark).tint(AlphaStyle.accent)
+    try await snapshot(advanced, name: "round4-camera-advanced", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
+  }
+}

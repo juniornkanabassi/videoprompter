@@ -20,32 +20,33 @@ struct CameraAdjustView: View {
       if advancedOnly { advancedControls } else {
         if !shotOnly {
         Text("Camera").font(.title2.bold())
-        Text("Pick the camera, then make the picture upright. Remembered for each camera.")
+        Text("Pick the camera, then make the picture upright.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         ChoiceTiles(items: devices, columns: 2, minTileWidth: 300) { device in
           let info = sourceInfo(device)
           let selected = device.uid == model.selectedUID
           let detail = [info.connectionDescription, info.videoFormat].compactMap { $0 }.joined(separator: " · ")
-          ZStack {
+          ZStack(alignment: .top) {
             Button { model.selectedUID = device.uid } label: { Color.clear.contentShape(Rectangle()) }
               .buttonStyle(.plain)
               .accessibilityLabel(device.displayName).accessibilityValue(detail)
               .accessibilityAddTraits(selected ? .isSelected : [])
-            HStack(spacing: Space.sm) {
+            HStack(alignment: .top, spacing: Space.sm) {
               Image(systemName: "video").font(.title3).frame(width: Space.xxl + Space.xs).allowsHitTesting(false)
               VStack(alignment: .leading, spacing: Space.xs) {
                 Text(device.displayName).font(.headline).lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 if !detail.isEmpty { Text(detail).font(.callout).foregroundStyle(.secondary).lineLimit(2).fixedSize(horizontal: false, vertical: true) }
               }.allowsHitTesting(false)
-              Spacer(minLength: Space.sm)
+              // Room for the pencil, which sits under the check badge.
+              Spacer(minLength: AlphaStyle.minTarget)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).overlay(alignment: .bottomTrailing) {
+              // Rename is quiet: a pencil in the tile's corner, always visible, a full-size target.
               Button { renaming = device; nickname = device.nickname ?? "" } label: {
-                Text("Rename").font(.callout.weight(.semibold)).foregroundStyle(.primary)
-                  .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
-                  .background(.primary.opacity(0.14), in: Capsule())
-                  .frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle())
+                Image(systemName: "pencil").font(.callout.weight(.semibold)).foregroundStyle(.primary.opacity(0.75))
+                  .frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget).contentShape(Rectangle())
               }.buttonStyle(.plain).accessibilityLabel("Rename \(device.displayName)").help("Rename this camera")
             }.accessibilityElement(children: .contain)
-          }.modifier(ChoiceTileStyle(selected: selected, minHeight: 64))
+          }.modifier(ChoiceTileStyle(selected: selected, minHeight: 52))
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
         }
         if showsShotHeading { Text("Shot").font(.system(size: 17, weight: .semibold)) }
@@ -53,7 +54,7 @@ struct CameraAdjustView: View {
           .accessibilityElement(children: .contain).accessibilityLabel("Shot")
         DisclosureGroup(isExpanded: $advancedOpen) {
           advancedControls
-        } label: { Text("Advanced").font(.system(size: 15, weight: .semibold)).foregroundStyle(.secondary).frame(minHeight: AlphaStyle.minTarget) }
+        } label: { Text("Advanced").font(.system(size: 15, weight: .semibold)).foregroundStyle(.primary).frame(minHeight: AlphaStyle.minTarget) }
       }
     }
     .onAppear { advancedOpen = initiallyAdvanced; if devicesOverride == nil { model.refreshDevices() } }
@@ -68,19 +69,15 @@ struct CameraAdjustView: View {
   var advancedControls: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
       ChoiceTiles(items: [Self.upsideDown], columns: 1) { shot($0) }
-      HStack {
-        Text("Automatic")
-        Spacer()
-        Toggle("Automatic", isOn: Binding(get: { model.guides.automaticRotation }, set: { model.guides.automaticRotation = $0 }))
-          .labelsHidden().toggleStyle(.switch)
-      }.frame(minHeight: AlphaStyle.minTarget)
+      Toggle("Automatic", isOn: Binding(get: { model.guides.automaticRotation }, set: { model.guides.automaticRotation = $0 }))
+        .toggleStyle(AccentSwitchStyle())
     }
   }
   private struct Shot: Identifiable {
     let id: String, title: String, detail: String, rotation: CameraRotation
   }
   private static let shots = [
-    Shot(id: "none", title: "Landscape", detail: "Normal", rotation: .none),
+    Shot(id: "none", title: "Landscape", detail: "Upright", rotation: .none),
     Shot(id: "quarter", title: "Vertical left", detail: "Top on the left", rotation: .quarter),
     Shot(id: "threeQuarters", title: "Vertical right", detail: "Top on the right", rotation: .threeQuarters)]
   private static let upsideDown = Shot(id: "half", title: "Upside down", detail: "Top at the bottom", rotation: .half)
@@ -116,22 +113,19 @@ struct ChoiceTileStyle: ViewModifier {
   }
 }
 
-/// A picture frame with its top edge marked, turned the way the camera is: wide for landscape, tall for the
-/// two verticals, with the marked edge on the left or right so they cannot be mistaken for each other.
+/// A picture frame turned the way the camera is, with an arrow to the side that is the top, so the three
+/// shots cannot be mistaken for each other.
 private struct ShotGlyph: View {
   let rotation: CameraRotation
   private var portrait: Bool { rotation == .quarter || rotation == .threeQuarters }
-  private var markAlignment: Alignment {
-    switch rotation { case .none: .top; case .quarter: .leading; case .half: .bottom; case .threeQuarters: .trailing }
+  private var topTurn: Angle {
+    switch rotation { case .none: .degrees(0); case .quarter: .degrees(-90); case .half: .degrees(180); case .threeQuarters: .degrees(90) }
   }
   var body: some View {
-    let size = portrait ? CGSize(width: 30, height: 44) : CGSize(width: 44, height: 30)
-    let sideMark = markAlignment == .leading || markAlignment == .trailing
-    RoundedRectangle(cornerRadius: 5).stroke(.primary, lineWidth: 2).frame(width: size.width, height: size.height) // grid: ok glyph drawing
-      .overlay(alignment: markAlignment) {
-        Capsule().fill(.primary).frame(width: sideMark ? 4 : 18, height: sideMark ? 18 : 4).padding(Space.xs) // grid: ok glyph drawing
-      }
-      .frame(height: 48).accessibilityHidden(true)
+    let size = portrait ? CGSize(width: 36, height: 52) : CGSize(width: 52, height: 36) // grid: ok glyph drawing
+    RoundedRectangle(cornerRadius: 6).stroke(.primary, lineWidth: 2).frame(width: size.width, height: size.height) // grid: ok glyph drawing
+      .overlay { Image(systemName: "arrow.up.to.line").font(.system(size: 20, weight: .bold)).rotationEffect(topTurn) } // grid: ok glyph drawing
+      .frame(height: 56).accessibilityHidden(true) // grid: ok glyph drawing
   }
 }
 
