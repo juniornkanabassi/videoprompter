@@ -94,7 +94,13 @@ struct IPadRemoteView: View {
   private func deviceMenu(_ state: PadRemote.State) -> some View {
     Menu {
       Button("Disconnect") { link.disconnect() }
-      Button("Connect another iPad") { link.disconnect(); link.controlsIPad = true }
+      Button("Connect another iPad") { link.disconnect() }
+      if link.wifiDevices.count > 1 {
+        Picker("Wi-Fi iPad", selection: $link.selectedWiFiID) {
+          Text("Automatic").tag(String?.none)
+          ForEach(link.wifiDevices) { Text($0.name).tag(Optional($0.id)) }
+        }
+      }
     } label: {
       HStack(spacing: Space.sm) {
         Circle().fill(.green).frame(width: Space.sm, height: Space.sm)
