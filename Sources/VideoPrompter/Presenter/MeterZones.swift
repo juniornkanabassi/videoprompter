@@ -37,6 +37,24 @@ enum MeterZones {
   }
 }
 
+extension MeterZones {
+  /// The part of the bar the level has not reached: a neutral track where the green is (so no half-lit green
+  /// block reads as an extra zone), with the yellow and red zones faintly tinted, as their words name them.
+  static func unlitTrack(vertical: Bool = false, scale: (Float) -> CGFloat = position) -> some View {
+    LinearGradient(stops: [
+      .init(color: .white.opacity(0.12), location: 0), .init(color: .white.opacity(0.12), location: scale(yellowFrom)),
+      .init(color: yellow.opacity(0.28), location: scale(yellowFrom)), .init(color: yellow.opacity(0.28), location: scale(redFrom)),
+      .init(color: red.opacity(0.28), location: scale(redFrom)), .init(color: red.opacity(0.28), location: 1)
+    ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
+  }
+
+  /// The live number's colour comes from the live level alone: a past clip never tints it.
+  static func readoutColour(_ dBFS: Float, loud: Color) -> Color {
+    guard dBFS.isFinite else { return .white.opacity(0.7) }
+    return dBFS >= redFrom ? loud : dBFS >= yellowFrom ? yellow : .white
+  }
+}
+
 struct PeakHold {
   private(set) var peak: Float?
   private(set) var at = 0.0

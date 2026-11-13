@@ -28,6 +28,8 @@ struct BarLabel: View {
   var accentIcon = false
   /// A little less room each side of the word, for a bar that is short of width.
   var snug = false
+  /// A switched-off device: the word is struck through as well as the icon, so it never reads as an active toggle.
+  var struck = false
   var body: some View {
     HStack(spacing: Space.xs) {
       if accentIcon {
@@ -35,7 +37,7 @@ struct BarLabel: View {
       } else {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
-      if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
+      if showsTitle { Text(title).font(.system(size: 15, weight: weight)).strikethrough(struck).lineLimit(1).fixedSize() }
     }.padding(.horizontal, showsTitle && !snug ? Space.md : Space.sm)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
   }
@@ -62,7 +64,7 @@ struct BarButtonStyle: ButtonStyle {
     switch role {
     case .prominent: AlphaStyle.onAccent
     case .off: PresenterBar.warning
-    case .muted: .white.opacity(0.7)
+    case .muted: .white.opacity(0.75)
     default: .white
     }
   }
@@ -71,7 +73,8 @@ struct BarButtonStyle: ButtonStyle {
     case .prominent: AlphaStyle.accent
     case .on: .white.opacity(0.2)
     case .off: Color.red.opacity(0.18)
-    case .muted, .secondary: .white.opacity(0.08)
+    case .secondary: .white.opacity(0.08)
+    case .muted: .clear
     case .plain: .clear
     }
   }
@@ -88,8 +91,10 @@ struct BarGroup<Content: View>: View {
     let shape = RoundedRectangle(cornerRadius: PresenterBar.corner)
     HStack(spacing: 0) {
       if let caption {
-        Text(caption).font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.85))
-          .padding(.horizontal, Space.md).accessibilityHidden(true)
+        // A label, not a control: small capitals in a quiet tone, no fill and no edge of its own.
+        Text(caption).font(.system(size: 12, weight: .semibold)).textCase(.uppercase).tracking(0.8) // grid: ok small-caps tracking
+          .foregroundStyle(.white.opacity(0.55))
+          .padding(.leading, Space.md).padding(.trailing, Space.sm).accessibilityHidden(true)
       }
       content()
     }
@@ -124,7 +129,7 @@ struct BarDeviceControl<MenuContent: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug) }
+      Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug, struck: !isOn && !offIsWarning) }
         .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
@@ -138,7 +143,13 @@ struct BarDeviceControl<MenuContent: View>: View {
       .help(menuLabel)
       .accessibilityLabel(menuLabel).accessibilityValue(menuValue)
     }
-    .background(isOn ? Color.clear : offIsWarning ? Color.red.opacity(0.18) : .white.opacity(0.08), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
+    .background(isOn || !offIsWarning ? Color.clear : Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
+    // A camera that is simply off is an empty, dashed outline: nothing filled, so it never matches the lit Script pill.
+    .overlay {
+      if !isOn && !offIsWarning {
+        RoundedRectangle(cornerRadius: PresenterBar.corner).stroke(.white.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+      }
+    }
   }
 }
 
@@ -212,15 +223,21 @@ struct PresenterReadingLine: View {
 
 /// A small status capsule: a dot for the state, then the words.
 struct BarStatusPill: View {
+  /// How much of the status the bar has room for: the whole line, just the state, or the dot alone.
+  enum Style { case full, compact, dot }
   let text: String
+  /// The state alone ("Listening"), shown in the compact pill.
+  var shortText: String? = nil
   let isActive: Bool
+  var style = Style.full
   var body: some View {
     HStack(spacing: Space.sm) {
       Circle().fill(isActive ? Color.green : .white.opacity(0.4)).frame(width: 8, height: 8)
-      Text(text).font(.system(size: 14, weight: .medium)).lineLimit(1)
-    }.padding(.horizontal, Space.md).frame(minHeight: 32) // grid: ok A calm status capsule, shorter than a control.
+      if style != .dot { Text(style == .compact ? (shortText ?? text) : text).font(.system(size: 14, weight: .medium)).lineLimit(1) }
+    }.padding(.horizontal, style == .dot ? Space.sm : Space.md).frame(minHeight: 32) // grid: ok A calm status capsule, shorter than a control.
       .background(.white.opacity(0.07), in: Capsule())
       .foregroundStyle(.white.opacity(0.85))
+      .help(text)
       .accessibilityElement(children: .ignore).accessibilityLabel(text)
       .accessibilityIdentifier("presenter-status-pill")
   }

@@ -15,6 +15,9 @@ struct MicMeterView: View {
   var showsHeading = true
   /// Off means the presenter turned the microphone off: nothing is listened to or measured.
   var isListening = true
+  /// The words and numbers grow by this much beyond the strip's own zoom (the Mac presenter caps the strip at
+  /// 150% but lets its type follow the interface size); the columns they sit in grow with them.
+  var typeScale: CGFloat = 1
   @Environment(\.colorSchemeContrast) private var contrast
   @State private var peakHold = PeakHold()
   @State private var clipLatchUntil: TimeInterval = 0
@@ -23,6 +26,11 @@ struct MicMeterView: View {
   /// Column widths of the vertical meter: the dB numbers, the bar, and the zone words beside it.
   static let tickColumn: CGFloat = 34
   static let zoneColumn: CGFloat = 56
+  /// Width of the whole vertical strip before zoom: the two text columns at `typeScale`, the bar, the gaps and edge padding.
+  static func stripWidth(typeScale: CGFloat) -> CGFloat { (tickColumn + zoneColumn) * typeScale + barWidth + 4 * Space.xs }
+  private var tickWidth: CGFloat { Self.tickColumn * typeScale }
+  private var zoneWidth: CGFloat { Self.zoneColumn * typeScale }
+  private func size(_ points: CGFloat) -> CGFloat { points * typeScale }
   static let scale: [(value: Float, label: String)] = [
     (0, "0"), (-6, "−6"), (-12, "−12"), (-20, "−20"), (-40, "−40"), (-60, "−60")
   ]
@@ -96,10 +104,12 @@ struct MicMeterView: View {
         VStack(spacing: horizontal ? Space.xs : Space.sm) {
           if showsHeading { heading }
           if horizontal { horizontalBar(fill: fill, clipLit: clipLit, now: now) } else { verticalBar(fill: fill, clipLit: clipLit, now: now) }
-          readoutView(db: db, clipLit: clipLit)
+          readoutView(db: db, clipLit: clipLit).frame(maxWidth: .infinity)
+            // Beside the readout, level with the lamp's end of the bar, so the two read together.
+            .overlay(alignment: .trailing) { if horizontal && clipLit { clippedBadge(lit: true).padding(.trailing, Space.md) } }
           if showsHeading {
             Text(micName)
-              .font(.system(size: 14)).multilineTextAlignment(.center).lineLimit(2)
+              .font(.system(size: size(14))).multilineTextAlignment(.center).lineLimit(2)
               .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
               .help(micName)
               .foregroundStyle(Palette.onDarkQuiet(contrast))
@@ -123,7 +133,7 @@ struct MicMeterView: View {
 
   private var heading: some View {
     Text("MIC")
-      .font(.system(size: 14, weight: .semibold))
+      .font(.system(size: size(14), weight: .semibold))
       .foregroundStyle(Palette.onDarkQuiet(contrast))
   }
 
@@ -135,13 +145,22 @@ struct MicMeterView: View {
       .frame(width: horizontal ? 8 : Self.barWidth, height: horizontal ? Self.barWidth : 8)
   }
 
+  /// The latched clip, named: a small badge that appears with the lamp and goes with it, so a past clip is
+  /// never mistaken for the live level.
+  private func clippedBadge(lit: Bool) -> some View {
+    Text(lit ? "Clipped" : "clip").font(.system(size: size(12), weight: lit ? .bold : .regular)).lineLimit(1)
+      .foregroundStyle(lit ? Color.white : Palette.onDarkQuiet(contrast))
+      .padding(.horizontal, lit ? Space.xs : 0).padding(.vertical, 1)
+      .background(MeterZones.red.opacity(lit ? 0.85 : 0), in: Capsule())
+  }
+
   private func readoutView(db: Float, clipLit: Bool) -> some View {
     VStack(spacing: 0) {
       Text(!isListening ? "Mic off" : db.isFinite ? Self.readout(db).replacingOccurrences(of: " dBFS", with: "") : "No signal")
-        .font(.system(size: db.isFinite && isListening ? 22 : 15, weight: .semibold)).monospacedDigit()
-        .foregroundStyle(clipLit ? loudColour : .white.opacity(db.isFinite && isListening ? 1 : 0.7))
+        .font(.system(size: size(db.isFinite && isListening ? 22 : 15), weight: .semibold)).monospacedDigit()
+        .foregroundStyle(isListening ? MeterZones.readoutColour(db, loud: loudColour) : .white.opacity(0.7))
         .minimumScaleFactor(0.7).lineLimit(1)
-      Text("dBFS").font(.system(size: 13)).foregroundStyle(Palette.onDarkQuiet(contrast))
+      Text("dBFS").font(.system(size: size(13))).foregroundStyle(Palette.onDarkQuiet(contrast))
         .opacity(db.isFinite && isListening ? 1 : 0)
     }
   }
@@ -149,10 +168,9 @@ struct MicMeterView: View {
   private func verticalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
     VStack(spacing: Space.xs) {
       HStack(spacing: Space.xs) {
-        Color.clear.frame(width: Self.tickColumn, height: 1)
+        Color.clear.frame(width: tickWidth, height: 1)
         clipLamp(lit: clipLit, horizontal: false)
-        Text("clip").font(.system(size: 12)).foregroundStyle(clipLit ? loudColour : Palette.onDarkQuiet(contrast))
-          .frame(width: Self.zoneColumn, alignment: .leading)
+        clippedBadge(lit: clipLit).frame(width: zoneWidth, alignment: .leading)
       }
       HStack(spacing: Space.xs) {
         // Each number is centred on its boundary: the label's centre, not its top, is the anchor.
@@ -160,23 +178,23 @@ struct MicMeterView: View {
           ZStack {
             ForEach(Self.visibleScale(height: geometry.size.height), id: \.value) { entry in
               Text(entry.label)
-                .font(.system(size: 13)).monospacedDigit()
+                .font(.system(size: size(13))).monospacedDigit()
                 .foregroundStyle(Palette.onDarkQuiet(contrast))
-                .frame(width: Self.tickColumn, alignment: .trailing)
-                .position(x: Self.tickColumn / 2, y: geometry.size.height * (1 - MeterZones.micPosition(entry.value)))
+                .frame(width: tickWidth, alignment: .trailing)
+                .position(x: tickWidth / 2, y: geometry.size.height * (1 - MeterZones.micPosition(entry.value)))
             }
           }
         }
-        .frame(width: Self.tickColumn)
+        .frame(width: tickWidth)
         GeometryReader { geometry in
           let height = geometry.size.height
           ZStack {
-            MeterZones.zoneTrack(vertical: true, scale: MeterZones.micPosition).opacity(0.28)
+            MeterZones.unlitTrack(vertical: true, scale: MeterZones.micPosition)
             MeterZones.zoneTrack(vertical: true, scale: MeterZones.micPosition).mask(alignment: .bottom) {
               Rectangle().frame(height: height * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
-              Rectangle().fill(.white.opacity(0.7)).frame(height: 1)
+              Rectangle().fill(.black.opacity(0.5)).frame(height: 1)
                 .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(boundary)))
             }
             if isListening, let peak = peakHold.value(at: now) {
@@ -194,7 +212,7 @@ struct MicMeterView: View {
             zoneWord("too loud", colour: loudColour, middle: (MeterZones.micPosition(MeterZones.redFrom) + 1) / 2, height: height)
           }
         }
-        .frame(width: Self.zoneColumn)
+        .frame(width: zoneWidth)
       }
     }
     .padding(.top, Space.xs).padding(.vertical, Space.sm)
@@ -202,9 +220,9 @@ struct MicMeterView: View {
   }
 
   private func zoneWord(_ text: String, colour: Color, middle: CGFloat, height: CGFloat) -> some View {
-    Text(text).font(.system(size: 12, weight: .medium)).foregroundStyle(colour).lineLimit(1)
-      .frame(width: Self.zoneColumn, alignment: .leading)
-      .position(x: Self.zoneColumn / 2, y: height * (1 - middle))
+    Text(text).font(.system(size: size(12), weight: .medium)).foregroundStyle(colour).lineLimit(1)
+      .frame(width: zoneWidth, alignment: .leading)
+      .position(x: zoneWidth / 2, y: height * (1 - middle))
   }
 
   private func horizontalBar(fill: CGFloat, clipLit: Bool, now: TimeInterval) -> some View {
@@ -229,12 +247,12 @@ struct MicMeterView: View {
         }.frame(height: 18) // grid: ok legend row: a word line and its bracket
         GeometryReader { geometry in
           ZStack {
-            MeterZones.zoneTrack(vertical: false, scale: MeterZones.micPosition).opacity(0.28)
+            MeterZones.unlitTrack(vertical: false, scale: MeterZones.micPosition)
             MeterZones.zoneTrack(vertical: false, scale: MeterZones.micPosition).mask(alignment: .leading) {
               Rectangle().frame(width: geometry.size.width * fill)
             }
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
-              Rectangle().fill(.white.opacity(0.7)).frame(width: 1)
+              Rectangle().fill(.black.opacity(0.5)).frame(width: 1)
                 .position(x: geometry.size.width * MeterZones.micPosition(boundary), y: Self.barWidth / 2)
             }
             if isListening, let peak = peakHold.value(at: now) {

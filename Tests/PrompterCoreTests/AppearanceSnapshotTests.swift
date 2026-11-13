@@ -409,7 +409,7 @@ import XCTest
     }
   }
 
-  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero, scrollToBottom: Bool = false) async throws {
+  func snapshot<V: View>(_ content: V, name: String, size: NSSize, scheme: ColorScheme, destination: URL, settleDelay: Duration = .zero, scrollToBottom: Bool = false, prepare: ((NSView) -> Void)? = nil) async throws {
     try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
     let host = NSHostingView(rootView: content.environment(\.offscreenRendering, true).background(Color(nsColor: .windowBackgroundColor)).environment(\.colorScheme, scheme).preferredColorScheme(scheme))
     // Match PresenterController: the host must not grow the window to its intrinsic minimum.
@@ -425,6 +425,10 @@ import XCTest
       try await Task.sleep(for: .milliseconds(30))
     }
     try await Task.sleep(for: settleDelay)
+    if let prepare {
+      prepare(host)
+      host.layoutSubtreeIfNeeded()
+    }
     if scrollToBottom {
       func scrollViews(_ view: NSView) -> [NSScrollView] {
         (view as? NSScrollView).map { [$0] } ?? view.subviews.flatMap(scrollViews)
