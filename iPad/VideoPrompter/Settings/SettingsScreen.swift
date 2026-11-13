@@ -315,6 +315,13 @@ struct MacControlScreen: View {
           notice("Plug in a USB-C cable, or scan the code in the Mac’s iPad Remote window.", colour: LibraryTheme.warn)
         }
         if !macs.isEmpty { pairedMacs }
+        ForEach(link.pairedMacs, id: \.id) { mac in
+          HStack {
+            Text(mac.name)
+            Spacer()
+            Button("Forget") { link.forgetMac(id: mac.id) }
+          }
+        }
         if showingKey { keyCard } else { Button("Show key to type instead") { showingKey = true } }
         Text("No Apple ID or iCloud is needed. Scripts the Mac sends are saved on this iPad in Sent from Mac.")
           .font(.subheadline).foregroundStyle(LibraryTheme.muted)
@@ -342,13 +349,12 @@ struct MacControlScreen: View {
     .confirmationDialog("Generate a new key?", isPresented: $confirming, titleVisibility: .visible) {
       Button("Generate new key", role: .destructive) {
         link.newPairingCode()
-        KnownMacs.removeWiFi()
         known = KnownMacs.load()
         reveal.show(at: Date(), captured: captured)
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("Every Mac paired over Wi-Fi is unpaired and must type the new key. USB-C keeps working.")
+      Text("Macs using the typed key must enter the new key. Individually paired Macs keep working.")
     }
   }
 
@@ -407,8 +413,8 @@ struct MacControlScreen: View {
 
   /// The connected Mac first, then the others, most recently seen first.
   private var macs: [KnownMac] {
-    var list = known
-    if let connection, !list.contains(where: { $0.name == connection.name }) {
+    var list = known.filter { old in !link.pairedMacs.contains { $0.name == old.name } }
+    if let connection, !link.pairedMacs.contains(where: { $0.name == connection.name }), !list.contains(where: { $0.name == connection.name }) {
       list.append(KnownMac(name: connection.name, kind: connection.kind, lastSeen: Date()))
     }
     return list.sorted {
@@ -441,7 +447,8 @@ struct MacControlScreen: View {
         pill("Disconnect", colour: LibraryTheme.text) { link.disconnect() }
       }
       pill("Forget", colour: LibraryTheme.bad) {
-          link.forgetMac(named: mac.name)
+          if mac.kind == "Wi-Fi" { link.forgetTypedKey() }
+          KnownMacs.remove(mac.name)
           known = KnownMacs.load()
         }
     }

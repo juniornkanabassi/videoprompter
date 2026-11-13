@@ -41,7 +41,7 @@ struct IPadConnectPanel: View {
           Text("Nearby iPads").font(.title2.bold())
           Text("Or choose an iPad, then tap Allow on it.").foregroundStyle(.secondary)
           if link.wifiDevices.isEmpty { Text("Looking for iPads on this Wi-Fi…").foregroundStyle(.secondary) }
-          ForEach(link.wifiDevices) { device in
+          ForEach(link.pairingDevices) { device in
             HStack {
               Image(systemName: "ipad")
               VStack(alignment: .leading) {
@@ -49,6 +49,9 @@ struct IPadConnectPanel: View {
                 if link.pairingRequestName == device.name { Text(link.pairingRequestCode.map { "Check \($0) matches, then tap Allow" } ?? "Waiting for the iPad…").font(.caption).foregroundStyle(.secondary) }
               }
               Spacer()
+              if link.pairingCode(id: device.id, name: device.name) != nil {
+                Button("Forget") { link.forgetIPad(id: device.id) }
+              }
               if link.pairingRequestName == device.name {
                 if link.pairingRequestCode != nil { Button("Numbers match") { link.confirmPairingRequest() } }
                 Button("Cancel") { link.cancelPairingRequest() }

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Network
 import XCTest
 @testable import PrompterCore
 @testable import VideoPrompter
@@ -11,6 +12,8 @@ final class PairingTests: XCTestCase {
     let offer = PairingOffer(macID: id, name: "Studio Mac", service: id.uuidString, now: now)
     XCTAssertEqual(try PairingOffer.decode(offer.encoded(), now: now), offer)
     XCTAssertThrowsError(try PairingOffer.decode(offer.encoded(), now: now.addingTimeInterval(300)))
+    XCTAssertEqual(try PairingOffer.decode(offer.encoded(), now: now.addingTimeInterval(359), clockSkew: 60), offer)
+    XCTAssertThrowsError(try PairingOffer.decode(offer.encoded(), now: now.addingTimeInterval(360), clockSkew: 60))
     XCTAssertThrowsError(try PairingOffer.decode("https://example.com"))
     var foreign = offer; foreign.app = "OtherApp"
     XCTAssertThrowsError(try PairingOffer.decode(foreign.encoded(), now: now))
@@ -72,12 +75,72 @@ final class PairingTests: XCTestCase {
     let intruder = Curve25519.KeyAgreement.PrivateKey()
     XCTAssertNotEqual(PairingExchange.credential(shared), try PairingExchange.credential(PairingExchange.key(intruder, peer: mac.publicKey.rawRepresentation, salt: "qr-secret")))
   }
+  @MainActor func testForgetAndSelectionPersistence() {
+    let defaults = freshDefaults(), store = PairingKeyStore.ephemeral()
+    let sender = IPadCameraSender(defaults: defaults, credentialStore: store)
+    sender.acceptedPairing(id: "one", code: "QR:one")
+    sender.acceptedPairing(id: "two", code: "QR:two")
+    sender.selectedWiFiID = "one"
+    sender.wifiChanged([])
+    XCTAssertEqual(sender.selectedWiFiID, "one")
+    XCTAssertEqual(IPadCameraSender(defaults: defaults, credentialStore: store).selectedWiFiID, "one")
+    sender.forgetIPad(id: "one")
+    XCTAssertNil(sender.pairingCode(id: "one", name: "one"))
+    XCTAssertEqual(sender.pairingCode(id: "two", name: "two"), "QR:two")
+  }
+  func testKeychainMigrationOnlyRemovesPreferencesAfterSuccessfulWrite() {
+    let defaults = freshDefaults()
+    defaults.set(["one": "secret"], forKey: "keys")
+    let failed = PairingKeyStore(read: { _ in nil }, write: { _, _ in false })
+    XCTAssertEqual(failed.load([String: String].self, key: "keys", defaults: defaults), ["one": "secret"])
+    XCTAssertNotNil(defaults.object(forKey: "keys"))
+    let store = PairingKeyStore.ephemeral()
+    XCTAssertEqual(store.load([String: String].self, key: "keys", defaults: defaults), ["one": "secret"])
+    XCTAssertNil(defaults.object(forKey: "keys"))
+    XCTAssertEqual(store.load([String: String].self, key: "keys", defaults: defaults), ["one": "secret"])
+  }
+  @MainActor func testFakeNearbyIPadCannotPairWithoutNumbersMatch() async throws {
+    let id = UUID().uuidString
+    let listener = try NWListener(using: .tcp)
+    listener.service = .init(name: id, type: PairingExchange.padService)
+    listener.newConnectionHandler = { connection in
+      Task { @MainActor in
+        connection.start(queue: .main)
+        do {
+          let request = try JSONDecoder().decode(PairingExchange.Request.self, from: await PairingExchange.receive(on: connection))
+          let key = Curve25519.KeyAgreement.PrivateKey()
+          try await PairingExchange.send(PairingExchange.commitment(key.publicKey.rawRepresentation), on: connection)
+          let peer = try await PairingExchange.receive(on: connection)
+          guard PairingExchange.commitment(peer) == request.publicKeyCommitment else { return }
+          try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
+          let shared = try PairingExchange.key(key, peer: peer)
+          try await PairingExchange.send(PairingExchange.seal(.init(id: id, name: "Fake iPad", code: "QR:fake"), key: shared), on: connection)
+        } catch {}
+        connection.cancel()
+      }
+    }
+    listener.start(queue: .main)
+    defer { listener.cancel() }
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    defer { sender.cancelPairingRequest(); sender.disconnect() }
+    sender.requestPairing(.init(id: id, name: "Fake iPad"))
+    for _ in 0..<100 where sender.pairingRequestCode == nil {
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertNotNil(sender.pairingRequestCode)
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertNil(sender.pairingCode(id: id, name: "Fake iPad"))
+    sender.cancelPairingRequest()
+    XCTAssertNil(sender.pairingCode(id: id, name: "Fake iPad"))
+  }
   @MainActor func testKnownMacCredentialSurvivesRestart() {
     let defaults = freshDefaults()
     let padID = UUID().uuidString
-    let first = IPadCameraSender(defaults: defaults)
+    let store = PairingKeyStore.ephemeral()
+    let first = IPadCameraSender(defaults: defaults, credentialStore: store)
     first.acceptedPairing(id: padID, code: "QR:known-secret")
-    let restarted = IPadCameraSender(defaults: defaults)
+    let restarted = IPadCameraSender(defaults: defaults, credentialStore: store)
     XCTAssertEqual(restarted.pairingCode(id: padID, name: "renamed iPad"), "QR:known-secret")
     XCTAssertNil(restarted.pairingCode(id: UUID().uuidString, name: "renamed iPad"))
   }

@@ -16,7 +16,8 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let documents = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["VP_IPAD_E2E_CONTAINER"]))
       .appendingPathComponent("Documents")
     let defaults = freshDefaults()
-    let sender = IPadCameraSender(defaults: defaults)
+    let store = PairingKeyStore.ephemeral()
+    let sender = IPadCameraSender(defaults: defaults, credentialStore: store)
     sender.searchesForIPad = false
     sender.refreshPairingOffer()
     defer { sender.stopPairingOffer(); sender.disconnect() }
@@ -27,7 +28,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(100))
     }
     XCTAssertTrue(try String(contentsOf: result, encoding: .utf8).hasPrefix("Paired with"))
-    let codes = try XCTUnwrap(defaults.dictionary(forKey: "sendCameraPairingCodes") as? [String: String])
+    let codes = try XCTUnwrap(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults))
     let padID = try XCTUnwrap(codes.keys.first)
     let code = try XCTUnwrap(codes[padID])
     let name = "iPad \(padID.prefix(4))"

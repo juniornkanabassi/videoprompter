@@ -54,25 +54,33 @@ import UIKit
     if value { setPairingScreen(open: false) }
   }
   private var permissionListener: NWListener?
+  private let credentialStore = PairingKeyStore(service: "VideoPrompter.camera-pairing")
   private var credentials: [String: Credential] = {
-    guard let data = UserDefaults.standard.data(forKey: "pairedMacCredentials") else { return [:] }
-    return (try? JSONDecoder().decode([String: Credential].self, from: data)) ?? [:]
+    PairingKeyStore(service: "VideoPrompter.camera-pairing").load([String: Credential].self, key: "pairedMacCredentials", defaults: .standard) ?? [:]
   }()
 
-  func forgetMac(named name: String) {
-    let hasCredential = credentials.values.contains { $0.name == name }
-    credentials = credentials.filter { $0.value.name != name }
-    if !hasCredential, KnownMacs.load().contains(where: { $0.name == name && $0.kind == "Wi-Fi" }) { newPairingCode() }
-    saveCredentials()
-    KnownMacs.remove(name)
+  var pairedMacs: [(id: String, name: String)] {
+    credentials.map { (id: $0.key, name: $0.value.name) }.sorted { $0.id < $1.id }
+  }
+  func forgetMac(id: String) {
+    var remaining = credentials
+    remaining[id] = nil
+    guard credentialStore.save(remaining, key: "pairedMacCredentials") else {
+      pairingFailure = "Could not forget this Mac. Unlock the iPad and try again."; return
+    }
+    credentials = remaining
     receiver.dropWiFi()
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
+  func forgetTypedKey() { newPairingCode() }
   private func saveCredentials() {
-    UserDefaults.standard.set(try? JSONEncoder().encode(credentials), forKey: "pairedMacCredentials")
+    credentialStore.save(credentials, key: "pairedMacCredentials")
   }
-  private func remember(_ id: String, name: String, code: String) {
-    credentials[id] = Credential(name: name, code: code); saveCredentials()
+  private func remember(_ id: String, name: String, code: String) throws {
+    var next = credentials
+    next[id] = Credential(name: name, code: code)
+    guard credentialStore.save(next, key: "pairedMacCredentials") else { throw PairingOffer.Failure.foreign }
+    credentials = next
     KnownMacs.note(name: name, kind: "Wi-Fi")
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
@@ -90,7 +98,7 @@ import UIKit
         let reply = PairingExchange.Reply(id: deviceID, name: deviceName, code: code)
         let sealed = try PairingExchange.seal(reply, key: PairingExchange.key(privateKey, peer: permission.peerPublicKey))
         // Install only after the local Allow tap, before the Mac starts its TLS connection.
-        remember(permission.request.id, name: permission.request.name, code: code)
+        try remember(permission.request.id, name: permission.request.name, code: code)
         try await PairingExchange.send(sealed, on: connection)
       } catch { pairingFailure = "Could not connect to that Mac. Try again." }
     }
@@ -152,7 +160,7 @@ import UIKit
       let shared = try PairingExchange.key(key, peer: publicKey, salt: offer.secret)
       try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
       // Install before acknowledging, so the Mac's first secure connection finds its key.
-      remember(offer.macID.uuidString, name: offer.name, code: PairingExchange.credential(shared))
+      try remember(offer.macID.uuidString, name: offer.name, code: PairingExchange.credential(shared))
       try await PairingExchange.send(PairingExchange.seal(.init(id: deviceID, name: deviceName, code: "installed"), key: shared), on: connection)
       let reply = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
       guard reply.id == offer.macID.uuidString, reply.code == "accepted" else { throw PairingOffer.Failure.foreign }
@@ -186,16 +194,20 @@ import UIKit
   /// picture. A new key unpairs every Mac. Stored under a new name, so a six-digit code from an
   /// earlier build is replaced.
   @Published private(set) var pairingCode: String = {
-    if let code = UserDefaults.standard.string(forKey: "macLinkKey") { return code }
+    let store = PairingKeyStore(service: "VideoPrompter.camera-pairing")
+    if let code = store.load(String.self, key: "macLinkKey", defaults: .standard) { return code }
     let code = CameraLinkSecurity.newCode()
-    UserDefaults.standard.set(code, forKey: "macLinkKey")
+    store.save(code, key: "macLinkKey")
     return code
   }()
 
   func newPairingCode() {
-    credentials.removeAll(); saveCredentials(); KnownMacs.removeWiFi()
-    pairingCode = CameraLinkSecurity.newCode()
-    UserDefaults.standard.set(pairingCode, forKey: "macLinkKey")
+    // Rotating the shared typed key does not revoke individually paired Macs.
+    let next = CameraLinkSecurity.newCode()
+    guard credentialStore.save(next, key: "macLinkKey") else {
+      pairingFailure = "Could not change the key. Unlock the iPad and try again."; return
+    }
+    pairingCode = next
     if allowsWiFi {
       wifi?.cancel()
       wifi = nil
@@ -236,6 +248,20 @@ import UIKit
     #if DEBUG && targetEnvironment(simulator)
     if !qrFixtureStarted, ProcessInfo.processInfo.environment["VP_IPAD_E2E_QR"] == "1" {
       qrFixtureStarted = true
+      // Exercise the iPad-only lifecycle and Forget paths on the disposable simulator.
+      assert(permissionListener == nil)
+      setPairingScreen(open: true)
+      assert(permissionListener != nil)
+      setPairingScreen(open: false)
+      assert(permissionListener == nil)
+      let firstID = UUID().uuidString, secondID = UUID().uuidString
+      try! remember(firstID, name: "Same name", code: "QR:fixture-one")
+      try! remember(secondID, name: "Same name", code: "QR:fixture-two")
+      forgetMac(id: firstID)
+      assert(credentials[firstID] == nil && credentials[secondID] != nil)
+      forgetTypedKey()
+      assert(credentials[secondID] != nil)
+      forgetMac(id: secondID)
       Task { @MainActor in
         let file = URL.documentsDirectory.appendingPathComponent("vp-qr-payload.txt")
         for _ in 0..<1200 {

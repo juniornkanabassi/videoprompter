@@ -228,9 +228,16 @@ import VideoToolbox
     let name: String
   }
   @Published private(set) var wifiDevices: [WiFiDevice] = []
+  var pairingDevices: [WiFiDevice] {
+    let names = defaults.dictionary(forKey: "pairedIPadNames") as? [String: String] ?? [:]
+    let saved = codes.keys.filter { UUID(uuidString: $0) != nil }.map { WiFiDevice(id: $0, name: names[$0] ?? "iPad") }
+    return Dictionary((wifiDevices + saved).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+      .values.sorted { $0.id < $1.id }
+  }
   @Published var selectedWiFiID: String? {
     didSet {
       guard selectedWiFiID != oldValue else { return }
+      defaults.set(selectedWiFiID, forKey: "selectedWiFiIPad")
       generation += 1
       oldIPad = false
       if let old = pipe, old.name == "Wi-Fi" {
@@ -368,23 +375,35 @@ import VideoToolbox
       pairingFailure = "Enter the full pairing key shown on the iPad."
       return
     }
-    codes[id] = code
+    acceptedPairing(id: id, code: code)
     pairingFailure = nil
     selectedWiFiID = id
     connectIfNeeded()
   }
 
   /// The pairing code for each iPad the user has paired over Wi-Fi, by its install ID (legacy peers use their Bonjour name).
-  private var refusedLegacyIDs: Set<String> = []
+  private var refusedLegacyIDs: Set<String> = [] {
+    didSet { defaults.set(Array(refusedLegacyIDs), forKey: "forgottenWiFiIPads") }
+  }
   private var codes: [String: String] {
-    didSet { defaults.set(codes, forKey: "sendCameraPairingCodes") }
+    didSet {
+      if !credentialStore.save(codes, key: "sendCameraPairingCodes") {
+        codes = oldValue
+        pairingFailure = "Could not update saved pairing keys. Try again after unlocking this Mac."
+      }
+    }
   }
   private let defaults: UserDefaults
+  private let credentialStore: PairingKeyStore
 
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = .standard, credentialStore: PairingKeyStore? = nil) {
     self.defaults = defaults
     usesWiFi = defaults.bool(forKey: "sendCameraOverWiFi")
-    codes = defaults.dictionary(forKey: "sendCameraPairingCodes") as? [String: String] ?? [:]
+    let store = credentialStore ?? (CaptureAccess.isAgentOrTest ? .ephemeral() : PairingKeyStore(service: "VideoPrompter.camera-pairing"))
+    self.credentialStore = store
+    codes = store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults) ?? [:]
+    selectedWiFiID = defaults.string(forKey: "selectedWiFiIPad")
+    refusedLegacyIDs = Set(defaults.stringArray(forKey: "forgottenWiFiIPads") ?? [])
     encoder.onPreview = { [weak self] image in
       Task { @MainActor in if self?.isOn == true { self?.previewImage = image } }
     }
@@ -594,7 +613,7 @@ import VideoToolbox
     // A plugged or swapped iPad may be an updated one.
     if devices != usbDevices { oldIPad = false }
     usbDevices = devices
-    if !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
+    if selectedWiFiID == nil, !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
     connectIfNeeded()
   }
 
@@ -607,9 +626,9 @@ import VideoToolbox
     }
     wifiDevices = Dictionary(discovered.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
       .values.sorted { $0.id < $1.id }
-    if let selectedWiFiID, !wifiDevices.contains(where: { $0.id == selectedWiFiID }) {
-      self.selectedWiFiID = nil
-    }
+    var names = defaults.dictionary(forKey: "pairedIPadNames") as? [String: String] ?? [:]
+    for device in wifiDevices { names[device.id] = device.name }
+    defaults.set(names, forKey: "pairedIPadNames")
     updatePairingTarget()
     connectIfNeeded()
   }
@@ -627,7 +646,15 @@ import VideoToolbox
   }
 
   func acceptedPairing(id: String, code: String) {
+    refusedLegacyIDs.remove(id)
     codes[id] = code
+  }
+
+  func forgetIPad(id: String) {
+    codes[id] = nil
+    refusedLegacyIDs.insert(id)
+    if selectedWiFiID == id { disconnect(); selectedWiFiID = nil }
+    updatePairingTarget()
   }
 
   func refusedPairing(id: String, name: String) {
@@ -647,7 +674,7 @@ import VideoToolbox
   private func connectIfNeeded() {
     guard linkOn, pipe == nil, !connecting, isOn || !oldIPad else { return }
     connecting = true
-    let usb = usbDevices
+    let usb = selectedWiFiID == nil ? usbDevices : []
     let wifi = wifiTargets
     let run = generation
     Task {
