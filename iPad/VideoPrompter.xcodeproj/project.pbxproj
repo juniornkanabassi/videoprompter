@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A11111111111111111111111 /* DBMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22222222222222222222222 /* DBMeter.swift */; };
 		FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26C84FA553FEA2B823DA12A /* SessionStore.swift */; };
 		4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D855FD629A122F15A7FE97E /* PrompterSettings.swift */; };
 		4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD650CCB71926F8862A6220 /* SpeechProvider.swift */; };
@@ -22,6 +23,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A22222222222222222222222 /* DBMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DBMeter.swift; sourceTree = "<group>"; };
 		0B8FE8C58B23D2288819C897 /* VideoPrompter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VideoPrompter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA685967BAA69CB4A9C14425 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C26C84FA553FEA2B823DA12A /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SessionStore.swift; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 		429461E971936A1CC87DA17D /* Shared with the Mac app */ = {
 			isa = PBXGroup;
 			children = (
+				A22222222222222222222222 /* DBMeter.swift */,
 				C26C84FA553FEA2B823DA12A /* SessionStore.swift */,
 				3D855FD629A122F15A7FE97E /* PrompterSettings.swift */,
 				0AD650CCB71926F8862A6220 /* SpeechProvider.swift */,
@@ -179,6 +182,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A11111111111111111111111 /* DBMeter.swift in Sources */,
 				FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */,
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
