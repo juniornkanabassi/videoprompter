@@ -57,6 +57,12 @@ enum ScriptRenderer {
     }
   }()
 
+  static let presenterFonts: [String] = {
+    _ = registeredFonts
+    return ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"]
+      + ["Poppins", "Lexend", "Lexend Deca"].filter { UIFont.familyNames.contains($0) }
+  }()
+
   static func font(_ style: ScriptStyle, scale: Double = 1, bold: Bool = false) -> UIFont {
     _ = registeredFonts
     let size = CGFloat(style.fontSize * scale)
