@@ -34,6 +34,22 @@ import XCTest
     XCTAssertTrue(MicMeterView.clipLit(isClipping: true, latchedUntil: 0, now: 100))
   }
 
+  func testOneClearForgetsTheClipForEveryViewOfTheSameMeter() {
+    let meter = InputMeter(), other = InputMeter()
+    let strip = ClipLatchBox.shared(for: meter), card = ClipLatchBox.shared(for: meter)
+    XCTAssertTrue(strip === card, "the strip's lamp and the card's words read one latch")
+    XCTAssertFalse(strip === ClipLatchBox.shared(for: other))
+    strip.hold(from: 10, seconds: MicMeterView.clipLatchSeconds)
+    XCTAssertTrue(card.isLit(isClipping: false, now: 10.5))
+    card.clear()
+    XCTAssertFalse(strip.isLit(isClipping: false, now: 10.5))
+  }
+
+  func testUnlitGreenIsTintedLikeTheOtherZones() {
+    // The track is drawn by one gradient; this keeps the three zone tints on one opacity.
+    XCTAssertEqual(MeterZones.unlitOpacity, 0.28)
+  }
+
   func testClearingTheLatchTurnsTheWarningOffAtOnceButNotALiveClip() {
     var latch = ClipLatch()
     latch.hold(from: 10, seconds: MicMeterView.clipLatchSeconds)

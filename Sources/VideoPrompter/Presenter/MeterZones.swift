@@ -38,13 +38,13 @@ enum MeterZones {
 }
 
 extension MeterZones {
-  /// The part of the bar the level has not reached: a neutral track where the green is (so no half-lit green
-  /// block reads as an extra zone), with the yellow and red zones faintly tinted, as their words name them.
+  static let unlitOpacity = 0.28
+  /// The part of the bar the level has not reached: every zone faintly tinted in its own colour, green included.
   static func unlitTrack(vertical: Bool = false, scale: (Float) -> CGFloat = position) -> some View {
     LinearGradient(stops: [
-      .init(color: .white.opacity(0.12), location: 0), .init(color: .white.opacity(0.12), location: scale(yellowFrom)),
-      .init(color: yellow.opacity(0.28), location: scale(yellowFrom)), .init(color: yellow.opacity(0.28), location: scale(redFrom)),
-      .init(color: red.opacity(0.28), location: scale(redFrom)), .init(color: red.opacity(0.28), location: 1)
+      .init(color: green.opacity(unlitOpacity), location: 0), .init(color: green.opacity(unlitOpacity), location: scale(yellowFrom)),
+      .init(color: yellow.opacity(unlitOpacity), location: scale(yellowFrom)), .init(color: yellow.opacity(unlitOpacity), location: scale(redFrom)),
+      .init(color: red.opacity(unlitOpacity), location: scale(redFrom)), .init(color: red.opacity(unlitOpacity), location: 1)
     ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
   }
 

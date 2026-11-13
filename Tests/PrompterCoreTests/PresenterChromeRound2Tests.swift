@@ -299,7 +299,7 @@ extension AppearanceSnapshotTests {
     return (1...20).map { "\($0). " + paragraph }.joined(separator: "\n\n")
   }()
 
-  func testPresenterChromeRound9Snapshots() async throws {
+  func testPresenterChromeRound10Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let destination = URL(fileURLWithPath: output)
@@ -337,6 +337,8 @@ extension AppearanceSnapshotTests {
       store.uiZoom = zoom
       store.session.present(record: script, settings: store.settings)
       // `latched`: the input clipped a moment ago and is now at `fallsTo`, so the lamp is still lit (it holds for two seconds).
+      // The shared clip latch outlives a fixture's view, so each fixture starts with it forgotten.
+      for meter in [recorder.inputMeter, store.session.meter] { ClipLatchBox.shared(for: meter).clear() }
       for meter in [recorder.inputMeter, store.session.meter] { meter.show(peakDBFS: latched ? -2 : level, isClipping: clipping || latched) }
       if latched { Task { @MainActor in try? await Task.sleep(for: .milliseconds(50)); for meter in [recorder.inputMeter, store.session.meter] { meter.show(peakDBFS: fallsTo, isClipping: false) } } }
       defaults.set(focus, forKey: "presenterFocusMode")
@@ -358,54 +360,59 @@ extension AppearanceSnapshotTests {
     // Setup with no camera: one centred empty state, one clear button, no exposure key.
     camera.displayMode = .prompterWithVideo
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r9-setup-nocamera-\(label)", size: size, noCamera: true)
+      try await present("r10-setup-nocamera-\(label)", size: size, noCamera: true)
     }
-    try await present("r9-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
+    try await present("r10-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
     // Setup with the camera on: the same words at 1600, 1280 and 4K, icons only when narrow.
     for (label, size) in [("1600", wide), ("1280", laptop), ("1000", narrow), ("4k", uhd)] {
-      try await present("r9-setup-camera-\(label)", size: size)
+      try await present("r10-setup-camera-\(label)", size: size)
     }
-    try await present("r9-setup-camera-150", size: wide, zoom: 1.5)
-    try await present("r9-setup-camera-200", size: wide, zoom: 2)
+    try await present("r10-setup-camera-150", size: wide, zoom: 1.5)
+    try await present("r10-setup-camera-200", size: wide, zoom: 2)
     // Camera off (just the script): a neutral off button, not an alarm.
     camera.displayMode = .prompterOnly
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r9-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
+      try await present("r10-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
     }
-    try await present("r9-setup-cameraoff-200", size: wide, preview: true, noCamera: true, zoom: 2)
+    try await present("r10-setup-cameraoff-200", size: wide, preview: true, noCamera: true, zoom: 2)
     camera.displayMode = .prompterWithVideo
-    try await present("r9-adjust-mic-1600", size: wide, adjust: .mic)
-    // The meters in the real screens at the loud states: too loud (-3, lamp dark), clipping now, and the lamp still lit after the level fell.
-    // `clip` is the input that clipped a moment ago and is now at -14 dBFS: one red "Clipped earlier" pill in place of the lamp, the live number calm.
-    for (name, level, clipping, latched, fallsTo) in [("tooloud", Float(-3), false, false, Float(-14)), ("clip", Float(-14), false, true, Float(-14)), ("clipping", Float(-2), true, false, Float(-14))] {
-      try await present("r9-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
-      try await present("r9-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+    try await present("r10-adjust-mic-1600", size: wide, adjust: .mic)
+    // The meters in the real screens at the loud states: too loud (-3, lamp dark), clipping now (-3, lamp lit, "Clipping now"),
+    // and clip earlier (clipped a moment ago, live level back at -14, "Clipped earlier" with the live number calm).
+    // With the Adjust mic card open the card says the words and the side strip shows its lamp lit, never dark.
+    for (name, level, clipping, latched, fallsTo) in [("tooloud", Float(-3), false, false, Float(-14)), ("clipearlier", Float(-14), false, true, Float(-14)), ("clipnow", Float(-3), true, false, Float(-14))] {
+      try await present("r10-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+      try await present("r10-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
     }
-    try await present("r9-setup-nocamera-200-clip", size: wide, noCamera: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
-    try await present("r9-setup-nocamera-1280-clip", size: laptop, noCamera: true, level: -14, latched: true, fallsTo: -14)
+    try await present("r10-setup-nocamera-200-clipearlier", size: wide, noCamera: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
+    try await present("r10-setup-nocamera-1280-clipearlier", size: laptop, noCamera: true, level: -14, latched: true, fallsTo: -14)
+    try await present("r10-setup-nocamera-200-clipnow", size: wide, noCamera: true, zoom: 2, level: -3, clipping: true)
+    try await present("r10-setup-nocamera-1280-clipnow", size: laptop, noCamera: true, level: -3, clipping: true)
+    try await present("r10-adjust-mic-1280-clipearlier", size: laptop, adjust: .mic, level: -14, latched: true, fallsTo: -14)
+    try await present("r10-adjust-mic-1280-clipnow", size: laptop, adjust: .mic, level: -3, clipping: true)
     // Reading: a soft band and a clear line, no column edges, a faded bottom at every size.
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r9-reading-\(label)", size: size, reading: true)
+      try await present("r10-reading-\(label)", size: size, reading: true)
     }
-    try await present("r9-reading-200", size: wide, reading: true, zoom: 2)
+    try await present("r10-reading-200", size: wide, reading: true, zoom: 2)
     // Just after reading starts the "Zebras off while reading" note is up; the others are its steady state (gone).
-    try await present("r9-reading-1600-chipstart", size: wide, reading: true, zebraChip: 60)
-    try await present("r9-reading-200-chipstart", size: wide, reading: true, zoom: 2, zebraChip: 60)
-    try await present("r9-reading-200-clip", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
-    try await present("r9-reading-long-1280", size: laptop, reading: true, script: longRecord)
-    try await present("r9-reading-autohide-1600", size: wide, reading: true, autoHide: true)
+    try await present("r10-reading-1600-chipstart", size: wide, reading: true, zebraChip: 60)
+    try await present("r10-reading-200-chipstart", size: wide, reading: true, zoom: 2, zebraChip: 60)
+    try await present("r10-reading-200-clipearlier", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
+    try await present("r10-reading-long-1280", size: laptop, reading: true, script: longRecord)
+    try await present("r10-reading-autohide-1600", size: wide, reading: true, autoHide: true)
     // Focus: only the text, the audio meter and the reading line, with a short "Esc to exit".
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r9-reading-focus-\(label)", size: size, reading: true, focus: true)
+      try await present("r10-reading-focus-\(label)", size: size, reading: true, focus: true)
     }
     // Editing: Save and Cancel on the editor's own edge, at every size and with a long script.
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r9-editing-\(label)", size: size, editing: true)
+      try await present("r10-editing-\(label)", size: size, editing: true)
     }
-    try await present("r9-editing-200", size: wide, editing: true, zoom: 2)
-    try await present("r9-editing-4k", size: uhd, editing: true)
-    try await present("r9-editing-long-1600", size: wide, editing: true, script: longRecord)
-    try await present("r9-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
+    try await present("r10-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r10-editing-4k", size: uhd, editing: true)
+    try await present("r10-editing-long-1600", size: wide, editing: true, script: longRecord)
+    try await present("r10-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
     store.session.pause()
     store.uiZoom = 1
     defaults.set(false, forKey: "presenterFocusMode")
@@ -425,7 +432,7 @@ extension AppearanceSnapshotTests {
     text.addSubview(bar)
   }
 
-  func testMicMeterRound9States() async throws {
+  func testMicMeterRound10States() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let meter = InputMeter()
@@ -436,19 +443,25 @@ extension AppearanceSnapshotTests {
       if let peak { meter.show(peakDBFS: latched ? -2 : peak, isClipping: clipping || latched) }
       if latched { Task { @MainActor in try? await Task.sleep(for: .milliseconds(50)); meter.show(peakDBFS: peak ?? -14, isClipping: false) } }
     }
-    // Peaking sits in the yellow band at about -8, "too loud" is -3 with the lamp dark, hot has the clip lamp lit,
-    // latched has the lamp still lit after the level fell; the rest are the quiet states.
-    for (name, peak, clipping, listening, latched) in [("quiet", Float(-48), false, true, false), ("speech", Float(-20), false, true, false), ("peaking", Float(-8), false, true, false),
-                                                       ("tooloud", Float(-3), false, true, false), ("hot", Float(-2), true, true, false), ("latched", Float(-14), false, true, true), ("nosignal", nil, false, true, false), ("off", Float(-9), false, false, false)] as [(String, Float?, Bool, Bool, Bool)] {
+    // Peaking sits in the yellow band at about -8, "too loud" is -3 with the lamp dark, "clipnow" is clipping at -3 with the lamp lit,
+    // "clipearlier" clipped a moment ago and is back at -14 (lamp still lit); "cardopen" is the strip while the Adjust mic card
+    // says the words, so it shows the lamp lit and no button. The rest are the quiet states.
+    let states = [("quiet", Float(-48), false, true, false, true), ("speech", Float(-20), false, true, false, true), ("peaking", Float(-8), false, true, false, true),
+                  ("tooloud", Float(-3), false, true, false, true), ("clipnow", Float(-3), true, true, false, true), ("clipearlier", Float(-14), false, true, true, true),
+                  ("clipnow-cardopen", Float(-3), true, true, false, false), ("clipearlier-cardopen", Float(-14), false, true, true, false),
+                  ("nosignal", nil, false, true, false, true), ("off", Float(-9), false, false, false, true)] as [(String, Float?, Bool, Bool, Bool, Bool)]
+    for (name, peak, clipping, listening, latched, badge) in states {
+      ClipLatchBox.shared(for: meter).clear()
       show(peak, clipping: clipping, latched: latched)
-      try await snapshot(MicMeterView(meter: meter, micName: "ATEM Mini Extreme ISO G2", isListening: listening).frame(width: 96, height: 420).padding(Space.md).background(Color.black).foregroundStyle(.white),
-                         name: "r9-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+      try await snapshot(MicMeterView(meter: meter, micName: "ATEM Mini Extreme ISO G2", isListening: listening, showsClipBadge: badge).frame(width: MicMeterView.stripWidth(typeScale: 1), height: 420).padding(Space.md).background(Color.black).foregroundStyle(.white),
+                         name: "r10-mic-meter-\(name)", size: .init(width: 140, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     // The horizontal meter (the Adjust mic card) keeps the same scale, colours and centred words.
-    for (name, peak, clipping, latched) in [("peaking", Float(-8), false, false), ("tooloud", Float(-3), false, false), ("hot", Float(-2), true, false), ("latched", Float(-14), false, true)] as [(String, Float, Bool, Bool)] {
+    for (name, peak, clipping, latched) in [("peaking", Float(-8), false, false), ("tooloud", Float(-3), false, false), ("clipnow", Float(-3), true, false), ("clipearlier", Float(-14), false, true)] as [(String, Float, Bool, Bool)] {
+      ClipLatchBox.shared(for: meter).clear()
       show(peak, clipping: clipping, latched: latched)
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM Mini Extreme ISO G2", showsHeading: false).frame(width: 360, height: 96).padding(Space.md).background(Color(white: 0.12)),
-                         name: "r9-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+                         name: "r10-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     meter.reset()
   }
