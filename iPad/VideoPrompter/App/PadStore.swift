@@ -554,7 +554,7 @@ extension PadStore {
       deviceName: UIDevice.current.name,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
-      cameraOnly: cameraOnly)
+      cameraOnly: cameraOnly, linkHeartbeat: true)
   }
 
   func perform(_ command: PadRemote.Command) {

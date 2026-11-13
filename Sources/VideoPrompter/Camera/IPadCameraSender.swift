@@ -541,7 +541,7 @@ import VideoToolbox
       .sink { [weak self] _ in
         MainActor.assumeIsolated {
           guard let self else { return }
-          if self.iPadState != nil && Date().timeIntervalSince(self.lastResponse) > 8 {
+          if self.iPadState?.linkHeartbeat == true && Date().timeIntervalSince(self.lastResponse) > 8 {
             self.pipe?.close()
             if let pipe = self.pipe { self.lost(pipe) }
             return

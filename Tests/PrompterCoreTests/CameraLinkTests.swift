@@ -10,9 +10,11 @@ final class CameraLinkTests: XCTestCase {
   func testDeviceDetailsRemainOptionalAndRoundTrip() throws {
     let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
     var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
+    XCTAssertNil(state.linkHeartbeat)
     XCTAssertNil(state.deviceName)
     XCTAssertNil(state.appVersion)
     XCTAssertNil(state.scriptPreview)
+    state.linkHeartbeat = true
     state.deviceName = "Studio iPad"
     state.appVersion = "2.5.1"
     state.scriptPreview = "The current script line"
@@ -120,7 +122,7 @@ final class CameraLinkTests: XCTestCase {
     let pipe = LinkPipe(name: "Wi-Fi")
     sender.use(pipe)
     let state = try JSONDecoder().decode(PadRemote.State.self,
-      from: Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8))
+      from: Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0,"linkHeartbeat":true}"#.utf8))
     pipe.onMessage?(.state(state))
     try await Task.sleep(for: .seconds(9))
     XCTAssertNil(sender.pipe)
