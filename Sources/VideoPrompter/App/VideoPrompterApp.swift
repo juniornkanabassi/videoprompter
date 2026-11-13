@@ -106,13 +106,19 @@ enum ScriptShortcuts {
             .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
           RecordingMenuItems()
           Divider()
-          Button("Pin selected text over camera") { PresenterController.shared.monitorSelection(store: store) }
-            // Not Option-Command-M: that is Window > Minimise All.
-            .keyboardShortcut("l", modifiers: [.command, .option])
-            .help("Pin the selected passage over the camera picture, as a reference monitor")
-            .disabled(!PresenterController.shared.hasSelectedText)
-          Button("Match camera size") { PresenterController.shared.matchCameraSize() }
-            .help("Resize the presenter window to the camera picture’s proportions")
+          // Grouped to stay within the commands builder's ten items.
+          Group {
+            Button("Edit script in presenter") { PresenterController.shared.beginEditing() }
+              .keyboardShortcut("e", modifiers: [.command, .option])
+              .help("Edit the script where it is, without going back to the library")
+            Button("Pin selected text over camera") { PresenterController.shared.monitorSelection(store: store) }
+              // Not Option-Command-M: that is Window > Minimise All.
+              .keyboardShortcut("l", modifiers: [.command, .option])
+              .help("Pin the selected passage over the camera picture, as a reference monitor")
+              .disabled(!PresenterController.shared.hasSelectedText)
+            Button("Match camera size") { PresenterController.shared.matchCameraSize() }
+              .help("Resize the presenter window to the camera picture’s proportions")
+          }
         }
         CameraCommands()
         UpdateCommands()

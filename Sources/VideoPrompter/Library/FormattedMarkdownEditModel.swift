@@ -425,8 +425,9 @@ struct FormattedMarkdownEditModel {
         replacing([NSRange(location: $0, length: 0)], visibleRange: range, with: replacement)
       }.first
     }
+    // Text with no Markdown behind it (a callout's default title) is skipped, not refused:
+    // the check below accepts the edit only if it removes exactly the selected text.
     let selected = sourceOffsets[range.location..<NSMaxRange(range)]
-    guard selected.allSatisfy({ $0 != nil }) else { return nil }
     var runs: [NSRange] = []
     for offset in selected.compactMap({ $0 }) {
       if let last = runs.last, offset == NSMaxRange(last) {
@@ -453,12 +454,33 @@ struct FormattedMarkdownEditModel {
     // Inside a callout a new line stays in it, and a removed line break takes the next line's
     // hidden `> ` with it, so the callout's lines are never split or left with a stray `>`.
     let runs = mergingCalloutPrefixes(runs)
-    let literalText = callout(containing: runs[0].location) == nil
-      ? literal : literal.replacingOccurrences(of: "\n", with: "\n> ")
-    let source = NSMutableString(string: markdown)
-    for run in runs.dropFirst().reversed() { source.replaceCharacters(in: run, with: "") }
-    source.replaceCharacters(in: runs[0], with: literalText)
-    return checked(source as String, replacing: visibleRange, with: replacement)
+    func attempt(_ runs: [NSRange]) -> FormattedMarkdownEditModel? {
+      let literalText = callout(containing: runs[0].location) == nil
+        ? literal : literal.replacingOccurrences(of: "\n", with: "\n> ")
+      let source = NSMutableString(string: markdown)
+      for run in runs.dropFirst().reversed() { source.replaceCharacters(in: run, with: "") }
+      source.replaceCharacters(in: runs[0], with: literalText)
+      return checked(source as String, replacing: visibleRange, with: replacement)
+    }
+    // Typing over a selection or deleting part of it keeps the formatting around what is left, so
+    // only the selected characters change. A deletion that takes a whole bold run, link or heading
+    // would leave its delimiters behind (`****`, `[](url)`), so those go too. Each try is accepted
+    // only when the re-rendered text is exactly what was asked for.
+    guard visibleRange.length > 0, let first = runs.first, let last = runs.last else { return attempt(runs) }
+    let claimed = Set(sourceOffsets.compactMap { $0 })
+    var start = first.location, end = NSMaxRange(last)
+    let span = NSRange(location: start, length: end - start)
+    while start > 0, !claimed.contains(start - 1) { start -= 1 }
+    while end < (markdown as NSString).length, !claimed.contains(end) { end += 1 }
+    let extended = NSRange(location: start, length: end - start)
+    // Select All across several lines, then type: a fresh script, not one that inherits the old
+    // first heading. (One formatted line keeps its formatting, as replacing any selection does.)
+    if visibleRange.location == 0, visibleRange.length == sourceOffsets.count, renderedSource.string.contains("\n"),
+      let next = attempt([NSRange(location: 0, length: (markdown as NSString).length)]) { return next }
+    if replacement.isEmpty, start < span.location, end > NSMaxRange(span), let next = attempt([extended]) { return next }
+    if let next = attempt(runs) { return next }
+    if runs.count > 1, let next = attempt([span]) { return next }
+    return attempt([extended])
   }
 
   /// Source positions may be absent from literal runs. Accept a fallback alignment
