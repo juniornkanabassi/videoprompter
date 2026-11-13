@@ -1040,7 +1040,7 @@ final class NetworkPipe: LinkPipe, @unchecked Sendable {
       connection.stateUpdateHandler = { state in
         switch state {
         case .ready: once.finish(.ready)
-        case .failed(.tls): once.finish(.refused)
+        case .failed(.tls), .waiting(.tls): once.finish(.refused)
         case .failed, .cancelled, .waiting: once.finish(.unreachable)
         default: break
         }
