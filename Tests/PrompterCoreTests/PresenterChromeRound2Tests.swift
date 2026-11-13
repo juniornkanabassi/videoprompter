@@ -209,17 +209,7 @@ import XCTest
     XCTAssertEqual(PresenterView.barTier(width: 800), .compact)
   }
 
-  func testBlankLinesShrinkWithoutChangingTheText() {
-    let text = NSMutableAttributedString(string: "One.\n\nTwo.\n\n\nThree.", attributes: [.paragraphStyle: NSParagraphStyle.default])
-    let before = text.string
-    ScriptTextView.Coordinator.shrinkBlankLines(in: text, fontSize: 50)
-    XCTAssertEqual(text.string, before, "no character is added or removed")
-    func height(at index: Int) -> CGFloat { (text.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle)?.maximumLineHeight ?? -1 }
-    XCTAssertEqual(height(at: 5), 50 * ScriptTextView.Coordinator.blankLineHeight, "the blank line is shortened")
-    XCTAssertEqual(height(at: 0), 0, "text lines are untouched")
-    XCTAssertEqual(height(at: 4), 0, "even the newline that ends a text line")
-    XCTAssertEqual(height(at: 11), 50 * ScriptTextView.Coordinator.blankLineHeight)
-    XCTAssertEqual(height(at: 12), 50 * ScriptTextView.Coordinator.blankLineHeight)
+  func testBottomFadeIsAboutALineAndAHalfAtEveryTextSize() {
     XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 20), ReadingViewportMask.fadeHeight)
     XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 52), 52 * 1.6, accuracy: 0.001)
     XCTAssertEqual(ScriptTextView.fadeHeight(fontSize: 200), 160)

@@ -165,6 +165,7 @@ final class ExposureOrientationRegressionTests: XCTestCase {
     let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
     camera.displayMode = .videoOnly
     camera.guides.zebras = true
+    camera.pictureSizeOverride = CGSize(width: 1920, height: 1080) // the key needs a picture
     camera.guides.zebraLevel = 45; camera.guides.zebraRange = 2
     let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(), hasScript: false,
                              camera: camera, startsCamera: false, recorder: recorder).defaultAppStorage(defaults)

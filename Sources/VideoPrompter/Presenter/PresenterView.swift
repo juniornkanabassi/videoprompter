@@ -93,8 +93,9 @@ struct PresenterView: View {
   enum BarTier { case full, standard, compact }
   static func barTier(width: CGFloat) -> BarTier { width >= 1700 ? .full : width >= 1150 ? .standard : .compact }
   private var barTier: BarTier { Self.barTier(width: viewport.width / controlZoom) }
-  /// Room kept under the text so the last visible line fades out clear of the bar, at every interface size.
-  static let readingBottomInset: CGFloat = Space.section
+  /// The text runs down to the bar and fades out over `ScriptTextView.fadeHeight` (a line and a half),
+  /// so no extra room is kept under it and upcoming words stay in view at every interface size.
+  static let readingBottomInset: CGFloat = 0
   /// The strip stays reserved while editing, so the editor wraps its lines exactly as reading does.
   private var meterReserved: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
   @State private var viewport = CGSize(width: 1600, height: 1000)
