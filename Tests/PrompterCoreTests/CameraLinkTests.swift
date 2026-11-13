@@ -6,6 +6,28 @@ import XCTest
 @testable import PrompterCore
 
 final class CameraLinkTests: XCTestCase {
+  func testReplicaStateAndSeekAreCompatibleWithOlderPeers() throws {
+    let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
+    var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
+    XCTAssertNil(state.markdown)
+    let oldLook = try JSONDecoder().decode(PadRemote.Look.self, from: Data(#"{"fontSize":44}"#.utf8))
+    XCTAssertNil(oldLook.fontName)
+    state.markdown = "# Reading\n\nOne two three."
+    state.look = .init(horizontalMirror: true, verticalMirror: true, fontSize: 52,
+                       fontName: "Helvetica", fontWeight: "Bold", textColorHex: "#FFFF00",
+                       textOpacity: 0.8, paragraphSpacing: 0.5, alignment: "Center", showCues: true)
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(CameraLink.Message.state(state).encoded()), [.state(state)])
+    struct OldState: Decodable { var word: Int; var words: Int }
+    XCTAssertEqual(try JSONDecoder().decode(OldState.self, from: JSONEncoder().encode(state)).word, 0)
+    struct OldLook: Decodable { var fontSize: Double? }
+    XCTAssertEqual(try JSONDecoder().decode(OldLook.self, from: JSONEncoder().encode(state.look)).fontSize, 52)
+    enum OldCommand: Codable, Equatable { case seek(word: Int) }
+    let command = PadRemote.Command.seek(word: 12)
+    XCTAssertEqual(try JSONDecoder().decode(OldCommand.self, from: JSONEncoder().encode(command)), .seek(word: 12))
+    XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: JSONEncoder().encode(OldCommand.seek(word: 12))), command)
+  }
+
   func testDeviceDetailsRemainOptionalAndRoundTrip() throws {
     let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
     var state = try JSONDecoder().decode(PadRemote.State.self, from: old)

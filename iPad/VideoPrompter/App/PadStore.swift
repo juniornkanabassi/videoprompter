@@ -536,7 +536,9 @@ extension PadStore {
       look: PadRemote.Look(
         horizontalMirror: settings.horizontalMirror, verticalMirror: settings.verticalMirror,
         fontSize: settings.fontSize, textWidth: settings.textWidth, lineSpacing: settings.lineSpacing,
-        guideFraction: settings.guideFraction),
+        guideFraction: settings.guideFraction, fontName: settings.fontName, fontWeight: settings.fontWeight,
+        textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
+        paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues),
       presets: presets.map(\.name), startDelay: session.startDelay,
       voiceSource: session.followsRemote ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
@@ -547,7 +549,7 @@ extension PadStore {
       deviceName: UIDevice.current.name,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
-      cameraOnly: cameraOnly)
+      cameraOnly: cameraOnly, markdown: open ? session.activeRecord?.markdown : nil)
   }
 
   func perform(_ command: PadRemote.Command) {

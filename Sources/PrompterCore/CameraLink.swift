@@ -253,13 +253,25 @@ public enum PadRemote {
     public var textWidth: Double?
     public var lineSpacing: Double?
     public var guideFraction: Double?
+    public var fontName: String?
+    public var fontWeight: String?
+    public var textColorHex: String?
+    public var textOpacity: Double?
+    public var paragraphSpacing: Double?
+    public var alignment: String?
+    public var showCues: Bool?
     public init(
       horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
-      textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil
+      textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil,
+      fontName: String? = nil, fontWeight: String? = nil, textColorHex: String? = nil,
+      textOpacity: Double? = nil, paragraphSpacing: Double? = nil, alignment: String? = nil, showCues: Bool? = nil
     ) {
       self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
       self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
       self.guideFraction = guideFraction
+      self.fontName = fontName; self.fontWeight = fontWeight; self.textColorHex = textColorHex
+      self.textOpacity = textOpacity; self.paragraphSpacing = paragraphSpacing
+      self.alignment = alignment; self.showCues = showCues
     }
   }
 
@@ -322,6 +334,8 @@ public enum PadRemote {
     public var deviceName: String?
     public var appVersion: String?
     public var scriptPreview: String?
+    /// Full presented script for a local replica, including scripts created on the iPad.
+    public var markdown: String?
     /// The presenter shows the camera alone, with no script (`presenting` is nil then).
     public var cameraOnly: Bool?
     public init(
@@ -332,10 +346,10 @@ public enum PadRemote {
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
       macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
       selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil,
-      cameraOnly: Bool? = nil
+      cameraOnly: Bool? = nil, markdown: String? = nil
     ) {
       self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
-      self.cameraOnly = cameraOnly
+      self.cameraOnly = cameraOnly; self.markdown = markdown
       self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
