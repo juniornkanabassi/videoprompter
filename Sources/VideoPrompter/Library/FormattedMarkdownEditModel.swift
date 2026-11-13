@@ -467,6 +467,8 @@ struct FormattedMarkdownEditModel {
     // would leave its delimiters behind (`****`, `[](url)`), so those go too. Each try is accepted
     // only when the re-rendered text is exactly what was asked for.
     guard visibleRange.length > 0, let first = runs.first, let last = runs.last else { return attempt(runs) }
+    // One character (Backspace, Delete) is the common case, and needs none of the fallbacks.
+    if visibleRange.length == 1, let next = attempt(runs) { return next }
     let claimed = Set(sourceOffsets.compactMap { $0 })
     var start = first.location, end = NSMaxRange(last)
     let span = NSRange(location: start, length: end - start)
