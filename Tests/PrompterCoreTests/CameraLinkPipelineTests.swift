@@ -23,7 +23,11 @@ final class CameraLinkPipelineTests: XCTestCase {
       let pipe = CollectingPipe(name: "test")
       let encoder = LinkEncoder()
       encoder.attach(pipe)
-      for index in 0..<15 { encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(width, height, index), from: Self.connection) }
+      // One frame at a time, as a camera delivers them: the encoder drops a frame that arrives while another is still in it.
+      for index in 0..<15 {
+        encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(width, height, index), from: Self.connection)
+        encoder.drain()
+      }
       let messages = try Self.wait(for: pipe, frames: 15)
       guard case .format(let w, let h, let sets) = messages.first else { return XCTFail("\(width)×\(height): no format first") }
       XCTAssertEqual(w, expected.0, "\(width)×\(height)")
@@ -43,7 +47,10 @@ final class CameraLinkPipelineTests: XCTestCase {
     let pipe = CollectingPipe(name: "test")
     let encoder = LinkEncoder()
     encoder.attach(pipe)
-    for index in 0..<5 { encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, index), from: Self.connection) }
+    for index in 0..<5 {
+      encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.frame(1920, 1080, index), from: Self.connection)
+      encoder.drain()
+    }
     encoder.finish(pipe)
     encoder.captureQueue.sync {}
     // A frame the camera delivers after the switch is not sent.

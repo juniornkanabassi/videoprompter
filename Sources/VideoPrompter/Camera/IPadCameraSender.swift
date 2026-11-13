@@ -400,6 +400,9 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   /// The parameter sets last sent, so they go again only when they change.
   private let lastSets = Mutex<[Data]>([])
   private var forceKeyFrame = false
+  /// Frames inside the encoder, not yet queued on the pipe. Counted with the pipe's waiting frames
+  /// when deciding to admit a frame, so two frames cannot both pass while a write is stalled.
+  private let encoding = Mutex(0)
 
   func attach(_ pipe: LinkPipe?, bitRate: Int = 10_000_000, longSide: Int = 1920) {
     target.withLock {
@@ -420,8 +423,9 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
     // The cable or Wi-Fi is behind: skip this frame rather than queue it, and start the next
     // one clean so the iPad never shows a smeared picture. One frame may wait behind the one being
-    // written; a second would only be older by the time it went.
-    if pipe.videoFramesWaiting > 0 || pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) {
+    // written, counting the one still being encoded; a second would only be older by the time it
+    // went. Dropped before encoding, so no encoded reference frame is ever lost.
+    if pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) || !admit(pipe) {
       forceKeyFrame = true
       return
     }
@@ -431,16 +435,40 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       makeSession(size: size, bitRate: bitRate, longSide: longSide)
       sessionGeneration = generation
     }
-    guard let session else { return }
+    guard let session else { release(); return }
     let options: CFDictionary? = forceKeyFrame ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
     forceKeyFrame = false
-    VTCompressionSessionEncodeFrame(
+    let status = VTCompressionSessionEncodeFrame(
       session, imageBuffer: image, presentationTimeStamp: sampleBuffer.presentationTimeStamp,
       duration: .invalid, frameProperties: options, infoFlagsOut: nil
     ) { [weak self] status, _, encoded in
-      guard status == noErr, let encoded, let self else { return }
+      guard let self else { return }
+      // Released after it is queued, so the frame is always counted in one place or the other.
+      defer { self.release() }
+      guard status == noErr, let encoded else { return }
       self.send(encoded, to: pipe)
     }
+    // The handler never runs for a frame VideoToolbox refused.
+    if status != noErr { release() }
+  }
+
+  /// Reserves the encoder slot unless a frame is already encoding or waiting to be written.
+  private func admit(_ pipe: LinkPipe) -> Bool {
+    encoding.withLock { count in
+      guard count + pipe.videoFramesWaiting == 0 else { return false }
+      count += 1
+      return true
+    }
+  }
+
+  private func release() { encoding.withLock { $0 -= 1 } }
+
+  /// Frames reserved in the encoder, for tests.
+  var framesEncoding: Int { encoding.withLock { $0 } }
+
+  /// Returns once every frame given so far has come out of the encoder and onto the pipe.
+  func drain() {
+    captureQueue.sync { if let session { VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid) } }
   }
 
   /// The output picture: the camera's own shape, no larger than `longSide` on its long side.

@@ -64,7 +64,7 @@ final class CameraLinkLatencyTests: XCTestCase {
   private func run(
     _ label: String, camera: (Int, Int), over: String, megabits: Double, wifi: Bool,
     stall: (at: Double, for: Double)? = nil, seconds: Double = 3
-  ) throws -> (encode: [Double], queue: [Double], decode: [Double], sent: Int, fed: Int, size: CGSize) {
+  ) throws -> (encode: [Double], queue: [Double], decode: [Double], sent: Int, fed: Int, size: CGSize, frames: [Int: TimedPipe.Frame]) {
     let pipe = TimedPipe(name: over, bytesPerSecond: megabits * 125_000, stall: stall)
     let encoder = LinkEncoder()
     encoder.attach(pipe, bitRate: wifi ? 4_000_000 : 10_000_000, longSide: wifi ? 1280 : 1920)
@@ -79,8 +79,7 @@ final class CameraLinkLatencyTests: XCTestCase {
       feedTimes.append(CACurrentMediaTime())
       encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: frame, from: CameraLinkPipelineTests.connection)
     }
-    encoder.captureQueue.sync {}
-    Thread.sleep(forTimeInterval: 1.5)
+    try Self.drain(encoder, pipe)
     let frames = pipe.frames
     let order = frames.keys.sorted()
     // encode: the frame reached the pipe's queue; queue: until the transport began to write it.
@@ -97,7 +96,7 @@ final class CameraLinkLatencyTests: XCTestCase {
     print("LATENCY   encode  \(stage(encode))")
     print("LATENCY   queue   \(stage(queue))")
     print("LATENCY   decode  \(stage(decode))")
-    return (encode, queue, decode, order.count, fed, pipe.size)
+    return (encode, queue, decode, order.count, fed, pipe.size, frames)
   }
 
   /// The three delays at the two sizes a confidence monitor sends, over each transport. The numbers
@@ -119,6 +118,46 @@ final class CameraLinkLatencyTests: XCTestCase {
     XCTAssertLessThan(stalled.sent, stalled.fed, "frames behind the stall are dropped")
     // The frame already waiting when the stall began is unavoidably late; nothing else may queue behind it.
     XCTAssertLessThanOrEqual(stalled.queue.filter { $0 > 100 }.count, 1, "at most one frame sat in the queue behind the stall")
+    // The picture comes back: every frame after a gap is a key frame, and delivery goes on to the last
+    // frame fed (run() has already decoded every frame that got through, each to a picture).
+    let order = stalled.frames.keys.sorted()
+    let gaps = zip(order, order.dropFirst()).filter { $1 != $0 + 1 }.map(\.1)
+    XCTAssertFalse(gaps.isEmpty)
+    for after in gaps { XCTAssertTrue(stalled.frames[after]!.key, "frame \(after) follows a dropped one") }
+    XCTAssertEqual(order.last, stalled.fed - 1, "delivery continues to the last frame")
+    XCTAssertGreaterThanOrEqual(order.filter { $0 >= (gaps.last ?? 0) }.count, 20, "a run of frames follows the stall")
+  }
+
+  /// Two frames arrive before either has left the encoder, with the transport stalled or not: the
+  /// second is dropped before it is encoded, so only one frame's worth is ever in flight.
+  func testASecondFrameIsNotAdmittedWhileOneIsStillEncoding() throws {
+    let pipe = GatedPipe(name: "Wi-Fi")
+    let encoder = LinkEncoder()
+    encoder.attach(pipe, bitRate: 4_000_000, longSide: 1280)
+    let connection = CameraLinkPipelineTests.connection
+    // On its own thread: VideoToolbox may deliver the first frame on the calling thread, which the gate blocks.
+    let first = try Self.noisyFrame(1280, 720, 0)
+    let finished = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+      encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: first, from: connection)
+      finished.signal()
+    }
+    // Frame 0's completion is now blocked inside the pipe, still counted as encoding.
+    XCTAssertEqual(pipe.entered.wait(timeout: .now() + 10), .success, "frame 0 reached the pipe")
+    XCTAssertEqual(encoder.framesEncoding, 1)
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.noisyFrame(1280, 720, 1), from: connection)
+    XCTAssertEqual(encoder.framesEncoding, 1, "frame 1 was not admitted")
+    pipe.gate.signal()
+    XCTAssertEqual(finished.wait(timeout: .now() + 10), .success)
+    try Self.drain(encoder, pipe)
+    XCTAssertEqual(encoder.framesEncoding, 0, "the slot is given back")
+    // After a drop the next frame is let in, and is a key frame.
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.noisyFrame(1280, 720, 2), from: connection)
+    try Self.drain(encoder, pipe)
+    XCTAssertEqual(pipe.frames.keys.sorted(), [0, 2])
+    XCTAssertEqual(pipe.frames[2]?.key, true)
+    XCTAssertEqual(encoder.framesEncoding, 0)
+    XCTAssertEqual(try Self.timedDecode([0, 2].map { pipe.frames[$0]!.data }, sets: pipe.sets).count, 2)
   }
 
   /// Dropping a frame makes the next one a key frame, so the picture recovers without waiting
@@ -133,8 +172,7 @@ final class CameraLinkLatencyTests: XCTestCase {
       due = CACurrentMediaTime() + 1.0 / 30
       encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: try Self.noisyFrame(1280, 720, index), from: CameraLinkPipelineTests.connection)
     }
-    encoder.captureQueue.sync {}
-    Thread.sleep(forTimeInterval: 1)
+    try Self.drain(encoder, pipe)
     let frames = pipe.frames
     let order = frames.keys.sorted()
     var gaps = 0
@@ -143,9 +181,49 @@ final class CameraLinkLatencyTests: XCTestCase {
       XCTAssertTrue(frames[after]!.key, "frame \(after) follows a dropped one and must be a key frame")
     }
     XCTAssertGreaterThan(gaps, 0, "the stall dropped something")
+    XCTAssertEqual(order.last, 44, "delivery continues to the last frame")
+    // Every frame that got through, gaps and all, decodes to a picture: the key frames made it whole.
+    XCTAssertEqual(try Self.timedDecode(order.map { frames[$0]!.data }, sets: pipe.sets).count, order.count)
+  }
+
+  /// Blocks the first message queued, on the encoder's output thread, until `gate` is signalled.
+  final class GatedPipe: LinkPipe, @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let gate = DispatchSemaphore(value: 0)
+    private let first = Mutex(true)
+    private let state = Mutex((frames: [Int: TimedPipe.Frame](), sets: [Data]()))
+    override func queued(_ count: Int) {
+      super.queued(count)
+      if first.withLock({ defer { $0 = false }; return $0 }) {
+        entered.signal()
+        _ = gate.wait(timeout: .now() + 5)
+      }
+    }
+    override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+      var reader = CameraLink.Reader()
+      for message in (try? reader.append(data)) ?? [] {
+        switch message {
+        case .format(_, _, let sets): state.withLock { $0.sets = sets }
+        case .frame(let time, let key, let payload):
+          state.withLock { $0.frames[Int((time * 30 + 500_000) / 1_000_000)] = TimedPipe.Frame(key: key, data: payload) }
+        default: break
+        }
+      }
+      done()
+    }
+    var frames: [Int: TimedPipe.Frame] { state.withLock { $0.frames } }
+    var sets: [Data] { state.withLock { $0.sets } }
   }
 
   // MARK: Helpers
+
+  /// Waits for every frame fed to come out of the encoder, then for the transport to finish writing.
+  static func drain(_ encoder: LinkEncoder, _ pipe: LinkPipe) throws {
+    encoder.drain()
+    let deadline = Date().addingTimeInterval(10)
+    while pipe.pendingBytes > 0, Date() < deadline { Thread.sleep(forTimeInterval: 0.005) }
+    XCTAssertEqual(pipe.pendingBytes, 0, "the transport finished writing")
+  }
 
   /// A 420v frame with a moving gradient and noise, so the encoder has real work to do.
   static func noisyFrame(_ width: Int, _ height: Int, _ index: Int) throws -> CMSampleBuffer {
@@ -192,22 +270,29 @@ final class CameraLinkLatencyTests: XCTestCase {
   }
 
   /// Milliseconds each frame takes to decode, one at a time, with the iPad's format description.
+  /// Every submission and every callback must succeed with a picture of the stream's size, and every
+  /// frame must come back: the result has one entry per frame, or the test fails.
+  @discardableResult
   static func timedDecode(_ frames: [Data], sets: [Data]) throws -> [Double] {
+    XCTAssertGreaterThanOrEqual(sets.count, 2, "the stream's parameter sets arrived")
     guard sets.count >= 2 else { return [] }
     var format: CMVideoFormatDescription?
     let copies = sets.map { [UInt8]($0) }
-    copies[0].withUnsafeBufferPointer { sps in
+    let made = copies[0].withUnsafeBufferPointer { sps in
       copies[1].withUnsafeBufferPointer { pps in
-        _ = CMVideoFormatDescriptionCreateFromH264ParameterSets(
+        CMVideoFormatDescriptionCreateFromH264ParameterSets(
           allocator: nil, parameterSetCount: 2, parameterSetPointers: [sps.baseAddress!, pps.baseAddress!],
           parameterSetSizes: [sps.count, pps.count], nalUnitHeaderLength: 4, formatDescriptionOut: &format)
       }
     }
+    XCTAssertEqual(made, noErr)
+    let size = CMVideoFormatDescriptionGetDimensions(try XCTUnwrap(format))
     var session: VTDecompressionSession?
-    XCTAssertEqual(VTDecompressionSessionCreate(allocator: nil, formatDescription: try XCTUnwrap(format), decoderSpecification: nil, imageBufferAttributes: nil, outputCallback: nil, decompressionSessionOut: &session), noErr)
-    defer { VTDecompressionSessionInvalidate(session!) }
+    XCTAssertEqual(VTDecompressionSessionCreate(allocator: nil, formatDescription: format!, decoderSpecification: nil, imageBufferAttributes: nil, outputCallback: nil, decompressionSessionOut: &session), noErr)
+    defer { if let session { VTDecompressionSessionInvalidate(session) } }
+    let pictures = Mutex(0)
     var times: [Double] = []
-    for data in frames {
+    for (index, data) in frames.enumerated() {
       var block: CMBlockBuffer?
       let bytes = [UInt8](data)
       CMBlockBufferCreateWithMemoryBlock(allocator: nil, memoryBlock: nil, blockLength: bytes.count, blockAllocator: nil, customBlockSource: nil, offsetToData: 0, dataLength: bytes.count, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block)
@@ -215,11 +300,20 @@ final class CameraLinkLatencyTests: XCTestCase {
       var sample: CMSampleBuffer?
       var length = bytes.count
       CMSampleBufferCreateReady(allocator: nil, dataBuffer: block, formatDescription: format, sampleCount: 1, sampleTimingEntryCount: 0, sampleTimingArray: nil, sampleSizeEntryCount: 1, sampleSizeArray: &length, sampleBufferOut: &sample)
+      let before = pictures.withLock { $0 }
       let began = CACurrentMediaTime()
-      VTDecompressionSessionDecodeFrame(session!, sampleBuffer: sample!, flags: [], infoFlagsOut: nil) { _, _, _, _, _ in }
-      VTDecompressionSessionWaitForAsynchronousFrames(session!)
+      let submitted = VTDecompressionSessionDecodeFrame(session!, sampleBuffer: try XCTUnwrap(sample), flags: [], infoFlagsOut: nil) { status, _, image, _, _ in
+        XCTAssertEqual(status, noErr)
+        if let image, CVPixelBufferGetWidth(image) == Int(size.width), CVPixelBufferGetHeight(image) == Int(size.height) {
+          pictures.withLock { $0 += 1 }
+        }
+      }
+      XCTAssertEqual(submitted, noErr, "frame \(index) was accepted by the decoder")
+      XCTAssertEqual(VTDecompressionSessionWaitForAsynchronousFrames(session!), noErr)
       times.append((CACurrentMediaTime() - began) * 1000)
+      XCTAssertEqual(pictures.withLock { $0 }, before + 1, "frame \(index) decoded to a picture of \(size.width)x\(size.height)")
     }
+    XCTAssertEqual(pictures.withLock { $0 }, frames.count)
     return times
   }
 }
