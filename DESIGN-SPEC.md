@@ -119,6 +119,12 @@ Not added in this round: a combined "Record and start reading" action and a coun
 
 ### 2.2 Presenter (`Presenter/PresenterView.swift`)
 
+**Presenter chrome, round 2 (13 November 2026).** This supersedes the tile bar below. Setup is one 44 pt row: transport on the left (Start reading, Back to start, Open script), then a video-call group of split buttons (Camera on/off with a caret listing cameras, Mic on/off with a caret listing inputs and channel, Script show/hide), then the picture tools (Zebras, False colour, Guides, Key, Adjust, Clean) as a separate group. Words give way to icons, then the groups wrap, as the window narrows or the interface size grows; chrome also grows to 1.5 times in windows wider than 2400 pt. Camera off shows just the script; Mic off pauses Voice follow and never opens the microphone (`SessionStore.listensToMicrophone`). With no camera, "Connect a camera" sits centred with one yellow Choose camera button. The mic meter is the slim shared `MicMeterView`: dB ticks, a live number, green to -12 dBFS, yellow -12 to -6 (where to peak), red above -6, and the caption names the input actually chosen.
+
+Reading is one slim row: a status pill (left), Back, Pause and Set up the shot (centre, Pause neutral; Start reading is yellow), and quiet options (Mic, Focus, Reading settings, Open script). Over the camera the text sits on a soft dark backing in a narrower column, with the full-width reading line behind the words. Focus mode (View > Focus mode, ⌥⌘F, or the Focus button) shows only the text, the meter and the reading line; Esc or the exit pill leaves it. View > Auto-hide reading controls slides the bar away while reading and brings it back on pointer movement. Both persist (`presenterFocusMode`, `presenterAutoHideBar`).
+
+Editing has a top band (Editing, not saved yet, Cancel, Save), the text on a visible bordered surface with a normal top margin, no reading bar and no mic meter.
+
 Alpha package E supersedes the earlier presenter bar and Tools contracts below. Set up the shot has a 132 pt bar, large Start reading and Back to start actions, and 104 × 92 pt named Camera, Zebras, False colour, Guides, Mic, Adjust and Clean tiles. Active toggles have an accent border and check badge. Labels remain visible at 125–200% by wrapping the bar.
 
 The exposure key sits in the left pillarbox, the microphone meter at the right edge, and camera/shot pills at the top. Adjust opens a 470 pt right panel with Camera, Zebras, False colour, Guides and Mic tabs; right-click or long press selects the matching tab. Escape closes it.

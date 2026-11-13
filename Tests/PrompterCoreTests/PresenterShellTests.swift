@@ -73,9 +73,13 @@ import XCTest
         XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "\(title) at \(zoom): \(frame)")
         XCTAssertGreaterThanOrEqual(frame.height, 44)
       }
-      for title in ["Camera", "Adjust"] {
-        let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
-        XCTAssertFalse(["On", "Off"].contains(LibraryAX.value(node, "accessibilityValue")))
+      // Camera is a real on/off toggle, like a video call; Adjust only opens a panel.
+      let camera = try XCTUnwrap(LibraryAX.named("Camera", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
+      XCTAssertEqual(LibraryAX.value(camera, "accessibilityValue"), "On")
+      let adjust = try XCTUnwrap(LibraryAX.named("Adjust", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
+      XCTAssertFalse(["On", "Off"].contains(LibraryAX.value(adjust, "accessibilityValue")))
+      for title in ["Mic", "Script", "Choose camera", "Choose microphone"] {
+        XCTAssertFalse(LibraryAX.named(title, in: host).isEmpty, title)
       }
       LibraryAX.close(window)
     }

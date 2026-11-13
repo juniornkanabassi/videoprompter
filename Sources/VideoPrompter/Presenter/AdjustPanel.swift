@@ -17,6 +17,7 @@ struct AdjustPanel: View {
   @Binding var selection: AdjustTab
   @Binding var showsMic: Bool
   @State private var microphones: [AudioInputDevice] = []
+  @State private var defaultMicrophoneName: String?
   @ObservedObject var camera: CameraModel
   @ObservedObject var store: AppStore
   let startsMeter: Bool
@@ -76,10 +77,10 @@ struct AdjustPanel: View {
         store.session.stopMicrophoneTest()
         recorder.stopInputTest()
       })
-      MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName, showsHeading: false).frame(height: 180)
+      MicMeterView(meter: recorder.inputMeter, micName: MicMeterView.inputName(uid: store.settings.audioDeviceUID, devices: microphonesOverride ?? microphones, systemDefault: defaultMicrophoneName), showsHeading: false).frame(height: 180)
       SettingsLink { Text("More in Settings") }.frame(minHeight: AlphaStyle.minTarget)
       Text("Speak to check your microphone level.").foregroundStyle(.secondary)
-    }.onAppear { microphones = AudioCapture.inputDevices() }
+    }.onAppear { microphones = AudioCapture.inputDevices(); defaultMicrophoneName = AudioCapture.resolvedInput(nil)?.name }
   }
 
 }

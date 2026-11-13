@@ -177,10 +177,17 @@ struct PresenterVideoItems: View {
 
 struct ExposureMenuItems: View {
   @ObservedObject private var camera = CameraModel.shared
+  /// The same keys the presenter reads, so the menu and the presenter's Focus button agree.
+  @AppStorage("presenterFocusMode") private var focusMode = false
+  @AppStorage("presenterAutoHideBar") private var autoHidesBar = false
   var body: some View {
     Toggle("Clean", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
     Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
     Toggle("False colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
+    Toggle("Focus mode", isOn: $focusMode).keyboardShortcut("f", modifiers: [.option, .command])
+      .help("While reading, show only the text, the level meter and the reading line")
+    Toggle("Auto-hide reading controls", isOn: $autoHidesBar)
+      .help("While reading, slide the bottom bar away until the pointer moves")
   }
 }
 

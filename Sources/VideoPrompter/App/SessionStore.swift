@@ -67,6 +67,7 @@ final class SessionStore: ObservableObject {
     if settings.mode == "Voice", !isActivelyRunning && anchorNotice?.lowercased().contains("microphone") == true { return "Needs microphone" }
     guard isActivelyRunning else { return "Paused" }
     if isManual { return "Scrolling" }
+    if !listensToMicrophone { return "Microphone off" }
     if !hasLiveRecognition { return "Waiting for your voice" }
     if case .uncertain = state { return "Matching words" }
     return "Listening"
@@ -80,6 +81,7 @@ final class SessionStore: ObservableObject {
     if hasStartedReading && readingStatus == "Needs microphone" { return "Needs microphone" }
     if !isActivelyRunning { return hasStartedReading ? "Paused" : "Ready" }
     if isManual { return "Scrolling" }
+    if !listensToMicrophone { return "Microphone off" }
     if case .uncertain = state, hasLiveRecognition { return "Matching words" }
     return hasLiveRecognition ? "Following" : "Listening"
   }
@@ -761,7 +763,17 @@ final class SessionStore: ObservableObject {
 
   var resolveAudioInput: (String?) -> AudioInputDevice? = AudioCapture.resolvedInput
 
+  /// The presenter's Mic button. Off, Voice follow never opens the microphone; the reading stays paused
+  /// until Start reading, and starts without listening. Automatic scroll never listens either way.
+  @Published private(set) var listensToMicrophone = true
+  func setListensToMicrophone(_ on: Bool) {
+    guard on != listensToMicrophone else { return }
+    listensToMicrophone = on
+    if !on, settings.mode == "Voice", isActivelyRunning { pause() }
+  }
+
   private func startAudioMode() {
+    guard listensToMicrophone else { return }
     // Also while a start is still preparing: a second one would race it for the recogniser.
     guard audioCapture == nil, speechTask == nil else { return }
     if audioDeviceObserver == nil {

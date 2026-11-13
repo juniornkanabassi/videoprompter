@@ -466,17 +466,21 @@ struct InputLevelMeter: View {
     return start...(start + width)
   }
 
+  /// Green is normal speech, yellow is where Junior should peak, red is near clipping.
+  static let yellowFrom: Float = -12
+  static let redFrom: Float = -6
+
   static func zoneTrack(vertical: Bool = false) -> some View {
     LinearGradient(stops: [
-      .init(color: .green, location: 0), .init(color: .green, location: position(-18)),
-      .init(color: .yellow, location: position(-18)), .init(color: .yellow, location: position(-6)),
-      .init(color: .red, location: position(-6)), .init(color: .red, location: 1)
+      .init(color: .green, location: 0), .init(color: .green, location: position(yellowFrom)),
+      .init(color: .yellow, location: position(yellowFrom)), .init(color: .yellow, location: position(redFrom)),
+      .init(color: .red, location: position(redFrom)), .init(color: .red, location: 1)
     ], startPoint: vertical ? .bottom : .leading, endPoint: vertical ? .top : .trailing)
   }
 
   var body: some View {
     GeometryReader { geometry in
-      let ticks = zoneScale ? Self.ticks.filter { $0.0 == -18 || $0.0 == -6 } : Self.ticks
+      let ticks = zoneScale ? Self.ticks.filter { $0.0 == Self.yellowFrom || $0.0 == Self.redFrom } : Self.ticks
       let widths = ticks.map { ($0.1 as NSString).size(withAttributes: [.font: Self.labelFont]).width }
       let positions = ticks.map { Self.position($0.0) }
       ZStack(alignment: .topLeading) {
