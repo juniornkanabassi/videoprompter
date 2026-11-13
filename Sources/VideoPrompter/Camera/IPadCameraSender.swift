@@ -47,6 +47,7 @@ import VideoToolbox
   }
   var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
   let micMeter = RemoteMicMeter()
+  let iPadMicMeter = RemoteMicMeter()
   func setVoiceSource(_ value: String) { send(.voiceSource(value)) }
   func setMirror(_ value: Bool) { send(.look(.init(horizontalMirror: value))) }
   func setFlip(_ value: Bool) { send(.look(.init(verticalMirror: value))) }
@@ -135,7 +136,7 @@ import VideoToolbox
     let session = AppStore.shared.session
     let activeMeter = (relay.session?.isActivelyRunning == true ? relay.meter : nil) ?? (recorder.isCapturing ? recorder.inputMeter :
       (session.isActivelyRunning && session.settings.mode == "Voice" && !session.followsRemote ? session.meter : nil))
-    updateSetupMeter(needed: (iPadState?.cameraOnly == true || pickerMeter) && macMicOn && activeMeter == nil)
+    updateSetupMeter(needed: (iPadState?.cameraOnly == true || pickerMeter || (controlsIPad && iPadState?.voiceSource != "iPad")) && macMicOn && activeMeter == nil)
     let meter = activeMeter ?? (meterCapture != nil ? setupMeter : AppStore.shared.session.meter)
     sampleMicLevel(meter)
     let next = PadRemote.MacStatus(
@@ -195,6 +196,7 @@ import VideoToolbox
       macMicOn = true
       if !relay.isRelaying { relay.startFromIPad(settings: AppStore.shared.settings) }
       publishMacStatus()
+    case .microphoneLevel(let level): iPadMicMeter.show(level)
     case .microphoneMeter(let value): pickerMeter = value; publishMacStatus()
     case .microphoneChannel(let value):
       guard let channel = AudioChannel(rawValue: value) else { return }
@@ -256,6 +258,10 @@ import VideoToolbox
     let saved = codes.keys.filter { UUID(uuidString: $0) != nil }.map { WiFiDevice(id: $0, name: names[$0] ?? "iPad") }
     return Dictionary((wifiDevices + saved).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
       .values.sorted { $0.id < $1.id }
+  }
+  func displayName(for device: WiFiDevice) -> String {
+    pairingDevices.filter { $0.name == device.name }.count > 1
+      ? "\(device.name) \(device.id.prefix(4))" : device.name
   }
   @Published var selectedWiFiID: String? {
     didSet {
@@ -364,6 +370,14 @@ import VideoToolbox
 
   func requestPairing(_ device: WiFiDevice) {
     cancelPairingRequest()
+    if pairingCode(id: device.id, name: device.name) != nil {
+      // A selected USB connection must also yield to an explicit Wi-Fi device choice.
+      disconnect()
+      selectedWiFiID = device.id
+      usesWiFi = true
+      controlsIPad = true
+      return
+    }
     selectedWiFiID = device.id
     usesWiFi = true
     let endpoint = NWEndpoint.service(name: device.id, type: PairingExchange.padService, domain: "local.", interface: nil)
@@ -812,7 +826,7 @@ import VideoToolbox
       // Whatever the iPad says, the window's slider and the CLI get sane numbers.
       state.words = min(max(state.words, 0), 10_000_000)
       state.word = min(max(state.word, 0), state.words)
-      Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.lastResponse = Date(); self.iPadState = state } }
+      Task { @MainActor in if let self, let pipe, self.pipe === pipe { self.lastResponse = Date(); self.iPadState = state; self.iPadMicMeter.show(state.micLevelDB ?? -60) } }
     }
     pipe.startReading()
     pipe.send(CameraLink.Message.hello(name: macName, version: CameraLink.protocolVersion).encoded())

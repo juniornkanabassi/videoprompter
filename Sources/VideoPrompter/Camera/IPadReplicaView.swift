@@ -56,7 +56,7 @@ struct IPadReplicaView: View {
       Text(state.editing == true ? "Editing on iPad. Reading controls are paused." : "Click a word or scroll to move the iPad’s reading position")
         .font(.caption).foregroundStyle(.secondary).padding(8)
     }
-    .background(Color.black)
+    .background(state.pictureMode == .behindScript ? Color.clear : Color.black)
     .onChange(of: state.markdown) { _, markdown in
       script.document = PrompterDocument(markdown: markdown ?? "")
     }

@@ -9,6 +9,7 @@ import XCTest
 final class CameraLinkTests: XCTestCase {
   func testConsoleCommandsAndOptionalState() throws {
     for command in [PadRemote.Command.rename("Footballco Studio iPad"),
+      .microphoneLevel(-18),
       .cameraGuides(.init(zebras: true, falseColour: true, thirds: true, centre: true, marker: "9:16", exposureKey: false))] {
       XCTAssertEqual(try JSONDecoder().decode(PadRemote.Command.self, from: JSONEncoder().encode(command)), command)
     }
@@ -91,6 +92,7 @@ final class CameraLinkTests: XCTestCase {
     }
     sender.wifiChanged([endpoint("iPad", a), endpoint("iPad", b)])
     XCTAssertEqual(sender.wifiDevices.count, 2)
+    XCTAssertEqual(Set(sender.pairingDevices.map { sender.displayName(for: $0) }).count, 2)
     sender.selectedWiFiID = a
     sender.pair(key: "0123456789ABCDEF")
     sender.selectedWiFiID = b
