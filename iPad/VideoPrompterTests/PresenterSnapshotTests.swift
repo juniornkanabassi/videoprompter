@@ -29,6 +29,27 @@ import XCTest
     Finally, the one result nobody saw coming. We will take it apart, minute by minute, and ask what it means for the run in.
     """
 
+  func testBundledFontsAndSpacing() throws {
+    for family in ["Lexend Deca", "Lexend"] {
+      var style = ScriptStyle()
+      style.fontName = family
+      XCTAssertEqual(ScriptRenderer.font(style).familyName, family)
+      XCTAssertNotNil(Bundle.main.url(forResource: family == "Lexend" ? "Lexend-Variable" : "LexendDeca-Variable", withExtension: "ttf"))
+    }
+    for size in [24.0, 48, 96] {
+      var style = ScriptStyle()
+      style.fontSize = size
+      let rendered = ScriptRenderer.render(PrompterDocument(markdown: "First paragraph.\n\nSecond paragraph."), style: style)
+      let paragraph = try XCTUnwrap(rendered.text.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+      XCTAssertEqual(paragraph.lineSpacing, max(3, size * style.lineSpacing))
+      XCTAssertEqual(paragraph.paragraphSpacing, max(10, size * style.paragraphSpacing))
+      XCTAssertTrue(rendered.text.string.contains("\n\n"))
+    }
+    for width: CGFloat in [1180, 1366] {
+      XCTAssertEqual(ScriptCanvas.sideInset(width: width, textWidth: 0.8), max(42, width * 0.1), accuracy: 0.001)
+    }
+  }
+
   func testPresenterShots() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true)
