@@ -40,8 +40,6 @@ struct BarLabel: View {
   var accentIcon = false
   /// A little less room each side of the word, for a bar that is short of width.
   var snug = false
-  /// A longer word the button may show (Camera / Camera off): its room is kept, so the group never shifts.
-  var reserveTitle: String? = nil
   var body: some View {
     HStack(spacing: Space.xs) {
       if accentIcon {
@@ -50,8 +48,7 @@ struct BarLabel: View {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
       if showsTitle {
-        Text(reserveTitle ?? title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize().hidden()
-          .overlay(alignment: .leading) { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
+        Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize()
       }
     }.padding(.horizontal, showsTitle ? (snug ? Space.sm : Space.md) : PresenterBar.iconPadding)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: controlHeight)
@@ -139,7 +136,7 @@ struct BarDeviceControl<MenuContent: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Button(action: toggle) { BarLabel(title: isOn ? title : offTitle ?? title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug, reserveTitle: offTitle) }
+      Button(action: toggle) { BarLabel(title: isOn ? title : offTitle ?? title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug) }
         .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)

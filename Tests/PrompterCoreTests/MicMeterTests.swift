@@ -33,4 +33,13 @@ import XCTest
     XCTAssertFalse(MicMeterView.clipLit(isClipping: false, latchedUntil: 12, now: 12))
     XCTAssertTrue(MicMeterView.clipLit(isClipping: true, latchedUntil: 0, now: 100))
   }
+
+  func testClearingTheLatchTurnsTheWarningOffAtOnceButNotALiveClip() {
+    var latch = ClipLatch()
+    latch.hold(from: 10, seconds: MicMeterView.clipLatchSeconds)
+    XCTAssertTrue(latch.isLit(isClipping: false, now: 10.5), "remembered after the level fell")
+    latch.clear()
+    XCTAssertFalse(latch.isLit(isClipping: false, now: 10.5), "the pill's button forgets it")
+    XCTAssertTrue(latch.isLit(isClipping: true, now: 10.5), "an input still clipping lights it again")
+  }
 }

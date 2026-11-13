@@ -83,8 +83,8 @@ struct PresenterView: View {
   // Interface size applies to the entire shell, with named controls wrapping as needed.
   static func controlZoom(_ zoom: Double) -> Double { zoom }
   /// A window of 4K size gets proportionally larger chrome, so it reads like a laptop one: 1 up to
-  /// 1920 points wide (before the interface zoom), then growing with the window, to 2 at most: a 4K window's chrome is as large as on a 1920 one.
-  static func sizeBoost(width: CGFloat) -> Double { min(2, max(1, Double(width) / 1920)) }
+  /// 1920 points wide (before the interface zoom), then growing with the window, to 2.4 at 4K (a little more than in proportion, so it reads next to the picture).
+  static func sizeBoost(width: CGFloat) -> Double { min(2.4, max(1, 1 + 1.4 * (Double(width) / 1920 - 1))) }
   private var controlZoom: Double {
     Self.controlZoom(store.uiZoom) * Self.sizeBoost(width: viewport.width / Self.controlZoom(store.uiZoom))
   }
@@ -110,10 +110,12 @@ struct PresenterView: View {
   /// richest variant that fits, on one row; when no one-row variant fits, on two compact rows.
   struct SetupWords: Equatable {
     /// Once any word is short, every label gives up a little of its side room too.
-    var snug: Bool { shortToolTitles || shortTransport }
+    var snug: Bool { shortToolTitles || shortOpen || shortTransport }
     var viewTitles = true
     /// "False colour" is "Colour", as in the Adjust tab.
     var shortToolTitles = false
+    /// "Open script" is "Open", with "Back to start" still in full.
+    var shortOpen = false
     /// "Back to start" is "Back" and "Open script" is "Open".
     var shortTransport = false
     /// Two rows: the transport and the video-call group above, the picture tools and view options below.
@@ -122,6 +124,7 @@ struct PresenterView: View {
   static let setupWordVariants: [SetupWords] = [
     SetupWords(),
     SetupWords(shortToolTitles: true),
+    SetupWords(shortToolTitles: true, shortOpen: true),
     SetupWords(shortToolTitles: true, shortTransport: true),
     SetupWords(viewTitles: false, shortToolTitles: true, shortTransport: true),
     SetupWords(shortToolTitles: true, twoRows: true),
@@ -289,7 +292,7 @@ struct PresenterView: View {
           .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-picture-region")
         if setup { Color.clear.frame(width: max(0, cardColumn - meterWidth)) }
         if micLevelVisible {
-          MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening, typeScale: meterTypeScale)
+          MicMeterView(meter: recorder.inputMeter, micName: inputName, isListening: micListening, typeScale: meterTypeScale, showsClipBadge: shell.adjustTab != .mic)
             .frame(width: stripWidth, height: max(0, geometry.size.height / meterZoom - 32)).uiZoom(meterZoom)
             .frame(width: meterWidth).padding(.vertical, Space.md)
         } else if meterWidth > 0 {
@@ -317,10 +320,13 @@ struct PresenterView: View {
     if sourceInfo != nil {
     Button { adjustOpener = "Camera"; shell.adjustTab = .camera } label: {
       VStack(alignment: .leading, spacing: Space.xs) {
-        Text(sourceInfo?.displayName ?? "").fontWeight(.semibold)
-        if let connection = sourceInfo?.connectionDescription { Text(connection).foregroundStyle(.white.opacity(0.7)) }
-        if let format = sourceInfo?.videoFormat { Text(format).foregroundStyle(.white.opacity(0.7)).lineLimit(1).minimumScaleFactor(0.6) }
-        Text(shotLabel).foregroundStyle(.white.opacity(0.7))
+        // The camera's name is the headline; the connection, format and shot are quieter detail, each on its own line.
+        Text(sourceInfo?.displayName ?? "").font(.system(size: 16, weight: .semibold))
+        Group {
+          if let connection = sourceInfo?.connectionDescription { Text(connection) }
+          if let format = sourceInfo?.videoFormat { Text(format).lineLimit(1).minimumScaleFactor(0.6) }
+          ForEach(shotLabel.components(separatedBy: " · "), id: \.self) { Text($0) }
+        }.font(.system(size: 14)).foregroundStyle(.white.opacity(0.62))
       }.font(.system(size: 15, weight: .regular)).multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
         .background(Surfaces.presenterPanel, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
@@ -570,7 +576,7 @@ struct PresenterView: View {
   }
   private func setupRow(_ words: SetupWords, spacious: Bool) -> some View {
     HStack(spacing: spacious ? PresenterBar.groupGap : words.snug ? Space.sm : Space.md) {
-      HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, snug: words.snug) }
+      HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
       Spacer(minLength: 0)
       callGroup(snug: words.snug)
       toolsGroup(words: words)
@@ -581,13 +587,14 @@ struct PresenterView: View {
   private func setupRows(_ words: SetupWords) -> some View {
     VStack(spacing: Self.compactRowGap) {
       HStack(spacing: Space.md) {
-        HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, snug: words.snug) }
+        HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
         Spacer(minLength: Space.sm)
         callGroup(snug: words.snug)
       }
+      // Right-aligned under the groups above, so the one gap sits where the first row's does (under the transport).
       HStack(spacing: Space.md) {
-        toolsGroup(words: words)
         Spacer(minLength: Space.sm)
+        toolsGroup(words: words)
         viewGroup(titles: words.viewTitles)
       }
     }.environment(\.barControlHeight, Self.compactControlHeight(zoom: controlZoom)).padding(.vertical, Space.xs)
@@ -607,14 +614,14 @@ struct PresenterView: View {
   }
 
   /// Every transport button has its word; Back to start and Open script may take their short forms.
-  @ViewBuilder private func setupTransport(short: Bool, snug: Bool = false) -> some View {
+  @ViewBuilder private func setupTransport(short: Bool, shortOpen: Bool = false, snug: Bool = false) -> some View {
     Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
       .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
     Button { session.restart() } label: { BarLabel(title: short ? "Back" : "Back to start", symbol: "arrow.counterclockwise", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton(short: short, role: .secondary, snug: snug)
+    scriptButton(short: short || shortOpen, role: .secondary, snug: snug)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -739,11 +746,12 @@ struct PresenterView: View {
 
   private func viewGroup(titles: Bool) -> some View {
     BarGroup(label: "View options", raised: false) {
-      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled, showsTitle: titles,
-        help: "Show or hide the exposure key") { exposureKeyEnabled.toggle() }
-        .disabled(!camera.exposureIsConfigured)
-      BarToggle(title: "Clean", symbol: "rectangle", isOn: false, showsTitle: titles,
-                help: CameraModel.cleanViewExplanation, traits: [], value: nil) { camera.cleanView = true }
+      // Like the picture tools, the key has nothing to explain without a picture: dimmed, never shown as on.
+      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled && hasPicture, showsTitle: titles, displayTitle: "Show key",
+        help: exposureKeyEnabled ? "Hide the exposure key: what the zebras and colours mean" : "Show the exposure key: what the zebras and colours mean") { exposureKeyEnabled.toggle() }
+        .disabled(!camera.exposureIsConfigured).opacity(hasPicture ? 1 : 0.45)
+      BarToggle(title: "Clean", symbol: "rectangle", isOn: false, showsTitle: titles, displayTitle: nil,
+                help: "Hide everything but the picture. Move the pointer to bring the controls back (⌥⌘K).", traits: [], value: nil) { camera.cleanView = true }
     }
   }
 

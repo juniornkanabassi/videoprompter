@@ -18,9 +18,11 @@ struct MicMeterView: View {
   /// The words and numbers grow by this much beyond the strip's own zoom (the Mac presenter caps the strip at
   /// 150% but lets its type follow the interface size); the columns they sit in grow with them.
   var typeScale: CGFloat = 1
+  /// False while the Adjust mic card is open beside the strip: the card says the clip, so it is said once per screen.
+  var showsClipBadge = true
   @Environment(\.colorSchemeContrast) private var contrast
   @State private var peakHold = PeakHold()
-  @State private var clipLatchUntil: TimeInterval = 0
+  @State private var clipLatch = ClipLatch()
 
   static let barWidth: CGFloat = 14
   /// Column widths of the vertical meter: the dB numbers, the bar, and the zone words beside it.
@@ -34,6 +36,9 @@ struct MicMeterView: View {
   static let scale: [(value: Float, label: String)] = [
     (0, "0"), (-6, "−6"), (-12, "−12"), (-20, "−20"), (-40, "−40"), (-60, "−60")
   ]
+  /// Unlabelled marks between the numbers, at 3 dB steps over the 3%-per-dB part of the bar and 10 dB steps below the knee,
+  /// so the marks are an even 9 to 10% apart all the way down: that is the rule the uneven numbers sit on.
+  static let minorTicks: [Float] = [-3, -9, -15, -30, -50]
   static let clipLatchSeconds: TimeInterval = 2
 
   /// A stale meter shows silence, so the bar falls and the readout says "No signal".
@@ -59,35 +64,11 @@ struct MicMeterView: View {
     return systemDefault ?? "No microphone"
   }
 
-  /// Short labels that always clear each other: the middle ones drop first.
-  static func visibleScale(height: CGFloat) -> [(value: Float, label: String)] {
-    scale.filter { entry in
-      switch entry.value {
-      case -40: height >= 260
-      case -20: height >= 200
-      default: true
-      }
-    }
-  }
-
-  /// The same scale along the width of the horizontal meter.
-  static func visibleScale(width: CGFloat) -> [(value: Float, label: String)] {
-    scale.filter { entry in
-      switch entry.value {
-      case -40: width >= 200
-      case -20: width >= 240
-      default: true
-      }
-    }
-  }
-
   /// The horizontal zone words are centred on their zones: "too loud" is held inside the bar's end,
   /// and "aim here" clear of it, however narrow the meter.
   static let zoneWordWidth: CGFloat = 60
   /// The horizontal meter's zone words, as large as the numbers beside them.
   static let zoneWordSize: CGFloat = 13
-  /// Beside the horizontal meter's bar: the clip lamp and, in its own slot, the word "clip" or the "Clipped" pill.
-  static let clipSlotWidth: CGFloat = 104
   static func zoneWordCentres(width: CGFloat) -> (aim: CGFloat, loud: CGFloat) {
     let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
     let loud = min(width - zoneWordWidth / 2, width * (red + 1) / 2)
@@ -103,17 +84,21 @@ struct MicMeterView: View {
       let now = ProcessInfo.processInfo.systemUptime
       let db = isListening ? Self.level(peakDBFS: meter.peakDBFS, isFresh: meter.isFresh(at: now)) : -.infinity
       let fill = MeterZones.micPosition(db)
-      let clipLit = isListening && Self.clipLit(isClipping: meter.isClipping, latchedUntil: clipLatchUntil, now: now)
+      let clipLit = isListening && showsClipBadge && clipLatch.isLit(isClipping: meter.isClipping, now: now)
       let clipLive = clipLit && meter.isClipping
       GeometryReader { available in
         let horizontal = available.size.width >= 180 && available.size.height < 280
         VStack(spacing: horizontal ? Space.xs : Space.sm) {
           if showsHeading { heading }
           if horizontal { horizontalBar(fill: fill, db: db, clipLit: clipLit, clipLive: clipLive, now: now) } else { verticalBar(fill: fill, db: db, clipLit: clipLit, clipLive: clipLive, now: now) }
+          // The horizontal meter's clip signal sits under the loud end, level with the readout, so the bar keeps the width its zone words need.
           readoutView(db: db, clipLit: clipLit).frame(maxWidth: .infinity)
+            .overlay(alignment: .trailing) {
+              if horizontal { clipSignal(lit: clipLit, live: clipLive, horizontal: true, earlier: true).padding(.horizontal, Space.md) }
+            }
           if showsHeading {
             Text(micName)
-              .font(.system(size: size(14))).multilineTextAlignment(.center).lineLimit(2).truncationMode(.tail)
+              .font(.system(size: size(12.5))).multilineTextAlignment(.center).lineLimit(2).truncationMode(.tail).minimumScaleFactor(0.85)
               .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
               .help(micName)
               .foregroundStyle(Palette.onDarkQuiet(contrast))
@@ -125,9 +110,10 @@ struct MicMeterView: View {
         .accessibilityLabel(isListening ? "Microphone level, \(micName), \(Self.readout(db))" + (clipLit ? ", Clipping" : "") : "Microphone off, \(micName)")
         .accessibilityValue(isListening ? Self.readout(db) + (clipLit ? ", Clipping" : "") : "Off")
         .accessibilityHint(clipLit ? "Input is clipping." : "Green is quiet to normal speech, yellow is where to peak, red above minus 6 dBFS is too loud.")
+        .accessibilityAction(named: "Clear clip warning") { clipLatch.clear() }
       }
       .onChange(of: meter.isClipping, initial: true) { wasClipping, clipping in
-        if clipping || wasClipping { clipLatchUntil = ProcessInfo.processInfo.systemUptime + Self.clipLatchSeconds }
+        if clipping || wasClipping { clipLatch.hold(from: ProcessInfo.processInfo.systemUptime, seconds: Self.clipLatchSeconds) }
       }
       .onChange(of: db, initial: true) { _, value in
         peakHold.ingest(value, at: ProcessInfo.processInfo.systemUptime)
@@ -150,18 +136,28 @@ struct MicMeterView: View {
   }
 
   /// The clip, named, in place of the lamp: one red pill, so there is one clip signal and a past clip
-  /// (a latch that holds after the level fell) is never mistaken for the live level.
-  private func clippedPill(live: Bool) -> some View {
-    Text(live ? "Clipping" : "Clipped earlier").font(.system(size: size(12), weight: .bold)).lineLimit(1).fixedSize()
-      .foregroundStyle(Color.white)
-      .padding(.horizontal, Space.xs + 2).padding(.vertical, 1) // grid: ok a small capsule
-      .background(MeterZones.red.opacity(0.9), in: Capsule())
+  /// (a latch that holds after the level fell) is never mistaken for the live level. The side strip says "Clipped" and the
+  /// Adjust card "Clipped earlier"; a past clip is a button that clears the warning, a live one is not (it would only light again).
+  private func clippedPill(live: Bool, earlier: Bool) -> some View {
+    let label = HStack(spacing: Space.xs) {
+      Text(live ? "Clipping" : earlier ? "Clipped earlier" : "Clipped").font(.system(size: size(12), weight: .bold)).lineLimit(1).fixedSize()
+      if !live { Image(systemName: "xmark").font(.system(size: size(9), weight: .bold)) }
+    }
+    .foregroundStyle(Color.white)
+    .padding(.horizontal, Space.xs + 2).padding(.vertical, 1) // grid: ok a small capsule
+    .background(MeterZones.red.opacity(0.9), in: Capsule())
+    return Group {
+      if live { label } else {
+        Button { clipLatch.clear() } label: { label }.buttonStyle(.plain)
+          .help("Clipped a moment ago. Click to clear.").accessibilityLabel("Clear clip warning")
+      }
+    }
   }
 
   /// Unlit: the dark lamp and its word. Lit: the red pill alone.
-  private func clipSignal(lit: Bool, live: Bool, horizontal: Bool) -> some View {
+  private func clipSignal(lit: Bool, live: Bool, horizontal: Bool, earlier: Bool = false) -> some View {
     HStack(spacing: Space.xs) {
-      if lit { clippedPill(live: live) }
+      if lit { clippedPill(live: live, earlier: earlier) }
       else {
         clipLamp(horizontal: horizontal)
         Text("clip").font(.system(size: size(12))).lineLimit(1).fixedSize().foregroundStyle(Palette.onDarkQuiet(contrast))
@@ -202,7 +198,7 @@ struct MicMeterView: View {
         // Each number is centred on its boundary: the label's centre, not its top, is the anchor.
         GeometryReader { geometry in
           ZStack {
-            ForEach(Self.visibleScale(height: geometry.size.height), id: \.value) { entry in
+            ForEach(Self.scale, id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: size(13))).monospacedDigit()
                 .foregroundStyle(Palette.onDarkQuiet(contrast))
@@ -222,6 +218,12 @@ struct MicMeterView: View {
             ForEach([MeterZones.yellowFrom, MeterZones.redFrom], id: \.self) { boundary in
               Rectangle().fill(.black.opacity(0.5)).frame(height: 1)
                 .position(x: Self.barWidth / 2, y: height * (1 - MeterZones.micPosition(boundary)))
+            }
+            // Marks on the bar's left edge: long at each number, short between.
+            ForEach(Self.minorTicks + Self.scale.map(\.value).filter { $0 < 0 && $0 > -60 }, id: \.self) { value in
+              let major = Self.scale.contains { $0.value == value }
+              Rectangle().fill(.white.opacity(major ? 0.7 : 0.4)).frame(width: major ? 6 : 3, height: 1) // grid: ok hairline marks
+                .position(x: (major ? 6 : 3) / 2, y: height * (1 - MeterZones.micPosition(value)))
             }
             if let peak = peakTick(db: db, now: now) {
               Rectangle().fill(.white).frame(height: 2)
@@ -252,8 +254,7 @@ struct MicMeterView: View {
   }
 
   private func horizontalBar(fill: CGFloat, db: Float, clipLit: Bool, clipLive: Bool, now: TimeInterval) -> some View {
-    HStack(alignment: .top, spacing: Space.xs) {
-      VStack(spacing: Space.xs) {
+    VStack(spacing: Space.xs) {
         // The legend row: each word centred on its zone, with a short bracket in the zone's own colour
         // under it, so the words read as the zones' names and never as numbers. The numbers sit on their own row below the bar.
         GeometryReader { geometry in
@@ -289,7 +290,7 @@ struct MicMeterView: View {
         }.frame(height: Self.barWidth)
         GeometryReader { geometry in
           ZStack {
-            ForEach(Self.visibleScale(width: geometry.size.width), id: \.value) { entry in
+            ForEach(Self.scale, id: \.value) { entry in
               Text(entry.label)
                 .font(.system(size: 13)).monospacedDigit().foregroundStyle(Palette.onDarkQuiet(contrast)).fixedSize()
                 .position(x: geometry.size.width * MeterZones.micPosition(entry.value), y: 8)
@@ -297,11 +298,15 @@ struct MicMeterView: View {
           }
         }.frame(height: 16)
       }
-      // At 0 dBFS, beside the bar's loud end and level with the bar: the lamp and its word or "Clipped" pill, one warning in one place.
-      clipSignal(lit: clipLit, live: clipLive, horizontal: true).frame(width: Self.clipSlotWidth, alignment: .leading)
-        .padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
-    }
     // Room for the end numbers, which are centred on -60 and 0.
     .padding(.horizontal, Space.md)
   }
+}
+
+/// How long the input's clip stays remembered, and the one way to forget it early: the pill's button.
+struct ClipLatch {
+  private(set) var until: TimeInterval = 0
+  mutating func hold(from now: TimeInterval, seconds: TimeInterval) { until = now + seconds }
+  mutating func clear() { until = 0 }
+  func isLit(isClipping: Bool, now: TimeInterval) -> Bool { MicMeterView.clipLit(isClipping: isClipping, latchedUntil: until, now: now) }
 }

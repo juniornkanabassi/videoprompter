@@ -41,9 +41,10 @@ import XCTest
     XCTAssertEqual(MicMeterView.inputName(uid: nil, devices: [builtIn, atem], systemDefault: "MacBook Pro Microphone"), "MacBook Pro Microphone", "The meter names the real device, as its card does")
     XCTAssertEqual(MicMeterView.inputName(uid: "gone", devices: [builtIn], systemDefault: nil), "Selected microphone unavailable")
     XCTAssertEqual(MicMeterView.inputName(uid: nil, devices: [], systemDefault: nil), "No microphone")
-    XCTAssertEqual(MicMeterView.visibleScale(height: 300).map(\.label), ["0", "−6", "−12", "−20", "−40", "−60"])
-    XCTAssertEqual(MicMeterView.visibleScale(height: 220).map(\.label), ["0", "−6", "−12", "−20", "−60"])
-    XCTAssertEqual(MicMeterView.visibleScale(height: 160).map(\.label), ["0", "−6", "−12", "−60"])
+    XCTAssertEqual(MicMeterView.scale.map(\.label), ["0", "−6", "−12", "−20", "−40", "−60"], "one set of numbers at every size and in both orientations")
+    // The marks between the numbers keep the drawn spacing even: 3 dB steps above the knee, 10 dB steps below it.
+    let marks = (MicMeterView.scale.map(\.value) + MicMeterView.minorTicks).sorted(by: >).map { MeterZones.micPosition($0) }
+    for pair in zip(marks, marks.dropFirst()) { XCTAssertLessThanOrEqual(pair.0 - pair.1, 0.151, "no gap between marks is wider than 15% of the bar") }
   }
 
   func testMeterShowsNumbersAndMicOffState() async throws {
@@ -156,9 +157,9 @@ import XCTest
     XCTAssertEqual(PresenterView.sizeBoost(width: 720), 1)
     XCTAssertEqual(PresenterView.sizeBoost(width: 1600), 1)
     XCTAssertEqual(PresenterView.sizeBoost(width: 1920), 1)
-    XCTAssertEqual(PresenterView.sizeBoost(width: 2560), 2560.0 / 1920, accuracy: 0.0001)
-    XCTAssertEqual(PresenterView.sizeBoost(width: 3840), 2, accuracy: 0.0001, "a 4K window reads like a laptop one")
-    XCTAssertEqual(PresenterView.sizeBoost(width: 7680), 2)
+    XCTAssertEqual(PresenterView.sizeBoost(width: 2560), 1 + 1.4 / 3, accuracy: 0.0001)
+    XCTAssertEqual(PresenterView.sizeBoost(width: 3840), 2.4, accuracy: 0.0001, "a 4K window's chrome reads next to its picture")
+    XCTAssertEqual(PresenterView.sizeBoost(width: 7680), 2.4)
   }
 
   func testReadingMeasureAndEditorTypography() {
@@ -180,7 +181,6 @@ import XCTest
     XCTAssertEqual(MeterZones.position(-12), 0.8, accuracy: 0.0001)
     XCTAssertEqual(MeterZones.position(-6), 0.9, accuracy: 0.0001)
     XCTAssertEqual(MeterZones.position(0), 1)
-    XCTAssertEqual(MicMeterView.visibleScale(width: 300).map(\.value), MicMeterView.visibleScale(height: 300).map(\.value))
   }
 
   func testMicScaleGivesTheLoudHalfAtLeastHalfTheLength() {
@@ -299,7 +299,7 @@ extension AppearanceSnapshotTests {
     return (1...20).map { "\($0). " + paragraph }.joined(separator: "\n\n")
   }()
 
-  func testPresenterChromeRound8Snapshots() async throws {
+  func testPresenterChromeRound9Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let destination = URL(fileURLWithPath: output)
@@ -358,54 +358,54 @@ extension AppearanceSnapshotTests {
     // Setup with no camera: one centred empty state, one clear button, no exposure key.
     camera.displayMode = .prompterWithVideo
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r8-setup-nocamera-\(label)", size: size, noCamera: true)
+      try await present("r9-setup-nocamera-\(label)", size: size, noCamera: true)
     }
-    try await present("r8-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
+    try await present("r9-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
     // Setup with the camera on: the same words at 1600, 1280 and 4K, icons only when narrow.
     for (label, size) in [("1600", wide), ("1280", laptop), ("1000", narrow), ("4k", uhd)] {
-      try await present("r8-setup-camera-\(label)", size: size)
+      try await present("r9-setup-camera-\(label)", size: size)
     }
-    try await present("r8-setup-camera-150", size: wide, zoom: 1.5)
-    try await present("r8-setup-camera-200", size: wide, zoom: 2)
+    try await present("r9-setup-camera-150", size: wide, zoom: 1.5)
+    try await present("r9-setup-camera-200", size: wide, zoom: 2)
     // Camera off (just the script): a neutral off button, not an alarm.
     camera.displayMode = .prompterOnly
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r8-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
+      try await present("r9-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
     }
-    try await present("r8-setup-cameraoff-200", size: wide, preview: true, noCamera: true, zoom: 2)
+    try await present("r9-setup-cameraoff-200", size: wide, preview: true, noCamera: true, zoom: 2)
     camera.displayMode = .prompterWithVideo
-    try await present("r8-adjust-mic-1600", size: wide, adjust: .mic)
+    try await present("r9-adjust-mic-1600", size: wide, adjust: .mic)
     // The meters in the real screens at the loud states: too loud (-3, lamp dark), clipping now, and the lamp still lit after the level fell.
     // `clip` is the input that clipped a moment ago and is now at -14 dBFS: one red "Clipped earlier" pill in place of the lamp, the live number calm.
     for (name, level, clipping, latched, fallsTo) in [("tooloud", Float(-3), false, false, Float(-14)), ("clip", Float(-14), false, true, Float(-14)), ("clipping", Float(-2), true, false, Float(-14))] {
-      try await present("r8-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
-      try await present("r8-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+      try await present("r9-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+      try await present("r9-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
     }
-    try await present("r8-setup-nocamera-200-clip", size: wide, noCamera: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
-    try await present("r8-setup-nocamera-1280-clip", size: laptop, noCamera: true, level: -14, latched: true, fallsTo: -14)
+    try await present("r9-setup-nocamera-200-clip", size: wide, noCamera: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
+    try await present("r9-setup-nocamera-1280-clip", size: laptop, noCamera: true, level: -14, latched: true, fallsTo: -14)
     // Reading: a soft band and a clear line, no column edges, a faded bottom at every size.
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r8-reading-\(label)", size: size, reading: true)
+      try await present("r9-reading-\(label)", size: size, reading: true)
     }
-    try await present("r8-reading-200", size: wide, reading: true, zoom: 2)
+    try await present("r9-reading-200", size: wide, reading: true, zoom: 2)
     // Just after reading starts the "Zebras off while reading" note is up; the others are its steady state (gone).
-    try await present("r8-reading-1600-chipstart", size: wide, reading: true, zebraChip: 60)
-    try await present("r8-reading-200-chipstart", size: wide, reading: true, zoom: 2, zebraChip: 60)
-    try await present("r8-reading-200-clip", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
-    try await present("r8-reading-long-1280", size: laptop, reading: true, script: longRecord)
-    try await present("r8-reading-autohide-1600", size: wide, reading: true, autoHide: true)
+    try await present("r9-reading-1600-chipstart", size: wide, reading: true, zebraChip: 60)
+    try await present("r9-reading-200-chipstart", size: wide, reading: true, zoom: 2, zebraChip: 60)
+    try await present("r9-reading-200-clip", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
+    try await present("r9-reading-long-1280", size: laptop, reading: true, script: longRecord)
+    try await present("r9-reading-autohide-1600", size: wide, reading: true, autoHide: true)
     // Focus: only the text, the audio meter and the reading line, with a short "Esc to exit".
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r8-reading-focus-\(label)", size: size, reading: true, focus: true)
+      try await present("r9-reading-focus-\(label)", size: size, reading: true, focus: true)
     }
     // Editing: Save and Cancel on the editor's own edge, at every size and with a long script.
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r8-editing-\(label)", size: size, editing: true)
+      try await present("r9-editing-\(label)", size: size, editing: true)
     }
-    try await present("r8-editing-200", size: wide, editing: true, zoom: 2)
-    try await present("r8-editing-4k", size: uhd, editing: true)
-    try await present("r8-editing-long-1600", size: wide, editing: true, script: longRecord)
-    try await present("r8-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
+    try await present("r9-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r9-editing-4k", size: uhd, editing: true)
+    try await present("r9-editing-long-1600", size: wide, editing: true, script: longRecord)
+    try await present("r9-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
     store.session.pause()
     store.uiZoom = 1
     defaults.set(false, forKey: "presenterFocusMode")
@@ -425,7 +425,7 @@ extension AppearanceSnapshotTests {
     text.addSubview(bar)
   }
 
-  func testMicMeterRound8States() async throws {
+  func testMicMeterRound9States() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let meter = InputMeter()
@@ -442,13 +442,13 @@ extension AppearanceSnapshotTests {
                                                        ("tooloud", Float(-3), false, true, false), ("hot", Float(-2), true, true, false), ("latched", Float(-14), false, true, true), ("nosignal", nil, false, true, false), ("off", Float(-9), false, false, false)] as [(String, Float?, Bool, Bool, Bool)] {
       show(peak, clipping: clipping, latched: latched)
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM Mini Extreme ISO G2", isListening: listening).frame(width: 96, height: 420).padding(Space.md).background(Color.black).foregroundStyle(.white),
-                         name: "r8-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+                         name: "r9-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     // The horizontal meter (the Adjust mic card) keeps the same scale, colours and centred words.
     for (name, peak, clipping, latched) in [("peaking", Float(-8), false, false), ("tooloud", Float(-3), false, false), ("hot", Float(-2), true, false), ("latched", Float(-14), false, true)] as [(String, Float, Bool, Bool)] {
       show(peak, clipping: clipping, latched: latched)
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM Mini Extreme ISO G2", showsHeading: false).frame(width: 360, height: 96).padding(Space.md).background(Color(white: 0.12)),
-                         name: "r8-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+                         name: "r9-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     meter.reset()
   }
