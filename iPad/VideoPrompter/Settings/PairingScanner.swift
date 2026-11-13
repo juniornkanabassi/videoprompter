@@ -40,6 +40,11 @@ struct PairingScanner: View {
         Button("Cancel") { dismiss() }.buttonStyle(.bordered).padding(24)
       }.padding(32)
     }
+    .alert("Pair with \(link.scannedOffer?.name ?? "Mac")?", isPresented: Binding(
+      get: { link.scannedOffer != nil }, set: { _ in })) {
+      Button("Pair") { Task { await link.confirmScannedPairing(true) } }
+      Button("Cancel", role: .cancel) { Task { await link.confirmScannedPairing(false) } }
+    }
     .task {
       #if !targetEnvironment(simulator)
       allowed = await AVCaptureDevice.requestAccess(for: .video)

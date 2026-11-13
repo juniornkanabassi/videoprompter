@@ -17,7 +17,7 @@ import SwiftUI
           set: { if !$0 { store.closePresenter() } })
         ) {
           PresenterScreen(session: store.session, camera: store.camera).environmentObject(store)
-            .modifier(PairingPresentation(link: store.camera.link))
+
         }
         .alert("Video Prompter", isPresented: Binding(
           get: { store.errorMessage != nil || store.folder.errorMessage != nil },
@@ -27,7 +27,7 @@ import SwiftUI
         } message: {
           Text(store.errorMessage ?? store.folder.errorMessage ?? "")
         }
-        .modifier(PairingPresentation(link: store.camera.link))
+        .onChange(of: store.isPresenting) { _, value in store.camera.link.setPresenting(value) }
         .sheet(isPresented: $suggestConnection) {
           VStack(spacing: 24) {
             Text("Connect to a Mac").font(.largeTitle.bold())

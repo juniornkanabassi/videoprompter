@@ -251,6 +251,8 @@ import VideoToolbox
   @Published private(set) var pairingRequestName: String?
   @Published private(set) var pairingRequestCode: String?
   private var pairingListener: NWListener?
+  private var pairingConnections: [NWConnection] = []
+  private var confirmedPairingConnection: NWConnection?
   private var pairingRedemption = PairingRedemption()
   private var requestConnection: NWConnection?
   private var pairingMacID: UUID {
@@ -267,20 +269,33 @@ import VideoToolbox
     listener.service = .init(name: offer.service, type: PairingExchange.macService)
     listener.newConnectionHandler = { [weak self] connection in
       Task { @MainActor in
-        guard let self else { connection.cancel(); return }
+        guard let self, self.pairingConnections.count < 2 else { connection.cancel(); return }
+        self.pairingConnections.append(connection)
         connection.start(queue: .main); PairingExchange.expire(connection)
-        defer { connection.cancel() }
+        defer { connection.cancel(); self.pairingConnections.removeAll { $0 === connection } }
+        var validExchange = false
         do {
           let request = try JSONDecoder().decode(PairingExchange.Request.self, from: await PairingExchange.receive(on: connection))
-          guard let received = request.offer, let code = request.code, code.hasPrefix("QR:"), code.count == 75,
-            UUID(uuidString: request.id) != nil, let current = self.pairingOffer else { throw PairingOffer.Failure.foreign }
+          guard let received = request.offer, request.publicKeyCommitment.count == 32,
+            UUID(uuidString: request.id) != nil, let current = self.pairingOffer,
+            received == current else { throw PairingOffer.Failure.foreign }
+          let key = Curve25519.KeyAgreement.PrivateKey()
+          try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
+          let publicKey = try await PairingExchange.receive(on: connection)
+          guard PairingExchange.commitment(publicKey) == request.publicKeyCommitment else { throw PairingOffer.Failure.foreign }
+          let shared = try PairingExchange.key(key, peer: publicKey, salt: current.secret)
+          let installed = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
+          guard installed.id == request.id, installed.code == "installed" else { throw PairingOffer.Failure.foreign }
+          validExchange = true
           try self.pairingRedemption.redeem(received, expected: current)
-          try await PairingExchange.send(JSONEncoder().encode(PairingExchange.Reply(id: offer.macID.uuidString, name: offer.name, code: "accepted")), on: connection)
-          self.acceptedPairing(id: request.id, code: code)
+          self.acceptedPairing(id: request.id, code: PairingExchange.credential(shared))
+          try await PairingExchange.send(PairingExchange.seal(.init(id: offer.macID.uuidString, name: offer.name, code: "accepted"), key: shared), on: connection)
           self.usesWiFi = true
           self.selectedWiFiID = request.id
           self.refreshPairingOffer()
-        } catch { self.pairingFailure = "That code has expired or could not be verified. Choose New code and scan again." }
+        } catch {
+          if validExchange { self.pairingFailure = "That code has expired or could not be verified. Choose New code and scan again." }
+        }
       }
     }
     listener.start(queue: .main)
@@ -289,11 +304,18 @@ import VideoToolbox
 
   func stopPairingOffer() {
     pairingListener?.cancel(); pairingListener = nil; pairingOffer = nil
+    pairingConnections.forEach { $0.cancel() }; pairingConnections.removeAll()
     cancelPairingRequest()
   }
 
   func cancelPairingRequest() {
+    confirmedPairingConnection = nil
     requestConnection?.cancel(); requestConnection = nil; pairingRequestName = nil; pairingRequestCode = nil
+  }
+
+  func confirmPairingRequest() {
+    guard pairingRequestCode != nil else { return }
+    confirmedPairingConnection = requestConnection
   }
 
   func requestPairing(_ device: WiFiDevice) {
@@ -320,6 +342,11 @@ import VideoToolbox
         guard requestConnection === connection else { return }
         let reply = try PairingExchange.open(data, key: shared)
         guard reply.id == device.id, reply.code.hasPrefix("QR:") else { throw PairingOffer.Failure.foreign }
+        let deadline = Date().addingTimeInterval(55)
+        while confirmedPairingConnection !== connection {
+          guard requestConnection === connection, Date() < deadline else { return }
+          try await Task.sleep(for: .milliseconds(100))
+        }
         acceptedPairing(id: device.id, code: reply.code)
         selectedWiFiID = device.id
         connectIfNeeded()
@@ -376,6 +403,7 @@ import VideoToolbox
   /// next or survives the switch being turned off.
   private var generation = 0
   private var retry: Task<Void, Never>?
+  private var retryDelay = 2.0
   private var linkOn = false
   private var automaticallyLinks = false
 
@@ -603,9 +631,7 @@ import VideoToolbox
   }
 
   func refusedPairing(id: String, name: String) {
-    codes[id] = nil
-    // Do not retry an ambiguous legacy key on this device until the user pairs it.
-    refusedLegacyIDs.insert(id)
+    // An unauthenticated peer cannot revoke a stored credential.
     unpairedDeviceID = id
     unpairedDeviceName = name
     pairingFailure = "Pairing failed. Check the key on the iPad and try again."
@@ -677,6 +703,7 @@ import VideoToolbox
   }
 
   func use(_ pipe: LinkPipe) {
+    retryDelay = 2
     self.pipe = pipe
     unpairedDeviceName = nil
     pairingFailure = nil
@@ -779,8 +806,10 @@ import VideoToolbox
 
   private func scheduleRetry() {
     retry?.cancel()
+    let delay = retryDelay
+    retryDelay = min(30, retryDelay * 2)
     retry = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(2))
+      try? await Task.sleep(for: .seconds(delay))
       guard !Task.isCancelled else { return }
       self?.connectIfNeeded()
     }

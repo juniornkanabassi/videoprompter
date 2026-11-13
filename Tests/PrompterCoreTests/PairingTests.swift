@@ -45,6 +45,33 @@ final class PairingTests: XCTestCase {
     var tampered = sealed; tampered[0] ^= 1
     XCTAssertThrowsError(try PairingExchange.open(tampered, key: PairingExchange.key(mac, peer: pad.publicKey.rawRepresentation)))
   }
+  func testListenerIsLimitedToConnectionScreenAndDeclineCooldown() {
+    var availability = PairingAvailability()
+    let now = Date()
+    XCTAssertFalse(availability.allowsRequest(now: now))
+    availability.screenOpen = true
+    XCTAssertTrue(availability.allowsRequest(now: now))
+    availability.presenting = true
+    XCTAssertFalse(availability.allowsRequest(now: now))
+    availability.presenting = false
+    availability.decline(now: now)
+    XCTAssertFalse(availability.allowsRequest(now: now.addingTimeInterval(179)))
+    XCTAssertTrue(availability.allowsRequest(now: now.addingTimeInterval(180)))
+  }
+  @MainActor func testFailedHandshakeRetainsStoredCredential() {
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.acceptedPairing(id: "pad", code: "QR:secret")
+    sender.refusedPairing(id: "pad", name: "Impersonator")
+    XCTAssertEqual(sender.pairingCode(id: "pad", name: "Impersonator"), "QR:secret")
+  }
+  @MainActor func testQRCredentialRequiresPrivateKeyAndSecret() throws {
+    let mac = Curve25519.KeyAgreement.PrivateKey(), pad = Curve25519.KeyAgreement.PrivateKey()
+    let shared = try PairingExchange.key(mac, peer: pad.publicKey.rawRepresentation, salt: "qr-secret")
+    XCTAssertEqual(PairingExchange.credential(shared), try PairingExchange.credential(PairingExchange.key(pad, peer: mac.publicKey.rawRepresentation, salt: "qr-secret")))
+    XCTAssertNotEqual(PairingExchange.credential(shared), try PairingExchange.credential(PairingExchange.key(pad, peer: mac.publicKey.rawRepresentation, salt: "other")))
+    let intruder = Curve25519.KeyAgreement.PrivateKey()
+    XCTAssertNotEqual(PairingExchange.credential(shared), try PairingExchange.credential(PairingExchange.key(intruder, peer: mac.publicKey.rawRepresentation, salt: "qr-secret")))
+  }
   @MainActor func testKnownMacCredentialSurvivesRestart() {
     let defaults = freshDefaults()
     let padID = UUID().uuidString

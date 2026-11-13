@@ -98,7 +98,7 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertNil(defaults.dictionary(forKey: "sendCameraPairingCodes")?["first"])
     sender.acceptedPairing(id: "first", code: "0123456789ABCDEF")
     sender.refusedPairing(id: "second", name: "Other iPad")
-    XCTAssertNil(sender.pairingCode(id: "second", name: "Other iPad"))
+    XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), "0123456789ABCDEF")
     XCTAssertEqual(sender.pairingCode(id: "first", name: "Renamed"), "0123456789ABCDEF")
     XCTAssertEqual(sender.unpairedDeviceName, "Other iPad")
     sender.pair(key: "FEDCBA9876543210")

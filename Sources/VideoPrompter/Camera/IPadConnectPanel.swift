@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import PrompterCore
@@ -49,6 +50,7 @@ struct IPadConnectPanel: View {
               }
               Spacer()
               if link.pairingRequestName == device.name {
+                if link.pairingRequestCode != nil { Button("Numbers match") { link.confirmPairingRequest() } }
                 Button("Cancel") { link.cancelPairingRequest() }
               } else {
                 Button("Connect") { link.requestPairing(device) }
@@ -70,7 +72,8 @@ struct IPadConnectPanel: View {
       if let failure = link.pairingFailure { Text(failure).foregroundStyle(.orange) }
     }
     .padding(32)
-    .onAppear { link.usesWiFi = true; link.refreshPairingOffer() }
+    .background(PairingPrivateWindow())
+    .onAppear { link.refreshPairingOffer() }
     .onDisappear { link.stopPairingOffer() }
     .task {
       while !Task.isCancelled {
@@ -86,5 +89,12 @@ struct IPadConnectPanel: View {
     guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)) else { return nil }
     return CIContext().createCGImage(output, from: output.extent)
   }
+}
+private struct PairingPrivateWindow: NSViewRepresentable {
+  final class View: NSView {
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); window?.sharingType = .none }
+  }
+  func makeNSView(context: Context) -> View { View() }
+  func updateNSView(_ view: View, context: Context) { view.window?.sharingType = .none }
 }
 #endif

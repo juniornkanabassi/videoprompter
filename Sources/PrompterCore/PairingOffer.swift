@@ -16,14 +16,14 @@ public struct PairingOffer: Codable, Equatable, Sendable {
     expires = now.addingTimeInterval(300)
   }
   public func encoded() throws -> String { "videoprompter://pair/" + (try JSONEncoder().encode(self)).base64EncodedString() }
-  public static func decode(_ value: String, now: Date = Date()) throws -> Self {
+  public static func decode(_ value: String, now: Date = Date(), clockSkew: TimeInterval = 0) throws -> Self {
     guard value.hasPrefix("videoprompter://pair/"), value.count < 4096,
       let data = Data(base64Encoded: String(value.dropFirst(21))) else { throw Failure.foreign }
     let offer: Self
     do { offer = try JSONDecoder().decode(Self.self, from: data) } catch { throw Failure.foreign }
     guard offer.app == "VideoPrompter.pair.v1", offer.secret.count == 72,
       offer.service == offer.macID.uuidString, !offer.name.isEmpty else { throw Failure.foreign }
-    guard offer.expires > now, offer.expires <= now.addingTimeInterval(300) else { throw Failure.expired }
+    guard offer.expires > now.addingTimeInterval(-clockSkew), offer.expires <= now.addingTimeInterval(300 + clockSkew) else { throw Failure.expired }
     return offer
   }
   public enum Failure: Error { case foreign, expired, replay }
@@ -49,4 +49,16 @@ public struct PairingConsent: Sendable {
     decided = true
     return allow && now < expires
   }
+}
+
+/// Pairing is available only in the connection screen; declining silences repeat requests.
+public struct PairingAvailability: Sendable {
+  public var screenOpen = false
+  public var presenting = false
+  private var blockedUntil = Date.distantPast
+  public init() {}
+  public func allowsRequest(now: Date = Date()) -> Bool {
+    screenOpen && !presenting && now >= blockedUntil
+  }
+  public mutating func decline(now: Date = Date()) { blockedUntil = now.addingTimeInterval(180) }
 }

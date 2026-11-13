@@ -36,7 +36,7 @@ struct SettingsScreen: View {
     .scrollContentBackground(.hidden)
     .background(LibraryTheme.background.ignoresSafeArea())
     .tint(LibraryTheme.accent)
-    .modifier(PairingPresentation(link: store.camera.link))
+
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { Button("Done") { dismiss() } }
@@ -336,7 +336,9 @@ struct MacControlScreen: View {
     .onChange(of: scenePhase) { _, phase in if phase != .active { reveal.hide() } }
     .onChange(of: connection) { _, _ in known = KnownMacs.load() }
     .fullScreenCover(isPresented: $scanning) { PairingScanner(link: link) }
-    .onDisappear { reveal.hide() }
+    .modifier(PairingPresentation(link: link))
+    .onAppear { link.setPairingScreen(open: true) }
+    .onDisappear { reveal.hide(); link.setPairingScreen(open: false) }
     .confirmationDialog("Generate a new key?", isPresented: $confirming, titleVisibility: .visible) {
       Button("Generate new key", role: .destructive) {
         link.newPairingCode()

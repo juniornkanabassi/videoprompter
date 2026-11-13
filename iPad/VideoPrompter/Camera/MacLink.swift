@@ -37,6 +37,22 @@ import UIKit
   }
   @Published var pendingPermission: PairingPermission?
   @Published var scanStatus: String?
+  var pairingAvailability = PairingAvailability()
+  private var permissionConnections: [NWConnection] = []
+  @Published private(set) var scannedOffer: PairingOffer?
+  func setPairingScreen(open: Bool) {
+    pairingAvailability.screenOpen = open
+    if open { startPermissionListener() } else {
+      permissionListener?.cancel(); permissionListener = nil
+      permissionConnections.forEach { $0.cancel() }; permissionConnections.removeAll()
+      approvePairing(false)
+      scannedOffer = nil
+    }
+  }
+  func setPresenting(_ value: Bool) {
+    pairingAvailability.presenting = value
+    if value { setPairingScreen(open: false) }
+  }
   private var permissionListener: NWListener?
   private var credentials: [String: Credential] = {
     guard let data = UserDefaults.standard.data(forKey: "pairedMacCredentials") else { return [:] }
@@ -63,8 +79,9 @@ import UIKit
   func approvePairing(_ allow: Bool) {
     guard var permission = pendingPermission else { return }
     pendingPermission = nil
+    if !allow { pairingAvailability.decline() }
     let connection = permission.connection
-    guard permission.consent.consume(allow: allow) else { connection.cancel(); return }
+    guard pairingAvailability.allowsRequest(), permission.consent.consume(allow: allow) else { connection.cancel(); return }
     Task {
       defer { connection.cancel() }
       do {
@@ -79,16 +96,18 @@ import UIKit
     }
   }
   private func startPermissionListener() {
-    guard allowsWiFi, permissionListener == nil,
+    guard allowsWiFi, pairingAvailability.allowsRequest(), permissionListener == nil,
       let listener = try? NWListener(using: .tcp) else { return }
     listener.service = .init(name: deviceID, type: PairingExchange.padService)
     listener.newConnectionHandler = { [weak self] connection in
       Task { @MainActor in
-        guard let self else { connection.cancel(); return }
+        guard let self, self.pairingAvailability.allowsRequest(), self.permissionConnections.count < 2 else { connection.cancel(); return }
+        self.permissionConnections.append(connection)
+        defer { self.permissionConnections.removeAll { $0 === connection } }
         connection.start(queue: .main); PairingExchange.expire(connection)
         do {
           let request = try JSONDecoder().decode(PairingExchange.Request.self, from: await PairingExchange.receive(on: connection))
-          guard self.allowsWiFi, self.pendingPermission == nil, UUID(uuidString: request.id) != nil,
+          guard self.allowsWiFi, self.pairingAvailability.allowsRequest(), self.pendingPermission == nil, UUID(uuidString: request.id) != nil,
             request.publicKeyCommitment.count == 32, !request.name.isEmpty, request.name.count <= 128 else { connection.cancel(); return }
           let privateKey = Curve25519.KeyAgreement.PrivateKey()
           // Commit before revealing either key, so an interceptor cannot choose matching numbers.
@@ -97,7 +116,7 @@ import UIKit
           guard PairingExchange.commitment(peerPublicKey) == request.publicKeyCommitment else { connection.cancel(); return }
           let shared = try PairingExchange.key(privateKey, peer: peerPublicKey)
           try await PairingExchange.send(privateKey.publicKey.rawRepresentation, on: connection)
-          guard self.allowsWiFi, self.pendingPermission == nil else { connection.cancel(); return }
+          guard self.allowsWiFi, self.pairingAvailability.allowsRequest(), self.pendingPermission == nil else { connection.cancel(); return }
           self.pendingPermission = PairingPermission(request: request, connection: connection, privateKey: privateKey, peerPublicKey: peerPublicKey,
             confirmationCode: PairingExchange.confirmationCode(shared))
           Task { @MainActor in
@@ -111,21 +130,34 @@ import UIKit
   }
   func scanPairingCode(_ value: String) async {
     do {
-      let offer = try PairingOffer.decode(value)
+      scannedOffer = try PairingOffer.decode(value, clockSkew: 60)
+      scanStatus = "Confirm the Mac to pair."
+    } catch { scanStatus = "That code is invalid or expired. Scan a new code." }
+  }
+
+  func confirmScannedPairing(_ allow: Bool) async {
+    guard let offer = scannedOffer else { return }
+    scannedOffer = nil
+    guard allow, !pairingAvailability.presenting else { scanStatus = "Pairing cancelled."; return }
+    do {
       scanStatus = "Connecting to \(offer.name)…"
       allowsWiFi = true
       let connection = PairingExchange.connect(.service(name: offer.service, type: PairingExchange.macService, domain: "local.", interface: nil), code: offer.secret)
       defer { connection.cancel() }
-      let code = "QR:" + UUID().uuidString + UUID().uuidString
-      let request = PairingExchange.Request(id: deviceID, name: deviceName, publicKeyCommitment: Data(), offer: offer, code: code)
+      let key = Curve25519.KeyAgreement.PrivateKey()
+      let request = PairingExchange.Request(id: deviceID, name: deviceName,
+        publicKeyCommitment: PairingExchange.commitment(key.publicKey.rawRepresentation), offer: offer)
       try await PairingExchange.send(JSONEncoder().encode(request), on: connection)
-      let reply = try JSONDecoder().decode(PairingExchange.Reply.self, from: await PairingExchange.receive(on: connection))
+      let publicKey = try await PairingExchange.receive(on: connection)
+      let shared = try PairingExchange.key(key, peer: publicKey, salt: offer.secret)
+      try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
+      // Install before acknowledging, so the Mac's first secure connection finds its key.
+      remember(offer.macID.uuidString, name: offer.name, code: PairingExchange.credential(shared))
+      try await PairingExchange.send(PairingExchange.seal(.init(id: deviceID, name: deviceName, code: "installed"), key: shared), on: connection)
+      let reply = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
       guard reply.id == offer.macID.uuidString, reply.code == "accepted" else { throw PairingOffer.Failure.foreign }
-      remember(reply.id, name: offer.name, code: code)
       scanStatus = "Paired with \(offer.name). Waiting for the connection…"
-    } catch PairingOffer.Failure.expired { scanStatus = "That code has expired. On the Mac, choose New code, then scan again." }
-    catch PairingOffer.Failure.foreign { scanStatus = "This isn’t a Video Prompter code." }
-    catch { scanStatus = "Can’t find that Mac on this Wi-Fi. Try scanning a new code." }
+    } catch { scanStatus = "Can’t find that Mac on this Wi-Fi. Try scanning a new code." }
   }
 
   func disconnect() { receiver.disconnect() }
@@ -210,6 +242,7 @@ import UIKit
           if let value = try? String(contentsOf: file, encoding: .utf8) {
             try? FileManager.default.removeItem(at: file)
             await scanPairingCode(value)
+            await confirmScannedPairing(true)
             try? Data((scanStatus ?? "No result").utf8).write(to: URL.documentsDirectory.appendingPathComponent("vp-qr-result.txt"))
             break
           }
@@ -379,6 +412,7 @@ final class LinkReceiver: @unchecked Sendable {
       new.cancel()
       return
     }
+    guard pending.count < 4 else { new.cancel(); return }
     // The current Mac stays until the newcomer is ready, so a peer that fails the pairing
     // handshake cannot knock it off.
     pending.append((new, overWiFi))

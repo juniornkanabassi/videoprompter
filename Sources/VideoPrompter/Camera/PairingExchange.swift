@@ -19,9 +19,12 @@ import PrompterCore
     var name: String
     var code: String
   }
-  static func key(_ privateKey: Curve25519.KeyAgreement.PrivateKey, peer: Data) throws -> SymmetricKey {
+  static func key(_ privateKey: Curve25519.KeyAgreement.PrivateKey, peer: Data, salt: String = "VP pairing v1") throws -> SymmetricKey {
     try privateKey.sharedSecretFromKeyAgreement(with: .init(rawRepresentation: peer))
-      .hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data("VP pairing v1".utf8), sharedInfo: Data(), outputByteCount: 32)
+      .hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data(salt.utf8), sharedInfo: Data(), outputByteCount: 32)
+  }
+  static func credential(_ key: SymmetricKey) -> String {
+    "QR:" + key.withUnsafeBytes { Data($0).base64EncodedString() }
   }
   static func commitment(_ publicKey: Data) -> Data { Data(SHA256.hash(data: publicKey)) }
   static func confirmationCode(_ key: SymmetricKey) -> String {
