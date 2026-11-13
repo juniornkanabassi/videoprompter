@@ -43,7 +43,7 @@ extension AppearanceSnapshotTests {
           }
           if state == "setup" {
             let cameraButton = try XCTUnwrap(LibraryAX.named("Choose camera", in: host).first)
-            XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Turned right for vertical")
+            XCTAssertEqual(LibraryAX.value(cameraButton, "accessibilityValue"), "Sony FX3, Vertical right · Top on the right")
             let stage = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-visible-stage" })
             let pictureRegion = try XCTUnwrap(nodes.first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-picture-region" })
             let stageFrame = try XCTUnwrap(stage.value(forKey: "accessibilityFrame") as? NSValue).rectValue

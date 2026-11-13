@@ -38,7 +38,7 @@ import XCTest
     let builtIn = AudioInputDevice(id: 2, uid: "mac", name: "MacBook Pro Microphone")
     XCTAssertEqual(MicMeterView.inputName(uid: "atem", devices: [builtIn, atem], systemDefault: "MacBook Pro Microphone"), "ATEM ISO",
                    "The caption names the chosen input, never another device")
-    XCTAssertEqual(MicMeterView.inputName(uid: nil, devices: [builtIn, atem], systemDefault: "MacBook Pro Microphone"), "System default · MacBook Pro Microphone")
+    XCTAssertEqual(MicMeterView.inputName(uid: nil, devices: [builtIn, atem], systemDefault: "MacBook Pro Microphone"), "MacBook Pro Microphone", "The meter names the real device, as its card does")
     XCTAssertEqual(MicMeterView.inputName(uid: "gone", devices: [builtIn], systemDefault: nil), "Selected microphone unavailable")
     XCTAssertEqual(MicMeterView.inputName(uid: nil, devices: [], systemDefault: nil), "No microphone")
     XCTAssertEqual(MicMeterView.visibleScale(height: 300).map(\.label), ["0", "−6", "−12", "−20", "−40", "−60"])
@@ -155,9 +155,10 @@ import XCTest
   func testChromeGrowsWithTheWindowButNotBelowOne() {
     XCTAssertEqual(PresenterView.sizeBoost(width: 720), 1)
     XCTAssertEqual(PresenterView.sizeBoost(width: 1600), 1)
-    XCTAssertEqual(PresenterView.sizeBoost(width: 2400), 1)
-    XCTAssertEqual(PresenterView.sizeBoost(width: 3840), 1.5, accuracy: 0.0001)
-    XCTAssertEqual(PresenterView.sizeBoost(width: 7680), 1.5)
+    XCTAssertEqual(PresenterView.sizeBoost(width: 1920), 1)
+    XCTAssertEqual(PresenterView.sizeBoost(width: 2560), 2560.0 / 1920, accuracy: 0.0001)
+    XCTAssertEqual(PresenterView.sizeBoost(width: 3840), 2, accuracy: 0.0001, "a 4K window reads like a laptop one")
+    XCTAssertEqual(PresenterView.sizeBoost(width: 7680), 2)
   }
 
   func testReadingMeasureAndEditorTypography() {
@@ -218,19 +219,18 @@ import XCTest
     XCTAssertEqual(variants.first, PresenterView.SetupWords(), "the richest variant has every word")
     // Each step only takes words away (or adds the second row), never gives one back, so the bar at any size is the richest that fits.
     func count(_ w: PresenterView.SetupWords) -> Int {
-      [w.viewTitles, w.toolsCaption, w.toolTitles, w.shortToolTitles, w.transportTitles].filter { $0 }.count
+      [w.viewTitles, w.toolTitles, w.shortToolTitles, w.transportTitles].filter { $0 }.count
     }
     for pair in zip(variants, variants.dropFirst()) {
       XCTAssertNotEqual(pair.0, pair.1)
-      XCTAssertTrue(pair.0.transportTitles || !pair.1.transportTitles)
-      XCTAssertTrue(pair.0.toolTitles || !pair.1.toolTitles || (!pair.0.twoRows && pair.1.twoRows), "the second row is where the tools' words come back")
-      XCTAssertTrue(pair.0.toolsCaption || !pair.1.toolsCaption)
-      XCTAssertTrue(pair.0.viewTitles || !pair.1.viewTitles)
+      XCTAssertTrue(pair.0.transportTitles || !pair.1.transportTitles || (!pair.0.twoRows && pair.1.twoRows), "the second row is where the transport's words come back")
+      XCTAssertTrue(pair.0.toolTitles || !pair.1.toolTitles || (!pair.0.twoRows && pair.1.twoRows))
+      XCTAssertTrue(pair.0.viewTitles || !pair.1.viewTitles || (!pair.0.twoRows && pair.1.twoRows))
       XCTAssertTrue(!pair.0.twoRows || pair.1.twoRows, "once on two rows the bar stays on two")
     }
-    // Camera, Mic, Script, Key and Clean have no icon-only variant at all: their words go at no size.
-    XCTAssertTrue(variants.allSatisfy(\.viewTitles), "Key and Clean keep their words at every size")
-    XCTAssertTrue(variants.contains { $0.shortToolTitles && $0.toolTitles }, "the picture tools go snug before they are icons")
+    // The picture tools go to icons before Back to start and Open script do, and a variant exists for each step.
+    XCTAssertTrue(variants.contains { !$0.toolTitles && $0.transportTitles && !$0.twoRows }, "tools are icons while Back to start and Open script keep words")
+    XCTAssertTrue(variants.contains { $0.shortToolTitles && $0.toolTitles }, "the picture tools get short words before icons")
     XCTAssertTrue(variants.contains { $0.twoRows && $0.toolTitles }, "a second row brings the words back before icons")
     XCTAssertGreaterThan(count(variants[0]), count(variants[variants.count - 1]))
   }
@@ -239,7 +239,7 @@ import XCTest
     XCTAssertEqual(PresenterView.meterTypeScale(controlZoom: 1, uiZoom: 1), 1)
     XCTAssertEqual(PresenterView.meterTypeScale(controlZoom: 1.5, uiZoom: 1.5), 1, accuracy: 0.0001)
     XCTAssertEqual(PresenterView.meterTypeScale(controlZoom: 2, uiZoom: 2), 4.0 / 3.0, accuracy: 0.0001, "at 200% the type is the interface's size inside the capped strip")
-    XCTAssertEqual(MicMeterView.stripWidth(typeScale: 1), 120, "the unscaled strip is the width it always had")
+    XCTAssertEqual(MicMeterView.stripWidth(typeScale: 1), 116, "the unscaled strip, a little narrower than before so the meter takes less from the script")
     XCTAssertLessThan(MicMeterView.stripWidth(typeScale: 4.0 / 3.0) * 1.5, 250, "the strip stays modest at 200%")
   }
 
@@ -300,13 +300,13 @@ extension AppearanceSnapshotTests {
     return (1...20).map { "\($0). " + paragraph }.joined(separator: "\n\n")
   }()
 
-  func testPresenterChromeRound6Snapshots() async throws {
+  func testPresenterChromeRound7Snapshots() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let destination = URL(fileURLWithPath: output)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let defaults = freshDefaults("PresenterRound6Snapshots")
+    let defaults = freshDefaults("PresenterRound7Snapshots")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let record = try await store.createScript(title: "Matchday", markdown: "Arsenal went to Anfield with a plan.\n\nAnd that is why the back three changed everything this season.\n\nWatch where Saliba stands when the ball goes wide.")
     let longRecord = try await store.createScript(title: "Long", markdown: Self.presenterLongScript)
@@ -320,6 +320,8 @@ extension AppearanceSnapshotTests {
     camera.displayMode = .prompterWithVideo
     camera.guides.zebras = true
     let picture = try XCTUnwrap(NSImage(contentsOf: Bundle.module.url(forResource: "presenter-zebras", withExtension: "png", subdirectory: "Fixtures")!))
+    // While reading the app draws no zebras on the picture, so reading fixtures use the same shot without them.
+    let cleanPicture = try XCTUnwrap(NSImage(contentsOf: Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures")!))
     let source = CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)
     // The same input everywhere: the Adjust mic card selects the ATEM and the side meter names it.
     var atem = AudioInputDevice(id: 1, uid: "atem", name: "ATEM ISO")
@@ -344,7 +346,7 @@ extension AppearanceSnapshotTests {
       let draft = PresenterDraft(record: script)
       if editing { draft.begin(session: store.session) }
       let view = PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder,
-        shell: PresenterShell(reading: reading, adjustTab: adjust, scriptPreview: preview), referencePicture: noCamera ? nil : picture,
+        shell: PresenterShell(reading: reading, adjustTab: adjust, scriptPreview: preview), referencePicture: noCamera ? nil : reading ? cleanPicture : picture,
         sourceInfoOverride: noCamera ? nil : source, microphoneNameOverride: atem.name, microphonesOverride: [atem]).environment(\.presenterReduceTransparency, false).defaultAppStorage(defaults)
       var caret: ((NSView) -> Void)?
       if editing { caret = { Self.showEditingCaret($0) } }
@@ -357,47 +359,48 @@ extension AppearanceSnapshotTests {
     // Setup with no camera: one centred empty state, one clear button, no exposure key.
     camera.displayMode = .prompterWithVideo
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r6-setup-nocamera-\(label)", size: size, noCamera: true)
+      try await present("r7-setup-nocamera-\(label)", size: size, noCamera: true)
     }
-    try await present("r6-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
+    try await present("r7-setup-nocamera-200", size: wide, noCamera: true, zoom: 2)
     // Setup with the camera on: the same words at 1600, 1280 and 4K, icons only when narrow.
     for (label, size) in [("1600", wide), ("1280", laptop), ("1000", narrow), ("4k", uhd)] {
-      try await present("r6-setup-camera-\(label)", size: size)
+      try await present("r7-setup-camera-\(label)", size: size)
     }
-    try await present("r6-setup-camera-200", size: wide, zoom: 2)
+    try await present("r7-setup-camera-200", size: wide, zoom: 2)
     // Camera off (just the script): a neutral off button, not an alarm.
     camera.displayMode = .prompterOnly
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r6-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
+      try await present("r7-setup-cameraoff-\(label)", size: size, preview: true, noCamera: true)
     }
+    try await present("r7-setup-cameraoff-200", size: wide, preview: true, noCamera: true, zoom: 2)
     camera.displayMode = .prompterWithVideo
-    try await present("r6-adjust-mic-1600", size: wide, adjust: .mic)
+    try await present("r7-adjust-mic-1600", size: wide, adjust: .mic)
     // The meters in the real screens at the loud states: too loud (-3, lamp dark), clipping now, and the lamp still lit after the level fell.
     // `clip` is -3 dBFS with the lamp lit: the live number stays its own colour and the badge says the lamp is a past clip.
     for (name, level, clipping, latched, fallsTo) in [("tooloud", Float(-3), false, false, Float(-14)), ("clip", Float(-3), false, true, Float(-3)), ("latched", Float(-14), false, true, Float(-14))] {
-      try await present("r6-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
-      try await present("r6-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+      try await present("r7-setup-nocamera-1600-\(name)", size: wide, noCamera: true, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
+      try await present("r7-adjust-mic-1600-\(name)", size: wide, adjust: .mic, level: level, clipping: clipping, latched: latched, fallsTo: fallsTo)
     }
-    try await present("r6-setup-nocamera-200-clip", size: wide, noCamera: true, zoom: 2, level: -3, latched: true, fallsTo: -3)
+    try await present("r7-setup-nocamera-200-clip", size: wide, noCamera: true, zoom: 2, level: -3, latched: true, fallsTo: -3)
     // Reading: a soft band and a clear line, no column edges, a faded bottom at every size.
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r6-reading-\(label)", size: size, reading: true)
+      try await present("r7-reading-\(label)", size: size, reading: true)
     }
-    try await present("r6-reading-200", size: wide, reading: true, zoom: 2)
-    try await present("r6-reading-long-1280", size: laptop, reading: true, script: longRecord)
-    try await present("r6-reading-autohide-1600", size: wide, reading: true, autoHide: true)
+    try await present("r7-reading-200", size: wide, reading: true, zoom: 2)
+    try await present("r7-reading-long-1280", size: laptop, reading: true, script: longRecord)
+    try await present("r7-reading-autohide-1600", size: wide, reading: true, autoHide: true)
     // Focus: only the text, the audio meter and the reading line, with a short "Esc to exit".
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
-      try await present("r6-reading-focus-\(label)", size: size, reading: true, focus: true)
+      try await present("r7-reading-focus-\(label)", size: size, reading: true, focus: true)
     }
     // Editing: Save and Cancel on the editor's own edge, at every size and with a long script.
     for (label, size) in [("1600", wide), ("1280", laptop)] {
-      try await present("r6-editing-\(label)", size: size, editing: true)
+      try await present("r7-editing-\(label)", size: size, editing: true)
     }
-    try await present("r6-editing-200", size: wide, editing: true, zoom: 2)
-    try await present("r6-editing-4k", size: uhd, editing: true)
-    try await present("r6-editing-long-1600", size: wide, editing: true, script: longRecord)
-    try await present("r6-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
+    try await present("r7-editing-200", size: wide, editing: true, zoom: 2)
+    try await present("r7-editing-4k", size: uhd, editing: true)
+    try await present("r7-editing-long-1600", size: wide, editing: true, script: longRecord)
+    try await present("r7-editing-long-200", size: wide, editing: true, zoom: 2, script: longRecord)
     store.session.pause()
     store.uiZoom = 1
     defaults.set(false, forKey: "presenterFocusMode")
@@ -417,7 +420,7 @@ extension AppearanceSnapshotTests {
     text.addSubview(bar)
   }
 
-  func testMicMeterRound6States() async throws {
+  func testMicMeterRound7States() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     guard ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] != "light" else { return }
     let meter = InputMeter()
@@ -435,13 +438,13 @@ extension AppearanceSnapshotTests {
                                                        ("nosignal", nil, false, true, false), ("off", Float(-9), false, false, false)] as [(String, Float?, Bool, Bool, Bool)] {
       show(peak, clipping: clipping, latched: latched)
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM ISO", isListening: listening).frame(width: 96, height: 420).padding(Space.md).background(Color.black).foregroundStyle(.white),
-                         name: "r6-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+                         name: "r7-mic-meter-\(name)", size: .init(width: 130, height: 460), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     // The horizontal meter (the Adjust mic card) keeps the same scale, colours and centred words.
     for (name, peak, clipping, latched) in [("peaking", Float(-8), false, false), ("tooloud", Float(-3), false, false), ("hot", Float(-2), true, false), ("latched", Float(-14), false, true), ("clipped-live-3", Float(-3), false, true)] as [(String, Float, Bool, Bool)] {
       show(peak, clipping: clipping, latched: latched)
       try await snapshot(MicMeterView(meter: meter, micName: "ATEM ISO", showsHeading: false).frame(width: 360, height: 96).padding(Space.md).background(Color(white: 0.12)),
-                         name: "r6-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
+                         name: "r7-mic-meter-horizontal-\(name)", size: .init(width: 400, height: 130), scheme: .dark, destination: destination, settleDelay: .milliseconds(200))
     }
     meter.reset()
   }

@@ -78,8 +78,8 @@ struct PresenterView: View {
   // Interface size applies to the entire shell, with named controls wrapping as needed.
   static func controlZoom(_ zoom: Double) -> Double { zoom }
   /// A window of 4K size gets proportionally larger chrome, so it reads like a laptop one: 1 up to
-  /// 2400 points wide (before the interface zoom), then growing with the window, to 1.5 at most.
-  static func sizeBoost(width: CGFloat) -> Double { min(1.5, max(1, Double(width) / 2400)) }
+  /// 1920 points wide (before the interface zoom), then growing with the window, to 2 at most: a 4K window's chrome is as large as on a 1920 one.
+  static func sizeBoost(width: CGFloat) -> Double { min(2, max(1, Double(width) / 1920)) }
   private var controlZoom: Double {
     Self.controlZoom(store.uiZoom) * Self.sizeBoost(width: viewport.width / Self.controlZoom(store.uiZoom))
   }
@@ -101,30 +101,29 @@ struct PresenterView: View {
     min(300, max(188, width / zoom * 0.12)) * zoom + Space.md * 2
   }
   /// The words the setup bar shows. One rule at every size: the bar takes the richest variant that fits
-  /// (see `setupWordVariants`), so Camera, Mic, Script and the transport keep their words longest, the
-  /// picture tools get snug padding and drop their caption before they become icons ("False colour" is always "Colour" here, as in the Adjust tab).
+  /// (see `setupWordVariants`). Camera, Mic, Script and Start reading keep their words longest; the picture
+  /// tools get short words, then icons (they have help text), before Back to start and Open script lose theirs
+  /// ("False colour" is always "Colour" once short, as in the Adjust tab).
   struct SetupWords: Equatable {
     /// Once the picture tools are short, every label gives up a little of its side room too.
-    var snug: Bool { shortToolTitles }
+    var snug: Bool { shortToolTitles || !toolTitles }
     var viewTitles = true
-    var toolsCaption = true
     var toolTitles = true
     var shortToolTitles = false
     var transportTitles = true
     /// Two rows: the transport and the video-call group above, the picture tools and view options below.
     var twoRows = false
   }
-  /// Camera, Mic, Script, Key and Clean keep their words at every size: the bar gives up the "Picture" caption,
-  /// then snug padding on the picture tools, then the words on Back to start and Open script, then the picture tools'
-  /// words, and only then takes a second row (where the words come back) before any of them becomes an icon.
+  /// One row for as long as it fits: short picture-tool words, then icons, then Back to start and Open script as icons,
+  /// then Key and Clean as icons. Only below that does the bar take a second row, where the words come back.
   static let setupWordVariants: [SetupWords] = [
     SetupWords(),
-    SetupWords(toolsCaption: false),
-    SetupWords(toolsCaption: false, shortToolTitles: true),
-    SetupWords(toolsCaption: false, shortToolTitles: true, transportTitles: false),
-    SetupWords(toolsCaption: false, toolTitles: false, transportTitles: false),
-    SetupWords(toolsCaption: false, shortToolTitles: true, transportTitles: false, twoRows: true),
-    SetupWords(toolsCaption: false, toolTitles: false, transportTitles: false, twoRows: true)
+    SetupWords(shortToolTitles: true),
+    SetupWords(toolTitles: false),
+    SetupWords(toolTitles: false, transportTitles: false),
+    SetupWords(viewTitles: false, toolTitles: false, transportTitles: false),
+    SetupWords(shortToolTitles: true, twoRows: true),
+    SetupWords(viewTitles: false, toolTitles: false, transportTitles: false, twoRows: true)
   ]
   /// The text runs down to the bar and fades out over `ScriptTextView.fadeHeight` (a line and a half),
   /// so no extra room is kept under it and upcoming words stay in view at every interface size.
@@ -205,7 +204,7 @@ struct PresenterView: View {
           if camera.presentsWithVideo || camera.cleanView {
             Group {
               if let referencePicture { Image(nsImage: referencePicture).resizable().scaledToFit() }
-              else { CameraPreview(model: camera, presenter: true) }
+              else { CameraPreview(model: camera, presenter: true, hidesExposureAids: shell.reading && !editing) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
               // Focus keeps the picture running (a take may be on) but out of sight: no zebras, false colour or guides behind the words.
               .opacity(focusActive ? 0 : 1)
@@ -247,7 +246,7 @@ struct PresenterView: View {
                   if camera.guides.falseColour {
                     HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
                   } else { PresenterZebraSwatch().frame(width: 24, height: 16) }
-                  Text(camera.guides.falseColour ? "False colour on" : "Zebras on")
+                  Text(camera.guides.falseColour ? "False colour off while reading" : "Zebras off while reading")
                 } else { Text("Exposure key") }
                 Image(systemName: keyExpanded ? "chevron.up" : "chevron.down")
               }.font(.system(size: 15, weight: .semibold))
@@ -323,10 +322,11 @@ struct PresenterView: View {
   private var shotLabel: String {
     if camera.guides.automaticRotation { return "Automatic" }
     switch camera.guides.rotation {
-    case .none: return "Landscape"
-    case .quarter: return "Turned left for vertical"
-    case .threeQuarters: return "Turned right for vertical"
-    case .half: return "Upside down"
+    case .none: return "Landscape · Upright"
+    // The words of the Adjust Camera shot cards.
+    case .quarter: return "Vertical left · Top on the left"
+    case .threeQuarters: return "Vertical right · Top on the right"
+    case .half: return "Upside down · Top at the bottom"
     }
   }
 
@@ -522,7 +522,7 @@ struct PresenterView: View {
       if !draft.isEditing {
         if shell.reading { readingBar } else { setupBar }
       }
-    }.padding(.horizontal, viewport.width / controlZoom < 600 ? Space.sm : Space.lg)
+    }.padding(.horizontal, viewport.width / controlZoom < 900 ? Space.sm : Space.lg)
       .padding(.vertical, shell.reading ? Space.sm : Space.md).frame(maxWidth: .infinity)
       .background(PresenterBar.background)
       .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.08)).frame(height: 1) }
@@ -548,9 +548,9 @@ struct PresenterView: View {
     }
   }
   private func setupRow(_ words: SetupWords, spacious: Bool) -> some View {
-    HStack(spacing: spacious ? PresenterBar.groupGap : Space.md) {
+    HStack(spacing: spacious ? PresenterBar.groupGap : words.snug ? Space.sm : Space.md) {
       HStack(spacing: Space.sm) { setupTransport(titled: words.transportTitles, snug: words.snug) }
-      Spacer(minLength: Space.sm)
+      Spacer(minLength: 0)
       callGroup(snug: words.snug)
       toolsGroup(words: words)
       viewGroup(titles: words.viewTitles)
@@ -604,7 +604,7 @@ struct PresenterView: View {
   /// Camera, Mic and Script always show their words.
   private func callGroup(snug: Bool = false) -> some View {
     BarGroup(label: "Camera, microphone and script") {
-      BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.presentsWithVideo,
+      BarDeviceControl(offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: camera.presentsWithVideo,
         showsTitle: true, snug: snug, isEnabled: hasScript,
         toggleHelp: camera.presentsWithVideo ? "Turn the camera off to see just the script" : "Turn the camera on",
         menuLabel: "Choose camera", menuValue: cameraValue, toggle: toggleCamera) { cameraMenu }
@@ -699,7 +699,7 @@ struct PresenterView: View {
     let titles = words.toolTitles
     let live = hasPicture
     let snug = words.shortToolTitles
-    return BarGroup(label: "Picture tools", caption: titles && words.toolsCaption ? "Picture" : nil, raised: false) {
+    return BarGroup(label: "Picture tools", raised: false) {
       tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, titles: titles, snug: snug,
            help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
         .opacity(live ? 1 : 0.45)
@@ -746,29 +746,32 @@ struct PresenterView: View {
 
   // MARK: Reading bar
 
-  /// One slim row: a status pill, the transport in the middle, quiet options on the right. At large interface
-  /// sizes the status shrinks to its state and then to a dot, the Space hint goes, and then the bar takes a second
-  /// row; every action keeps its word ("Restart", "Pause", "Set up", "Focus", "Text", "Edit", "Open script")
-  /// until the window is too narrow even for that.
+  /// One slim row: a status pill, the transport in the middle, quiet options on the right. As the window gets
+  /// narrower or the interface larger, the Space hint goes, then the options (not Mic) become icons, then the
+  /// status shrinks to its short form and a dot, and only then does the bar take a second row. Restart, Pause and
+  /// Set up keep their words until the window is too narrow even for that.
   private var readingBar: some View {
     ViewThatFits(in: .horizontal) {
       readingRow(pill: .full, hint: true)
-      readingRow(pill: .compact, hint: true)
-      readingRow(pill: .dot, hint: false)
+      readingRow(pill: .full, hint: false)
+      readingRow(pill: .full, hint: false, titles: false)
+      readingRow(pill: .compact, hint: false, titles: false)
+      readingRow(pill: .dot, hint: false, titles: false)
       readingRows
       readingRow(pill: nil, hint: false, titles: false)
     }
   }
-  /// Words beside the right-hand icons while there is room; they are plain buttons, lit only when on.
+  /// Words beside the right-hand icons while there is room; they are plain buttons, lit only when on. Mic keeps its word.
   private func readingRow(pill: BarStatusPill.Style?, hint: Bool, titles: Bool = true) -> some View {
     HStack(spacing: Space.md) {
       // The options keep their full width (a variant only fits if they do), the status takes what is left
       // and the transport sits beside the options; without a status the transport floats in the room.
       if let pill { readingPill(pill).frame(maxWidth: .infinity, alignment: .leading) }
       else { Spacer(minLength: 0) }
-      HStack(spacing: Space.sm) { readingTransport(titles: titles, hint: hint) }
+      // A variant fits only if the transport keeps its width; the last one has nothing to give up, so it may squeeze.
+      HStack(spacing: Space.sm) { readingTransport(titles: true, hint: hint) }.fixedSize(horizontal: pill != nil, vertical: false)
       if pill == nil { Spacer(minLength: Space.md) }
-      readingOptions(titles: titles).fixedSize()
+      readingOptions(titles: titles, micTitle: pill != nil).fixedSize()
     }
   }
   /// The status and the transport on one row, the options under them: the same words, a taller bar.
@@ -786,11 +789,11 @@ struct PresenterView: View {
     }
   }
   private func readingPill(_ style: BarStatusPill.Style) -> some View {
-    BarStatusPill(text: readingPillText, shortText: session.visibleReadingState, isActive: session.isActivelyRunning, style: style)
+    BarStatusPill(text: readingPillText, shortText: readingPillShortText, isActive: session.isActivelyRunning, style: style)
   }
-  private func readingOptions(titles: Bool) -> some View {
+  private func readingOptions(titles: Bool, micTitle: Bool = true) -> some View {
     BarGroup(label: "Reading options") {
-      micControl(titles: false)
+      micControl(titles: micTitle, snug: !titles)
       BarDivider()
       BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: titles,
                 help: "Focus: only the text, the level meter and the reading line (⌥⌘F)") { focusMode.toggle() }
@@ -805,6 +808,8 @@ struct PresenterView: View {
     let state = session.visibleReadingState
     return store.settings.mode == "Voice" ? "Voice · \(state)" : "Automatic · \(Int(store.settings.speed)) wpm · \(state)"
   }
+  /// The mode and the state, without the speed: "Voice · Listening" is already that short.
+  private var readingPillShortText: String { (store.settings.mode == "Voice" ? "Voice" : "Auto") + " · " + session.visibleReadingState }
 
   @ViewBuilder private func readingTransport(titles: Bool, hint: Bool = true) -> some View {
     let running = session.isActivelyRunning || session.isCountingDown
@@ -813,7 +818,7 @@ struct PresenterView: View {
     Button { session.toggle() } label: {
       HStack(spacing: Space.sm) {
         BarLabel(title: running ? "Pause" : "Start reading", symbol: running ? "pause.fill" : "play.fill")
-        if running && hint { Text("Space").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5)).padding(.trailing, Space.md) }
+        if running && hint { KeyCap(text: "Space").padding(.trailing, Space.md) }
       }
     }.buttonStyle(BarButtonStyle(role: running ? .secondary : .prominent))
       .accessibilityLabel(running ? "Pause" : "Start reading").help((running ? "Pause" : "Start reading") + " (Space)")

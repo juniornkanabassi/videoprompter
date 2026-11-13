@@ -6,9 +6,13 @@ import PrompterCore
 struct CameraPreview: NSViewRepresentable {
   @ObservedObject var model: CameraModel
   var presenter = false
+  /// While reading, the picture is a dimmed reference behind the words: no zebras or false colour on it.
+  var hidesExposureAids = false
   func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
-    view.apply(uid: model.selectedUID, guides: presenter ? model.previewGuides : model.monitorGuides, mirrored: model.mirrored)
+    var guides = presenter ? model.previewGuides : model.monitorGuides
+    if hidesExposureAids { guides.zebras = false; guides.falseColour = false }
+    view.apply(uid: model.selectedUID, guides: guides, mirrored: model.mirrored)
   }
   static func dismantleNSView(_ view: CameraStageView, coordinator: ()) { view.stop() }
 }

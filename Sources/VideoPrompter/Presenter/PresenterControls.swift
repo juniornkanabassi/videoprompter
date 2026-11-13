@@ -13,8 +13,10 @@ enum PresenterBar {
   static let caretWidth = AlphaStyle.minTarget
   #else
   static let iconWidth: CGFloat = 0
-  static let caretWidth: CGFloat = 28
+  static let caretWidth: CGFloat = 24 // grid: ok A pointer target a little narrower than a finger's.
   #endif
+  /// Side room of an icon-only button with a pointer: a bar of icons fits a narrow window or a large interface size.
+  static let iconPadding: CGFloat = 6 // grid: ok
   static let warning = Color(red: 1, green: 0.45, blue: 0.42)
 }
 
@@ -28,8 +30,6 @@ struct BarLabel: View {
   var accentIcon = false
   /// A little less room each side of the word, for a bar that is short of width.
   var snug = false
-  /// A switched-off device: the word is struck through as well as the icon, so it never reads as an active toggle.
-  var struck = false
   var body: some View {
     HStack(spacing: Space.xs) {
       if accentIcon {
@@ -37,8 +37,8 @@ struct BarLabel: View {
       } else {
         Image(systemName: symbol).font(.system(size: 17, weight: .semibold)).frame(width: 24)
       }
-      if showsTitle { Text(title).font(.system(size: 15, weight: weight)).strikethrough(struck).lineLimit(1).fixedSize() }
-    }.padding(.horizontal, showsTitle && !snug ? Space.md : Space.sm)
+      if showsTitle { Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize() }
+    }.padding(.horizontal, showsTitle ? (snug ? Space.sm : Space.md) : PresenterBar.iconPadding)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: PresenterBar.height)
   }
 }
@@ -81,23 +81,14 @@ struct BarButtonStyle: ButtonStyle {
 }
 
 /// A named run of controls on one soft backing: the video-call group, the picture tools. The picture
-/// tools are a quieter, outlined group with a caption, so the two read as different kinds of control.
+/// tools are a quieter, outlined group, so the two read as different kinds of control.
 struct BarGroup<Content: View>: View {
   let label: String
-  var caption: String? = nil
   var raised = true
   @ViewBuilder var content: () -> Content
   var body: some View {
     let shape = RoundedRectangle(cornerRadius: PresenterBar.corner)
-    HStack(spacing: 0) {
-      if let caption {
-        // A label, not a control: small capitals in a quiet tone, no fill and no edge of its own.
-        Text(caption).font(.system(size: 12, weight: .semibold)).textCase(.uppercase).tracking(0.8) // grid: ok small-caps tracking
-          .foregroundStyle(.white.opacity(0.55))
-          .padding(.leading, Space.md).padding(.trailing, Space.sm).accessibilityHidden(true)
-      }
-      content()
-    }
+    HStack(spacing: 0) { content() }
       .background(shape.fill(.white.opacity(raised ? 0.1 : 0)))
       .overlay(shape.stroke(.white.opacity(raised ? 0.1 : 0.22), lineWidth: 1))
       .accessibilityElement(children: .contain).accessibilityLabel(label)
@@ -115,6 +106,8 @@ struct BarDeviceControl<MenuContent: View>: View {
   /// Off is a warning (the microphone: Voice stops following) or just a choice (the camera).
   var offIsWarning = true
   let title: String
+  /// The word while it is switched off ("Camera off"), where off is a plain state and not a warning.
+  var offTitle: String? = nil
   let onSymbol: String
   let offSymbol: String
   let isOn: Bool
@@ -129,7 +122,7 @@ struct BarDeviceControl<MenuContent: View>: View {
 
   var body: some View {
     HStack(spacing: 0) {
-      Button(action: toggle) { BarLabel(title: title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug, struck: !isOn && !offIsWarning) }
+      Button(action: toggle) { BarLabel(title: isOn ? title : offTitle ?? title, symbol: isOn ? onSymbol : offSymbol, showsTitle: showsTitle, snug: snug) }
         .buttonStyle(BarButtonStyle(role: isOn ? .plain : offIsWarning ? .off : .muted))
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
@@ -144,10 +137,10 @@ struct BarDeviceControl<MenuContent: View>: View {
       .accessibilityLabel(menuLabel).accessibilityValue(menuValue)
     }
     .background(isOn || !offIsWarning ? Color.clear : Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: PresenterBar.corner))
-    // A camera that is simply off is an empty, dashed outline: nothing filled, so it never matches the lit Script pill.
+    // A camera that is simply off is an empty, quiet outline and says "Camera off": nothing filled, so it never matches the lit Script pill.
     .overlay {
       if !isOn && !offIsWarning {
-        RoundedRectangle(cornerRadius: PresenterBar.corner).stroke(.white.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        RoundedRectangle(cornerRadius: PresenterBar.corner).stroke(.white.opacity(0.4), lineWidth: 1)
       }
     }
   }
@@ -226,7 +219,7 @@ struct BarStatusPill: View {
   /// How much of the status the bar has room for: the whole line, just the state, or the dot alone.
   enum Style { case full, compact, dot }
   let text: String
-  /// The state alone ("Listening"), shown in the compact pill.
+  /// The mode and state ("Voice · Listening"), shown in the compact pill.
   var shortText: String? = nil
   let isActive: Bool
   var style = Style.full
@@ -253,12 +246,12 @@ struct PresenterEditingBand: View {
     HStack(spacing: Space.md) {
       Image(systemName: "pencil").font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.accent)
       Text("Editing").font(.system(size: 17, weight: .semibold))
-      Text("Not saved yet").font(.system(size: 16, weight: .medium)).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
+      Text("Not saved yet").font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
       Spacer(minLength: Space.md)
       Button(action: cancel) {
         HStack(spacing: Space.sm) {
           Text("Cancel").font(.system(size: 15, weight: .semibold))
-          if !compact { keycap("esc", dark: false) }
+          if !compact { KeyCap(text: "esc") }
         }.padding(.horizontal, Space.md).frame(minHeight: PresenterBar.height)
       }.buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Cancel editing").disabled(isSaving)
         .help("Discard this draft (Esc)")
@@ -266,7 +259,7 @@ struct PresenterEditingBand: View {
         HStack(spacing: Space.sm) {
           Image(systemName: "checkmark").font(.system(size: 15, weight: .bold))
           Text("Save").font(.system(size: 15, weight: .bold))
-          if !compact { keycap("⌘↩", dark: true) }
+          if !compact { KeyCap(text: "⌘↩", dark: true) }
         }.padding(.horizontal, Space.md).frame(minHeight: PresenterBar.height)
       }.buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Save changes").disabled(isSaving)
         .keyboardShortcut(.return, modifiers: .command)
@@ -279,12 +272,17 @@ struct PresenterEditingBand: View {
     .overlay(alignment: .bottom) { Rectangle().fill(.white.opacity(0.22)).frame(height: 1) }
     .accessibilityElement(children: .contain).accessibilityIdentifier("presenter-editing-band")
   }
+}
 
-  /// A key hint in a small outlined capsule: 14 pt, readable at a glance.
-  private func keycap(_ text: String, dark: Bool) -> some View {
+/// A key hint in a small outlined box: 14 pt, readable at a glance. The same box for Esc, Save and Pause.
+struct KeyCap: View {
+  let text: String
+  var dark = false
+  var body: some View {
     Text(text).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
       .foregroundStyle(dark ? AlphaStyle.onAccent.opacity(0.85) : .white.opacity(0.9))
       .padding(.horizontal, Space.sm).padding(.vertical, 2)
       .overlay(RoundedRectangle(cornerRadius: 6).stroke(dark ? AlphaStyle.onAccent.opacity(0.45) : .white.opacity(0.45), lineWidth: 1)) // grid: ok hairline key-hint border
+      .accessibilityHidden(true)
   }
 }

@@ -24,8 +24,8 @@ struct MicMeterView: View {
 
   static let barWidth: CGFloat = 14
   /// Column widths of the vertical meter: the dB numbers, the bar, and the zone words beside it.
-  static let tickColumn: CGFloat = 34
-  static let zoneColumn: CGFloat = 56
+  static let tickColumn: CGFloat = 28
+  static let zoneColumn: CGFloat = 58
   /// Width of the whole vertical strip before zoom: the two text columns at `typeScale`, the bar, the gaps and edge padding.
   static func stripWidth(typeScale: CGFloat) -> CGFloat { (tickColumn + zoneColumn) * typeScale + barWidth + 4 * Space.xs }
   private var tickWidth: CGFloat { Self.tickColumn * typeScale }
@@ -55,7 +55,8 @@ struct MicMeterView: View {
     if let uid {
       return devices.first { $0.uid == uid }?.name ?? "Selected microphone unavailable"
     }
-    return systemDefault.map { "System default · " + $0 } ?? "No microphone"
+    // The device's real name, as its card in the Adjust mic list shows it.
+    return systemDefault ?? "No microphone"
   }
 
   /// Short labels that always clear each other: the middle ones drop first.
@@ -82,7 +83,11 @@ struct MicMeterView: View {
 
   /// The horizontal zone words are centred on their zones: "too loud" is held inside the bar's end,
   /// and "aim here" clear of it, however narrow the meter.
-  static let zoneWordWidth: CGFloat = 52
+  static let zoneWordWidth: CGFloat = 60
+  /// The horizontal meter's zone words, as large as the numbers beside them.
+  static let zoneWordSize: CGFloat = 13
+  /// Beside the horizontal meter's bar: the clip lamp and, in its own slot, the word "clip" or the "Clipped" pill.
+  static let clipSlotWidth: CGFloat = 68
   static func zoneWordCentres(width: CGFloat) -> (aim: CGFloat, loud: CGFloat) {
     let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
     let loud = min(width - zoneWordWidth / 2, width * (red + 1) / 2)
@@ -105,11 +110,9 @@ struct MicMeterView: View {
           if showsHeading { heading }
           if horizontal { horizontalBar(fill: fill, clipLit: clipLit, now: now) } else { verticalBar(fill: fill, clipLit: clipLit, now: now) }
           readoutView(db: db, clipLit: clipLit).frame(maxWidth: .infinity)
-            // Beside the readout, level with the lamp's end of the bar, so the two read together.
-            .overlay(alignment: .trailing) { if horizontal && clipLit { clippedBadge(lit: true).padding(.trailing, Space.md) } }
           if showsHeading {
             Text(micName)
-              .font(.system(size: size(14))).multilineTextAlignment(.center).lineLimit(2)
+              .font(.system(size: size(14))).multilineTextAlignment(.center).lineLimit(2).truncationMode(.tail)
               .fixedSize(horizontal: false, vertical: true).layoutPriority(1)
               .help(micName)
               .foregroundStyle(Palette.onDarkQuiet(contrast))
@@ -148,7 +151,7 @@ struct MicMeterView: View {
   /// The latched clip, named: a small badge that appears with the lamp and goes with it, so a past clip is
   /// never mistaken for the live level.
   private func clippedBadge(lit: Bool) -> some View {
-    Text(lit ? "Clipped" : "clip").font(.system(size: size(12), weight: lit ? .bold : .regular)).lineLimit(1)
+    Text(lit ? "Clipped" : "clip").font(.system(size: size(12), weight: lit ? .bold : .regular)).lineLimit(1).fixedSize()
       .foregroundStyle(lit ? Color.white : Palette.onDarkQuiet(contrast))
       .padding(.horizontal, lit ? Space.xs : 0).padding(.vertical, 1)
       .background(MeterZones.red.opacity(lit ? 0.85 : 0), in: Capsule())
@@ -235,9 +238,9 @@ struct MicMeterView: View {
           let width = geometry.size.width
           let yellow = MeterZones.micPosition(MeterZones.yellowFrom), red = MeterZones.micPosition(MeterZones.redFrom)
           ZStack {
-            Text("aim here").font(.system(size: 12, weight: .medium)).foregroundStyle(aimColour).lineLimit(1)
+            Text("aim here").font(.system(size: Self.zoneWordSize, weight: .medium)).foregroundStyle(aimColour).lineLimit(1)
               .frame(width: Self.zoneWordWidth).position(x: centres.aim, y: 6)
-            Text("too loud").font(.system(size: 12, weight: .medium)).foregroundStyle(loudColour).lineLimit(1)
+            Text("too loud").font(.system(size: Self.zoneWordSize, weight: .medium)).foregroundStyle(loudColour).lineLimit(1)
               .frame(width: Self.zoneWordWidth).position(x: centres.loud, y: 6)
             Capsule().fill(MeterZones.yellow).frame(width: max(0, width * (red - yellow) - Space.xs), height: 2)
               .position(x: width * (yellow + red) / 2, y: 16)
@@ -271,8 +274,11 @@ struct MicMeterView: View {
           }
         }.frame(height: 16)
       }
-      // At 0 dBFS, beside the bar's loud end and level with the bar.
-      clipLamp(lit: clipLit, horizontal: true).padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
+      // At 0 dBFS, beside the bar's loud end and level with the bar: the lamp and its word or "Clipped" pill, one warning in one place.
+      HStack(spacing: Space.xs) {
+        clipLamp(lit: clipLit, horizontal: true)
+        clippedBadge(lit: clipLit).frame(width: Self.clipSlotWidth - Space.xs - 8, alignment: .leading)
+      }.padding(.top, 18 + Space.xs) // grid: ok the legend row above the bar
     }
     // Room for the end numbers, which are centred on -60 and 0.
     .padding(.horizontal, Space.md)

@@ -283,7 +283,7 @@ final class UIZoomTests: XCTestCase {
               y: viewport.minY + viewport.height * (Double(row) + 0.5) / 10)
             let hit = panel.contentView?.superview?.hitTest(point)
             XCTAssertTrue(hit === scroll || hit?.isDescendant(of: scroll) == true,
-              "capsule must not obscure the bottom script rows at \(zoom)")
+              "capsule must not obscure the bottom script rows at \(zoom): \(String(describing: hit)) at \(point) viewport \(viewport)")
           } }
         }
       }
