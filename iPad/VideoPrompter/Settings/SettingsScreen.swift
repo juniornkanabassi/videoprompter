@@ -36,6 +36,7 @@ struct SettingsScreen: View {
     .scrollContentBackground(.hidden)
     .background(LibraryTheme.background.ignoresSafeArea())
     .tint(LibraryTheme.accent)
+
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { Button("Done") { dismiss() } }
@@ -52,7 +53,7 @@ struct SettingsScreen: View {
         MacControlScreen(link: store.camera.link, failure: store.camera.link.pairingFailure)
       } label: {
         VStack(alignment: .leading, spacing: 4) {
-          Text("Control from a Mac")
+          Text("Connect to a Mac")
           Text(store.macConnection.map { "\($0.name)" + ($0.kind.map { " · \($0)" } ?? "") } ?? "Not connected")
             .font(.subheadline)
             .foregroundStyle(store.macConnection == nil ? LibraryTheme.muted : LibraryTheme.good)
@@ -234,7 +235,7 @@ extension UIColor {
   }
 }
 
-// MARK: - Control from a Mac
+// MARK: - Connect to a Mac
 
 /// A Mac this iPad has been connected to, remembered by name so Settings can list it.
 struct KnownMac: Codable, Identifiable, Equatable {
@@ -279,6 +280,8 @@ struct MacControlScreen: View {
   @State private var confirming = false
   @State private var captured = MacControlScreen.screenIsCaptured
   @State private var known = KnownMacs.load()
+  @State private var scanning = false
+  @State private var showingKey = false
 
   init(link: MacLink, failure: String? = nil) {
     self.link = link
@@ -296,7 +299,7 @@ struct MacControlScreen: View {
     ScrollView {
       VStack(spacing: 16) {
         HStack {
-          Text("Control from a Mac").font(.largeTitle.weight(.semibold))
+          Text("Connect to a Mac").font(.largeTitle.weight(.semibold))
           Spacer()
           Button("Done") { dismiss() }
             .font(.body)
@@ -305,13 +308,21 @@ struct MacControlScreen: View {
             .background(LibraryTheme.card2, in: Capsule())
             .buttonStyle(.plain)
         }
+        notice(connection.map { "Connected to \($0.name)" + ($0.kind.map { " · \($0)" } ?? "") } ?? "Not connected", colour: connection == nil ? LibraryTheme.muted : LibraryTheme.good)
         ways
         if let failure = failure ?? link.pairingFailure { notice(failure, colour: LibraryTheme.bad) }
         if connection == nil {
-          notice("Not connected. Plug in the USB-C cable, or on the Mac choose File › Control iPad… and type the key below when asked.", colour: LibraryTheme.warn)
+          notice("Plug in a USB-C cable, or scan the code in the Mac’s iPad Remote window.", colour: LibraryTheme.warn)
         }
         if !macs.isEmpty { pairedMacs }
-        keyCard
+        ForEach(link.pairedMacs, id: \.id) { mac in
+          HStack {
+            Text(mac.name)
+            Spacer()
+            Button("Forget") { link.forgetMac(id: mac.id) }
+          }
+        }
+        if showingKey { keyCard } else { Button("Show key to type instead") { showingKey = true } }
         Text("No Apple ID or iCloud is needed. Scripts the Mac sends are saved on this iPad in Sent from Mac.")
           .font(.subheadline).foregroundStyle(LibraryTheme.muted)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -331,17 +342,19 @@ struct MacControlScreen: View {
     }
     .onChange(of: scenePhase) { _, phase in if phase != .active { reveal.hide() } }
     .onChange(of: connection) { _, _ in known = KnownMacs.load() }
-    .onDisappear { reveal.hide() }
+    .fullScreenCover(isPresented: $scanning) { PairingScanner(link: link) }
+    .modifier(PairingPresentation(link: link))
+    .onAppear { link.setPairingScreen(open: true) }
+    .onDisappear { reveal.hide(); link.setPairingScreen(open: false) }
     .confirmationDialog("Generate a new key?", isPresented: $confirming, titleVisibility: .visible) {
       Button("Generate new key", role: .destructive) {
         link.newPairingCode()
-        KnownMacs.removeWiFi()
         known = KnownMacs.load()
         reveal.show(at: Date(), captured: captured)
       }
       Button("Cancel", role: .cancel) {}
     } message: {
-      Text("Every Mac paired over Wi-Fi is unpaired and must type the new key. USB-C keeps working.")
+      Text("Macs using the typed key must enter the new key. Individually paired Macs keep working.")
     }
   }
 
@@ -368,22 +381,14 @@ struct MacControlScreen: View {
       Toggle(isOn: $link.allowsWiFi) {
         VStack(alignment: .leading, spacing: 4) {
           Text("Same Wi-Fi")
-          Text("The Mac finds this iPad and asks once for the pairing key.")
+          Text("Scan the code in the Mac’s iPad Remote window. Known Macs reconnect automatically.")
             .font(.subheadline).foregroundStyle(LibraryTheme.muted)
         }
       }
       .padding(.vertical, 12)
       divider
-      // No peer-to-peer link exists yet, so the switch is shown but cannot be turned on.
-      Toggle(isOn: .constant(false)) {
-        VStack(alignment: .leading, spacing: 4) {
-          Text("Direct Wi-Fi (no router)")
-          Text("For studio Wi-Fi that hides devices from each other. Uses Apple’s peer-to-peer Wi-Fi. Coming soon.")
-            .font(.subheadline).foregroundStyle(LibraryTheme.muted)
-        }
-      }
-      .disabled(true)
-      .padding(.vertical, 12)
+      Button("Scan the code") { scanning = true }
+        .buttonStyle(.borderedProminent).foregroundStyle(.black).padding(.vertical, 12)
     }
     .padding(.horizontal, 20)
     .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
@@ -391,7 +396,7 @@ struct MacControlScreen: View {
 
   private var usbStatus: String {
     if usingUSB { return "In use" }
-    return connection != nil && connection?.kind == nil ? "Connected" : "Not plugged in"
+    return "Automatic"
   }
 
   private var divider: some View { LibraryTheme.line.frame(height: 1) }
@@ -408,8 +413,8 @@ struct MacControlScreen: View {
 
   /// The connected Mac first, then the others, most recently seen first.
   private var macs: [KnownMac] {
-    var list = known
-    if let connection, !list.contains(where: { $0.name == connection.name }) {
+    var list = known.filter { old in !link.pairedMacs.contains { $0.name == old.name } }
+    if let connection, !link.pairedMacs.contains(where: { $0.name == connection.name }), !list.contains(where: { $0.name == connection.name }) {
       list.append(KnownMac(name: connection.name, kind: connection.kind, lastSeen: Date()))
     }
     return list.sorted {
@@ -440,12 +445,12 @@ struct MacControlScreen: View {
       Spacer(minLength: 12)
       if now {
         pill("Disconnect", colour: LibraryTheme.text) { link.disconnect() }
-      } else {
-        pill("Remove", colour: LibraryTheme.bad) {
+      }
+      pill("Forget", colour: LibraryTheme.bad) {
+          if mac.kind == "Wi-Fi" { link.forgetTypedKey() }
           KnownMacs.remove(mac.name)
           known = KnownMacs.load()
         }
-      }
     }
   }
 

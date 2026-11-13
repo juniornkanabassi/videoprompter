@@ -3,6 +3,9 @@ import SwiftUI
 
 @main struct VideoPrompterPadApp: App {
   @StateObject private var store = PadStore()
+  @AppStorage("hasSuggestedMacConnection") private var suggested = false
+  @State private var suggestConnection = false
+  @State private var scan = false
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
@@ -14,6 +17,7 @@ import SwiftUI
           set: { if !$0 { store.closePresenter() } })
         ) {
           PresenterScreen(session: store.session, camera: store.camera).environmentObject(store)
+
         }
         .alert("Video Prompter", isPresented: Binding(
           get: { store.errorMessage != nil || store.folder.errorMessage != nil },
@@ -22,6 +26,21 @@ import SwiftUI
           Button("OK", role: .cancel) {}
         } message: {
           Text(store.errorMessage ?? store.folder.errorMessage ?? "")
+        }
+        .onChange(of: store.isPresenting) { _, value in store.camera.link.setPresenting(value) }
+        .sheet(isPresented: $suggestConnection) {
+          VStack(spacing: 24) {
+            Text("Connect to a Mac").font(.largeTitle.bold())
+            Text("Use a USB-C cable for an automatic connection, or scan the code in the Mac’s iPad Remote window.")
+            Button("Scan the code") { suggestConnection = false; scan = true }
+            Button("Not now") { suggestConnection = false }
+          }.padding(40).presentationDetents([.medium])
+        }
+        .fullScreenCover(isPresented: $scan) { PairingScanner(link: store.camera.link) }
+        .task {
+          #if !targetEnvironment(simulator)
+          if !suggested { suggested = true; suggestConnection = true }
+          #endif
         }
         .preferredColorScheme(.dark)
         .tint(AlphaStyle.accent)

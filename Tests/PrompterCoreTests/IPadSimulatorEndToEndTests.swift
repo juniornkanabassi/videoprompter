@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import Synchronization
+import Network
 import XCTest
 
 @testable import PrompterCore
@@ -10,6 +11,45 @@ import XCTest
 /// usbmuxd's tunnel. Runs only with VP_IPAD_E2E=1 and the app open in a booted Simulator with
 /// at least one script; `checks/ipad-link-e2e.sh` sets that up headless.
 final class IPadSimulatorEndToEndTests: XCTestCase {
+  @MainActor func testZInjectedQRPairing() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let documents = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents")
+    let defaults = freshDefaults()
+    let store = PairingKeyStore.ephemeral()
+    let sender = IPadCameraSender(defaults: defaults, credentialStore: store)
+    sender.searchesForIPad = false
+    sender.refreshPairingOffer()
+    defer { sender.stopPairingOffer(); sender.disconnect() }
+    let offer = try XCTUnwrap(sender.pairingOffer)
+    try offer.encoded().write(to: documents.appendingPathComponent("vp-qr-payload.txt"), atomically: true, encoding: .utf8)
+    let result = documents.appendingPathComponent("vp-qr-result.txt")
+    var confirmedOnMac = false
+    for _ in 0..<400 where !FileManager.default.fileExists(atPath: result.path) {
+      if sender.pairingRequestCode != nil, !confirmedOnMac {
+        XCTAssertNil(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults), "A photographed QR must not bypass local Mac approval")
+        sender.confirmPairingRequest()
+        confirmedOnMac = true
+      }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertTrue(confirmedOnMac)
+    XCTAssertTrue(try String(contentsOf: result, encoding: .utf8).hasPrefix("Paired with"))
+    let codes = try XCTUnwrap(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults))
+    let padID = try XCTUnwrap(codes.keys.first)
+    let code = try XCTUnwrap(codes[padID])
+    let name = "iPad \(padID.prefix(4))"
+    let endpoint = NWEndpoint.service(name: "\(name) [\(padID)]", type: CameraLink.bonjourType, domain: "local.", interface: nil)
+    for _ in 0..<2 {
+      guard case .opened(let pipe) = await NetworkPipe.open(endpoint, code: code) else { return XCTFail("Paired TLS link did not reconnect") }
+      pipe.startReading()
+      pipe.send(CameraLink.Message.hello(name: "QR test Mac", version: CameraLink.protocolVersion).encoded())
+      try await Task.sleep(for: .milliseconds(200))
+      pipe.close()
+      try await Task.sleep(for: .milliseconds(200))
+    }
+  }
+
   @MainActor
   func testAIdleSenderAnswersCameraOnlyAndReconnects() async throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
@@ -59,10 +99,14 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let fd = try XCTUnwrap(Self.connect(port: port), "the fixture iPad app is not listening")
     let pipe = SocketPipe(socket: fd, name: "USB-C")
     let latest = Mutex<PadRemote.State?>(nil)
+    let latestMarkdown = Mutex<String?>(nil)
     let commands = Mutex<[PadRemote.Command]>([])
     pipe.onMessage = {
       switch $0 {
-      case .state(let state): latest.withLock { $0 = state }
+      case .state(let state):
+        latest.withLock { $0 = state }
+        // Status-only updates omit unchanged text, just as they do for the Mac replica.
+        if let markdown = state.markdown { latestMarkdown.withLock { $0 = markdown } }
       case .command(let command): commands.withLock { $0.append(command) }
       default: break
       }
@@ -221,7 +265,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(listed.macStatus?.selectedCamera, cameraChoice.id)
     XCTAssertEqual(listed.macStatus?.selectedMicrophone, micChoice.id)
     // Untouched since the last send: the same script takes the new text.
-    XCTAssertEqual(listed.markdown, text, "The replica receives the presented script, not the selected draft")
+    XCTAssertEqual(latestMarkdown.withLock { $0 }, text, "The replica receives the presented script, not the selected draft")
     let newer = text + " Thirteen fourteen."
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))
     _ = try state("resend replaces in place") { state in
@@ -310,6 +354,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
       process.arguments = ["simctl"] + arguments
       var childEnvironment = environment
       childEnvironment["SIMCTL_CHILD_VP_IPAD_E2E_PORT"] = String(port)
+      childEnvironment["SIMCTL_CHILD_VP_IPAD_E2E_QR"] = "1"
       process.environment = childEnvironment
       process.standardOutput = FileHandle.nullDevice
       process.standardError = FileHandle.nullDevice

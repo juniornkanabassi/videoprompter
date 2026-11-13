@@ -27,6 +27,10 @@ Straight into the iPad, anything that shows up as a USB webcam (UVC) works: the 
 
 Through a Mac, connect the iPad to the Mac with a USB-C cable and open Video Prompter on both devices. The Mac connects automatically. Opening Camera Only or a presenter with a picture asks the Mac to send its camera; camera controls are in the Mac’s iPad window. The Mac sends the camera its Camera window shows (a DeckLink or ATEM feed included) as hardware H.264 at up to 1080p, through usbmuxd, the same channel Finder uses, so no network or pairing is needed beyond "Trust This Computer". With Settings › Camera from a Mac › Allow a Mac on the same Wi-Fi turned on here, and Connect over Wi-Fi in the Mac’s iPad window, the Mac also finds the iPad over Wi-Fi with Bonjour. The Mac asks once for the 16-character pairing key the iPad shows (80 random bits, so a recorded handshake cannot be guessed offline), and the link runs over TLS keyed by it, so only a paired Mac can send and the picture is encrypted. Turning either option off ends a Wi-Fi connection at once.
 
+Alternatively, choose the iPad under Nearby iPads on the Mac. Compare the six-digit number on both screens before tapping Allow on the iPad. That comparison prevents another device on the Wi-Fi from substituting its request. Requests expire after one minute. Forget removes the Mac's credential. Older peers can still use the hidden typed-key fallback; forgetting a legacy Mac rotates that shared legacy key, so other legacy Macs must pair again.
+
+Pairing and the camera stream use separate listeners. Pairing listeners never accept remote-control commands. The QR endpoint uses a random temporary TLS PSK; the nearby-device handshake uses ephemeral Curve25519 keys and authenticated encryption, with the matching number binding the local Allow decision to the requesting Mac. The camera link retains its existing TLS transport.
+
 Rotation, mirroring and the framing guides apply to either source and are remembered per camera.
 
 ## Controlling the iPad from the Mac

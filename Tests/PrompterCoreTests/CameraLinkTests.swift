@@ -80,9 +80,9 @@ final class CameraLinkTests: XCTestCase {
     sender.selectedWiFiID = b
     XCTAssertEqual(sender.unpairedDeviceName, "iPad")
     sender.pair(key: "FEDCBA9876543210")
-    let codes = defaults.dictionary(forKey: "sendCameraPairingCodes")
-    XCTAssertEqual(codes?[a] as? String, CameraLinkSecurity.normalised("0123456789ABCDEF"))
-    XCTAssertEqual(codes?[b] as? String, CameraLinkSecurity.normalised("FEDCBA9876543210"))
+    let codes = [a: sender.pairingCode(id: a, name: "iPad"), b: sender.pairingCode(id: b, name: "iPad")]
+    XCTAssertEqual(codes[a] ?? nil, CameraLinkSecurity.normalised("0123456789ABCDEF"))
+    XCTAssertEqual(codes[b] ?? nil, CameraLinkSecurity.normalised("FEDCBA9876543210"))
     sender.wifiChanged([endpoint("Renamed", a), endpoint("iPad", b)])
     sender.selectedWiFiID = a
     XCTAssertNil(sender.unpairedDeviceName)
@@ -98,12 +98,12 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertNil(defaults.dictionary(forKey: "sendCameraPairingCodes")?["first"])
     sender.acceptedPairing(id: "first", code: "0123456789ABCDEF")
     sender.refusedPairing(id: "second", name: "Other iPad")
-    XCTAssertNil(sender.pairingCode(id: "second", name: "Other iPad"))
+    XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), "0123456789ABCDEF")
     XCTAssertEqual(sender.pairingCode(id: "first", name: "Renamed"), "0123456789ABCDEF")
     XCTAssertEqual(sender.unpairedDeviceName, "Other iPad")
     sender.pair(key: "FEDCBA9876543210")
     XCTAssertEqual(sender.pairingCode(id: "second", name: "Other iPad"), CameraLinkSecurity.normalised("FEDCBA9876543210"))
-    XCTAssertEqual(defaults.dictionary(forKey: "sendCameraPairingCodes")?["iPad"] as? String, "0123456789ABCDEF")
+    XCTAssertEqual(sender.pairingCode(id: "legacy", name: "iPad"), "0123456789ABCDEF")
   }
 
   @MainActor
@@ -119,7 +119,7 @@ final class CameraLinkTests: XCTestCase {
     let key = CameraLinkSecurity.newCode()
     sender.pair(key: key)
     XCTAssertNil(sender.pairingFailure)
-    XCTAssertEqual(defaults.dictionary(forKey: "sendCameraPairingCodes")?["Studio iPad"] as? String, CameraLinkSecurity.normalised(key))
+    XCTAssertEqual(sender.pairingCode(id: "Studio iPad", name: "Studio iPad"), CameraLinkSecurity.normalised(key))
     sender.disconnect()
     XCTAssertFalse(sender.controlsIPad)
     XCTAssertNil(sender.pipe)
