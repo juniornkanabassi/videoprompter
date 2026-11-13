@@ -102,7 +102,7 @@ struct PresenterView: View {
   }
   /// The words the setup bar shows. One rule at every size: the bar takes the richest variant that fits
   /// (see `setupWordVariants`), so Camera, Mic, Script and the transport keep their words longest, the
-  /// picture tools shorten ("False colour" to "Colour") and drop their caption before they become icons.
+  /// picture tools get snug padding and drop their caption before they become icons ("False colour" is always "Colour" here, as in the Adjust tab).
   struct SetupWords: Equatable {
     /// Once the picture tools are short, every label gives up a little of its side room too.
     var snug: Bool { shortToolTitles }
@@ -115,7 +115,7 @@ struct PresenterView: View {
     var twoRows = false
   }
   /// Camera, Mic, Script, Key and Clean keep their words at every size: the bar gives up the "Picture" caption,
-  /// then "False colour" to "Colour", then the words on Back to start and Open script, then the picture tools'
+  /// then snug padding on the picture tools, then the words on Back to start and Open script, then the picture tools'
   /// words, and only then takes a second row (where the words come back) before any of them becomes an icon.
   static let setupWordVariants: [SetupWords] = [
     SetupWords(),
@@ -703,7 +703,7 @@ struct PresenterView: View {
       tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, titles: titles, snug: snug,
            help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
         .opacity(live ? 1 : 0.45)
-      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, titles: titles, shortTitle: words.shortToolTitles ? "Colour" : nil, snug: snug,
+      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, titles: titles, shortTitle: "Colour", snug: snug,
            help: live ? "False colour exposure (⌥⌘X). Press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
         .opacity(live ? 1 : 0.45)
       tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, titles: titles, snug: snug,

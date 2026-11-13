@@ -272,8 +272,9 @@ final class UIZoomTests: XCTestCase {
           let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
           let y = manager.boundingRect(forGlyphRange: glyph, in: container).midY
             + text.textContainerInset.height - scroll.contentView.bounds.minY
+          // A short window draws the reading line higher (the saved position is unchanged).
           let guide = ScriptTextView.visualGuideY(height: scroll.contentView.bounds.height,
-            fraction: store.settings.guideFraction)
+            fraction: PresenterView.readingGuideFraction(saved: store.settings.guideFraction, height: scroll.contentView.bounds.height, fontSize: store.settings.fontSize))
           XCTAssertEqual(y, mirrored != (rotation == 180) ? scroll.contentView.bounds.height - guide : guide,
             accuracy: 2, "anchor realigns after resize")
           // Both edges of the viewport must remain clear of controls and the drag handle.

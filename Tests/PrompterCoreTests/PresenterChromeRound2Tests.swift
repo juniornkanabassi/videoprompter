@@ -223,14 +223,14 @@ import XCTest
     for pair in zip(variants, variants.dropFirst()) {
       XCTAssertNotEqual(pair.0, pair.1)
       XCTAssertTrue(pair.0.transportTitles || !pair.1.transportTitles)
-      XCTAssertTrue(pair.0.toolTitles || !pair.1.toolTitles)
+      XCTAssertTrue(pair.0.toolTitles || !pair.1.toolTitles || (!pair.0.twoRows && pair.1.twoRows), "the second row is where the tools' words come back")
       XCTAssertTrue(pair.0.toolsCaption || !pair.1.toolsCaption)
       XCTAssertTrue(pair.0.viewTitles || !pair.1.viewTitles)
       XCTAssertTrue(!pair.0.twoRows || pair.1.twoRows, "once on two rows the bar stays on two")
     }
     // Camera, Mic, Script, Key and Clean have no icon-only variant at all: their words go at no size.
     XCTAssertTrue(variants.allSatisfy(\.viewTitles), "Key and Clean keep their words at every size")
-    XCTAssertTrue(variants.contains { $0.shortToolTitles && $0.toolTitles }, "False colour shortens to Colour before it is an icon")
+    XCTAssertTrue(variants.contains { $0.shortToolTitles && $0.toolTitles }, "the picture tools go snug before they are icons")
     XCTAssertTrue(variants.contains { $0.twoRows && $0.toolTitles }, "a second row brings the words back before icons")
     XCTAssertGreaterThan(count(variants[0]), count(variants[variants.count - 1]))
   }
