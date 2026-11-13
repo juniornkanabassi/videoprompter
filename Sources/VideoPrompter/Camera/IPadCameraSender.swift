@@ -331,7 +331,9 @@ import VideoToolbox
   }
 
   private func attachCamera(_ pipe: LinkPipe) {
-    encoder.attach(pipe, bitRate: pipe.name == "USB-C" ? 10_000_000 : 4_000_000)
+    // Over Wi-Fi the picture is a monitor, not a recording: 720p at 4 Mbps keeps the delay lowest.
+    let usb = pipe.name == "USB-C"
+    encoder.attach(pipe, bitRate: usb ? 10_000_000 : 4_000_000, longSide: usb ? 1920 : 1280)
     status = Self.connected(over: pipe.name, sending: true)
   }
 
@@ -388,6 +390,7 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   private struct Target {
     var pipe: LinkPipe?
     var bitRate = 10_000_000
+    var longSide = 1920
     var generation = 0
   }
   private let target = Mutex(Target())
@@ -398,10 +401,11 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   private let lastSets = Mutex<[Data]>([])
   private var forceKeyFrame = false
 
-  func attach(_ pipe: LinkPipe?, bitRate: Int = 10_000_000) {
+  func attach(_ pipe: LinkPipe?, bitRate: Int = 10_000_000, longSide: Int = 1920) {
     target.withLock {
       $0.pipe = pipe
       $0.bitRate = bitRate
+      $0.longSide = longSide
       $0.generation += 1
     }
   }
@@ -409,21 +413,22 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   func captureOutput(
     _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
   ) {
-    let (pipe, bitRate, generation) = target.withLock { ($0.pipe, $0.bitRate, $0.generation) }
+    let (pipe, bitRate, longSide, generation) = target.withLock { ($0.pipe, $0.bitRate, $0.longSide, $0.generation) }
     guard let pipe, let image = sampleBuffer.imageBuffer else {
       if session != nil { tearDown() }
       return
     }
     // The cable or Wi-Fi is behind: skip this frame rather than queue it, and start the next
-    // one clean so the iPad never shows a smeared picture.
-    if pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) {
+    // one clean so the iPad never shows a smeared picture. One frame may wait behind the one being
+    // written; a second would only be older by the time it went.
+    if pipe.videoFramesWaiting > 0 || pipe.pendingBytes > pipe.videoLimit.load(ordering: .relaxed) {
       forceKeyFrame = true
       return
     }
     let size = CMVideoDimensions(width: Int32(CVPixelBufferGetWidth(image)), height: Int32(CVPixelBufferGetHeight(image)))
     if session == nil || generation != sessionGeneration || sessionSize.map({ $0.width != size.width || $0.height != size.height }) == true {
       tearDown()
-      makeSession(size: size, bitRate: bitRate)
+      makeSession(size: size, bitRate: bitRate, longSide: longSide)
       sessionGeneration = generation
     }
     guard let session else { return }
@@ -438,18 +443,18 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     }
   }
 
-  /// The output picture: the camera's own shape, no larger than 1920 on its long side.
-  static func encodedSize(_ size: CMVideoDimensions) -> CMVideoDimensions {
+  /// The output picture: the camera's own shape, no larger than `longSide` on its long side.
+  static func encodedSize(_ size: CMVideoDimensions, longSide: Int = 1920) -> CMVideoDimensions {
     let long = max(size.width, size.height)
-    guard long > 1920 else { return size }
-    let scale = 1920 / Double(long)
+    guard Int(long) > longSide else { return size }
+    let scale = Double(longSide) / Double(long)
     // H.264 wants even sizes.
     func even(_ value: Int32) -> Int32 { Int32((Double(value) * scale / 2).rounded()) * 2 }
     return CMVideoDimensions(width: even(size.width), height: even(size.height))
   }
 
-  private func makeSession(size: CMVideoDimensions, bitRate: Int) {
-    let out = Self.encodedSize(size)
+  private func makeSession(size: CMVideoDimensions, bitRate: Int, longSide: Int) {
+    let out = Self.encodedSize(size, longSide: longSide)
     var made: VTCompressionSession?
     let spec = [kVTVideoEncoderSpecification_EnableLowLatencyRateControl: true] as CFDictionary
     guard
@@ -464,8 +469,10 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       kVTCompressionPropertyKey_ProfileLevel: kVTProfileLevel_H264_High_AutoLevel,
       kVTCompressionPropertyKey_AllowFrameReordering: false,
       kVTCompressionPropertyKey_AverageBitRate: bitRate,
-      // A key frame every second, so a dropped frame or a fresh connection recovers quickly.
-      kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 1,
+      // A key frame every half second, so a frame the link lost anyway recovers quickly; a frame
+      // dropped here asks for one at once. The low-latency encoder honours the frame count, not the duration.
+      kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration: 0.5,
+      kVTCompressionPropertyKey_MaxKeyFrameInterval: 15,
       kVTCompressionPropertyKey_ExpectedFrameRate: 30,
     ]
     for (key, value) in properties { VTSessionSetProperty(made, key: key, value: value as CFTypeRef) }
@@ -552,6 +559,10 @@ class LinkPipe: @unchecked Sendable {
   private let messageHandler = Mutex<(@Sendable (CameraLink.Message) -> Void)?>(nil)
   private let reader = Mutex(CameraLink.Reader())
   var pendingBytes: Int { pending.load(ordering: .relaxed) }
+  /// Frames queued and not yet being written.
+  var videoFramesWaiting: Int {
+    backlog.withLock { $0.video.reduce(0) { $0 + ($1.count > 4 && $1[$1.startIndex + 4] == 3 ? 1 : 0) } }
+  }
   var onClose: (@Sendable () -> Void)? {
     get { closeHandler.withLock { $0 } }
     set { closeHandler.withLock { $0 = newValue } }
