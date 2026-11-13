@@ -371,12 +371,16 @@ struct FormattedScriptTextView: UIViewRepresentable {
     }
     if let command, coordinator.lastCommand != command.id {
       coordinator.lastCommand = command.id
-      switch command.action {
-      case .undo: coordinator.draft.history.undo()
-      case .redo: coordinator.draft.history.redo()
-      case .bold: coordinator.format(.bold, view: view)
-      case .italic: coordinator.format(.italic, view: view)
-      case .heading: coordinator.format(.heading, view: view)
+      // Toolbar commands update bindings after SwiftUI has finished this view update.
+      DispatchQueue.main.async { [weak coordinator, weak view] in
+        guard let coordinator, let view else { return }
+        switch command.action {
+        case .undo: coordinator.draft.history.undo()
+        case .redo: coordinator.draft.history.redo()
+        case .bold: coordinator.format(.bold, view: view)
+        case .italic: coordinator.format(.italic, view: view)
+        case .heading: coordinator.format(.heading, view: view)
+        }
       }
     }
   }
