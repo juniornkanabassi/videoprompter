@@ -46,7 +46,6 @@ import VideoToolbox
   }
   var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
   let micMeter = RemoteMicMeter()
-  var micLevelDB: Double { micMeter.levelDB }
   func setVoiceSource(_ value: String) { send(.voiceSource(value)) }
   func setMirror(_ value: Bool) { send(.look(.init(horizontalMirror: value))) }
   func setFlip(_ value: Bool) { send(.look(.init(verticalMirror: value))) }

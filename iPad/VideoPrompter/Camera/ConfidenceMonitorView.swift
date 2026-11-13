@@ -1,4 +1,5 @@
 import AVFoundation
+import PrompterCore
 import SwiftUI
 import UIKit
 
@@ -13,6 +14,7 @@ struct ConfidenceMonitorView: View {
   @State private var fill = false
   @State private var showScript = false
 
+  private let accent = Color(red: 245 / 255, green: 207 / 255, blue: 74 / 255)  // #f5cf4a
   private let amber = Color(red: 0.90, green: 0.64, blue: 0.26)
   private var tallyColour: Color {
     switch store.recordingState {
@@ -73,13 +75,14 @@ struct ConfidenceMonitorView: View {
                   let status = paused ? "Picture paused · last frame \(link.lastFrameTime == nil ? "unknown" : "\(Int(max(0, age))) s ago")"
                     : link.transportKind == "Wi-Fi" && link.framesSkipped > 0 ? "Wi-Fi · \(link.framesSkipped) frames skipped" : "Live"
                   chip(status, colour: paused ? amber : Color(white: 0.15))
+                    .scaleEffect(x: orientationX, y: orientationY)
                 }
                 .padding(16)
               }
               .position(x: area.size.width / 2, y: area.size.height / 2)
               .clipped()
           }
-          DBMeter(levelDB: store.micLevelDB, axis: .vertical)
+          MonitorMeter(meter: store.micMeter)
             .frame(width: 60).padding(.vertical, 16)
             .scaleEffect(x: orientationX, y: orientationY)
         }
@@ -97,19 +100,26 @@ struct ConfidenceMonitorView: View {
     return CGSize(width: width, height: width / ratio)
   }
 
+  /// A bounded window around the spoken word: earlier words dimmed on the left, the current word in
+  /// the accent colour in the middle, upcoming words on the right.
   private var scriptLine: some View {
     let tokens = store.session.document.spokenTokens
-    let index = min(max(0, store.session.tokenIndex), tokens.count)
+    let index = min(max(0, store.session.tokenIndex), max(0, tokens.count - 1))
+    let before = tokens.prefix(index).suffix(12).map(\.text).joined(separator: " ")
     let current = index < tokens.count ? tokens[index].text : ""
-    let remaining = tokens.dropFirst(min(index + 1, tokens.count)).prefix(29).map(\.text).joined(separator: " ")
-    return HStack(spacing: 0) {
-      (Text(current).foregroundColor(.yellow) + Text(remaining.isEmpty ? "" : " " + remaining))
-        .font(.system(size: 48, weight: .semibold)).lineLimit(1)
-      Spacer(minLength: 0)
+    let after = tokens.dropFirst(index + 1).prefix(12).map(\.text).joined(separator: " ")
+    let font = Font.system(size: 44, weight: .semibold)
+    return HStack(spacing: 16) {
+      Text(before).foregroundStyle(Color.white.opacity(0.4)).lineLimit(1).truncationMode(.head)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+      Text(current).foregroundStyle(accent).lineLimit(1).fixedSize()
+      Text(after).foregroundStyle(.white).lineLimit(1).truncationMode(.tail)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .font(font)
     .padding(.horizontal, 40)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .overlay(alignment: .top) { Rectangle().fill(Color.yellow.opacity(0.6)).frame(height: 4) }
+    .overlay(alignment: .top) { Rectangle().fill(accent.opacity(0.6)).frame(height: 4) }
     .clipped()
     .scaleEffect(x: orientationX, y: orientationY)
   }
@@ -130,6 +140,12 @@ struct ConfidenceMonitorView: View {
       .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
       .accessibilityLabel(label).accessibilityValue(active ? "On" : "Off")
   }
+}
+
+/// Observes the meter itself, so level-only updates redraw just this.
+private struct MonitorMeter: View {
+  @ObservedObject var meter: RemoteMicMeter
+  var body: some View { DBMeter(levelDB: meter.levelDB, axis: .vertical) }
 }
 
 private struct MonitorPicture: UIViewRepresentable {

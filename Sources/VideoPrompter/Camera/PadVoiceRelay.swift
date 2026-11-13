@@ -111,8 +111,15 @@ import PrompterCore
     if state == nil, phase == .preparing { return finish("The link to the iPad dropped", pausingIPad: false) }
     guard phase == .live else { return }
     guard let state else { return finish("The link to the iPad dropped", pausingIPad: false) }
-    guard state.presenting == iPadScriptID, state.fingerprint == fingerprint, state.seekRevision != nil else {
+    guard state.presenting == iPadScriptID, state.seekRevision != nil else {
       return finish("The iPad opened another script or closed this one", pausingIPad: true)
+    }
+    // shortcut: the iPad reports only a fingerprint, never its saved text, so the relay cannot adopt an
+    // edit; upgrade by sending the saved text in State and remapping with ScriptTransfer. Until then it
+    // hands the voice back to the iPad's own microphone instead of waiting for words nobody sends.
+    guard state.fingerprint == fingerprint else {
+      if state.voiceSource == "Mac" { link?.send(.voiceSource("iPad")) }
+      return finish("The script was edited on the iPad, so the Mac's voice stopped. The iPad is using its own microphone", pausingIPad: true)
     }
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
     if state.editing == true {

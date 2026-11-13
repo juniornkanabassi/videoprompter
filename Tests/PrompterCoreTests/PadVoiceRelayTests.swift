@@ -259,6 +259,27 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertEqual(link.sent.last, .pause)
   }
 
+  func testAnEditSavedOnTheIPadHandsTheVoiceBackInsteadOfWaitingForWords() async throws {
+    let (relay, link) = try await started(running: true)
+    var editing = state(running: false)
+    editing.editing = true
+    relay.iPadStateChanged(editing)
+    XCTAssertTrue(relay.isRelaying, "an edit in progress only pauses the relay")
+    // Saved: the iPad's text, and so its fingerprint, is no longer the one the relay follows.
+    var saved = state(running: false, text: markdown + " uniform")
+    saved.editing = true
+    relay.iPadStateChanged(saved)
+    XCTAssertFalse(relay.isRelaying)
+    XCTAssertTrue(relay.status.contains("edited on the iPad"), relay.status)
+    XCTAssertEqual(link.sent.suffix(2), [.voiceSource("iPad"), .pause], "the iPad listens for itself, not for the Mac")
+    // Resume after the save: the relay is gone, so nothing is waiting on or sending words.
+    let sentBefore = link.sent.count
+    relay.iPadStateChanged(state(running: true, voice: "iPad", text: markdown + " uniform"))
+    XCTAssertEqual(link.sent.count, sentBefore)
+    XCTAssertNil(relay.session)
+    XCTAssertEqual(link.active, [true, false])
+  }
+
   func testRefusesWhileTheMacsOwnPresenterListens() {
     let link = FakeLink()
     let relay = makeRelay(link, initial: state())

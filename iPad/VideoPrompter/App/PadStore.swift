@@ -199,7 +199,14 @@ import UIKit
   func save(_ markdown: String, to script: FolderScript) -> Bool {
     do {
       let record = try folder.save(markdown, to: script)
-      if session.activeScriptID == script.id { session.applyEditedRecord(record) }
+      if session.activeScriptID == script.id {
+        // The Mac's voice relay holds the old text and cannot follow the new one, so this iPad's own
+        // microphone takes over, and the reader is told why.
+        let relayed = session.followsRemote && record.markdown != session.activeRecord?.markdown
+        if relayed { session.followsRemote = false; micMeter.show(Double(session.audioPeakDBFS)) }
+        session.applyEditedRecord(record)
+        if relayed { errorMessage = "The script changed, so the Mac's voice stopped following. The iPad's own microphone is selected. Choose the Mac's voice again from the Mac." }
+      }
       return true
     } catch {
       errorMessage = error.localizedDescription

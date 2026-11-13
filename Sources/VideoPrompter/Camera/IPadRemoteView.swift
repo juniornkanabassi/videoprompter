@@ -122,6 +122,7 @@ struct IPadRemoteView: View {
         Button("Next passage", systemImage: "arrow.down") { link.send(.nextPassage) }.labelStyle(.iconOnly).disabled(state.presenting == nil || state.editing == true)
       }
       if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
+      RelayNotice(relay: link.relay)
       HStack {
         Text("On the iPad").frame(width: 120, alignment: .leading)
         split("Camera", on: link.cameraOn, sources: link.cameraSources, toggle: link.setCameraOn, select: link.selectCamera)
@@ -137,7 +138,12 @@ struct IPadRemoteView: View {
       HStack {
         Text("Mic level").frame(width: 120, alignment: .leading)
         Text(link.microphoneSources.first { $0.id == link.selectedMicrophone }?.name ?? "Microphone").foregroundStyle(.secondary)
-        DBMeter(levelDB: link.micLevelDB, axis: .horizontal).frame(maxWidth: 352)
+        // The iPad does not report its own microphone level, so never show the Mac's under its name.
+        if state.voiceSource == "iPad" {
+          Text("Not sent to the Mac. Watch the meter on the iPad").foregroundStyle(.secondary)
+        } else {
+          MicMeterRow(meter: link.micMeter).frame(maxWidth: 352)
+        }
       }
       HStack {
         Text("Scroll speed").frame(width: 120, alignment: .leading)
@@ -215,5 +221,19 @@ struct IPadRemoteView: View {
   private func lookSlider(_ title: String, value: Double, range: ClosedRange<Double>, set: @escaping (Double) -> Void) -> some View {
     HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 56) }
   }
+}
+
+/// Why the Mac's voice is not following the iPad, shown once the relay has ended or been refused.
+private struct RelayNotice: View {
+  @ObservedObject var relay: PadVoiceRelay
+  var body: some View {
+    if !relay.isRelaying, !["Off", "Stopped"].contains(relay.status) { Text(relay.status).foregroundStyle(.orange) }
+  }
+}
+
+/// Observes the meter itself, so level-only updates redraw just this.
+private struct MicMeterRow: View {
+  @ObservedObject var meter: RemoteMicMeter
+  var body: some View { DBMeter(levelDB: meter.levelDB, axis: .horizontal) }
 }
 #endif
