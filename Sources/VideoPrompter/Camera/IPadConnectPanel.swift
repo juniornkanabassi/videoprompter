@@ -10,6 +10,7 @@ struct IPadConnectPanel: View {
       Text("Waiting for an iPad").font(.title2.bold())
       Text("Open Video Prompter on your iPad and connect it by USB-C, or pair over Wi-Fi.")
         .foregroundStyle(.secondary).multilineTextAlignment(.center)
+      if !link.controlsIPad { Button("Connect") { link.controlsIPad = true } }
       Toggle("Connect over Wi-Fi", isOn: $link.usesWiFi)
       if link.wifiDevices.count > 1 {
         Picker("iPad", selection: $link.selectedWiFiID) {
