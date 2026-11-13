@@ -55,7 +55,8 @@ struct MicrophoneCards: View {
       // Channel and meter line up with the input's name, one icon width in.
       if selected, device != nil || meter != nil {
         VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
-          if let device, device.channels > 1 { channelPicker(device) }
+          // A saved Left or Right stays changeable even if the input now reports one channel.
+          if let device, device.channels > 1 || AudioChannel.load(device.uid, defaults: store.defaults) != .both { channelPicker(device) }
           if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 152).padding(.horizontal, -Space.sm) }
         }.padding(.leading, Space.xxl + Space.sm)
       }

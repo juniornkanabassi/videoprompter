@@ -30,9 +30,20 @@ public enum AudioChannel: String, CaseIterable, Sendable {
     return result
   }
 
-  /// False when the tap delivers fewer channels than the interface has, so Left or Right cannot be told apart.
-  func canIsolate(tapChannels: Int, deviceChannels: Int) -> Bool {
-    self == .both || deviceChannels < 2 || tapChannels >= 2
+  /// What capture must do so Left and Right arrive as separate channels, from what the hardware reports
+  /// and what the tap currently delivers. Pure, so every case is unit-tested without a device.
+  enum CapturePlan: Equatable { case useTap, requestSeparateChannels, cannotIsolate }
+
+  func capturePlan(hardwareChannels: Int, tapChannels: Int) -> CapturePlan {
+    guard self != .both else { return .useTap }
+    // One real channel: Left is that channel. Right has nothing to pick, so say so rather than guess.
+    if hardwareChannels < 2 { return self == .left ? .useTap : .cannotIsolate }
+    return tapChannels >= 2 ? .useTap : .requestSeparateChannels
+  }
+
+  /// Calm wording for the one case where the choice cannot be honoured.
+  var separateChannelsMessage: String {
+    "\(rawValue) needs a microphone that sends two separate channels, and this one is sending one. Choose Both, or pick another input."
   }
 
   private func mix(_ list: UnsafeMutableAudioBufferListPointer, _ asbd: AudioStreamBasicDescription, frames: Int, into target: UnsafeMutablePointer<Float>) -> Bool {

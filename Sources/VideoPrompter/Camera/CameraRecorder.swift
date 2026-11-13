@@ -226,6 +226,7 @@ import PrompterCore
       let input = try CaptureAccess.deviceInput(microphone, media: .audio)
       let format = CMAudioFormatDescriptionGetStreamBasicDescription(microphone.activeFormat.formatDescription)?.pointee
       let channel = AudioChannel.load(microphone.uniqueID, defaults: defaults)
+      // Left or Right records one mono channel. Both is deliberately stereo (channels 1 and 2, not mixed down), as the Alpha keeps it.
       let spec = AudioSpec(sampleRate: floatAudio ? (format?.mSampleRate ?? 48000) : min(format?.mSampleRate ?? 48000, 48000), channels: channel == .both ? min(Int(format?.mChannelsPerFrame ?? 2), 2) : 1)
       audioChannels = spec.channels
       let sink = RecordingSink(url: Self.fileURL(in: folder, label: takeLabel, defaultLabel: defaultLabel), preset: preset, rotation: camera.guides.rotation, mirrored: mirrorSavedVideo, audio: spec, floatAudio: floatAudio, microphone: input, channel: channel, onFrame: { [weak self] duration in

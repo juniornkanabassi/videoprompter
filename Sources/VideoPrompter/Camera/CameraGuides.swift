@@ -1,4 +1,6 @@
+#if canImport(AppKit)
 import AppKit
+#endif
 import SwiftUI
 import CoreGraphics
 import Foundation
@@ -363,8 +365,10 @@ extension CameraGuides {
   mutating func changeExposure(_ change: (inout CameraGuides) -> Void) {
     if greyCardCheck {
       greyCardCheck = false
+#if canImport(AppKit)
       NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
         userInfo: [.announcement: "Grey card check ended.", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+#endif
     }
     change(&self)
   }
