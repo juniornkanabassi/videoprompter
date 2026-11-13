@@ -1,5 +1,6 @@
 import PrompterCore
 import UIKit
+import CoreText
 
 /// The presenter's look, as the renderer needs it. Built from PrompterSettings.
 struct ScriptStyle: Equatable {
@@ -48,9 +49,25 @@ enum ScriptRenderer {
   private static let headingRegex = try! NSRegularExpression(pattern: #"^[ \t]*#{1,6}[ \t]+"#)
   private static let quoteRegex = try! NSRegularExpression(pattern: #"^[ \t]*>[ \t]?"#)
 
+  private static let registeredFonts: Void = {
+    for file in ["LexendDeca-Variable", "Lexend-Variable"] {
+      if let url = Bundle.main.url(forResource: file, withExtension: "ttf") {
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+      }
+    }
+  }()
+
+  static let presenterFonts: [String] = {
+    _ = registeredFonts
+    return ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next"]
+      + ["Poppins", "Lexend", "Lexend Deca"].filter { UIFont.familyNames.contains($0) }
+  }()
+
   static func font(_ style: ScriptStyle, scale: Double = 1, bold: Bool = false) -> UIFont {
+    _ = registeredFonts
     let size = CGFloat(style.fontSize * scale)
     let weight: UIFont.Weight = bold || style.fontWeight == "Bold" ? .bold : .regular
+    if style.fontName == "SF Pro" { return .systemFont(ofSize: size, weight: weight) }
     let descriptor = UIFontDescriptor(fontAttributes: [
       .family: style.fontName,
       .traits: [UIFontDescriptor.TraitKey.weight: weight.rawValue],
@@ -78,12 +95,19 @@ enum ScriptRenderer {
     paragraph.paragraphSpacing = max(10, style.fontSize * style.paragraphSpacing)
     paragraph.alignment = style.alignment == "Right" ? .right : style.alignment == "Center" ? .center : .left
     let bodyFont = font(style)
-    let headingFont = font(style, scale: 1.15, bold: true)
-    let codeFont = UIFont.monospacedSystemFont(ofSize: CGFloat(style.fontSize * 0.8), weight: .regular)
+    let headingFont = font(style, scale: 1.35, bold: true)
+    let codeFont = UIFont.monospacedSystemFont(ofSize: CGFloat(style.fontSize), weight: .regular)
     var blockRanges: [UUID: NSRange] = [:]
 
     for block in document.blocks where block.kind != .callout && block.kind != .thematicBreak {
-      if output.length > 0 { output.append(NSAttributedString(string: "\n")) }
+      if output.length > 0 {
+        output.append(NSAttributedString(string: "\n", attributes: [.font: bodyFont, .paragraphStyle: paragraph]))
+        let blank = paragraph.mutableCopy() as! NSMutableParagraphStyle
+        blank.paragraphSpacing = 0
+        output.append(NSAttributedString(string: "\n", attributes: [
+          .font: UIFont.systemFont(ofSize: max(1, style.fontSize * 0.4)), .paragraphStyle: blank,
+        ]))
+      }
       let start = output.length
       let blockFont = block.kind == .heading ? headingFont : block.kind == .code ? codeFont : bodyFont
       var text = ""

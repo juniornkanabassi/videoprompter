@@ -4,6 +4,30 @@ import XCTest
 @testable import VideoPrompter
 
 final class PadPresenterLayoutTests: XCTestCase {
+  func testScrollCatchUpAt60And120Hz() {
+    for fps in [60, 120] {
+      var offset: CGFloat = 0
+      var previousDelta: CGFloat = 0
+      for frame in 1...(fps * 8) {
+        // Simulates link updates in discrete words, four times a second.
+        let target = CGFloat(40 * (frame / (fps / 4) + 1))
+        let next = PadPresenterLayout.smoothedOffset(current: offset, target: target, delta: 1 / Double(fps))
+        let delta = next - offset
+        XCTAssertGreaterThan(delta, 0, "No backwards jumps or stalled frames")
+        XCTAssertLessThan(delta, 12, "No per-word offset jump")
+        XCTAssertLessThan(abs(delta - previousDelta), 9)
+        offset = next
+        previousDelta = delta
+      }
+    }
+    func settled(_ fps: Int) -> CGFloat {
+      (0..<fps).reduce(CGFloat.zero) { value, _ in
+        PadPresenterLayout.smoothedOffset(current: value, target: 100, delta: 1 / Double(fps))
+      }
+    }
+    XCTAssertEqual(settled(60), settled(120), accuracy: 0.000001)
+  }
+
   func testPictureToolsFoldBelow1300() {
     // iPad Pro 12.9 landscape keeps the group; the 11-inch, the 10th generation and portrait fold it.
     XCTAssertFalse(PadPresenterLayout.foldsPictureTools(width: 1366))

@@ -714,6 +714,14 @@ extension PadStore {
       if let value = look.textWidth, value.isFinite { next.textWidth = value }
       if let value = look.lineSpacing, value.isFinite { next.lineSpacing = value }
       if let value = look.guideFraction, value.isFinite { next.guideFraction = value }
+      if let value = look.fontName, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { next.fontName = value }
+      if let value = look.fontWeight { next.fontWeight = value }
+      if let value = look.textColorHex, let colour = PrompterSettings.normalisedHexColour(value) { next.textColorHex = colour }
+      if let value = look.textOpacity, value.isFinite { next.textOpacity = value }
+      if let value = look.paragraphSpacing, value.isFinite { next.paragraphSpacing = value }
+      if let value = look.alignment { next.alignment = value }
+      if let value = look.showCues { next.showCues = value }
+      next.sanitise()
       settings = next
     case .preset(let name):
       if let preset = presets.first(where: { $0.name == name }) { apply(preset) }

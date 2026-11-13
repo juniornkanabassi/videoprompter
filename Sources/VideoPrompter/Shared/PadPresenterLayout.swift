@@ -4,6 +4,11 @@ import Foundation
 /// The iPad presenter's width rules, turn matrix and status wording, kept free of UIKit so the
 /// unit tests can check them without an iPad.
 enum PadPresenterLayout {
+  /// Time-based catch-up is identical at 60 and 120 Hz, without restarting animations on word updates.
+  static func smoothedOffset(current: CGFloat, target: CGFloat, delta: Double) -> CGFloat {
+    current + (target - current) * (1 - exp(-max(0, delta) / 0.08))
+  }
+
   /// At this width or more the Zebras / False colour / Guides group fits; narrower folds it into one Picture menu.
   static let toolsGroupMinWidth: CGFloat = 1300
   /// Below this width Script and Aa (and the Camera and Mic labels) show icons only.

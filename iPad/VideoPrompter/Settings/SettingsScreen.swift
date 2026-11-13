@@ -10,11 +10,7 @@ struct SettingsScreen: View {
   @State private var presetName = ""
   @State private var choosingFolder = false
 
-  private static let fonts: [String] = {
-    let preferred = ["Lexend Deca", "Lexend", "Helvetica Neue", "Avenir Next", "Georgia"]
-    let others = UIFont.familyNames.sorted().filter { !preferred.contains($0) }
-    return preferred.filter { UIFont.familyNames.contains($0) || $0.hasPrefix("Lexend") } + others
-  }()
+  private static let fonts = ScriptRenderer.presenterFonts
 
   var body: some View {
     Form {

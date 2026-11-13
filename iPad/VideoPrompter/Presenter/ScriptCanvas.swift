@@ -35,8 +35,9 @@ struct ScriptCanvas: UIViewRepresentable {
   var onSingleTap: (() -> Void)?
 
   /// The Mac's rules (ScriptTextView): at least 42 pt each side, and a reading line never nearer than 54 pt to the top.
-  static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
-    max(42, width * (1 - CGFloat(textWidth)) / 2)
+  static func sideInset(width: CGFloat, textWidth: Double, fontSize: Double? = nil) -> CGFloat {
+    let measure = fontSize.map { min(textWidth, max(1, $0 * 30) / max(1, Double(width))) } ?? textWidth
+    return max(42, width * (1 - CGFloat(measure)) / 2)
   }
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
@@ -74,7 +75,7 @@ struct ScriptCanvas: UIViewRepresentable {
   func updateUIView(_ view: UITextView, context: Context) {
     let c = context.coordinator
     c.parent = self
-    let inset = Self.sideInset(width: view.bounds.width, textWidth: textWidth)
+    let inset = Self.sideInset(width: view.bounds.width, textWidth: textWidth, fontSize: style.fontSize)
     if abs(view.textContainerInset.left - inset) > 0.5 {
       view.textContainerInset.left = inset
       view.textContainerInset.right = inset
@@ -94,7 +95,9 @@ struct ScriptCanvas: UIViewRepresentable {
       c.dragSeekRevision = nil
     }
     c.updateDisplayLink()
-    if manualPosition == nil { c.alignVoice() } else { c.alignManual() }
+    if !isActivelyRunning || c.snapNext {
+      if manualPosition == nil { c.alignVoice() } else { c.alignManual() }
+    }
   }
 
   @MainActor final class Coordinator: NSObject, UITextViewDelegate {
@@ -107,16 +110,19 @@ struct ScriptCanvas: UIViewRepresentable {
     private var mappings: [(range: NSRange, token: Int)] = []
     private var colouredThrough: (token: Int, confirmed: Int?) = (-1, nil)
     private var lastAligned: (token: Int, guide: Double, height: CGFloat)?
-    /// The last Manual or Voice paint. The same position, guide and height with the scroll still
-    /// where it was put needs no layout or measuring: Voice paints every frame, silence included.
-    private var lastPaint: (position: Double, guide: Double, size: CGSize, y: CGFloat)?
     /// A drag let go of: the next paints ease from where the finger left the text instead of jumping.
     var settle: (from: CGFloat, start: CFTimeInterval)?
     var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
-    /// The Mac's yellow, #f5cf4a.
-    private static let currentWord = UIColor(red: 0.961, green: 0.812, blue: 0.290, alpha: 1)
+    private var measuredSize = CGSize.zero
+    private var measuredInset = UIEdgeInsets.zero
+    private var linePositions: [Int: CGFloat] = [:]
+    private var frameTime: CFTimeInterval?
+    private var frameDelta = 1.0 / 60
+    private var painting = false
+    /// The same semantic yellow as the Mac presenter.
+    private static let currentWord = UIColor.systemYellow
     private var baseColour = UIColor.white
     private var textOpacity = 1.0
 
@@ -124,6 +130,7 @@ struct ScriptCanvas: UIViewRepresentable {
       guard let textView, let parent else { return }
       let output = ScriptRenderer.render(document, style: style)
       mappings = output.mappings
+      linePositions.removeAll()
       baseColour = ScriptRenderer.colour(style.textColorHex)
       textOpacity = style.textOpacity
       let text = NSMutableAttributedString(attributedString: output.text)
@@ -143,7 +150,7 @@ struct ScriptCanvas: UIViewRepresentable {
     private func readColour(_ index: Int) -> UIColor {
       guard let parent else { return baseColour }
       let confirmed = parent.lastConfirmedTokenIndex.map { index <= $0 } ?? false
-      let alpha = confirmed ? textOpacity * 0.38 : textOpacity
+      let alpha = confirmed ? textOpacity * 0.5 : textOpacity
       return index == parent.tokenIndex && !confirmed && (renderedStyle?.highlightActiveWord ?? false)
         ? Self.currentWord.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
     }
@@ -181,13 +188,12 @@ struct ScriptCanvas: UIViewRepresentable {
       guard let textView, let parent, textView.bounds.height > 0 else { return nil }
       let height = textView.bounds.height
       // The width is only known after layout, and Stage Manager changes it without an update.
-      let inset = ScriptCanvas.sideInset(width: textView.bounds.width, textWidth: parent.textWidth)
+      let inset = ScriptCanvas.sideInset(width: textView.bounds.width, textWidth: parent.textWidth, fontSize: parent.style.fontSize)
       if abs(textView.textContainerInset.left - inset) > 0.5 {
         textView.textContainerInset.left = inset
         textView.textContainerInset.right = inset
         snapNext = true
         lastAligned = nil
-        lastPaint = nil
       }
       let guideY = parent.verticalMirror
         ? height - ScriptCanvas.visualGuideY(height: height, fraction: 1 - parent.layoutGuideFraction)
@@ -198,13 +204,25 @@ struct ScriptCanvas: UIViewRepresentable {
         textView.textContainerInset.bottom = edge
       }
       let manager = textView.layoutManager
-      manager.ensureLayout(for: textView.textContainer)
+      if measuredSize != textView.bounds.size || measuredInset != textView.textContainerInset || linePositions.isEmpty {
+        manager.ensureLayout(for: textView.textContainer)
+        measuredSize = textView.bounds.size
+        measuredInset = textView.textContainerInset
+        linePositions.removeAll(keepingCapacity: true)
+        for entry in mappings {
+          linePositions[entry.range.location] = measureRuleY(entry.range, manager: manager)
+        }
+      }
       return (manager, guideY)
     }
 
     /// Where the reading rule rests for the line holding this word: just under that line's text,
     /// halfway into the leading below it, from the measured line bounds (not a font-size guess).
     private func ruleY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
+      linePositions[range.location] ?? measureRuleY(range, manager: manager)
+    }
+
+    private func measureRuleY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
       guard let textView else { return 0 }
       let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil).location
       let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
@@ -215,21 +233,16 @@ struct ScriptCanvas: UIViewRepresentable {
     func alignVoice() {
       guard !isDragging, let textView, let parent, let (manager, guideY) = prepare() else { return }
       let height = textView.bounds.height
-      if let last = lastAligned, !snapNext, last.token == parent.tokenIndex,
-        last.guide == parent.layoutGuideFraction, last.height == height { return }
       let slot = lowerBound(parent.tokenIndex)
       guard slot < mappings.count else { return }
       let target = max(0, ruleY(mappings[slot].range, manager: manager) - guideY)
       let animate = lastAligned != nil && !snapNext && parent.isActivelyRunning && !UIAccessibility.isReduceMotionEnabled
       let destination = CGPoint(x: 0, y: target)
-      if animate {
-        UIView.animate(withDuration: 0.6, delay: 0, options: [.curveEaseInOut, .allowUserInteraction, .beginFromCurrentState]) {
-          textView.contentOffset = destination
-        }
-      } else {
-        textView.layer.removeAllAnimations()
-        textView.contentOffset = destination
-      }
+      painting = true
+      textView.contentOffset = animate
+        ? CGPoint(x: 0, y: PadPresenterLayout.smoothedOffset(current: textView.contentOffset.y, target: target, delta: frameDelta))
+        : destination
+      painting = false
       lastAligned = (parent.tokenIndex, parent.layoutGuideFraction, height)
       snapNext = false
     }
@@ -243,8 +256,6 @@ struct ScriptCanvas: UIViewRepresentable {
         if settle != nil { settle = nil; updateDisplayLink() }
         return
       }
-      if !snapNext, settle == nil, let last = lastPaint, last.position == position, last.guide == parent?.layoutGuideFraction,
-        last.size == textView.bounds.size, abs(textView.contentOffset.y - last.y) <= 0.01 { return }
       guard let (manager, guideY) = prepare() else { return }
       func y(_ slot: Int) -> CGFloat { ruleY(mappings[slot].range, manager: manager) - guideY }
       var low = 0, high = mappings.count
@@ -268,26 +279,29 @@ struct ScriptCanvas: UIViewRepresentable {
           target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
         }
       }
-      lastPaint = (position, parent?.layoutGuideFraction ?? 0, textView.bounds.size, target)
+      if !snapNext, parent?.isActivelyRunning == true, !UIAccessibility.isReduceMotionEnabled {
+        target = PadPresenterLayout.smoothedOffset(current: textView.contentOffset.y, target: target, delta: frameDelta)
+      }
       if abs(textView.contentOffset.y - target) > 0.01 {
-        textView.layer.removeAllAnimations()
+        painting = true
         textView.contentOffset = CGPoint(x: 0, y: target)
+        painting = false
       }
       snapNext = false
     }
 
     /// Re-aligns after a size change; a no-op while nothing moved.
     func relayout() {
-      guard let parent else { return }
+      guard !painting, let parent, measuredSize != textView?.bounds.size else { return }
       if parent.manualPosition == nil { alignVoice() } else { alignManual() }
     }
 
     func updateDisplayLink() {
       // A settle finishes even when the drag paused Manual.
-      let wanted = parent?.manualPosition != nil && parent?.isActivelyRunning == true || settle != nil
+      let wanted = parent?.isActivelyRunning == true || settle != nil
       if wanted, displayLink == nil {
-        let link = CADisplayLink(target: self, selector: #selector(tick))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 120, preferred: 60)
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: Float(UIScreen.main.maximumFramesPerSecond), preferred: Float(UIScreen.main.maximumFramesPerSecond))
         link.add(to: .main, forMode: .common)
         displayLink = link
       } else if !wanted {
@@ -297,8 +311,13 @@ struct ScriptCanvas: UIViewRepresentable {
     func stopDisplayLink() {
       displayLink?.invalidate()
       displayLink = nil
+      frameTime = nil
     }
-    @objc private func tick() { alignManual() }
+    @objc private func tick(_ link: CADisplayLink) {
+      frameDelta = frameTime.map { link.timestamp - $0 } ?? (link.targetTimestamp - link.timestamp)
+      frameTime = link.timestamp
+      if parent?.manualPosition == nil { alignVoice() } else { alignManual() }
+    }
 
     // MARK: Touch
 
