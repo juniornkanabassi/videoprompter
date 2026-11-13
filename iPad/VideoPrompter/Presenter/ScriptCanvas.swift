@@ -35,8 +35,9 @@ struct ScriptCanvas: UIViewRepresentable {
   var onSingleTap: (() -> Void)?
 
   /// The Mac's rules (ScriptTextView): at least 42 pt each side, and a reading line never nearer than 54 pt to the top.
-  static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
-    max(42, width * (1 - CGFloat(textWidth)) / 2)
+  static func sideInset(width: CGFloat, textWidth: Double, fontSize: Double? = nil) -> CGFloat {
+    let measure = fontSize.map { min(textWidth, max(1, $0 * 30) / max(1, Double(width))) } ?? textWidth
+    return max(42, width * (1 - CGFloat(measure)) / 2)
   }
   static func visualGuideY(height: CGFloat, fraction: Double) -> CGFloat {
     min(height, max(54, height * fraction))
@@ -74,7 +75,7 @@ struct ScriptCanvas: UIViewRepresentable {
   func updateUIView(_ view: UITextView, context: Context) {
     let c = context.coordinator
     c.parent = self
-    let inset = Self.sideInset(width: view.bounds.width, textWidth: textWidth)
+    let inset = Self.sideInset(width: view.bounds.width, textWidth: textWidth, fontSize: style.fontSize)
     if abs(view.textContainerInset.left - inset) > 0.5 {
       view.textContainerInset.left = inset
       view.textContainerInset.right = inset
@@ -115,8 +116,8 @@ struct ScriptCanvas: UIViewRepresentable {
     var dragSeekRevision: Int?
     private var displayLink: CADisplayLink?
     private var isDragging = false
-    /// The Mac's yellow, #f5cf4a.
-    private static let currentWord = UIColor(red: 0.961, green: 0.812, blue: 0.290, alpha: 1)
+    /// The same semantic yellow as the Mac presenter.
+    private static let currentWord = UIColor.systemYellow
     private var baseColour = UIColor.white
     private var textOpacity = 1.0
 
@@ -143,7 +144,7 @@ struct ScriptCanvas: UIViewRepresentable {
     private func readColour(_ index: Int) -> UIColor {
       guard let parent else { return baseColour }
       let confirmed = parent.lastConfirmedTokenIndex.map { index <= $0 } ?? false
-      let alpha = confirmed ? textOpacity * 0.38 : textOpacity
+      let alpha = confirmed ? textOpacity * 0.5 : textOpacity
       return index == parent.tokenIndex && !confirmed && (renderedStyle?.highlightActiveWord ?? false)
         ? Self.currentWord.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
     }
@@ -181,7 +182,7 @@ struct ScriptCanvas: UIViewRepresentable {
       guard let textView, let parent, textView.bounds.height > 0 else { return nil }
       let height = textView.bounds.height
       // The width is only known after layout, and Stage Manager changes it without an update.
-      let inset = ScriptCanvas.sideInset(width: textView.bounds.width, textWidth: parent.textWidth)
+      let inset = ScriptCanvas.sideInset(width: textView.bounds.width, textWidth: parent.textWidth, fontSize: parent.style.fontSize)
       if abs(textView.textContainerInset.left - inset) > 0.5 {
         textView.textContainerInset.left = inset
         textView.textContainerInset.right = inset

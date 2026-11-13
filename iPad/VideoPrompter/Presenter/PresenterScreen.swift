@@ -185,8 +185,15 @@ struct PresenterScreen: View {
     let lineY = min(max(size.height * settings.guideFraction, top + 54), top + height - 40)
     let showsLine = !setup && showScript
     let showsMeter = true
-    let fade = store.cleanScreen ? 0 : min(40, height / 4) / height
+    let fade = min(height, min(160, max(48, settings.fontSize * 1.6))) / height
     return ZStack(alignment: .topLeading) {
+      if showsLine {
+        PresenterReadingLine(settings: settings)
+          .frame(width: min(scriptWidth, scriptWidth - 2 * ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) + 64))
+          .offset(x: side + max(0, ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) - 32))
+          .offset(y: lineY - PresenterReadingLine.bandHeight(fontSize: settings.fontSize))
+          .allowsHitTesting(false)
+      }
       if showScript {
         ScriptCanvas(
           document: session.document, tokenIndex: session.tokenIndex,
@@ -204,17 +211,11 @@ struct PresenterScreen: View {
         .mask(
           LinearGradient(
             stops: [
-              .init(color: .clear, location: 0), .init(color: .black, location: fade),
+              .init(color: .black, location: 0),
               .init(color: .black, location: 1 - fade), .init(color: .clear, location: 1),
             ], startPoint: .top, endPoint: .bottom)
         )
         .offset(x: side, y: top)
-      }
-      if showsLine {
-        PresenterReadingLine(settings: settings)
-          .frame(width: size.width - (showsMeter ? 136 : 24))
-          .offset(y: lineY - PresenterReadingLine.bandHeight(fontSize: settings.fontSize))
-          .allowsHitTesting(false)
       }
       if showsMeter {
         PresenterMeter(meter: store.micMeter, name: microphoneName, isListening: store.micOn)
@@ -234,7 +235,7 @@ struct PresenterScreen: View {
           .font(.system(size: 30, weight: .semibold))
           .foregroundStyle(PresenterTheme.warn)
           .lineLimit(1).minimumScaleFactor(0.7)
-          .padding(.leading, ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth))
+          .padding(.leading, ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth, fontSize: settings.fontSize))
           .frame(width: size.width, height: band, alignment: .leading)
           .offset(y: PadPresenterLayout.topChrome)
           .allowsHitTesting(false)
