@@ -355,6 +355,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				VP_DISPLAY_NAME = "Video Prompter";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
@@ -382,6 +383,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.juniornkanabassi.VideoPrompter;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				VP_DISPLAY_NAME = "Video Prompter";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;

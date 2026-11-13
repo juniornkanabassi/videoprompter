@@ -51,6 +51,21 @@ xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter \
   build
 ```
 
+### Alpha and Beta colours
+
+The iPad app can wear the same channel colours as the Mac app: the white icon is the release, orange is Alpha and blue is Beta. Only the icon and the name under it change. The bundle ID stays `com.juniornkanabassi.VideoPrompter`, so a coloured build installs over the release on an iPad, updates it in place and keeps its scripts. Pass two build settings:
+
+```sh
+# Alpha: orange icon, "Video Prompter Alpha"
+xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter -destination 'generic/platform=iOS' \
+  -allowProvisioningUpdates ASSETCATALOG_COMPILER_APPICON_NAME=AppIconAlpha VP_DISPLAY_NAME="Video Prompter Alpha" build
+# Beta: blue icon, "Video Prompter Beta"
+xcodebuild -project iPad/VideoPrompter.xcodeproj -scheme VideoPrompter -destination 'generic/platform=iOS' \
+  -allowProvisioningUpdates ASSETCATALOG_COMPILER_APPICON_NAME=AppIconBeta VP_DISPLAY_NAME="Video Prompter Beta" build
+```
+
+Leave both out for the white release icon and "Video Prompter" (the defaults, `AppIcon` and `VP_DISPLAY_NAME`). The same two settings work with `archive`. The icon sets are in `VideoPrompter/Assets.xcassets`, made from the Mac masters in `Resources/AppIcon`.
+
 ## TestFlight
 
 1. Create the app in App Store Connect with bundle ID `com.juniornkanabassi.VideoPrompter`. The App Store name must be unique, so it may need to differ from "Video Prompter"; the home screen name stays "Video Prompter".
