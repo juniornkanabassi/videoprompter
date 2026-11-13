@@ -59,7 +59,15 @@ extension AppearanceSnapshotTests {
     atem.channels = 2; atem.connection = "Thunderbolt"
     var virtual = AudioInputDevice(id: 2, uid: "loopback", name: "Loopback Audio")
     virtual.channels = 2; virtual.connection = "Virtual"
-    try await snapshot(AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, microphonesOverride: [atem, virtual], recorder: recorder), name: "alpha-270-adjust-mic", size: .init(width: 540, height: 1100), scheme: .dark, destination: destination)
+    try await snapshot(AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, microphonesOverride: [atem, virtual], recorder: recorder), name: "alpha-270-adjust-mic", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
+    // The card in other sizes and states: a narrow sheet, a wide sheet, 200% text, the Mac's default input and a live level.
+    recorder.inputMeter.show(peakDBFS: -20, isClipping: false)
+    for (name, width, zoom, uid) in [("narrow", 340.0, 1.0, "atem"), ("wide", 900.0, 1.0, "atem"), ("200", 470.0, 2.0, "atem"), ("default", 470.0, 1.0, "")] {
+      store.settings.audioDeviceUID = uid.isEmpty ? nil : uid
+      let view = AdjustPanel(selection: .constant(.mic), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, microphonesOverride: [atem, virtual], recorder: recorder)
+      try await snapshot(view, name: "alpha-cards-mic-\(name)", size: .init(width: width * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
+    }
+    store.settings.audioDeviceUID = "atem"
     camera.displayMode = .videoOnly
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom

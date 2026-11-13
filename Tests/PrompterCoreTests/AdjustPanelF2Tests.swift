@@ -3,7 +3,7 @@ import XCTest
 @testable import VideoPrompter
 
 extension AppearanceSnapshotTests {
-  func testAdjustTabsWrapWithoutOverlap() async throws {
+  func testAdjustTabsStayOnOneRow() async throws {
     let defaults = freshDefaults("AdjustTabsRow")
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -15,6 +15,7 @@ extension AppearanceSnapshotTests {
       let button = try XCTUnwrap(LibraryAX.named(tab.rawValue, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
       return try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
     }
+    XCTAssertEqual(Set(frames.map(\.minY)).count, 1, "All five tabs share one row")
     for (index, frame) in frames.enumerated() {
       XCTAssertGreaterThanOrEqual(frame.height, 44)
       for other in frames.dropFirst(index + 1) { XCTAssertFalse(frame.intersects(other)) }
