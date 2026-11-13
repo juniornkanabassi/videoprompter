@@ -28,38 +28,44 @@ struct AdjustPanel: View {
   var width: CGFloat = 470 // grid: ok Approved panel content width.
   var close: () -> Void = {}
   var devicesOverride: [CameraDevice]? = nil
+  var sourceInfoOverride: [String: CameraSourceInfo]? = nil
   var microphonesOverride: [AudioInputDevice]? = nil
   let recorder: CameraRecorder
 
   var body: some View {
     VStack(spacing: 0) {
-        HStack(spacing: Space.xs) {
-          ForEach(AdjustTab.sources, id: \.self) { tabButton($0) }
-          Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: 28).padding(.horizontal, Space.xs).accessibilityHidden(true)
-          ForEach(AdjustTab.pictureTools, id: \.self) { tabButton($0) }
-        }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
-        .padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
+      // Close sits at the top right of the panel, on the row of the panel's own name.
       HStack {
-        Text(selection == .mic ? "Choose the input you speak into." : "Changes appear on your camera picture.").foregroundStyle(.secondary)
-        Spacer(minLength: 0)
+        Text("Adjust").font(.system(size: 17, weight: .semibold))
+        Spacer(minLength: Space.sm)
         Button(action: close) {
-          Image(systemName: "xmark").frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget)
+          Image(systemName: "xmark").font(.system(size: 14, weight: .semibold)).frame(width: AlphaStyle.minTarget, height: AlphaStyle.minTarget)
+            .background(Color.white.opacity(0.10), in: Circle()).contentShape(Circle())
         }.buttonStyle(.plain).accessibilityLabel("Close Adjust").initialPopoverFocus()
-      }.padding(.horizontal, AlphaStyle.panelInset)
+      }.padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
+      HStack(spacing: Space.xs) {
+        ForEach(AdjustTab.sources, id: \.self) { tabButton($0) }
+        Rectangle().fill(.white.opacity(0.25)).frame(width: 1, height: 28).padding(.horizontal, Space.xs).accessibilityHidden(true)
+        ForEach(AdjustTab.pictureTools, id: \.self) { tabButton($0) }
+      }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
+        .padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.xs)
+      Text(selection == .mic ? "Choose the input you speak into." : "Changes appear on your camera picture.").cardCaption()
+        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
       ScrollView {
-      VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Group {
-        switch selection {
-        case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []))
-        case .zebras: keyToggle; ZebraAdjustView(model: camera)
-        case .falseColour: keyToggle; FalseColourAdjustView(model: camera)
-        case .guides: AlphaGuideSections(model: camera)
-        case .mic: mic
+        VStack(spacing: 0) {
+          VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
+            switch selection {
+            case .camera: CameraAdjustView(model: camera, devicesOverride: devicesOverride ?? (startsMeter ? nil : []), sourceInfoOverride: sourceInfoOverride)
+            case .zebras: keyToggle; ZebraAdjustView(model: camera)
+            case .falseColour: keyToggle; FalseColourAdjustView(model: camera)
+            case .guides: AlphaGuideSections(model: camera)
+            case .mic: mic
+            }
+          }.padding(AlphaStyle.panelInset)
+          // The footer follows the content, so a short tab does not leave it floating at the bottom.
+          if selection == .mic || selection == .camera { footer }
         }
       }
-    }.padding(AlphaStyle.panelInset)
-    }
-      if selection == .mic || selection == .camera { footer }
     }.frame(maxWidth: 560).frame(maxWidth: .infinity) // grid: ok A wide sheet keeps the panel's proportions.
       .uiZoom(zoom).frame(width: width).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
@@ -90,10 +96,11 @@ struct AdjustPanel: View {
       HStack {
         Text("Microphone").font(.title2.bold())
         Spacer(minLength: Space.sm)
-        Toggle(isOn: $showsMic) { Text("Show meter").font(.callout).foregroundStyle(.secondary) }
+        Toggle(isOn: $showsMic) { Text("Show meter").cardCaption() }
           .toggleStyle(AccentSwitchStyle())
           .fixedSize().accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter")
       }.frame(minHeight: AlphaStyle.minTarget)
+      Text("Inputs").font(.system(size: 17, weight: .semibold))
       MicrophoneCards(store: store, devices: microphonesOverride ?? microphones, willChange: {
         store.session.stopMicrophoneTest()
         recorder.stopInputTest()
@@ -102,7 +109,7 @@ struct AdjustPanel: View {
   }
   private var footer: some View {
     HStack {
-      Text(selection == .mic ? "Speak to check your level." : "Remembered for each camera.").foregroundStyle(.secondary)
+      Text(selection == .mic ? "Speak to check your level." : "Remembered for each camera.").cardCaption()
       Spacer(minLength: Space.sm)
       SettingsLink { HStack(spacing: Space.xs) { Text("More in Settings"); Image(systemName: "chevron.right") } }
         .buttonStyle(.plain).frame(minHeight: AlphaStyle.minTarget)

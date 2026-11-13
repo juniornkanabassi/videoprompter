@@ -87,14 +87,16 @@ extension AppearanceSnapshotTests {
     let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
     let devices = [CameraDevice(uid: "fx3", name: "Sony FX3"), CameraDevice(uid: "mac", name: "MacBook Pro Camera")]
     camera.selectedUID = "fx3"
+    // The same capture-card label the presenter fixtures show for the Sony FX3.
+    let sourceInfo = ["fx3": CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)]
     let destination = URL(fileURLWithPath: output)
     for (name, width, zoom) in [("narrow", 340.0, 1.0), ("standard", 470.0, 1.0), ("wide", 900.0, 1.0), ("200", 470.0, 2.0)] {
       camera.setRotation(.none)
-      let view = AdjustPanel(selection: .constant(.camera), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, devicesOverride: devices, recorder: recorder)
+      let view = AdjustPanel(selection: .constant(.camera), showsMic: .constant(true), camera: camera, store: store, startsMeter: false, zoom: zoom, width: width * zoom, devicesOverride: devices, sourceInfoOverride: sourceInfo, recorder: recorder)
       try await snapshot(view, name: "round4-camera-\(name)", size: .init(width: width * zoom, height: 900 * zoom), scheme: .dark, destination: destination)
     }
     camera.setRotation(.threeQuarters)
-    let advanced = CameraAdjustView(model: camera, devicesOverride: devices, initiallyAdvanced: true).padding(AlphaStyle.panelInset)
+    let advanced = CameraAdjustView(model: camera, devicesOverride: devices, sourceInfoOverride: sourceInfo, initiallyAdvanced: true).padding(AlphaStyle.panelInset)
       .frame(width: 470, height: 900, alignment: .top).background(Color(white: 0.07)).environment(\.colorScheme, .dark).tint(AlphaStyle.accent)
     try await snapshot(advanced, name: "round4-camera-advanced", size: .init(width: 470, height: 900), scheme: .dark, destination: destination)
   }
