@@ -216,9 +216,12 @@ struct IPadRemoteView: View {
   }
   private func setVoice(_ value: String, _ state: PadRemote.State) {
     if value == "mac" {
-      guard let id = state.scripts.first(where: { $0.id == state.presenting })?.macID, let record = store.scripts.first(where: { $0.id == id }) else { message = "Send the script from this Mac first"; return }
       message = nil
-      link.relay.start(script: record, settings: store.settings)
+      if state.markdown != nil { link.relay.startFromIPad(settings: store.settings) }
+      else if let id = state.scripts.first(where: { $0.id == state.presenting })?.macID,
+        let record = store.scripts.first(where: { $0.id == id }) {
+        link.relay.start(script: record, settings: store.settings)
+      } else { message = "Send the script from this Mac first" }
     } else {
       if link.relay.isRelaying { link.relay.stop() }
       if value == "ipad" { link.setVoiceSource("iPad"); link.send(.mode("Voice")) }

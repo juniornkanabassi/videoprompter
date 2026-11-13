@@ -704,3 +704,9 @@ The approved connect mockup, section 2A–2D, governs the Mac iPad window. The w
 The connected window has three bands: device/voice/camera/script menus, a growing upright live replica with a thin draggable reading bar, and transport. Start reading/Pause, Back to start, Previous, Next and reading mode stay visible; automatic scroll adds a speed stepper. Space toggles reading, arrows move by passage, and Home returns to the start. Editing on the iPad disables these transport actions. Camera Only replaces the replica with the Mac preview and Open a script. The preview is not proof of the iPad's received picture.
 
 More holds picture mode, quality, mirror, flip, clean screen and countdown. A second page holds text size, width, line spacing, reading line and presets. The disconnected state embeds IPadConnectPanel; its temporary key-entry implementation will be replaced by the parallel QR pairing work without changing its interface. Closing the window stops voice relay; status publication remains automatic while linked.
+
+## iPad device cards (approved mockup 3, 13 November 2026)
+
+The Camera and Mic carets open touch popovers with the Mac Adjust card vocabulary. The Mac name and yellow Mac badge precede its devices; This iPad follows with a Fallback badge. A disconnected Mac keeps a quiet section with Connect to a Mac. Cards have a 64 pt minimum and segments a 44 pt minimum. The selected card has a yellow border and tick. The microphone card holds Show meter and Channel choices, where available.
+
+Choosing a microphone also selects the voice follower. Capability-advertising Macs accept the iPad's microphone request and follow the exact presented script; local microphone selection ends that relay. Older peers keep their existing protocol behaviour. Camera identity, connection, format and shot remain beside the presenter.

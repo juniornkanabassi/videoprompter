@@ -179,6 +179,10 @@ public enum PadRemote {
     case selectCamera(String)
     case cameraOn(Bool)
     case selectMicrophone(String)
+    /// Capability-gated iPad request: nil hands voice back to the iPad; empty UID uses system default.
+    case macMicrophone(String?)
+    case microphoneChannel(String)
+    case microphoneMeter(Bool)
     case micOn(Bool)
     /// Mac to iPad. Optional fields are partial updates.
     case macStatus(MacStatus)
@@ -199,9 +203,29 @@ public enum PadRemote {
   public struct Source: Codable, Equatable, Sendable, Identifiable {
     public var id: String
     public var name: String
-    public init(id: String, name: String) { self.id = id; self.name = name }
+    public var connection: String?
+    public var width: Int?
+    public var height: Int?
+    public var fps: Double?
+    public var channels: Int?
+    public var sampleRate: Double?
+    public init(id: String, name: String, connection: String? = nil, width: Int? = nil, height: Int? = nil,
+      fps: Double? = nil, channels: Int? = nil, sampleRate: Double? = nil) {
+      self.id = id; self.name = name; self.connection = connection; self.width = width; self.height = height
+      self.fps = fps; self.channels = channels; self.sampleRate = sampleRate
+    }
+    public var detail: String {
+      var parts = [connection].compactMap { $0 }
+      if let width, let height { parts.append("\(width) × \(height)") }
+      if let fps, fps.isFinite, fps > 0 { parts.append(String(format: "%.0fp", fps)) }
+      if let channels { parts.append("\(channels) \(channels == 1 ? "channel" : "channels")") }
+      if let sampleRate, sampleRate.isFinite, sampleRate > 0 { parts.append(String(format: "%.1f kHz", sampleRate / 1000)) }
+      return parts.joined(separator: " · ")
+    }
   }
   public struct MacStatus: Codable, Equatable, Sendable {
+    public var supportsMicSelection: Bool?
+    public var microphoneChannel: String?
     public var cameras: [Source]?
     /// Nil leaves selection unchanged; a supplied list that omits it clears it.
     public var selectedCamera: String?
@@ -221,7 +245,8 @@ public enum PadRemote {
     public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
       microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
       recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
-      micLevelDB: Double? = nil, framesSkipped: Int? = nil) {
+      micLevelDB: Double? = nil, framesSkipped: Int? = nil, supportsMicSelection: Bool? = nil, microphoneChannel: String? = nil) {
+      self.supportsMicSelection = supportsMicSelection; self.microphoneChannel = microphoneChannel
       self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn
       self.microphones = microphones; self.selectedMicrophone = selectedMicrophone; self.micOn = micOn
       self.recording = recording; self.displayName = displayName; self.connectionKind = connectionKind

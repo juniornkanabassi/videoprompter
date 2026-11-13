@@ -133,6 +133,7 @@ struct BarDeviceControl<MenuContent: View>: View {
   let menuValue: String
   let toggle: () -> Void
   @ViewBuilder var menu: () -> MenuContent
+  @State private var showingDevices = false
 
   var body: some View {
     HStack(spacing: 0) {
@@ -141,11 +142,22 @@ struct BarDeviceControl<MenuContent: View>: View {
         .help(toggleHelp)
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
         .disabled(!isEnabled)
+      Group {
+      #if os(iOS)
+      Button { showingDevices = true } label: {
+        Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
+          .frame(width: max(44, PresenterBar.caretWidth), height: max(44, controlHeight)).contentShape(Rectangle())
+      }
+      .buttonStyle(.plain)
+      .popover(isPresented: $showingDevices) { menu().presentationCompactAdaptation(.popover) }
+      #else
       Menu(content: menu) {
         Image(systemName: "chevron.down").font(.system(size: 11, weight: .bold))
           .frame(width: PresenterBar.caretWidth, height: controlHeight).contentShape(Rectangle())
       }
       .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+      #endif
+      }
       .foregroundStyle(isOn ? Color.white.opacity(0.8) : offIsWarning ? PresenterBar.warning : .white.opacity(0.7))
       .help(menuLabel)
       .accessibilityLabel(menuLabel).accessibilityValue(menuValue)

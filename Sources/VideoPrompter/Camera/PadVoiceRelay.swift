@@ -65,7 +65,16 @@ import PrompterCore
 
   /// Sends the script to the iPad if it lacks it, then listens and follows. Asynchronous: the
   /// status says how far it got.
-  func start(script: ScriptRecord, settings: PrompterSettings) {
+  func startFromIPad(settings: PrompterSettings) {
+    guard let state = iPadState, let id = state.presenting,
+      let text = state.markdown, text.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes,
+      MarkdownLibrary.fingerprint(text) == state.fingerprint,
+      let entry = state.scripts.first(where: { $0.id == id }) else { return fail("Open a script on the iPad first") }
+    let record = ScriptRecord(metadata: ScriptMetadata(id: entry.macID ?? id, title: entry.title, fileName: "ipad.md"), markdown: text)
+    start(script: record, settings: settings, fromIPad: true)
+  }
+
+  func start(script: ScriptRecord, settings: PrompterSettings, fromIPad: Bool = false) {
     guard phase == .idle else { return }
     guard let state = iPadState else { return fail("No iPad is connected") }
     guard (state.version ?? 2) >= 3 else { return fail("Update Video Prompter on the iPad to use the Mac's voice") }
@@ -76,7 +85,17 @@ import PrompterCore
     status = "Getting the script onto the iPad…"
     run += 1
     let thisRun = run
-    startTask = Task { [weak self] in await self?.begin(script: script, settings: settings, run: thisRun) }
+    let presentedID = fromIPad ? state.presenting : nil
+    startTask = Task { [weak self] in await self?.begin(script: script, settings: settings, run: thisRun, presentedID: presentedID) }
+  }
+
+  func setChannel(_ channel: AudioChannel) {
+    guard let device = AudioCapture.resolvedInput(session?.settings.audioDeviceUID),
+      let preferences = UserDefaults(suiteName: suiteName) else { return }
+    channel.save(device.uid, defaults: preferences)
+    let resume = wantsRunning
+    pause()
+    if resume { play() }
   }
 
   /// Pauses the iPad, then lets go. The voice source is left for the user to change.
@@ -154,17 +173,18 @@ import PrompterCore
 
   // MARK: - Starting
 
-  private func begin(script: ScriptRecord, settings: PrompterSettings, run: Int) async {
+  private func begin(script: ScriptRecord, settings: PrompterSettings, run: Int, presentedID: UUID?) async {
     // A stopped or replaced start does nothing at all, and above all sends nothing.
     func current() -> Bool { run == self.run && phase == .preparing && !Task.isCancelled }
     guard current() else { return }
     let wanted = MarkdownLibrary.fingerprint(script.markdown)
     let macID = script.metadata.id
-    func entry(_ state: PadRemote.State?) -> PadRemote.Script? { state?.scripts.first { $0.macID == macID } }
+    func entry(_ state: PadRemote.State?) -> PadRemote.Script? { state?.scripts.first { presentedID != nil ? $0.id == presentedID : $0.macID == macID } }
     func ready(_ state: PadRemote.State?) -> Bool {
-      guard let state, let found = entry(state), found.fingerprint == wanted else { return false }
+      guard let state, let found = entry(state), presentedID != nil || found.fingerprint == wanted else { return false }
       return state.presenting == found.id && state.fingerprint == wanted && state.seekRevision != nil
     }
+    if presentedID != nil, !ready(iPadState) { return finish("The iPad closed or changed the script", pausingIPad: false) }
     if let state = iPadState, !ready(state) {
       if let found = entry(state), found.fingerprint == wanted {
         link?.send(.present(found.id))
@@ -180,7 +200,7 @@ import PrompterCore
     let opened = await wait({ [self] in ready(iPadState) })
     guard current() else { return }
     guard opened else { return finish("The iPad did not open the script", pausingIPad: false) }
-    remember(wanted, for: macID)
+    if presentedID == nil { remember(wanted, for: macID) }
     link?.send(.voiceSource("Mac"))
     let switched = await wait({ [self] in iPadState?.voiceSource == "Mac" })
     guard current() else { return }
@@ -198,6 +218,9 @@ import PrompterCore
     relaySettings.allowsBackwardVoiceTracking = settings.allowsBackwardVoiceTracking
     relaySettings.audioDeviceUID = settings.audioDeviceUID
     relaySettings.inputGain = settings.inputGain
+    if let device = AudioCapture.resolvedInput(settings.audioDeviceUID) {
+      AudioChannel.load(device.uid, defaults: self.defaults).save(device.uid, defaults: defaults)
+    }
     let session = SessionStore(defaults: defaults)
     session.present(record: script, settings: relaySettings)
     self.session = session

@@ -30,6 +30,7 @@ struct PresenterScreen: View {
   @ObservedObject var session: SessionStore
   @ObservedObject var camera: PadCamera
   private let referencePicture: UIImage?
+  private let snapshotPicker: Bool?
   @ScaledMetric(relativeTo: .body) private var preferredHUDScale = 1.0
   private var hudScale: Double { max(1, preferredHUDScale) }
   @State private var setup: Bool
@@ -45,7 +46,8 @@ struct PresenterScreen: View {
   @FocusState private var focused: Bool
 
   /// `startsReading` opens on the reading controls (snapshots and tests); Start does the same.
-  init(session: SessionStore, camera: PadCamera, startsReading: Bool = false, referencePicture: UIImage? = nil, previouslyConnected: Bool = false) {
+  init(session: SessionStore, camera: PadCamera, startsReading: Bool = false, referencePicture: UIImage? = nil, previouslyConnected: Bool = false, snapshotPicker: Bool? = nil) {
+    self.snapshotPicker = snapshotPicker
     self.referencePicture = referencePicture
     _hadMac = State(initialValue: previouslyConnected)
     self.session = session
@@ -96,6 +98,12 @@ struct PresenterScreen: View {
             cleanHandle
           }
           if counting { countdown(size) }
+        }
+        if let snapshotPicker {
+          DevicePickerCards(store: store, microphone: snapshotPicker)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .padding(.trailing, 140).padding(.bottom, 152)
         }
       }
     }
@@ -553,11 +561,18 @@ struct PresenterScreen: View {
       }
       Button { showingCamera = true } label: {
         VStack(alignment: .leading, spacing: 4) {
-          Text(store.cameraSources.first { $0.id == store.selectedCamera }?.name
-            ?? camera.devices.first { $0.id == camera.selectedID }?.name ?? "Camera")
+          Text(camera.isShowingMac ? (store.cameraSources.first { $0.id == store.selectedCamera }?.name ?? "Mac camera")
+            : (camera.devices.first { $0.id == camera.selectedID }?.name ?? "Camera"))
             .font(.system(size: 16, weight: .semibold))
-          Text(cameraIsOn ? (macConnected ? "Camera from the Mac" : "iPad camera") : "Camera off")
-          if let mode = camera.mode { Text(mode) }
+          Text(cameraIsOn ? (camera.isShowingMac ? "From " + (store.macDisplayName ?? "Mac") : "This iPad") : "Camera off")
+          if camera.isShowingMac, let source = store.cameraSources.first(where: { $0.id == store.selectedCamera }) {
+            Text(source.detail)
+          }
+          if !camera.isShowingMac, let device = camera.devices.first(where: { $0.id == camera.selectedID }) {
+            Text(device.isExternal ? "USB-C capture" : "Built-in")
+            if let mode = camera.mode { Text(mode) }
+            else { Text(PadRemote.Source(id: device.id, name: device.name, width: device.width, height: device.height, fps: device.fps).detail) }
+          }
           Text(store.flip ? "Upside down" : "Landscape · Upright")
           if store.mirror { Text("Mirrored") }
         }
@@ -595,41 +610,22 @@ struct PresenterScreen: View {
     return [camera, mic].compactMap { $0 }.joined(separator: " ")
   }
 
-  private var cameraIsOn: Bool { macConnected ? store.cameraOn : camera.isOn }
+  private var cameraIsOn: Bool { camera.isShowingMac ? store.cameraOn : camera.isOn }
 
   private func cameraButton(compact: Bool) -> some View {
-    let name = store.cameraSources.first { $0.id == store.selectedCamera }?.name
+    let name = camera.isShowingMac ? store.cameraSources.first { $0.id == store.selectedCamera }?.name
+      : camera.devices.first { $0.id == camera.selectedID }?.name
     // "Sony FX3 · HDMI capture" shows as "Sony FX3"; the menu holds the full name.
     let title = !cameraIsOn ? "Camera off" : (name?.components(separatedBy: " · ").first ?? "Camera")
     return BarDeviceControl(
       offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: cameraIsOn,
       toggleHelp: title, menuLabel: "Choose camera", menuValue: title,
       toggle: {
-        if macConnected { store.setCameraOn(!store.cameraOn) } else { camera.isOn.toggle() }
+        if camera.isShowingMac { store.setCameraOn(!store.cameraOn) } else { camera.isOn.toggle() }
       }
     ) {
-      Section("Camera picture from the Mac") {
-        if macConnected {
-          ForEach(store.cameraSources) { source in
-            Button { store.selectCamera(source.id) } label: {
-              if source.id == store.selectedCamera { Label(source.name, systemImage: "checkmark") } else { Text(source.name) }
-            }
-          }
-        } else {
-          ForEach(camera.devices, id: \.id) { device in
-            Button { camera.selectedID = device.id } label: {
-              if device.id == camera.selectedID { Label(device.name, systemImage: "checkmark") } else { Text(device.name) }
-            }
-          }
-        }
-      }
-      if !store.cameraOnly {
-        Picker("Picture", selection: Binding(get: { store.pictureMode }, set: { store.setPictureMode($0) })) {
-          Text("Off (black behind the script)").tag(PadRemote.PictureMode.off)
-          Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
-          Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
-        }
-      }
+      DevicePickerCards(store: store, microphone: false)
+
     }
   }
 
@@ -639,22 +635,8 @@ struct PresenterScreen: View {
       title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: store.micOn,
       toggleHelp: title, menuLabel: "Choose microphone", menuValue: title, toggle: { store.setMicOn(!store.micOn) }
     ) {
-      if macConnected, !store.cameraOnly {
-        Picker("Voice from", selection: Binding(get: { store.voiceSource }, set: { store.setVoiceSource($0) })) {
-          // The iPad cannot start the Mac's voice relay; choosing the Mac here would leave it waiting for words.
-          // Once the Mac has started it (voiceSource is Mac), it stays selectable.
-          Text(store.voiceSource == "Mac" ? "The Mac" : "The Mac (start it from the Mac)").tag("Mac")
-            .disabled(store.voiceSource != "Mac")
-          Text("This iPad").tag("iPad")
-        }
-      }
-      Section("Microphone") {
-        ForEach(store.microphoneSources) { source in
-          Button { store.selectMicrophone(source.id) } label: {
-            if source.id == store.selectedMicrophone { Label(source.name, systemImage: "checkmark") } else { Text(source.name) }
-          }
-        }
-      }
+      DevicePickerCards(store: store, microphone: true)
+
     }
   }
 
@@ -794,9 +776,10 @@ private struct PresenterMeter: View {
   @ObservedObject var meter: RemoteMicMeter
   let name: String
   var isListening = true
+  var showsHeading = true
   @State private var input = InputMeter()
   var body: some View {
-    MicMeterView(meter: input, micName: name, isListening: isListening)
+    MicMeterView(meter: input, micName: name, showsHeading: showsHeading, isListening: isListening)
       .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
         input.show(peakDBFS: Float(meter.levelDB), isClipping: meter.levelDB >= -0.1)
       }
@@ -888,5 +871,117 @@ private struct TurnButton: View {
     .accessibilityLabel(title)
     .accessibilityValue(isOn ? "On" : "Off")
     .accessibilityAddTraits(.isToggle)
+  }
+}
+
+/// Touch-sized versions of the Mac Adjust cards. The source also chooses who follows the voice.
+struct DevicePickerCards: View {
+  @ObservedObject var store: PadStore
+  let microphone: Bool
+  @State private var showMeter = true
+  @State private var connect = false
+  @State private var channelRevision = 0
+  @State private var contentHeight: CGFloat = 600
+  var connected: Bool { store.camera.link.macName != nil }
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 12) {
+        HStack {
+          Text(microphone ? "Microphone" : "Camera").font(.title2.bold())
+          Spacer()
+          if microphone { Toggle("Show meter", isOn: $showMeter).tint(.yellow).fixedSize() }
+        }
+        if !microphone { Text("Pick the camera, then make the picture upright.").foregroundStyle(.secondary) }
+        heading(store.macDisplayName ?? "Mac", badge: connected ? "Mac" : "Not connected", active: connected)
+        if connected {
+          if microphone {
+            card(.init(id: "", name: "System default", connection: "Use the Mac’s selected input"), mac: true)
+            ForEach(store.macStatus.microphones ?? []) { card($0, mac: true) }
+          } else { ForEach(store.cameraSources) { card($0, mac: true) } }
+        } else {
+          VStack(alignment: .leading, spacing: 8) {
+            Text("Available when this iPad is connected to the Mac").foregroundStyle(.secondary)
+            Button("Connect to a Mac") { connect = true }.frame(minHeight: 44)
+          }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(.gray.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5])))
+        }
+        heading("This iPad", badge: "Fallback", active: false)
+        if microphone {
+          if store.localMicrophones.isEmpty { card(.init(id: "", name: "iPad microphone", connection: "Built-in"), mac: false) }
+          ForEach(store.localMicrophones) { card($0, mac: false) }
+        } else {
+          ForEach(store.camera.devices.filter { !$0.isMac }) { device in
+            card(.init(id: device.id, name: device.name,
+              connection: device.isExternal ? "USB-C capture" : "Built-in · faces away under the glass",
+              width: device.width, height: device.height, fps: device.fps), mac: false)
+          }
+          Text("Picture").font(.headline)
+          HStack(spacing: 4) {
+            picture("Off", .off); picture("Behind the script", .behindScript); picture("Monitor only", .monitorOnly)
+          }
+        }
+        Text(microphone ? "Speak to check your level." : "Remembered for each camera.").font(.callout).foregroundStyle(.secondary)
+      }.padding(20)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
+    }.frame(width: 500, height: min(680, contentHeight))
+      .background(Color(white: 0.1)).preferredColorScheme(.dark)
+      .onAppear { if microphone { store.showPickerMeter(showMeter) } }
+      .onDisappear { if microphone { store.showPickerMeter(false) } }
+      .onChange(of: showMeter) { _, value in if microphone { store.showPickerMeter(value) } }
+      .onChange(of: store.selectedMicrophone) { _, _ in if microphone { store.showPickerMeter(showMeter) } }
+      .onChange(of: store.micOn) { _, _ in if microphone { store.showPickerMeter(showMeter) } }
+      .onChange(of: store.usesMacMic) { _, _ in if microphone { store.showPickerMeter(showMeter) } }
+      .sheet(isPresented: $connect) { MacControlScreen(link: store.camera.link).environmentObject(store) }
+  }
+  private func heading(_ name: String, badge: String, active: Bool) -> some View {
+    HStack { Text(name).font(.headline); Text(badge).font(.caption.bold())
+      .padding(.horizontal, 8).padding(.vertical, 4)
+      .background(active ? Color.yellow.opacity(0.2) : Color.gray.opacity(0.2), in: Capsule())
+      .foregroundStyle(active ? .yellow : .secondary) }.padding(.top, 4)
+  }
+  private func selected(_ source: PadRemote.Source, mac: Bool) -> Bool {
+    if microphone { return store.usesMacMic == mac && (store.selectedMicrophone ?? (mac ? "" : AudioCapture.defaultDevice()?.uid ?? "")) == source.id }
+    return mac ? store.camera.isShowingMac && store.selectedCamera == source.id : store.camera.selectedID == source.id
+  }
+  private func card(_ source: PadRemote.Source, mac: Bool) -> some View {
+    let chosen = selected(source, mac: mac)
+    return VStack(alignment: .leading, spacing: 12) {
+      Button {
+        if microphone { store.chooseMicrophone(source.id, onMac: mac) }
+        else if mac { store.camera.selectedID = PadCamera.macLinkID; store.selectCamera(source.id); store.setCameraOn(true); store.camera.isOn = true }
+        else { store.camera.selectedID = source.id; store.camera.isOn = true }
+      } label: {
+        HStack {
+          VStack(alignment: .leading, spacing: 4) {
+            Text(source.name).font(.body.bold())
+            Text(source.detail).font(.callout).foregroundStyle(.white.opacity(0.75))
+          }
+          Spacer()
+          Image(systemName: chosen ? "checkmark.circle.fill" : "circle").foregroundStyle(chosen ? .yellow : .gray)
+        }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+      }.buttonStyle(.plain).accessibilityAddTraits(chosen ? .isSelected : [])
+        .disabled(microphone && mac && store.macStatus.supportsMicSelection != true && !store.usesMacMic)
+      if microphone && chosen {
+        if showMeter { PresenterMeter(meter: store.micMeter, name: source.name, isListening: store.micOn, showsHeading: false).frame(height: 96) }
+        if (source.channels ?? 1) > 1 || (mac ? store.macStatus.microphoneChannel ?? "Both" : AudioChannel.load(source.id).rawValue) != "Both" {
+          HStack {
+            Text("Channel")
+            ForEach(["Both", "Left", "Right"], id: \.self) { value in
+              let current = mac ? store.macStatus.microphoneChannel ?? "Both" : AudioChannel.load(source.id).rawValue
+              Button(value) { store.chooseChannel(value, onMac: mac); channelRevision += 1; store.showPickerMeter(showMeter) }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(current == value ? Color.yellow.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 8))
+            }
+          }.id(channelRevision)
+        }
+      }
+    }.padding(12).frame(minHeight: 64)
+      .background(Color(white: 0.16), in: RoundedRectangle(cornerRadius: 12))
+      .overlay(RoundedRectangle(cornerRadius: 12).stroke(chosen ? Color.yellow : Color.white.opacity(0.12), lineWidth: chosen ? 2 : 1))
+  }
+  private func picture(_ label: String, _ mode: PadRemote.PictureMode) -> some View {
+    Button(label) { store.setPictureMode(mode) }.font(.callout)
+      .frame(maxWidth: .infinity, minHeight: 44)
+      .background(store.pictureMode == mode ? Color.yellow.opacity(0.2) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
   }
 }

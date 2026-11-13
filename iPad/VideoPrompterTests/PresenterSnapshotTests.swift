@@ -85,12 +85,51 @@ import XCTest
     session.pause()
   }
 
+  func testPickerShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "picker-shots-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    store.settings.horizontalMirror = false
+    let script = try store.folder.create(title: "Picker fixture", markdown: Self.script)
+    store.present(script)
+    for state in ["3A", "3B", "3C"] {
+      let status = PadRemote.MacStatus(
+        cameras: [.init(id: "fx3", name: "Sony FX3", connection: "HDMI capture", width: 1920, height: 1080, fps: 25),
+          .init(id: "face", name: "FaceTime HD Camera", connection: "Built-in", width: 1280, height: 720, fps: 30)],
+        selectedCamera: "fx3", cameraOn: true,
+        microphones: [.init(id: "external", name: "External Microphone", connection: "USB", channels: 2, sampleRate: 48000),
+          .init(id: "built-in", name: "MacBook Pro Microphone", connection: "Built-in", channels: 1, sampleRate: 48000)],
+        selectedMicrophone: "external", displayName: "Junior’s MacBook Pro", connectionKind: "USB-C",
+        supportsMicSelection: true, microphoneChannel: "Both")
+      store.camera.link.pickerSnapshotConnection(state == "3C" ? nil : "Junior’s MacBook Pro")
+      store.camera.pickerSnapshotDevices()
+      store.camera.selectedID = state == "3C" ? "capture" : PadCamera.macLinkID
+      if state == "3C" { store.perform(.macStatus(.init(connectionKind: ""))) }
+      if state == "3B" { store.perform(.voiceSource("Mac")) }
+      for (name, size) in Self.sizes.prefix(2) {
+        store.present(script)
+        store.session.seek(to: 24)
+        store.camera.guides = CameraGuides()
+        if state == "3B" { store.perform(.voiceSource("Mac")) }
+        _ = try await render(PresenterScreen(session: store.session, camera: store.camera, referencePicture: UIImage(), snapshotPicker: state == "3B")
+          .environmentObject(store), size: size, name: "ipad-picker-\(state)-\(name)", directory: directory) {
+            store.perform(.macStatus(status))
+            store.camera.link.pickerSnapshotConnection(state == "3C" ? nil : "Junior’s MacBook Pro")
+            store.camera.pickerSnapshotDevices()
+            store.camera.selectedID = state == "3C" ? "capture" : PadCamera.macLinkID
+            store.setPictureMode(.behindScript)
+            store.micMeter.show(-12)
+          }
+      }
+    }
+  }
+
   func testPairingShots() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "qr-shots-\(UUID().uuidString)")!)
     let legacyKey = store.camera.link.pairingCode
     KnownMacs.note(name: "USB history fixture", kind: "USB-C")
-    store.camera.link.forgetMac(named: "USB history fixture")
+    store.camera.link.forgetMac(id: "USB history fixture")
     XCTAssertEqual(store.camera.link.pairingCode, legacyKey, "Forgetting USB history must preserve Wi-Fi pairings")
     _ = try await render(MacControlScreen(link: store.camera.link).environmentObject(store),
       size: CGSize(width: 1180, height: 820), name: "qr-ipad-connect", directory: directory, beforeDraw: {})

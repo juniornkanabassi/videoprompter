@@ -240,6 +240,10 @@ import UIKit
   /// Starts listening, or starts again after the app comes back from the background, where iOS
   /// may have torn the listeners down.
   #if DEBUG && targetEnvironment(simulator)
+  func pickerSnapshotConnection(_ name: String?) {
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { return }
+    if macName != name { macName = name }
+  }
   private var qrFixtureStarted = false
   #endif
   func start() {

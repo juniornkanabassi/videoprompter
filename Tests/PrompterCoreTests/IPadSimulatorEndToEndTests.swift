@@ -90,6 +90,37 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     }
   }
 
+  @MainActor func testBIPadMicrophonePickerStartsAndStopsMacRelay() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let env = ProcessInfo.processInfo.environment
+    let port = try XCTUnwrap(env["VP_IPAD_E2E_PORT"].flatMap(UInt16.init))
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.capturesCamera = false
+    sender.relay.captureAudio = false
+    sender.relay.presenterIsCapturing = { false }
+    defer { sender.disconnect() }
+    sender.use(SocketPipe(socket: try XCTUnwrap(Self.connect(port: port)), name: "USB-C"))
+    for _ in 0..<100 where sender.iPadState?.scripts.isEmpty != false { try await Task.sleep(for: .milliseconds(50)) }
+    let script = try XCTUnwrap(sender.iPadState?.scripts.first)
+    sender.send(.present(script.id))
+    for _ in 0..<100 where sender.iPadState?.presenting != script.id { try await Task.sleep(for: .milliseconds(50)) }
+    let trigger = URL(fileURLWithPath: try XCTUnwrap(env["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents/vp-picker-request.txt")
+    try "Mac".write(to: trigger, atomically: true, encoding: .utf8)
+    for _ in 0..<100 where sender.relay.session == nil { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertNotNil(sender.relay.session, "Relay: \(sender.relay.status); presented fingerprint: \(sender.iPadState?.fingerprint ?? "none"); request pending: \(FileManager.default.fileExists(atPath: trigger.path))")
+    XCTAssertEqual(sender.iPadState?.voiceSource, "Mac")
+    try "iPad".write(to: trigger, atomically: true, encoding: .utf8)
+    for _ in 0..<100 where sender.relay.isRelaying || sender.iPadState?.voiceSource != "iPad" { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertFalse(sender.relay.isRelaying)
+    XCTAssertEqual(sender.iPadState?.voiceSource, "iPad")
+    sender.send(.close)
+    for _ in 0..<100 where sender.iPadState?.presenting != nil { try await Task.sleep(for: .milliseconds(50)) }
+    sender.disconnect()
+    try await Task.sleep(for: .milliseconds(300))
+  }
+
   func testTheMacDrivesTheIPadAndSendsItsCamera() throws {
     try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
     let environment = ProcessInfo.processInfo.environment
