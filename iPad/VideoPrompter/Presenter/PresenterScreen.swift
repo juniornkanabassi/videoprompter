@@ -230,10 +230,7 @@ struct PresenterScreen: View {
     state == .recording ? Color(red: 0.78, green: 0.18, blue: 0.15) : PresenterTheme.warn
   }
 
-  /// Camera Only without a Mac shows this iPad's own camera. A Mac that is linked sends its own.
-  private func useOwnCameraWithoutMac() {
-    if store.cameraOnly, !macConnected, !camera.isOn { camera.isOn = true }
-  }
+  private func useOwnCameraWithoutMac() { store.useOwnCameraWithoutMac() }
 
   private func countdown(_ size: CGSize) -> some View {
     let turn = PadPresenterLayout.turn(mirror: store.mirror, flip: store.flip)
@@ -396,6 +393,7 @@ struct PresenterScreen: View {
   }
 
   private func primaryAction() {
+    guard !store.cameraOnly else { return }
     if session.isActivelyRunning || counting { session.pause() } else {
       setup = false
       startReading()
@@ -404,7 +402,8 @@ struct PresenterScreen: View {
 
   /// Voice follows nothing without a microphone; the off note beside Mic says why.
   private func startReading() {
-    guard store.micOn || !isVoice else { return }
+    // No script is on screen in Camera Only, so nothing may read, or ask for the microphone.
+    guard !store.cameraOnly, store.micOn || !isVoice else { return }
     session.startReading()
   }
 
@@ -651,6 +650,16 @@ struct PresenterScreen: View {
   /// Keyboards, presentation clickers and foot pedals. Most clickers send Page Up and Page Down
   /// or the arrow keys; pedals are usually set to Space or the arrows.
   private func handle(_ press: KeyPress) -> KeyPress.Result {
+    if store.cameraOnly {
+      // Only Escape, Mirror and Flip mean anything with no script; the reading keys are left alone.
+      switch (press.key, press.characters) {
+      case (.escape, _): store.closePresenter()
+      case (_, "m"): store.setMirror(!store.mirror)
+      case (_, "f"): store.setFlip(!store.flip)
+      default: return .ignored
+      }
+      return .handled
+    }
     switch press.key {
     case .space, .return:
       if session.isActivelyRunning || counting { session.pause() } else { startReading() }

@@ -60,6 +60,10 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertNil(cameraOnly.presenting)
     XCTAssertEqual(cameraOnly.words, 0)
     XCTAssertEqual(cameraOnly.pictureMode, .monitorOnly)
+    // Ownership of the Mac's feed depends on whether it was already on, so nothing is asked until the
+    // Mac's first camera status says so.
+    XCTAssertFalse(commands.withLock { $0.contains(.cameraOn(true)) }, "Camera Only must wait for the Mac's camera status")
+    send(.macStatus(.init(cameraOn: false)))
     for _ in 0..<50 where !commands.withLock({ $0.contains(.cameraOn(true)) }) { Thread.sleep(forTimeInterval: 0.1) }
     XCTAssertTrue(commands.withLock { $0.contains(.cameraOn(true)) }, "Camera Only must ask the Mac for its picture")
     send(.play)
@@ -70,6 +74,8 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(over.pictureMode, .behindScript)
     send(.close)
     _ = try state("closed after Camera Only") { $0.presenting == nil && $0.cameraOnly == false }
+    for _ in 0..<50 where !commands.withLock({ $0.contains(.cameraOn(false)) }) { Thread.sleep(forTimeInterval: 0.1) }
+    XCTAssertTrue(commands.withLock { $0.contains(.cameraOn(false)) }, "closing switches off the feed Camera Only switched on")
     // Let the cover finish dismissing, or its end would close the next presentation.
     Thread.sleep(forTimeInterval: 1.5)
     send(.mode("Manual"))

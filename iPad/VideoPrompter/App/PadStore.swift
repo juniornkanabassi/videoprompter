@@ -22,7 +22,10 @@ import UIKit
   /// The presenter is open, with or without a script.
   var isPresenting: Bool { presentingID != nil || cameraOnly }
   private var pictureIsTemporary = false
+  /// What Camera Only switched on, so closing puts back exactly that and nothing else: the Mac's
+  /// feed, or this iPad's own camera.
   private var startedMacCamera = false
+  private var startedLocalCamera = false
   @Published private(set) var picturePriority: PadRemote.PicturePriority = .realTime720p
   @Published private(set) var cleanScreen = false
   @Published private(set) var micOn = true
@@ -265,19 +268,34 @@ import UIKit
     askMacForPicture()
   }
 
-  /// A Mac that is linked sends nothing until asked, so Camera Only asks, now and when a Mac connects.
+  /// A Mac that is linked sends nothing until asked. Whether its feed was already on decides who
+  /// owns it, so this waits for the Mac's first camera status (it follows a connection at once).
+  /// A feed that was off is switched on and is the iPad's to switch off again on close.
   private func askMacForPicture() {
-    guard cameraOnly, camera.link.macName != nil, macStatus.cameraOn != true else { return }
-    // Switched back off on close only when this was what turned it on.
-    if macStatus.cameraOn == false { startedMacCamera = true }
+    guard cameraOnly, camera.link.macName != nil, macStatus.cameraOn == false else { return }
+    startedMacCamera = true
     setCameraOn(true)
+  }
+
+  /// With no Mac, Camera Only shows this iPad's own camera, which closing switches off again.
+  func useOwnCameraWithoutMac() {
+    guard cameraOnly, camera.link.macName == nil, !camera.isOn else { return }
+    startedLocalCamera = true
+    camera.isOn = true
   }
 
   func closePresenter() {
     session.pause()
     presentingID = nil
     cameraOnly = false
-    if startedMacCamera { startedMacCamera = false; setCameraOn(false) }
+    if startedMacCamera {
+      startedMacCamera = false
+      // Off before the Mac's picture stops: with it on, losing the Mac's format would fall back to
+      // this iPad's own camera, and starting that could ask for camera access while closing.
+      if camera.isShowingMac { camera.isOn = false }
+      setCameraOn(false)
+    }
+    if startedLocalCamera { startedLocalCamera = false; camera.isOn = false }
     if pictureIsTemporary { pictureIsTemporary = false; pictureMode = Self.savedPictureMode(defaults) }
     UIApplication.shared.isIdleTimerDisabled = false
     // A script deleted while it was on screen is cleaned up now.
@@ -410,6 +428,8 @@ extension PadStore {
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in
       guard let self else { return }
       if name == nil {
+        // Whatever this connection switched on is gone with it, and never belongs to the next Mac.
+        startedMacCamera = false
         resetMacControls()
         // A relayed session never falls back to this iPad's microphone on its own: it stops, and
         // the next Play here is the reader's choice.
@@ -587,12 +607,14 @@ extension PadStore {
       if let microphones = value.microphones, let id = next.selectedMicrophone, !microphones.contains(where: { $0.id == id }) { next.selectedMicrophone = nil }
       if let selected = value.selectedCamera { next.selectedCamera = selected }
       if let selected = value.selectedMicrophone { next.selectedMicrophone = selected }
+      let firstCameraStatus = macStatus.cameraOn == nil && value.cameraOn != nil
       if let on = value.cameraOn { next.cameraOn = on }
       if let on = value.micOn { next.micOn = on }
       if let recording = value.recording { next.recording = recording }
       if let name = value.displayName { next.displayName = name }
       if let kind = value.connectionKind { next.connectionKind = kind }
       if next != macStatus { macStatus = next }
+      if firstCameraStatus { askMacForPicture() }
 
     case .close: if isPresenting { closePresenter() }
     case .present(let id):
