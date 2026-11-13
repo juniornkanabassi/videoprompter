@@ -600,6 +600,7 @@ struct LibraryPresenterActions: View {
           Button("Recordings", systemImage: "film.stack") { NSWorkspace.shared.open(CameraRecorder.recordingsFolder()) }
             .labelStyle(.titleAndIcon).help("Show the Recordings folder in Finder")
         }
+        IPadButton()
         Button("Set up camera", systemImage: "video") { PresenterController.shared.presentCamera(store: store) }
           .labelStyle(.titleAndIcon)
           .help(Features.recording ? "Check framing or record without a script (⌥⌘C)" : "Check framing without a script (⌥⌘C)")

@@ -10,7 +10,7 @@ import SwiftUI
 import Synchronization
 import VideoToolbox
 
-/// File › Send Camera to iPad and File › Control iPad. The camera this Mac shows goes to Video
+/// Window › iPad. The camera this Mac shows goes to Video
 /// Prompter on an iPad, which puts it behind the script, and the iPad's presenter can be driven
 /// from here. Both share one connection, kept open while either is on. Over USB-C it travels through usbmuxd, the channel Finder and Xcode
 /// use to talk to an iPad, so it needs no network and no pairing beyond "Trust This Computer".
@@ -194,11 +194,11 @@ import VideoToolbox
       if isOn != oldValue { isOn ? startCamera() : stopCamera() }
     }
   }
-  /// Keeps the link open for the iPad Remote window and the CLI, camera or not.
+  /// Keeps the link open for the iPad window and the CLI, camera or not.
   @Published var controlsIPad = false {
     didSet {
       guard controlsIPad != oldValue else { return }
-      // Closing the Control iPad window ends the relay even if the camera keeps the link open.
+      // Closing the iPad window ends the relay even if the camera keeps the link open.
       if !controlsIPad { relay.stop() }
       updateLink()
     }
@@ -688,7 +688,7 @@ import VideoToolbox
     previewImage = nil
     guard linkOn else { return }
     if oldIPad, !isOn {
-      status = "Update Video Prompter on the iPad, then open Control iPad again"
+      status = "Update Video Prompter on the iPad, then open the iPad window again"
       return
     }
     status = "Looking for an iPad…"
@@ -705,13 +705,14 @@ import VideoToolbox
   }
 }
 
-/// File › Send Camera to iPad and Control iPad, with what the link is doing underneath.
+/// Window › iPad, with what the link is doing underneath.
 struct IPadCameraCommands: Commands {
   @ObservedObject var sender: IPadCameraSender
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
     CommandGroup(after: .windowList) {
-      Button("Control iPad…") { openWindow(id: "ipad-remote") }
+      Button("iPad…") { openWindow(id: "ipad-remote") }
+        .keyboardShortcut("i", modifiers: [.option, .command])
         .help("Choose the script on the iPad and control its reading")
     }
   }

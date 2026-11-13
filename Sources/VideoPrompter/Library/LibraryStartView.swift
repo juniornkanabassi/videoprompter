@@ -32,6 +32,7 @@ struct LibraryStartView: View {
           VStack(spacing: Space.md) { cards }
         }
         }
+        IPadButton().buttonStyle(AlphaSecondaryButtonStyle())
         WrapLayout(spacing: Space.md) {
           Button(action: practice) { Text("Practice with an example script").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
           Button { store.showWelcomeScript(); guide() } label: { Text("Help").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
