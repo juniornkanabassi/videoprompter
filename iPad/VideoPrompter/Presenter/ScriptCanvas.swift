@@ -29,6 +29,8 @@ struct ScriptCanvas: UIViewRepresentable {
   var manualPosition: (() -> Double)?
   let onSeek: (Int) -> Void
   var onUserScroll: ((Int) -> Void)?
+  /// A single tap, told apart from the double tap that jumps to a word. Clean screen uses it to bring the controls back.
+  var onSingleTap: (() -> Void)?
 
   static func sideInset(width: CGFloat, textWidth: Double) -> CGFloat {
     max(32, width * (1 - CGFloat(textWidth)) / 2)
@@ -52,6 +54,9 @@ struct ScriptCanvas: UIViewRepresentable {
     let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapped(_:)))
     doubleTap.numberOfTapsRequired = 2
     view.addGestureRecognizer(doubleTap)
+    let singleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.singleTapped))
+    singleTap.require(toFail: doubleTap)
+    view.addGestureRecognizer(singleTap)
     context.coordinator.textView = view
     return view
   }
@@ -308,6 +313,8 @@ struct ScriptCanvas: UIViewRepresentable {
       lastAligned = (mappings[best].token, parent.layoutGuideFraction, textView.bounds.height)
       (parent.onUserScroll ?? parent.onSeek)(mappings[best].token)
     }
+
+    @objc func singleTapped() { parent?.onSingleTap?() }
 
     @objc func doubleTapped(_ gesture: UITapGestureRecognizer) {
       guard let textView, let parent, !mappings.isEmpty else { return }

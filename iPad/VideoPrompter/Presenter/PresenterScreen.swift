@@ -152,7 +152,8 @@ struct PresenterScreen: View {
           manualPosition: session.isManual ? { [session] in session.manualPosition() }
             : UIAccessibility.isReduceMotionEnabled ? nil : { [session] in session.voicePosition() },
           onSeek: { session.seek(to: $0) },
-          onUserScroll: { session.seekFromUserScroll(to: $0) })
+          onUserScroll: { session.seekFromUserScroll(to: $0) },
+          onSingleTap: store.cleanScreen ? { store.setCleanScreen(false) } : nil)
         .frame(width: size.width, height: height)
         .mask(
           LinearGradient(
@@ -215,6 +216,8 @@ struct PresenterScreen: View {
     }
     .frame(width: size.width, height: size.height)
     .scaleEffect(x: turn.a, y: turn.d)
+    .contentShape(Rectangle())
+    .onTapGesture { if store.cleanScreen { store.setCleanScreen(false) } }
     .overlay(alignment: .trailing) {
       if macConnected {
         PresenterMeter(meter: store.micMeter)
@@ -619,7 +622,7 @@ struct PresenterScreen: View {
 
   // MARK: Clean full screen
 
-  /// Only text, line and meter; a swipe up or a tap on the handle brings the controls back.
+  /// Only text, line and meter; a tap anywhere, a swipe up or a tap on the handle brings the controls back.
   private var cleanHandle: some View {
     VStack {
       Spacer()
