@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26C84FA553FEA2B823DA12A /* SessionStore.swift */; };
 		4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D855FD629A122F15A7FE97E /* PrompterSettings.swift */; };
+		7C1A0E5D2B9F4A6381D05E71 /* AudioChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C1A0E5D2B9F4A6381D05E72 /* AudioChannel.swift */; };
 		4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AD650CCB71926F8862A6220 /* SpeechProvider.swift */; };
 		231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */; };
 		AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */; };
@@ -26,6 +27,7 @@
 		FA685967BAA69CB4A9C14425 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		C26C84FA553FEA2B823DA12A /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SessionStore.swift; sourceTree = "<group>"; };
 		3D855FD629A122F15A7FE97E /* PrompterSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/PrompterSettings.swift; sourceTree = "<group>"; };
+		7C1A0E5D2B9F4A6381D05E72 /* AudioChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Audio/AudioChannel.swift; sourceTree = "<group>"; };
 		0AD650CCB71926F8862A6220 /* SpeechProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Speech/SpeechProvider.swift; sourceTree = "<group>"; };
 		79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/DocumentImporter.swift; sourceTree = "<group>"; };
 		FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Import/GoogleDocsSheet.swift; sourceTree = "<group>"; };
@@ -69,6 +71,7 @@
 			children = (
 				C26C84FA553FEA2B823DA12A /* SessionStore.swift */,
 				3D855FD629A122F15A7FE97E /* PrompterSettings.swift */,
+				7C1A0E5D2B9F4A6381D05E72 /* AudioChannel.swift */,
 				0AD650CCB71926F8862A6220 /* SpeechProvider.swift */,
 				79FBD12FCEC52A2D1707EEDE /* DocumentImporter.swift */,
 				FC6F19E433AE7AFD9BC72C48 /* GoogleDocsSheet.swift */,
@@ -181,6 +184,7 @@
 			files = (
 				FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */,
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
+				7C1A0E5D2B9F4A6381D05E71 /* AudioChannel.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
 				231D299BE5548574AFB0DB20 /* DocumentImporter.swift in Sources */,
 				AEEB815325B6F6B459A153E3 /* GoogleDocsSheet.swift in Sources */,
