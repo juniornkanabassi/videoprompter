@@ -8,10 +8,26 @@ import XCTest
 @MainActor final class AppearanceSnapshotTests: XCTestCase {
   func testCameraAdjust() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
-    let model = CameraModel(defaults: freshDefaults("CameraAdjustSnapshot"))
+    let defaults = freshDefaults("CameraAdjustSnapshot")
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let model = CameraModel(defaults: defaults)
     model.selectedUID = "one"
     let devices = [CameraDevice(uid: "one", name: "Cam Link 4K", nickname: "Sony FX3"), CameraDevice(uid: "two", name: "MacBook Pro Camera")]
-    try await snapshot(CameraAdjustView(model: model, devicesOverride: devices), name: "alpha-camera-adjust-dark", size: .init(width: 470, height: 700), scheme: .dark, destination: URL(fileURLWithPath: output))
+    // The panel is the real container (inset, background, top alignment), framed at its own width: a bare
+    // CameraAdjustView in a larger window floated in the middle, which read as bands above and below.
+    let panel = AdjustPanel(selection: .constant(.camera), showsMic: .constant(true), camera: model, store: store, startsMeter: false, devicesOverride: devices, recorder: CameraRecorder(defaults: defaults))
+    try await snapshot(panel, name: "alpha-camera-adjust-dark", size: .init(width: 470, height: 760), scheme: .dark, destination: URL(fileURLWithPath: output))
+    // Cards in other sizes: a narrow sheet, a wide sheet, 200% text, three cameras, a long name and a video format.
+    let many = devices + [CameraDevice(uid: "three", name: "Logitech Brio Ultra HD Webcam")]
+    let info = ["one": CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)]
+    for (name, width, zoom) in [("narrow", 340.0, 1.0), ("wide", 900.0, 1.0), ("200", 470.0, 2.0)] {
+      let view = AdjustPanel(selection: .constant(.camera), showsMic: .constant(true), camera: model, store: store, startsMeter: false, zoom: zoom, width: width * zoom, devicesOverride: many, recorder: CameraRecorder(defaults: defaults))
+      try await snapshot(view, name: "alpha-cards-camera-\(name)", size: .init(width: width * zoom, height: 900 * zoom), scheme: .dark, destination: URL(fileURLWithPath: output))
+    }
+    try await snapshot(CameraAdjustView(model: model, devicesOverride: many, sourceInfoOverride: info).padding(AlphaStyle.panelInset).frame(maxHeight: .infinity, alignment: .top).background(Color(white: 0.07)).environment(\.colorScheme, .dark),
+                       name: "alpha-cards-camera-format", size: .init(width: 470, height: 900), scheme: .dark, destination: URL(fileURLWithPath: output))
   }
 
   func testAlphaZebraControlsAndLegend() async throws {

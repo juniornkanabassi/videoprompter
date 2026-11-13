@@ -22,41 +22,37 @@ struct CameraAdjustView: View {
         Text("Camera").font(.title2.bold())
         Text("Pick the camera, then make the picture upright. Remembered for each camera.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        VStack(spacing: AlphaStyle.controlGap) {
-        ForEach(devices) { device in
+        ChoiceTiles(items: devices, columns: 2, minTileWidth: 160) { device in
           let info = sourceInfo(device)
           let selected = device.uid == model.selectedUID
-          HStack(alignment: .center, spacing: Space.sm) {
-            Button { model.selectedUID = device.uid } label: {
-              HStack(spacing: Space.sm) {
-                Image(systemName: "video")
-                VStack(alignment: .leading, spacing: Space.xs) {
-                  Text(device.displayName).font(.headline).fixedSize(horizontal: false, vertical: true)
-                  Text(info.connectionDescription).font(.callout).foregroundStyle(.secondary)
-                  if let format = info.videoFormat {
-                    Text(format).font(.callout).foregroundStyle(.secondary)
-                  }
-                }
-                Spacer(minLength: 0)
-              }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
-            }.buttonStyle(.plain)
-              .accessibilityElement(children: .ignore)
-              .accessibilityLabel(device.displayName)
-              .accessibilityValue([info.connectionDescription, info.videoFormat].compactMap { $0 }.joined(separator: ", "))
+          let lines = [info.connectionDescription, info.videoFormat].compactMap { $0 }
+          let detail = lines.joined(separator: ", ")
+          ZStack(alignment: .top) {
+            Button { model.selectedUID = device.uid } label: { Color.clear.contentShape(Rectangle()) }
+              .buttonStyle(.plain)
+              .accessibilityLabel(device.displayName).accessibilityValue(detail)
               .accessibilityAddTraits(selected ? .isSelected : [])
-            Button("Rename") { renaming = device; nickname = device.nickname ?? "" }
-              .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
-              .frame(minWidth: AlphaStyle.minTarget, minHeight: AlphaStyle.minTarget)
-              .padding(.top, Space.md)
-          }.modifier(InputCardStyle(selected: selected))
-        }
+            VStack(spacing: Space.xs) {
+              Image(systemName: "video").font(.title2).frame(height: 32).allowsHitTesting(false)
+              HStack(spacing: Space.xs) {
+                Text(device.displayName).font(.headline).multilineTextAlignment(.center).lineLimit(2)
+                  .fixedSize(horizontal: false, vertical: true).allowsHitTesting(false)
+                Button { renaming = device; nickname = device.nickname ?? "" } label: {
+                  Image(systemName: "pencil").frame(width: 32, height: 32).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(.secondary)
+                  .accessibilityLabel("Rename \(device.displayName)").help("Rename this camera")
+              }
+              ForEach(lines, id: \.self) { line in
+                Text(line).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                  .lineLimit(2).fixedSize(horizontal: false, vertical: true).allowsHitTesting(false)
+              }
+            }.accessibilityElement(children: .contain)
+          }.modifier(ChoiceTileStyle(selected: selected))
         }.accessibilityElement(children: .contain).accessibilityLabel("Camera selection")
         }
         if showsShotHeading { Text("Shot").font(.system(size: 17, weight: .semibold)) }
-        ViewThatFits(in: .horizontal) {
-          HStack(spacing: AlphaStyle.controlGap) { shotCards }
-          VStack(spacing: AlphaStyle.controlGap) { shotCards }
-        }.accessibilityElement(children: .contain).accessibilityLabel("Shot")
+        ChoiceTiles(items: Self.shots, columns: 3) { shot($0) }
+          .accessibilityElement(children: .contain).accessibilityLabel("Shot")
         Text("If you are on your side, pick the other Vertical.").font(.callout).foregroundStyle(.secondary)
         DisclosureGroup(isExpanded: $advancedOpen) {
           advancedControls
@@ -74,7 +70,7 @@ struct CameraAdjustView: View {
   }
   var advancedControls: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
-      shot("Upside down", detail: "Turned over", icon: "rotate.right", rotation: .half)
+      ChoiceTiles(items: [Self.upsideDown], columns: 1) { shot($0) }
       HStack {
         Text("Automatic")
         Spacer()
@@ -83,11 +79,14 @@ struct CameraAdjustView: View {
       }.frame(minHeight: AlphaStyle.minTarget)
     }
   }
-  @ViewBuilder private var shotCards: some View {
-          shot("Landscape", detail: "As it comes", icon: "rectangle", rotation: .none)
-          shot("Vertical", detail: "Turned left", icon: "rotate.left", rotation: .quarter)
-          shot("Vertical", detail: "Turned right", icon: "rotate.right", rotation: .threeQuarters)
+  private struct Shot: Identifiable {
+    let id: String, title: String, detail: String, rotation: CameraRotation
   }
+  private static let shots = [
+    Shot(id: "none", title: "Landscape", detail: "As it comes", rotation: .none),
+    Shot(id: "quarter", title: "Vertical", detail: "Turned left", rotation: .quarter),
+    Shot(id: "threeQuarters", title: "Vertical", detail: "Turned right", rotation: .threeQuarters)]
+  private static let upsideDown = Shot(id: "half", title: "Upside down", detail: "Turned over", rotation: .half)
   private func sourceInfo(_ device: CameraDevice) -> CameraSourceInfo {
     if let info = sourceInfoOverride?[device.uid] { return info }
     if device.uid == model.selectedUID, let info = model.sourceInfo { return info }
@@ -96,16 +95,11 @@ struct CameraAdjustView: View {
     }
     return CameraSourceInfo(displayName: device.displayName, connection: .classify(deviceType: "", transportType: 0, manufacturer: "", modelID: "", name: device.originalName))
   }
-  @ViewBuilder private func selectionBadge(_ selected: Bool) -> some View {
-    if selected {
-      Image(systemName: "checkmark.circle.fill").foregroundStyle(AlphaStyle.accent)
-        .padding(Space.xs).accessibilityHidden(true)
-    }
-  }
-  private func shot(_ title: String, detail: String, icon: String, rotation: CameraRotation) -> some View {
+  private func shot(_ shot: Shot) -> some View {
+    let rotation = shot.rotation
     let selected = !model.guides.automaticRotation && model.guides.rotation == rotation
     return Button { model.setRotation(rotation) } label: {
-      VStack(spacing: Space.sm) {
+      VStack(spacing: Space.xs) {
         ZStack(alignment: .topTrailing) {
           Image(systemName: rotation == .quarter || rotation == .threeQuarters ? "rectangle.portrait" : "rectangle")
             .font(.title2)
@@ -113,12 +107,45 @@ struct CameraAdjustView: View {
             Image(systemName: rotation == .half ? "arrow.uturn.down" : rotation == .quarter ? "arrow.turn.up.left" : "arrow.turn.up.right").font(.caption.bold()).offset(x: Space.sm, y: -Space.xs)
           }
         }.frame(height: 32)
-        Text(title).font(.headline)
-        Text(detail).font(.callout).foregroundStyle(.secondary)
-      }.padding(.horizontal, Space.sm).frame(minWidth: 120, maxWidth: .infinity, minHeight: 112)
-        .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Space.md))
-        .overlay(RoundedRectangle(cornerRadius: Space.md).stroke(selected ? AlphaStyle.accent : .clear, lineWidth: AlphaStyle.selectionStroke))
-        .overlay(alignment: .topTrailing) { selectionBadge(selected) }
-    }.buttonStyle(.plain).accessibilityValue(selected ? "Selected" : "Not selected").accessibilityAddTraits(selected ? .isSelected : [])
+        Text(shot.title).font(.headline).frame(minHeight: 32)
+        Text(shot.detail).font(.callout).foregroundStyle(.secondary)
+      }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+    }.buttonStyle(.plain).modifier(ChoiceTileStyle(selected: selected))
+      .accessibilityLabel("\(shot.title), \(shot.detail)")
+      .accessibilityValue(selected ? "Selected" : "Not selected").accessibilityAddTraits(selected ? .isSelected : [])
+  }
+}
+
+/// Camera and Shot tiles share one height, radius and selection style.
+struct ChoiceTileStyle: ViewModifier {
+  var selected: Bool
+  func body(content: Content) -> some View {
+    content.frame(maxWidth: .infinity, minHeight: 120).modifier(InputCardStyle(selected: selected))
+  }
+}
+
+/// Tiles in rows of `columns` that all keep the same width and, per row, the same height. The column count
+/// follows the room offered, never the text, so a long camera name does not change the layout.
+struct ChoiceTiles<Item: Identifiable, Tile: View>: View {
+  let items: [Item]
+  let columns: Int
+  var minTileWidth: CGFloat = 120
+  @ViewBuilder var tile: (Item) -> Tile
+  @State private var width: CGFloat = 10_000
+  var body: some View {
+    let fitting = max(1, min(columns, Int((width + AlphaStyle.controlGap) / (minTileWidth + AlphaStyle.controlGap))))
+    grid(fitting).onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+  }
+  private func grid(_ columns: Int) -> some View {
+    // fixedSize below: rows take their content's height even where a parent offers a tall, bounded space.
+    Grid(horizontalSpacing: AlphaStyle.controlGap, verticalSpacing: AlphaStyle.controlGap) {
+      ForEach(Array(stride(from: 0, to: items.count, by: columns)), id: \.self) { start in
+        GridRow {
+          ForEach(items[start..<min(start + columns, items.count)]) { tile($0).frame(maxHeight: .infinity) }
+          // An empty cell keeps a short last row at the same tile width.
+          if start + columns > items.count { ForEach(0..<(start + columns - items.count), id: \.self) { _ in Color.clear.frame(maxWidth: .infinity, minHeight: 0) } }
+        }
+      }
+    }.fixedSize(horizontal: false, vertical: true)
   }
 }

@@ -19,6 +19,8 @@ struct MicrophoneCards: View {
   @ObservedObject var store: AppStore
   var devices: [AudioInputDevice]
   var willChange: () -> Void = {}
+  /// When set, the selected input's card shows this live level under its channel picker.
+  var meter: InputMeter? = nil
   @State private var revision = 0
   private var activeUID: String? { store.settings.audioDeviceUID ?? AudioCapture.resolvedInput(nil)?.uid }
   var body: some View {
@@ -41,26 +43,40 @@ struct MicrophoneCards: View {
         guard store.settings.audioDeviceUID != uid else { return }
         willChange(); store.settings.audioDeviceUID = uid
       } label: {
-        HStack(spacing: Space.sm) {
-          Image(systemName: "mic")
+        HStack(alignment: .top, spacing: Space.sm) {
+          Image(systemName: "mic").frame(width: Space.xxl, height: Space.xxl)
           VStack(alignment: .leading, spacing: Space.xs) {
             Text(name).font(.headline).fixedSize(horizontal: false, vertical: true)
             Text(detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-          }
+          }.padding(.trailing, Space.lg)
           Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, minHeight: 60, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityLabel(name).accessibilityValue(detail).accessibilityAddTraits(selected ? .isSelected : [])
-      if selected, let device, device.channels > 1 {
-        Picker("Channel", selection: Binding(get: { _ = revision; return AudioChannel.load(device.uid, defaults: store.defaults) }, set: {
-          let testing = store.session.isTestingMicrophone
-          willChange(); $0.save(device.uid, defaults: store.defaults); revision += 1
-          store.audioChannelRevision += 1
-          store.session.audioChannelDidChange()
-          if testing { store.session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
-        })) {
-          ForEach(AudioChannel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-        }.pickerStyle(.segmented).frame(minHeight: AlphaStyle.minTarget)
+      // Channel and meter line up with the input's name, one icon width in.
+      if selected, device != nil || meter != nil {
+        VStack(alignment: .leading, spacing: AlphaStyle.controlGap) {
+          if let device, device.channels > 1 { channelPicker(device) }
+          if let meter { MicMeterView(meter: meter, micName: meterName(name, uid: uid, device: device), showsHeading: false).frame(height: 152).padding(.horizontal, -Space.sm) }
+        }.padding(.leading, Space.xxl + Space.sm)
       }
     }.modifier(InputCardStyle(selected: selected))
+  }
+  /// The input actually listening, never the generic "System default" label.
+  private func meterName(_ name: String, uid: String?, device: AudioInputDevice?) -> String {
+    device?.name ?? (uid == nil ? AudioCapture.resolvedInput(nil)?.name : nil) ?? name
+  }
+  private func channelPicker(_ device: AudioInputDevice) -> some View {
+    HStack(spacing: Space.sm) {
+      Text("Channel").font(.callout).foregroundStyle(.secondary)
+      Picker("Channel", selection: Binding(get: { _ = revision; return AudioChannel.load(device.uid, defaults: store.defaults) }, set: {
+        let testing = store.session.isTestingMicrophone
+        willChange(); $0.save(device.uid, defaults: store.defaults); revision += 1
+        store.audioChannelRevision += 1
+        store.session.audioChannelDidChange()
+        if testing { store.session.startMicrophoneTest(deviceUID: store.settings.audioDeviceUID, gain: store.settings.inputGain) }
+      })) {
+        ForEach(AudioChannel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+      }.pickerStyle(.segmented).labelsHidden().fixedSize()
+    }.frame(minHeight: AlphaStyle.minTarget)
   }
 }

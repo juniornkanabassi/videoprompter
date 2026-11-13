@@ -2,6 +2,8 @@ import SwiftUI
 
 enum AdjustTab: String, CaseIterable {
   case camera = "Camera", mic = "Mic", zebras = "Zebras", falseColour = "False colour", guides = "Guides"
+  /// Short enough that five tabs always fit on one row.
+  var label: String { self == .falseColour ? "Colour" : rawValue }
   var symbol: String {
     switch self {
     case .camera: "video"
@@ -29,16 +31,18 @@ struct AdjustPanel: View {
 
   var body: some View {
     VStack(spacing: 0) {
-        WrapLayout(spacing: 4, leading: true) {
+        HStack(spacing: Space.xs) {
           ForEach(AdjustTab.allCases, id: \.self) { tab in
             Button { selection = tab } label: {
-              Label(tab.rawValue, systemImage: tab.symbol).font(.system(size: 16, weight: .semibold))
-                .padding(.horizontal, Space.md).frame(minHeight: AlphaStyle.minTarget)
+              VStack(spacing: Space.xs) {
+                Image(systemName: tab.symbol).font(.system(size: 18, weight: .semibold)).frame(height: Space.xxl)
+                Text(tab.label).font(.system(size: 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.7).padding(.horizontal, Space.xs)
+              }.frame(maxWidth: .infinity, minHeight: 60)
                 .foregroundStyle(selection == tab ? AlphaStyle.onAccent : .white)
                 .background(selection == tab ? AlphaStyle.accent : Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
-            }.buttonStyle(.plain).accessibilityAddTraits(selection == tab ? .isSelected : [])
+            }.buttonStyle(.plain).accessibilityLabel(tab.rawValue).accessibilityAddTraits(selection == tab ? .isSelected : [])
           }
-        }.frame(maxWidth: .infinity, alignment: .leading).accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
+        }.accessibilityElement(children: .contain).accessibilityLabel("Adjust sections")
         .padding(.horizontal, AlphaStyle.panelInset).padding(.top, Space.md)
       HStack {
         Text("Changes appear on your camera picture.").foregroundStyle(.secondary)
@@ -60,7 +64,9 @@ struct AdjustPanel: View {
       }
     }.padding(AlphaStyle.panelInset)
     }
-    }.uiZoom(zoom).frame(width: width).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
+      if selection == .mic { micFooter }
+    }.frame(maxWidth: 560).frame(maxWidth: .infinity) // grid: ok A wide sheet keeps the panel's proportions.
+      .uiZoom(zoom).frame(width: width).frame(maxHeight: .infinity, alignment: .top) // grid: ok The approved panel width is 470 points.
       .background(Color(nsColor: NSColor(white: 0.07, alpha: 1)))
       .environment(\.colorScheme, .dark).tint(AlphaStyle.accent).accentColor(AlphaStyle.accent)
   }
@@ -70,16 +76,24 @@ struct AdjustPanel: View {
   }
   private var mic: some View {
     VStack(alignment: .leading, spacing: AlphaStyle.sectionGap) {
-      Text("Microphone").font(.title2.bold())
-      Toggle("Show mic meter", isOn: $showsMic).toggleStyle(.switch).accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter").frame(minHeight: AlphaStyle.minTarget)
+      HStack {
+        Text("Microphone").font(.title2.bold())
+        Spacer(minLength: Space.sm)
+        Toggle(isOn: $showsMic) { Text("Show meter").font(.callout).foregroundStyle(.secondary) }
+          .toggleStyle(.switch).fixedSize().accessibilityIdentifier("show-mic-meter").accessibilityLabel("Show mic meter")
+      }.frame(minHeight: AlphaStyle.minTarget)
       MicrophoneCards(store: store, devices: microphonesOverride ?? microphones, willChange: {
         store.session.stopMicrophoneTest()
         recorder.stopInputTest()
-      })
-      MicMeterView(meter: recorder.inputMeter, micName: recorder.microphoneName, showsHeading: false).frame(height: 180)
-      SettingsLink { Text("More in Settings") }.frame(minHeight: AlphaStyle.minTarget)
-      Text("Speak to check your microphone level.").foregroundStyle(.secondary)
+      }, meter: recorder.inputMeter)
     }.onAppear { microphones = AudioCapture.inputDevices() }
   }
-
+  private var micFooter: some View {
+    HStack {
+      Text("Speak to check your level.").foregroundStyle(.secondary)
+      Spacer(minLength: Space.sm)
+      SettingsLink { HStack(spacing: Space.xs) { Text("More in Settings"); Image(systemName: "chevron.right") } }
+        .buttonStyle(.plain).frame(minHeight: AlphaStyle.minTarget)
+    }.padding(.horizontal, AlphaStyle.panelInset).overlay(alignment: .top) { Divider() }
+  }
 }
