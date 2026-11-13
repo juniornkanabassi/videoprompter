@@ -262,10 +262,10 @@ struct ScriptEditorView: View {
       if onTheFly {
         // The mockup's bounded reading column, so lines break where they will on the glass.
         GeometryReader { proxy in
-          textView(inset: 28)
+          textView(inset: 32)
             .background(Color.white.opacity(0.03))
-            .clipShape(RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(LibraryTheme.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(LibraryTheme.accent.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
             .padding(.horizontal, proxy.size.width * 0.12)
             .padding(.vertical, 16)
         }
