@@ -685,7 +685,10 @@ public actor MarkdownLibrary {
     return try? url.bookmarkData()
   }
   #if os(macOS)
-  private static let bookmarkResolutionOptions: [URL.BookmarkResolutionOptions] = [.withSecurityScope, []]
+  // Never remount a vanished network volume (a quit Shade drive): that shows a macOS error dialog on every sync.
+  private static let bookmarkResolutionOptions: [URL.BookmarkResolutionOptions] = [
+    [.withSecurityScope, .withoutMounting, .withoutUI], [.withoutMounting, .withoutUI],
+  ]
   #else
   private static let bookmarkResolutionOptions: [URL.BookmarkResolutionOptions] = [[]]
   #endif
