@@ -18,23 +18,46 @@ struct SettingsScreen: View {
 
   var body: some View {
     Form {
-      reading
-      teleprompter
-      text
-      camera
-      presets
-      scriptsFolder
-      Section("About") {
-        LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
-        Link("Privacy Policy", destination: PrivacyPolicy.url)
+      Group {
+        macControl
+        reading
+        teleprompter
+        text
+        camera
+        presets
+        scriptsFolder
+        Section("About") {
+          LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+          Link("Privacy Policy", destination: PrivacyPolicy.url)
+        }
       }
+      .listRowBackground(LibraryTheme.card)
     }
+    .scrollContentBackground(.hidden)
+    .background(LibraryTheme.background.ignoresSafeArea())
+    .tint(LibraryTheme.accent)
     .navigationTitle("Settings")
     .navigationBarTitleDisplayMode(.inline)
     .toolbar { Button("Done") { dismiss() } }
     .onAppear { microphones = AudioCapture.inputDevices() }
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
       if case .success(let url) = result { store.folder.choose(url) }
+    }
+  }
+
+  /// The way into the Mac connection page, with where the connection stands.
+  private var macControl: some View {
+    Section {
+      NavigationLink {
+        MacControlScreen(link: store.camera.link)
+      } label: {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Control from a Mac")
+          Text(store.macConnection.map { "\($0.name)" + ($0.kind.map { " · \($0)" } ?? "") } ?? "Not connected")
+            .font(.subheadline)
+            .foregroundStyle(store.macConnection == nil ? LibraryTheme.muted : LibraryTheme.good)
+        }
+      }
     }
   }
 
@@ -198,27 +221,6 @@ private struct CameraSettings: View {
     } footer: {
       Text("Under teleprompter glass the iPad's own cameras face away from you. Plug in the ATEM Mini's USB-C webcam output, a Sony camera set to USB Streaming, any UVC webcam or an HDMI to USB-C capture adapter to see the studio picture here.")
     }
-    MacLinkSettings(link: camera.link)
-  }
-}
-
-private struct MacLinkSettings: View {
-  @ObservedObject var link: MacLink
-  var body: some View {
-    Section {
-      LabeledContent("Mac", value: link.macName ?? "Not connected")
-      Toggle("Allow a Mac on the same Wi-Fi", isOn: $link.allowsWiFi)
-      if link.allowsWiFi {
-        LabeledContent("Pairing key") {
-          Text(link.pairingCode).font(.title3.monospaced().weight(.semibold)).textSelection(.enabled)
-        }
-        Button("New Key") { link.newPairingCode() }
-      }
-    } header: {
-      Text("Camera from a Mac")
-    } footer: {
-      Text("Connect the iPad to a Mac with a USB-C cable and choose File › Send Camera to iPad in Video Prompter on the Mac. The Mac's camera appears here behind the script. Over USB-C nothing needs setting up. For Wi-Fi, turn on the option here and File › Also Send over Wi-Fi on the Mac, then type the pairing key into the Mac when it asks. The picture is encrypted with that key; a new key unpairs every Mac.")
-    }
   }
 }
 
@@ -230,4 +232,269 @@ extension UIColor {
     func byte(_ value: CGFloat) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
     return String(format: "#%02X%02X%02X", byte(red), byte(green), byte(blue))
   }
+}
+
+// MARK: - Control from a Mac
+
+/// A Mac this iPad has been connected to, remembered by name so Settings can list it.
+struct KnownMac: Codable, Identifiable, Equatable {
+  var name: String
+  var kind: String?
+  var lastSeen: Date
+  var id: String { name }
+}
+
+enum KnownMacs {
+  private static let key = "macLinkKnownMacs"
+
+  static func load() -> [KnownMac] {
+    UserDefaults.standard.data(forKey: key).flatMap { try? JSONDecoder().decode([KnownMac].self, from: $0) } ?? []
+  }
+
+  static func note(name: String, kind: String?, at date: Date = Date()) {
+    var macs = load().filter { $0.name != name }
+    macs.append(KnownMac(name: name, kind: kind, lastSeen: date))
+    save(macs)
+  }
+
+  static func remove(_ name: String) { save(load().filter { $0.name != name }) }
+  /// A new key unpairs every Mac that came over Wi-Fi.
+  static func removeWiFi() { save(load().filter { $0.kind != "Wi-Fi" }) }
+
+  private static func save(_ macs: [KnownMac]) {
+    UserDefaults.standard.set(try? JSONEncoder().encode(macs), forKey: key)
+  }
+}
+
+/// The page Settings opens for connecting a Mac: the three ways to connect, the Macs known,
+/// and the Wi-Fi pairing key, hidden until asked for.
+struct MacControlScreen: View {
+  @EnvironmentObject private var store: PadStore
+  @ObservedObject var link: MacLink
+  /// Why the last Mac's pairing failed, to show above the key. Nothing reports this yet: the link
+  /// only reports a Mac once it is connected, so this stays nil until it does.
+  var failure: String?
+  @Environment(\.dismiss) private var dismiss
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var reveal = KeyReveal()
+  @State private var confirming = false
+  @State private var captured = MacControlScreen.screenIsCaptured
+  @State private var known = KnownMacs.load()
+
+  init(link: MacLink, failure: String? = nil) {
+    self.link = link
+    self.failure = failure
+  }
+
+  private var connection: MacConnection? { store.macConnection }
+  private var usingUSB: Bool { connection?.kind == "USB-C" }
+
+  static var screenIsCaptured: Bool {
+    UIApplication.shared.connectedScenes.contains { ($0 as? UIWindowScene)?.screen.isCaptured == true }
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(spacing: 16) {
+        HStack {
+          Text("Control from a Mac").font(.largeTitle.weight(.semibold))
+          Spacer()
+          Button("Done") { dismiss() }
+            .font(.body)
+            .padding(.horizontal, 20)
+            .frame(minHeight: 44)
+            .background(LibraryTheme.card2, in: Capsule())
+            .buttonStyle(.plain)
+        }
+        ways
+        if let failure { notice(failure, colour: LibraryTheme.bad) }
+        if connection == nil {
+          notice("Not connected. Plug in the USB-C cable, or on the Mac choose File › Control iPad… and type the key below when asked.", colour: LibraryTheme.warn)
+        }
+        if !macs.isEmpty { pairedMacs }
+        keyCard
+        Text("No Apple ID or iCloud is needed. Scripts the Mac sends are saved on this iPad in Sent from Mac.")
+          .font(.subheadline).foregroundStyle(LibraryTheme.muted)
+          .frame(maxWidth: .infinity, alignment: .leading)
+      }
+      .frame(maxWidth: 720)
+      .padding(.horizontal, 24)
+      .padding(.vertical, 40)
+      .frame(maxWidth: .infinity)
+    }
+    .background(Color.black.ignoresSafeArea())
+    .foregroundStyle(LibraryTheme.text)
+    .tint(LibraryTheme.accent)
+    .toolbar(.hidden, for: .navigationBar)
+    .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in
+      captured = Self.screenIsCaptured
+      if captured { reveal.hide() }
+    }
+    .onChange(of: scenePhase) { _, phase in if phase != .active { reveal.hide() } }
+    .onChange(of: connection) { _, _ in known = KnownMacs.load() }
+    .onDisappear { reveal.hide() }
+    .confirmationDialog("Generate a new key?", isPresented: $confirming, titleVisibility: .visible) {
+      Button("Generate new key", role: .destructive) {
+        link.newPairingCode()
+        KnownMacs.removeWiFi()
+        known = KnownMacs.load()
+        reveal.show(at: Date(), captured: captured)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Every Mac paired over Wi-Fi is unpaired and must type the new key. USB-C keeps working.")
+    }
+  }
+
+  // MARK: Ways to connect
+
+  private var ways: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("USB-C cable")
+          Text("Always on. Works with no network. Tap Trust on this iPad the first time.")
+            .font(.subheadline).foregroundStyle(LibraryTheme.muted)
+        }
+        Spacer(minLength: 12)
+        Text(usbStatus).font(.subheadline).foregroundStyle(usingUSB ? LibraryTheme.good : LibraryTheme.muted)
+      }
+      .padding(.vertical, 12)
+      divider
+      Toggle(isOn: $link.allowsWiFi) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Same Wi-Fi")
+          Text("The Mac finds this iPad and asks once for the pairing key.")
+            .font(.subheadline).foregroundStyle(LibraryTheme.muted)
+        }
+      }
+      .padding(.vertical, 12)
+      divider
+      // No peer-to-peer link exists yet, so the switch is shown but cannot be turned on.
+      Toggle(isOn: .constant(false)) {
+        VStack(alignment: .leading, spacing: 4) {
+          Text("Direct Wi-Fi (no router)")
+          Text("For studio Wi-Fi that hides devices from each other. Uses Apple’s peer-to-peer Wi-Fi. Coming soon.")
+            .font(.subheadline).foregroundStyle(LibraryTheme.muted)
+        }
+      }
+      .disabled(true)
+      .padding(.vertical, 12)
+    }
+    .padding(.horizontal, 20)
+    .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
+  }
+
+  private var usbStatus: String {
+    if usingUSB { return "In use" }
+    return connection != nil && connection?.kind == nil ? "Connected" : "Not plugged in"
+  }
+
+  private var divider: some View { LibraryTheme.line.frame(height: 1) }
+
+  private func notice(_ text: String, colour: Color) -> some View {
+    Text(text)
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
+      .overlay(RoundedRectangle(cornerRadius: 16).stroke(colour))
+  }
+
+  // MARK: Paired Macs
+
+  /// The connected Mac first, then the others, most recently seen first.
+  private var macs: [KnownMac] {
+    var list = known
+    if let connection, !list.contains(where: { $0.name == connection.name }) {
+      list.append(KnownMac(name: connection.name, kind: connection.kind, lastSeen: Date()))
+    }
+    return list.sorted {
+      ($0.name == connection?.name ? 1 : 0, $0.lastSeen) > ($1.name == connection?.name ? 1 : 0, $1.lastSeen)
+    }
+  }
+
+  private var pairedMacs: some View {
+    VStack(spacing: 0) {
+      ForEach(Array(macs.enumerated()), id: \.element.id) { index, mac in
+        if index > 0 { divider }
+        macRow(mac).padding(.vertical, 8)
+      }
+    }
+    .padding(.horizontal, 20)
+    .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
+  }
+
+  private func macRow(_ mac: KnownMac) -> some View {
+    let now = mac.name == connection?.name
+    return HStack(spacing: 12) {
+      VStack(alignment: .leading, spacing: 4) {
+        Text(mac.name)
+        Text(now ? "Connected now" + ((connection?.kind).map { " by \($0)" } ?? "")
+          : "Last seen " + mac.lastSeen.formatted(.relative(presentation: .named)))
+          .font(.subheadline).foregroundStyle(now ? LibraryTheme.good : LibraryTheme.muted)
+      }
+      Spacer(minLength: 12)
+      if now {
+        // Only a Wi-Fi Mac can be let go from here (by stopping Wi-Fi sharing); the iPad has no
+        // way yet to end a cable connection.
+        if connection?.kind == "Wi-Fi" {
+          pill("Disconnect", colour: LibraryTheme.text) { link.allowsWiFi = false }
+        } else {
+          Text("Unplug to disconnect").font(.footnote).foregroundStyle(LibraryTheme.muted)
+        }
+      } else {
+        pill("Remove", colour: LibraryTheme.bad) {
+          KnownMacs.remove(mac.name)
+          known = KnownMacs.load()
+        }
+      }
+    }
+  }
+
+  private func pill(_ title: String, colour: Color, action: @escaping () -> Void) -> some View {
+    Button(title, action: action)
+      .foregroundStyle(colour)
+      .padding(.horizontal, 16)
+      .frame(minHeight: 44)
+      .background(LibraryTheme.card2, in: Capsule())
+      .buttonStyle(.plain)
+  }
+
+  // MARK: Pairing key
+
+  private var keyCard: some View {
+    // The clock only drives a redraw each second; what is shown follows `reveal`.
+    TimelineView(.periodic(from: Date(), by: 1)) { _ in
+      let now = Date()
+      let shown = reveal.isVisible(at: now, captured: captured)
+      VStack(spacing: 12) {
+        Text("Pairing key for Wi-Fi").font(.subheadline).foregroundStyle(LibraryTheme.muted)
+        Text(shown ? link.pairingCode : Self.masked(link.pairingCode))
+          .font(.system(.largeTitle, design: .monospaced))
+          .tracking(2)
+          .lineLimit(1).minimumScaleFactor(0.5)
+          .foregroundStyle(shown ? LibraryTheme.text : LibraryTheme.muted)
+          .textSelection(.disabled)
+          .accessibilityLabel(shown ? "Pairing key \(link.pairingCode)" : "Pairing key hidden")
+        pill(shown ? "Hide key · \(reveal.secondsLeft(at: now)) s" : "Show key for 30 s", colour: LibraryTheme.text) {
+          if shown { reveal.hide() } else { reveal.show(at: Date(), captured: captured) }
+        }
+        .disabled(captured)
+        Text("Hidden while the screen is recorded or shared").font(.footnote).foregroundStyle(LibraryTheme.muted)
+        Button("Generate new key…") { confirming = true }
+          .foregroundStyle(LibraryTheme.bad)
+          .padding(.horizontal, 20)
+          .frame(minHeight: 44)
+          .overlay(Capsule().stroke(LibraryTheme.bad))
+          .buttonStyle(.plain)
+        Text("Every Mac will need the new key").font(.footnote).foregroundStyle(LibraryTheme.muted)
+      }
+      .padding(20)
+      .frame(maxWidth: .infinity)
+      .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
+    }
+  }
+
+  /// "K7QF-2MZX-P9RT-W3HD" as "••••-••••-••••-••••".
+  static func masked(_ code: String) -> String { String(code.map { $0 == "-" ? "-" : "•" }) }
 }
