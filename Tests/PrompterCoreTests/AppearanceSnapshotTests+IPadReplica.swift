@@ -12,6 +12,11 @@ extension AppearanceSnapshotTests {
     let defaults = freshDefaults("IPadReplica")
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let link = IPadCameraSender(defaults: defaults)
+    link.searchesForIPad = false
+    link.micMeter.show(-18)
+    link.iPadMicMeter.show(-18)
+    link.acceptedPairing(id: "personal", code: "0123456789ABCDEF")
+    link.acceptedPairing(id: "studio", code: "FEDCBA9876543210")
     let id = UUID()
     let markdown = "# Match day\n\nThe opening passage sets the scene for everyone watching at home.\n\nThe midfield is finding space between the lines and moving the ball with confidence.\n\nWatch the runner on the far side as the next passage begins.\n\nThere is still time to change the game."
     let state = PadRemote.State(scripts: [.init(id: id, title: "Match day")], presenting: id, running: true,

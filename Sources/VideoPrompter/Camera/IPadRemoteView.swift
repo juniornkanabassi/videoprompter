@@ -209,7 +209,7 @@ struct IPadRemoteView: View {
     Button("More", systemImage: "slider.horizontal.3") { moreOpen.toggle() }.fixedSize()
       .popover(isPresented: $moreOpen) {
         ScrollView { adjustControls(state).padding(Space.lg) }
-          .frame(width: 460, height: 560).uiZoom(store.uiZoom)
+          .frame(width: 460, height: textPage ? 340 : 560).uiZoom(store.uiZoom)
       }
   }
   func adjustControls(_ state: PadRemote.State) -> some View {
@@ -217,7 +217,7 @@ struct IPadRemoteView: View {
           if textPage || panelOverride == "text" {
             Button("Back", systemImage: "chevron.left") { textPage = false }
             Picker("Font", selection: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) })) {
-              ForEach(AvailableFonts.presenter, id: \.self) { Text($0).tag($0) }
+              ForEach(Array(Set(AvailableFonts.presenter + [state.look?.fontName ?? "Lexend Deca"])).sorted(), id: \.self) { Text($0).tag($0) }
             }
             lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
             lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
@@ -229,12 +229,12 @@ struct IPadRemoteView: View {
             }
           } else {
             Text("Picture on the iPad").font(.headline)
-            Picker("Picture", selection: Binding(get: { link.pictureMode }, set: link.setPictureMode)) {
+            Picker("Picture", selection: Binding(get: { state.pictureMode ?? .off }, set: link.setPictureMode)) {
               Text("Off").tag(PadRemote.PictureMode.off)
               Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
               Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
             }.pickerStyle(.segmented)
-            Picker("Quality", selection: Binding(get: { link.picturePriority }, set: link.setPicturePriority)) {
+            Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
               Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
               Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
             }
@@ -249,9 +249,9 @@ struct IPadRemoteView: View {
             }
             Toggle("Show key", isOn: Binding(get: { state.guides?.exposureKey ?? true }, set: { link.send(.cameraGuides(.init(exposureKey: $0))) }))
             Divider()
-            Toggle("Mirror left to right", isOn: Binding(get: { link.mirror }, set: link.setMirror))
-            Toggle("Flip upside down", isOn: Binding(get: { link.flip }, set: link.setFlip))
-            Toggle("Clean screen", isOn: Binding(get: { link.cleanScreen }, set: link.setCleanScreen))
+            Toggle("Mirror left to right", isOn: Binding(get: { state.look?.horizontalMirror ?? false }, set: link.setMirror))
+            Toggle("Flip upside down", isOn: Binding(get: { state.look?.verticalMirror ?? false }, set: link.setFlip))
+            Toggle("Clean screen", isOn: Binding(get: { state.cleanScreen ?? false }, set: link.setCleanScreen))
             Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
               Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
             }
