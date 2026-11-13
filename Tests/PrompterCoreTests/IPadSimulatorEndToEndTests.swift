@@ -221,6 +221,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(listed.macStatus?.selectedCamera, cameraChoice.id)
     XCTAssertEqual(listed.macStatus?.selectedMicrophone, micChoice.id)
     // Untouched since the last send: the same script takes the new text.
+    XCTAssertEqual(listed.markdown, text, "The replica receives the presented script, not the selected draft")
     let newer = text + " Thirteen fourteen."
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))
     _ = try state("resend replaces in place") { state in

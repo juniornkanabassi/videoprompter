@@ -4,7 +4,9 @@ import SwiftUI
 
 struct IPadRemoteView: View {
   @ObservedObject var link: IPadCameraSender
-  @ObservedObject private var store = AppStore.shared
+  @ObservedObject var store: AppStore = .shared
+  var stateOverride: PadRemote.State?
+  private var currentState: PadRemote.State? { stateOverride ?? link.iPadState }
   var startsLink = true
   @State private var selectedMac: UUID?
   @State private var dragging: Double?
@@ -20,7 +22,8 @@ struct IPadRemoteView: View {
       VStack(spacing: 16) {
         connection
         Group {
-          if let state = link.iPadState {
+          if let state = currentState {
+            replica(state)
             scripts(state)
             reading(state)
             picture
@@ -34,7 +37,7 @@ struct IPadRemoteView: View {
     }
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
     .tint(yellow).preferredColorScheme(.dark)
-    .frame(width: 760)
+    .frame(minWidth: 760, idealWidth: 900, maxWidth: .infinity)
     .frame(minHeight: 500, idealHeight: 848, maxHeight: 900)
     .onAppear { if startsLink { link.controlsIPad = true } }
     .onDisappear { if startsLink { link.controlsIPad = false } }
@@ -47,6 +50,12 @@ struct IPadRemoteView: View {
     }
   }
 
+  private func replica(_ state: PadRemote.State) -> some View {
+    IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
+      .frame(height: 380)
+      .clipShape(RoundedRectangle(cornerRadius: 12))
+  }
+
   private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
     VStack(alignment: .leading, spacing: 12, content: content)
       .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -55,17 +64,17 @@ struct IPadRemoteView: View {
   private var connection: some View {
     card {
       HStack {
-        Circle().fill(link.iPadState == nil ? Color.orange : Color.green).frame(width: 12, height: 12)
+        Circle().fill(currentState == nil ? Color.orange : Color.green).frame(width: 12, height: 12)
         VStack(alignment: .leading) {
-          Text(link.iPadState == nil ? "Not connected" : link.iPadState?.deviceName ?? "iPad connected").bold()
-          Text(link.iPadState == nil ? link.status : "Connected by \(link.transport ?? "USB-C") · Video Prompter \(link.iPadState?.appVersion ?? "unknown")")
+          Text(currentState == nil ? "Not connected" : currentState?.deviceName ?? "iPad connected").bold()
+          Text(currentState == nil ? link.status : "Connected by \(link.transport ?? "USB-C") · Video Prompter \(currentState?.appVersion ?? "unknown")")
             .foregroundStyle(.secondary)
         }
         Spacer()
-        if link.iPadState != nil { Button("Disconnect") { link.disconnect() } }
+        if currentState != nil { Button("Disconnect") { link.disconnect() } }
         else { Toggle("Wi-Fi", isOn: $link.usesWiFi).toggleStyle(.checkbox); if !link.controlsIPad { Button("Connect") { link.controlsIPad = true } } }
       }
-      if link.iPadState == nil, let name = link.unpairedDeviceName {
+      if currentState == nil, let name = link.unpairedDeviceName {
         Text("Pair with \(name)").font(.headline)
         HStack {
           TextField("Pairing key from the iPad", text: $pairingKey)
@@ -73,7 +82,7 @@ struct IPadRemoteView: View {
         }
       }
       if let failure = link.pairingFailure { Text(failure).foregroundStyle(.orange) }
-      if let state = link.iPadState {
+      if let state = currentState {
         HStack(spacing: 12) {
           if link.isOn, state.pictureMode != .off, let image = link.previewImage {
             Image(decorative: image, scale: 1).resizable().scaledToFit()
