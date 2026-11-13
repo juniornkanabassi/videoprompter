@@ -99,10 +99,14 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let fd = try XCTUnwrap(Self.connect(port: port), "the fixture iPad app is not listening")
     let pipe = SocketPipe(socket: fd, name: "USB-C")
     let latest = Mutex<PadRemote.State?>(nil)
+    let latestMarkdown = Mutex<String?>(nil)
     let commands = Mutex<[PadRemote.Command]>([])
     pipe.onMessage = {
       switch $0 {
-      case .state(let state): latest.withLock { $0 = state }
+      case .state(let state):
+        latest.withLock { $0 = state }
+        // Status-only updates omit unchanged text, just as they do for the Mac replica.
+        if let markdown = state.markdown { latestMarkdown.withLock { $0 = markdown } }
       case .command(let command): commands.withLock { $0.append(command) }
       default: break
       }
@@ -261,7 +265,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     XCTAssertEqual(listed.macStatus?.selectedCamera, cameraChoice.id)
     XCTAssertEqual(listed.macStatus?.selectedMicrophone, micChoice.id)
     // Untouched since the last send: the same script takes the new text.
-    XCTAssertEqual(listed.markdown, text, "The replica receives the presented script, not the selected draft")
+    XCTAssertEqual(latestMarkdown.withLock { $0 }, text, "The replica receives the presented script, not the selected draft")
     let newer = text + " Thirteen fourteen."
     send(.sendScript(.init(macID: macID, title: sentTitle, markdown: newer, basis: MarkdownLibrary.fingerprint(text), present: false)))
     _ = try state("resend replaces in place") { state in
