@@ -31,6 +31,69 @@ import XCTest
     Finally, the one result nobody saw coming. We will take it apart, minute by minute, and ask what it means for the run in.
     """
 
+  func testLinkedSensorFrameMatchesMacPreview() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let url = URL(fileURLWithPath: directory)
+    let expected = try JSONDecoder().decode([String: [[Double]]].self, from: Data(contentsOf: url.appendingPathComponent("linked-picture.json")))
+    var reader = CameraLink.Reader()
+    let messages = try reader.append(Data(contentsOf: url.appendingPathComponent("linked-picture.bin")))
+    let layer = AVSampleBufferDisplayLayer()
+    let view = LinkPreview.LinkView(displayLayer: layer)
+    view.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+    let exposure = PadExposure()
+    exposure.update(.init(zebras: true, zebraLevel: 80))
+    let receiver = LinkReceiver(renderer: layer.sampleBufferRenderer, exposure: exposure)
+    let decoded = expectation(description: "Mac sensor frame decoded by iPad receiver")
+    receiver.onEvent = { event in
+      if case .frame(let time, _) = event, time != nil { decoded.fulfill() }
+    }
+    receiver.queue.sync { for message in messages { receiver.handle(message) } }
+    await fulfillment(of: [decoded], timeout: 5)
+    for _ in 0..<100 where exposure.frame.zebraMask == nil { try await Task.sleep(for: .milliseconds(50)) }
+    let mask = try XCTUnwrap(exposure.frame.zebraMask, "The real decoder must deliver sensor pixels")
+    XCTAssertEqual(mask.width, 320)
+    XCTAssertEqual(mask.height, 180)
+    let bytes = try XCTUnwrap(mask.dataProvider?.data) as Data
+    XCTAssertNotEqual(bytes[22 * mask.bytesPerRow + 40 * 4], 0, "Bright marker stays top left in decoded sensor coordinates")
+    XCTAssertEqual(bytes[140 * mask.bytesPerRow + 280 * 4], 0)
+    let markers = [CGPoint(x: 40, y: 22), CGPoint(x: 280, y: 140), CGPoint(x: 120, y: 70)]
+    let store = PadStore(defaults: UserDefaults(suiteName: "linked-transform-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    store.camera.selectedID = PadCamera.macLinkID
+    for rotation in CameraRotation.allCases { for mirror in [false, true] {
+      let status = CameraLink.Message.command(.macStatus(.init(cameraRotation: rotation.rawValue, cameraMirrored: mirror)))
+      for message in try reader.append(status.encoded()) {
+        if case .command(let command) = message { store.perform(command) }
+      }
+      view.update(size: CGSize(width: 320, height: 180), mirrored: store.camera.linkedMirrored, guides: store.camera.previewGuides)
+      view.layoutIfNeeded()
+      let points = try XCTUnwrap(expected["\(rotation.rawValue)-\(mirror)"])
+      for (index, point) in markers.enumerated() {
+        let local = CGPoint(x: point.x / 320 * layer.bounds.width, y: point.y / 180 * layer.bounds.height)
+        let actual = layer.convert(local, to: view.layer)
+        XCTAssertEqual(actual.x, points[index][0], accuracy: 0.01)
+        XCTAssertEqual(actual.y, points[index][1], accuracy: 0.01)
+      }
+    } }
+  }
+
+  func testMacMicrophoneDefaultHonoursChoiceAndDoesNotRetryFailure() {
+    let store = PadStore(defaults: UserDefaults(suiteName: "mic-default-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    XCTAssertFalse(store.requestDefaultMacMicrophone(), "Wait for a capable Mac")
+    store.perform(.macStatus(.init(supportsMicSelection: true)))
+    store.camera.selectedID = PadCamera.macLinkID
+    XCTAssertTrue(store.requestDefaultMacMicrophone())
+    XCTAssertFalse(store.requestDefaultMacMicrophone(), "Already requested")
+    store.perform(.voiceSource("iPad"))
+    XCTAssertFalse(store.requestDefaultMacMicrophone(), "Relay failure must retain local fallback")
+    let chosen = PadStore(defaults: UserDefaults(suiteName: "mic-choice-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    chosen.chooseMicrophone("", onMac: false)
+    chosen.camera.selectedID = PadCamera.macLinkID
+    chosen.perform(.macStatus(.init(supportsMicSelection: true)))
+    XCTAssertTrue(chosen.microphoneChosen)
+    XCTAssertFalse(chosen.requestDefaultMacMicrophone())
+    XCTAssertFalse(chosen.session.followsRemote)
+  }
+
   func testBandGeometryAndLookSettings() throws {
     let store = PadStore(defaults: UserDefaults(suiteName: "band-settings-\(UUID().uuidString)")!)
     store.perform(.look(.init(readingBandOpacity: 0.3, videoDimming: 0.9)))
@@ -224,8 +287,11 @@ import XCTest
     store.perform(.macStatus(.init(cameraRotation: 90)))
     XCTAssertEqual(store.camera.guides.rotation, .threeQuarters, "A Mac update must not rotate the local camera")
     store.perform(.selectCamera("fx3"))
-    store.perform(.macStatus(.init(cameraRotation: 90)))
+    store.perform(.macStatus(.init(cameraRotation: 90, cameraMirrored: true)))
     XCTAssertEqual(store.camera.guides.rotation, .quarter)
+    XCTAssertTrue(store.camera.linkedMirrored)
+    store.perform(.macStatus(.init(micLevelDB: -20)))
+    XCTAssertTrue(store.camera.linkedMirrored, "Partial status must preserve camera mirror")
 
     let layer = AVSampleBufferDisplayLayer()
     let view = LinkPreview.LinkView(displayLayer: layer)
@@ -255,7 +321,7 @@ import XCTest
     let defaults = UserDefaults(suiteName: suite)!
     defer { defaults.removePersistentDomain(forName: suite) }
     let fresh = PadStore(defaults: defaults)
-    XCTAssertTrue(fresh.mirror, "First launch is ready for teleprompter glass")
+    XCTAssertFalse(fresh.mirror, "First launch reads normally on the iPad")
     XCTAssertFalse(fresh.flip)
     for mirror in [false, true] {
       for flip in [false, true] {
@@ -297,6 +363,7 @@ import XCTest
               store.camera.selectedID = source == "mac" ? PadCamera.macLinkID : "capture"
               store.camera.isOn = true
               store.camera.mirrored = cameraMirror
+              store.camera.linkedMirrored = cameraMirror
               store.camera.guides.rotation = .quarter
               store.camera.guides.thirds = true
               store.setMirror(mirror)
@@ -318,8 +385,8 @@ import XCTest
                       let y = exposure.convert(CGPoint(x: 0, y: 10), to: root.layer)
                       // Rotate the sensor 90 degrees, apply selfie mirror, then turn the whole stage.
                       XCTAssertEqual(x.x - origin.x, 0, accuracy: 0.01, label)
-                      XCTAssertEqual(x.y - origin.y, flip ? -10 : 10, accuracy: 0.01, label)
-                      XCTAssertEqual(y.x - origin.x, cameraMirror != mirror ? 10 : -10, accuracy: 0.01, label)
+                      XCTAssertEqual(x.y - origin.y, source == "mac" ? (flip ? 10 : -10) : (flip ? -10 : 10), accuracy: 0.01, label)
+                      XCTAssertEqual(y.x - origin.x, source == "mac" ? (cameraMirror != mirror ? -10 : 10) : (cameraMirror != mirror ? 10 : -10), accuracy: 0.01, label)
                       XCTAssertEqual(y.y - origin.y, 0, accuracy: 0.01, label)
                     } else { XCTFail("Missing exposure layer: \(label)") }
                   }

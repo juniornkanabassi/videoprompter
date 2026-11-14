@@ -104,7 +104,21 @@ import AVFoundation
     let next = discoverMicrophones()
     if next != localMicrophones { localMicrophones = next }
   }
+  private(set) var microphoneChosen = false
+  private var requestedDefaultMicrophone = false
+
+  /// Attempt once per link; a failed relay returns to the local mic without a retry loop.
+  @discardableResult func requestDefaultMacMicrophone() -> Bool {
+    guard !microphoneChosen, !requestedDefaultMicrophone, camera.isShowingMac,
+      macStatus.supportsMicSelection == true else { return false }
+    requestedDefaultMicrophone = true
+    camera.link.send(remoteState)
+    camera.link.send(.macMicrophone(""))
+    return true
+  }
+
   func chooseMicrophone(_ id: String, onMac: Bool) {
+    microphoneChosen = true
     if onMac {
       guard macStatus.supportsMicSelection == true else {
         if usesMacMic { camera.link.send(.selectMicrophone(id)) }
@@ -156,6 +170,7 @@ import AVFoundation
 
   func setCameraOn(_ value: Bool) { camera.link.send(.cameraOn(value)) }
   func selectMicrophone(_ id: String) {
+    microphoneChosen = true
     if usesMacMic { camera.link.send(.selectMicrophone(id)) }
     else if microphoneSources.contains(where: { $0.id == id }) { settings.audioDeviceUID = id }
   }
@@ -216,8 +231,7 @@ import AVFoundation
     if let data = defaults.data(forKey: Self.settingsKey),
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
     { settings = saved } else {
-      // An iPad under teleprompter glass is the usual case, so a first launch starts mirrored.
-      settings.horizontalMirror = true
+      settings.horizontalMirror = false
       settings.fontSize = 56
     }
     if let data = defaults.data(forKey: Self.presetsKey),
@@ -560,7 +574,7 @@ extension PadStore {
         link.send(.microphoneLevel(micOn ? micMeter.levelDB : -60))
       }.store(in: &bag)
     camera.objectWillChange.receive(on: DispatchQueue.main)
-      .sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
+      .sink { [weak self] in self?.objectWillChange.send(); self?.requestDefaultMacMicrophone() }.store(in: &bag)
     // DispatchQueue, not RunLoop: a run loop scheduler waits while a finger is on the screen.
     objectWillChange.receive(on: DispatchQueue.main)
       .throttle(for: .milliseconds(200), scheduler: DispatchQueue.main, latest: true)
@@ -601,6 +615,7 @@ extension PadStore {
   }
 
   private func resetMacControls() {
+    requestedDefaultMicrophone = false
     consoleMeterRequested = false
     updateSetupMeter()
     macStatus = PadRemote.MacStatus()
@@ -806,6 +821,10 @@ extension PadStore {
         next.cameraRotation = value
         if camera.isShowingMac, camera.guides.rotation != rotation { camera.guides.rotation = rotation }
       }
+      if let mirrored = value.cameraMirrored {
+        next.cameraMirrored = mirrored
+        camera.linkedMirrored = mirrored
+      }
       if let cameras = value.cameras { next.cameras = cameras }
       if let microphones = value.microphones { next.microphones = microphones }
       // List-only updates preserve selections; a complete list that removes one clears it.
@@ -821,6 +840,7 @@ extension PadStore {
       if let kind = value.connectionKind { next.connectionKind = kind }
       if next != macStatus { macStatus = next }
       if firstCameraStatus { askMacForPicture() }
+      requestDefaultMacMicrophone()
 
     case .play: startReading()
     case .close: if isPresenting { closePresenter() }
@@ -870,6 +890,7 @@ extension PadStore {
     case .voiceSource(let source):
       switch source {
       case "Mac":
+        guard presentingID != nil else { return }
         micMeter.show(macMicLevelDB)
         // Before the mode change, so switching to Voice cannot start this iPad's microphone.
         session.followsRemote = true

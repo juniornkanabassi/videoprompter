@@ -250,6 +250,7 @@ public enum PadRemote {
     /// Nil leaves selection unchanged; a supplied list that omits it clears it.
     public var selectedCamera: String?
     public var cameraRotation: Int?
+    public var cameraMirrored: Bool?
     public var cameraOn: Bool?
     public var microphones: [Source]?
     /// Nil leaves selection unchanged; a supplied list that omits it clears it.
@@ -266,7 +267,8 @@ public enum PadRemote {
     public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
       microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
       recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
-      micLevelDB: Double? = nil, framesSkipped: Int? = nil, supportsMicSelection: Bool? = nil, microphoneChannel: String? = nil, cameraRotation: Int? = nil) {
+      micLevelDB: Double? = nil, framesSkipped: Int? = nil, supportsMicSelection: Bool? = nil, microphoneChannel: String? = nil, cameraRotation: Int? = nil, cameraMirrored: Bool? = nil) {
+      self.cameraMirrored = cameraMirrored
       self.cameraRotation = cameraRotation
       self.supportsMicSelection = supportsMicSelection; self.microphoneChannel = microphoneChannel
       self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn

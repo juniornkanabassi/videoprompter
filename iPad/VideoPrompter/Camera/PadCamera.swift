@@ -20,6 +20,7 @@ import UIKit
     hidesExposureAids = hidden
     updateExposure()
   }
+  var linkedMirrored = false
   var previewGuides: CameraGuides {
     var value = guides
     if hidesExposureAids { value.zebras = false; value.falseColour = false }

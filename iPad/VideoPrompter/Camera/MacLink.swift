@@ -575,7 +575,7 @@ final class LinkReceiver: @unchecked Sendable {
     onEvent?(.disconnected)
   }
 
-  private func handle(_ message: CameraLink.Message) {
+  func handle(_ message: CameraLink.Message) {
     switch message {
     case .hello(let name, let version):
       peerVersion = version
@@ -730,7 +730,7 @@ struct LinkPreview: UIViewRepresentable {
   func updateUIView(_ view: LinkView, context: Context) {
     view.fill = fill
     view.exposure.bind(link.exposure, settings: camera.previewGuides.exposure)
-    view.update(size: link.pictureSize, mirrored: camera.mirrored, guides: camera.previewGuides)
+    view.update(size: link.pictureSize, mirrored: camera.linkedMirrored, guides: camera.previewGuides)
   }
 
   final class LinkView: UIView {
