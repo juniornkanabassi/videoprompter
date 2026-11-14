@@ -180,7 +180,9 @@ final class CameraLinkTests: XCTestCase {
     sender.pipe = pipe
     sender.disconnect()
     var reader = CameraLink.Reader()
-    XCTAssertEqual(try reader.append(pipe.bytes), [.goodbye])
+    let messages = try reader.append(pipe.bytes)
+    XCTAssertEqual(messages.last, .goodbye)
+    XCTAssertTrue(messages.contains(.command(.microphoneMeter(false))))
     XCTAssertTrue(pipe.didClose)
     XCTAssertNil(sender.pipe)
     XCTAssertFalse(sender.controlsIPad)
@@ -235,6 +237,38 @@ final class CameraLinkTests: XCTestCase {
       XCTAssertTrue(sender.pipe === pipe, "camera off keeps the control session")
       sender.disconnect()
     }
+  }
+
+  @MainActor
+  func testConsoleMeterLifetimeAndIdleIPadLevels() async throws {
+    final class Pipe: LinkPipe, @unchecked Sendable {
+      var requests: [Bool] = []
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+        var reader = CameraLink.Reader()
+        for message in (try? reader.append(data)) ?? [] {
+          if case .command(.microphoneMeter(let value)) = message { requests.append(value) }
+        }
+        done()
+      }
+    }
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.capturesCamera = false
+    sender.relay.captureAudio = false
+    let pipe = Pipe(name: "test")
+    sender.use(pipe)
+    defer { sender.disconnect() }
+    sender.controlsIPad = true
+    XCTAssertEqual(pipe.requests, [false, true])
+    for level in [-34.0, -8.0, -60.0] {
+      pipe.onMessage?(.command(.microphoneLevel(level)))
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertEqual(sender.iPadMicMeter.levelDB, level)
+      XCTAssertEqual(sender.micMeter.levelDB, -60, "iPad levels must not overwrite the Mac meter")
+    }
+    sender.controlsIPad = false
+    XCTAssertEqual(pipe.requests, [false, true, false])
+    XCTAssertFalse(sender.isOn, "metering must not start the camera")
   }
 
   @MainActor

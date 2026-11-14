@@ -62,12 +62,26 @@ import AVFoundation
     if let id = settings.audioDeviceUID { return localMicrophones.first { $0.id == id }?.id }
     return localMicrophones.first { $0.connection == "Built-in" }?.id ?? localMicrophones.first?.id
   }
+  private var pickerMeter = false
+  private var consoleMeterRequested = false
+
   func showPickerMeter(_ show: Bool) {
+    pickerMeter = show
     if macStatus.supportsMicSelection == true { camera.link.send(.microphoneMeter(show && usesMacMic)) }
-    session.stopMicrophoneTest()
-    guard show, !usesMacMic, micOn, ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] == nil,
-      ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] == nil else { return }
-    session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
+    updateSetupMeter()
+  }
+
+  /// Keep setup metering alive even on the library screen. Never ask permission in the background.
+  private func updateSetupMeter() {
+    let needed = (pickerMeter || consoleMeterRequested && camera.link.macName != nil) && !usesMacMic && micOn
+      && (!session.isActivelyRunning || session.isManual)
+      && ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] == nil
+      && ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] == nil
+      && (pickerMeter || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized)
+    if !needed { session.stopMicrophoneTest() }
+    else if !session.isTestingMicrophone {
+      session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
+    }
   }
   @Published private(set) var localMicrophones: [PadRemote.Source] = []
   private let discoverMicrophones: () -> [PadRemote.Source]
@@ -156,6 +170,9 @@ import AVFoundation
     didSet {
       guard settings != oldValue else { return }
       persist()
+      if settings.audioDeviceUID != oldValue.audioDeviceUID || settings.inputGain != oldValue.inputGain {
+        session.stopMicrophoneTest()
+      }
       if session.activeRecord != nil { session.updateSettings(settings) }
     }
   }
@@ -340,9 +357,23 @@ import AVFoundation
       pictureMode = .behindScript
       pictureIsTemporary = true
     }
+    revealScript()
     presentingID = script.id
     askMacForPicture()
     UIApplication.shared.isIdleTimerDisabled = true
+  }
+
+  private func revealScript() {
+    scriptVisible = true
+    if pictureMode == .monitorOnly { setPictureMode(.behindScript) }
+  }
+
+  func startReading() {
+    if presentingID == nil, !cameraOnly, let script = selected { present(script) }
+    guard presentingID != nil, micOn || settings.mode != "Voice" else { return }
+    revealScript()
+    presenterSetup = false
+    session.startReading()
   }
 
   /// The camera on its own, to set up framing, sound and recording before any script. The Mac is
@@ -511,6 +542,12 @@ extension PadStore {
     let link = camera.link
     link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
+    link.$pictureSize.receive(on: DispatchQueue.main).sink { [weak self] size in
+      guard let self, size != nil, !isPresenting else { return }
+      presentCamera()
+    }.store(in: &bag)
+    Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
+      .sink { [weak self] _ in self?.updateSetupMeter() }.store(in: &bag)
     micMeter.$levelDB.dropFirst().throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
       .sink { [weak self] _ in
         guard let self, link.macName != nil, !session.followsRemote else { return }
@@ -558,6 +595,8 @@ extension PadStore {
   }
 
   private func resetMacControls() {
+    consoleMeterRequested = false
+    updateSetupMeter()
     macStatus = PadRemote.MacStatus()
     macMicLevelDB = -60
     micMeter.show(-60)
@@ -719,8 +758,10 @@ extension PadStore {
     case .pictureMode(let value): setPictureMode(value)
     case .picturePriority(let value): setPicturePriority(value)
     case .cleanScreen(let value): setCleanScreen(value)
+    case .microphoneMeter(let value): consoleMeterRequested = value; updateSetupMeter()
     case .micOn(let value): setMicOn(value)
     case .selectCamera(let id, let onIPad):
+      if !isPresenting { presentCamera() }
       if onIPad == true {
         guard camera.devices.contains(where: { $0.id == id && !$0.isMac }) else { return }
         camera.selectedID = id
@@ -732,6 +773,7 @@ extension PadStore {
         camera.isOn = true
       }
     case .cameraOn(let value):
+      if value, !isPresenting { presentCamera() }
       if camera.isShowingMac { setCameraOn(value) } else { camera.isOn = value }
     case .selectMicrophone(let id, let onIPad):
       if onIPad == true { chooseMicrophone(id, onMac: false) }
@@ -771,6 +813,7 @@ extension PadStore {
       if next != macStatus { macStatus = next }
       if firstCameraStatus { askMacForPicture() }
 
+    case .play: startReading()
     case .close: if isPresenting { closePresenter() }
     case .present(let id):
       guard let script = folder.script(id) else { return }
@@ -784,7 +827,9 @@ extension PadStore {
       do {
         guard let script = try folder.receive(transfer) else { return }
         if !editing { selectedID = script.id }
-        if transfer.present, presentingID != script.id { present(script) }
+        if transfer.present {
+          if presentingID != script.id { present(script) } else { revealScript() }
+        }
         objectWillChange.send()
       } catch { errorMessage = error.localizedDescription }
     case .look(let look):
@@ -816,7 +861,6 @@ extension PadStore {
     case .voiceSource(let source):
       switch source {
       case "Mac":
-        guard presentingID != nil else { return }
         micMeter.show(macMicLevelDB)
         // Before the mode change, so switching to Voice cannot start this iPad's microphone.
         session.followsRemote = true
@@ -836,7 +880,6 @@ extension PadStore {
       guard presentingID != nil else { return }
       switch command {
       // The iPad's own Start: honours the Manual countdown. Pause cancels it.
-      case .play: if micOn || settings.mode != "Voice" { session.startReading() }
       case .pause: session.pause()
       case .backToStart: session.restart()
       case .nextPassage: session.nextPassage()

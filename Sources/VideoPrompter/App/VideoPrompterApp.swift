@@ -127,8 +127,9 @@ enum ScriptShortcuts {
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store).background(CalmInitialFocus()) }
       .defaultSize(width: 520, height: 320)
       .windowResizability(.contentMinSize)
-    Window("iPad", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom).background(IPadWindowConfigurator()) }
+    Window("iPad Control", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom).background(IPadWindowConfigurator()) }
       .defaultSize(width: 960, height: 720)
+      .windowResizability(.contentMinSize)
       .commandsRemoved()
       .defaultLaunchBehavior(.suppressed)
     Window("Second Monitor", id: "camera") {
@@ -137,6 +138,7 @@ enum ScriptShortcuts {
         .onAppear { PresenterController.shared.observeInterfaceSettings(store) }
     }
       .defaultSize(width: 760, height: 480)
+      .windowResizability(.contentMinSize)
       .defaultLaunchBehavior(Headless.shared.active ? .suppressed : .automatic)
   }
 }

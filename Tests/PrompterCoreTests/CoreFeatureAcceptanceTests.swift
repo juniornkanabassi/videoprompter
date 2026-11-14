@@ -1093,9 +1093,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
   func testFullScreenStateFlags() {
     let panel = PresenterPanel(captureVisible: false)
     XCTAssertTrue(panel.styleMask.contains(.resizable))
-    // Auxiliary at rest, so it floats over another app's full-screen Space; Primary only while in
-    // its own (PresenterControllerTests covers the switch).
-    XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary))
+    // The presenter remains a normal primary window before and after full screen.
+    XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary))
     XCTAssertFalse(panel.styleMask.contains(.fullScreen), "a new presenter is windowed")
     XCTAssertFalse(panel.isReleasedWhenClosed, "closing keeps the panel for the next present")
     XCTAssertFalse(panel.hidesOnDeactivate)
@@ -1106,15 +1105,15 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
     controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: panel))
     XCTAssertEqual(panel.level, .normal)
     controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: panel))
-    XCTAssertEqual(panel.level, .floating)
+    XCTAssertEqual(panel.level, .normal)
     XCTAssertEqual(flag(), false, "an ordinary exit does not close")
     controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: panel))
     controller.windowDidFailToEnterFullScreen(panel)
-    XCTAssertEqual(panel.level, .floating)
+    XCTAssertEqual(panel.level, .normal)
     controller.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: panel))
     XCTAssertEqual(panel.level, .normal)
     controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: panel))
-    XCTAssertEqual(panel.level, .floating)
+    XCTAssertEqual(panel.level, .normal)
     // Without a presented panel the full-screen command and close are harmless no-ops.
     controller.toggleFullScreen()
     controller.closeNow()

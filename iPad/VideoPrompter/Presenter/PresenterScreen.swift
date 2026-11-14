@@ -123,7 +123,7 @@ struct PresenterScreen: View {
     .focusEffectDisabled()
     .onKeyPress(phases: .down) { press in handle(press) }
     .onAppear {
-      setup = !startsReading
+      setup = !(startsReading || session.isActivelyRunning || session.isCountingDown)
       focused = true
       hadMac = hadMac || macConnected
       if referencePicture == nil { useOwnCameraWithoutMac() }
@@ -473,7 +473,7 @@ struct PresenterScreen: View {
   private func startReading() {
     // No script is on screen in Camera Only, so nothing may read, or ask for the microphone.
     guard !store.cameraOnly, store.micOn || !isVoice else { return }
-    session.startReading()
+    store.startReading()
   }
 
   /// Mirror and Flip: two independent glass buttons, lit when on, always on screen while presenting.

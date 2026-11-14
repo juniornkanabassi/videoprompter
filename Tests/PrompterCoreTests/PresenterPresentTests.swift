@@ -7,7 +7,7 @@ import XCTest
 @testable import VideoPrompter
 
 /// Present, driven the way the toolbar, Cmd-Option-P and the menu drive it, with every presenter
-/// panel kept off the screen: ordering an `NSPanel` only flips a flag that `isVisible` reports
+/// panel kept off the screen: ordering an `NSWindow` only flips a flag that `isVisible` reports
 /// (with KVO, as AppKit does), full screen is a flag `styleMask` reports, and activation is
 /// counted, never performed. Nothing here shows a window, takes focus or opens a camera.
 @MainActor
@@ -44,7 +44,7 @@ final class PresenterPresentTests: XCTestCase {
   }
 
   // The controller's own state, read the way the view sees it.
-  private var panel: NSPanel? { Mirror(reflecting: controller!).descendant("panel") as? NSPanel }
+  private var panel: NSWindow? { Mirror(reflecting: controller!).descendant("panel") as? NSWindow }
   private var draft: PresenterDraft? { Mirror(reflecting: controller!).descendant("draft") as? PresenterDraft }
   private var showsPresenter: Bool {
     guard let panel, panel.isVisible, let content = panel.contentView else { return false }
@@ -187,7 +187,7 @@ final class PresenterPresentTests: XCTestCase {
     OffscreenPanels.setFullScreen(shown, false)
     controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: shown))
     XCTAssertFalse(shown.isVisible)
-    XCTAssertEqual(shown.level, .floating)
+    XCTAssertEqual(shown.level, .normal)
     controller.present(store: store)
     XCTAssertTrue(showsPresenter)
   }
@@ -232,7 +232,7 @@ final class PresenterPresentTests: XCTestCase {
   }
 }
 
-/// Swaps a few `NSPanel` and `NSApplication` methods for flags, and back again.
+/// Swaps a few `NSWindow` and `NSApplication` methods for flags, and back again.
 @MainActor enum OffscreenPanels {
   private static var shown = Set<ObjectIdentifier>()
   private static var fullScreen = Set<ObjectIdentifier>()
@@ -255,15 +255,15 @@ final class PresenterPresentTests: XCTestCase {
   static func countActivation() { activations += 1 }
 
   private static let panelSwaps: [(Selector, Selector)] = [
-    (#selector(NSWindow.makeKeyAndOrderFront(_:)), #selector(NSPanel.offscreen_makeKeyAndOrderFront(_:))),
-    (#selector(NSWindow.orderFrontRegardless), #selector(NSPanel.offscreen_orderFrontRegardless)),
-    (#selector(NSWindow.orderFront(_:)), #selector(NSPanel.offscreen_orderFront(_:))),
-    (#selector(NSWindow.makeKey), #selector(NSPanel.offscreen_makeKey)),
-    (#selector(NSWindow.orderOut(_:)), #selector(NSPanel.offscreen_orderOut(_:))),
-    (#selector(NSWindow.close), #selector(NSPanel.offscreen_close)),
-    (#selector(getter: NSWindow.isVisible), #selector(getter: NSPanel.offscreen_isVisible)),
-    (#selector(getter: NSWindow.styleMask), #selector(getter: NSPanel.offscreen_styleMask)),
-    (#selector(NSWindow.toggleFullScreen(_:)), #selector(NSPanel.offscreen_toggleFullScreen(_:))),
+    (#selector(NSWindow.makeKeyAndOrderFront(_:)), #selector(NSWindow.offscreen_makeKeyAndOrderFront(_:))),
+    (#selector(NSWindow.orderFrontRegardless), #selector(NSWindow.offscreen_orderFrontRegardless)),
+    (#selector(NSWindow.orderFront(_:)), #selector(NSWindow.offscreen_orderFront(_:))),
+    (#selector(NSWindow.makeKey), #selector(NSWindow.offscreen_makeKey)),
+    (#selector(NSWindow.orderOut(_:)), #selector(NSWindow.offscreen_orderOut(_:))),
+    (#selector(NSWindow.close), #selector(NSWindow.offscreen_close)),
+    (#selector(getter: NSWindow.isVisible), #selector(getter: NSWindow.offscreen_isVisible)),
+    (#selector(getter: NSWindow.styleMask), #selector(getter: NSWindow.offscreen_styleMask)),
+    (#selector(NSWindow.toggleFullScreen(_:)), #selector(NSWindow.offscreen_toggleFullScreen(_:))),
   ]
   private static let appSwaps: [(Selector, Selector)] = [
     (#selector(NSApplication.activate(ignoringOtherApps:)), #selector(NSApplication.offscreen_activate(ignoringOtherApps:))),
@@ -285,7 +285,7 @@ final class PresenterPresentTests: XCTestCase {
     activations = 0
   }
   private static func swapAll() {
-    for (original, replacement) in panelSwaps { swap(NSPanel.self, original, replacement) }
+    for (original, replacement) in panelSwaps { swap(PresenterPanel.self, original, replacement) }
     for (original, replacement) in appSwaps { swap(NSApplication.self, original, replacement) }
   }
   /// Gives the class its own entry first, so the inherited `NSWindow` method is left alone.
@@ -301,7 +301,7 @@ final class PresenterPresentTests: XCTestCase {
   }
 }
 
-extension NSPanel {
+extension NSWindow {
   @objc fileprivate dynamic func offscreen_makeKeyAndOrderFront(_ sender: Any?) {
     MainActor.assumeIsolated { OffscreenPanels.setShown(self, true) }
   }

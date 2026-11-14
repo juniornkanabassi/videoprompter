@@ -139,6 +139,7 @@ import VideoToolbox
   private var statusTicks = 0
   private var lastResponse = Date()
   private var pickerMeter = false
+  private var consoleMeterRequested: Bool?
   private var meterCapture: AudioCapture?
   private let setupMeter = InputMeter()
   private var macName = "Mac"
@@ -168,6 +169,10 @@ import VideoToolbox
   }
   private func publishMacStatus() {
     guard pipe != nil else { return }
+    if consoleMeterRequested != controlsIPad {
+      consoleMeterRequested = controlsIPad
+      send(.microphoneMeter(controlsIPad))
+    }
     let camera = CameraModel.shared
     let recorder = CameraRecorder.shared
     let session = AppStore.shared.session
@@ -238,6 +243,7 @@ import VideoToolbox
       selectMacMicrophone(id)
       macMicOn = true
       pendingMacMicrophone = iPadState?.presenting == nil
+      if pendingMacMicrophone { send(.voiceSource("Mac")) }
       if !pendingMacMicrophone, !relay.isRelaying {
         relay.startFromIPad(settings: AppStore.shared.settings)
       }
@@ -272,6 +278,7 @@ import VideoToolbox
       guard controlsIPad != oldValue else { return }
       // Closing the iPad window ends the relay even if the camera keeps the link open.
       if !controlsIPad { pendingMacMicrophone = false; relay.stop() }
+      publishMacStatus()
       updateLink()
     }
   }
@@ -852,6 +859,7 @@ import VideoToolbox
     lastResponse = Date()
     macStatus = PadRemote.MacStatus()
     pickerMeter = false
+    consoleMeterRequested = nil
     statusTimer = Timer.publish(every: 1.0 / 15, on: .main, in: .common).autoconnect()
       .sink { [weak self] _ in
         MainActor.assumeIsolated {
@@ -962,7 +970,7 @@ struct IPadCameraCommands: Commands {
   @Environment(\.openWindow) private var openWindow
   var body: some Commands {
     CommandGroup(after: .windowList) {
-      Button("iPad…") { openWindow(id: "ipad-remote") }
+      Button("iPad Control…") { openWindow(id: "ipad-remote") }
         .keyboardShortcut("i", modifiers: [.option, .command])
         .help("Choose the script on the iPad and control its reading")
     }
