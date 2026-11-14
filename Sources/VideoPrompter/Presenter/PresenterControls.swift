@@ -398,3 +398,15 @@ struct PresenterExposureKey: View {
       .environment(\.colorScheme, .dark).uiZoom(zoom)
   }
 }
+
+/// The same live-selection tick in the Mac menu and the iPad picker.
+struct DeviceChoiceLabel: View {
+  let name: String
+  let selected: Bool
+  var body: some View {
+    Group {
+      if selected { Label(name, systemImage: "checkmark") }
+      else { Text(name) }
+    }.accessibilityAddTraits(selected ? .isSelected : [])
+  }
+}

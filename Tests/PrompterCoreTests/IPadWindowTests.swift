@@ -1,3 +1,5 @@
+import AppKit
+@testable import VideoPrompter
 import Foundation
 import XCTest
 
@@ -14,6 +16,16 @@ final class IPadWindowTests: XCTestCase {
     XCTAssertEqual(commands.components(separatedBy: "Button(\"iPad…\")").count - 1, 1)
     XCTAssertTrue(commands.contains(".keyboardShortcut(\"i\", modifiers: [.option, .command])"))
     XCTAssertFalse(commands.contains("Button(\"Control iPad"))
+  }
+  @MainActor func testConsoleSupportsStandardFullScreenWithoutEnteringIt() {
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 960, height: 720),
+      styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: true)
+    IPadWindowConfigurator.configure(window)
+    XCTAssertTrue(window.collectionBehavior.contains(.fullScreenPrimary))
+    XCTAssertFalse(window.collectionBehavior.contains(.fullScreenAuxiliary))
+    XCTAssertTrue(window.styleMask.contains(.resizable))
+    XCTAssertEqual(window.standardWindowButton(.zoomButton)?.action, #selector(NSWindow.toggleFullScreen(_:)))
+    XCTAssertFalse(window.styleMask.contains(.fullScreen))
   }
   func testRemoteKeyboardBindings() throws {
     let view = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/IPadRemoteView.swift"), encoding: .utf8)

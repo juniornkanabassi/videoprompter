@@ -117,6 +117,19 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     for _ in 0..<100 where sender.relay.isRelaying || sender.iPadState?.voiceSource != "iPad" { try await Task.sleep(for: .milliseconds(50)) }
     XCTAssertFalse(sender.relay.isRelaying)
     XCTAssertEqual(sender.iPadState?.voiceSource, "iPad")
+    // The console uses the same relay path as the iPad picker.
+    sender.chooseMicrophone("", onIPad: false)
+    for _ in 0..<100 where sender.relay.session == nil { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertNotNil(sender.relay.session, sender.relay.status)
+    for _ in 0..<100 where sender.iPadState?.voiceSource != "Mac" { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertEqual(sender.iPadState?.voiceSource, "Mac")
+    // A simulator normally has no microphone. Invalid local IDs must not stop the active relay.
+    sender.chooseMicrophone("not-a-device", onIPad: true)
+    XCTAssertTrue(sender.relay.isRelaying)
+    sender.send(.selectMicrophone("", onIPad: true))
+    for _ in 0..<100 where sender.relay.isRelaying || sender.iPadState?.voiceSource != "iPad" { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertFalse(sender.relay.isRelaying)
+    XCTAssertEqual(sender.iPadState?.voiceSource, "iPad")
     sender.send(.close)
     for _ in 0..<100 where sender.iPadState?.presenting != nil { try await Task.sleep(for: .milliseconds(50)) }
     sender.disconnect()

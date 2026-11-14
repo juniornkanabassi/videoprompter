@@ -63,6 +63,21 @@ import XCTest
     }
   }
 
+  func testRemoteCameraSelectionReportsTheActualSide() throws {
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { throw XCTSkip("Snapshot capture guard required") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "selection-\(UUID().uuidString)")!)
+    store.camera.pickerSnapshotDevices()
+    store.perform(.selectCamera("capture", onIPad: true))
+    XCTAssertEqual(store.camera.selectedID, "capture")
+    XCTAssertEqual(store.remoteState.localCameraID, "capture")
+    XCTAssertEqual(store.remoteState.localCameras?.count, 2)
+    store.perform(.selectCamera("not-a-device", onIPad: true))
+    XCTAssertEqual(store.camera.selectedID, "capture")
+    store.perform(.selectCamera("fx3"))
+    XCTAssertTrue(store.camera.isShowingMac)
+    XCTAssertNil(store.remoteState.localCameraID)
+  }
+
   func testRemoteTypographySettings() {
     let store = PadStore(defaults: UserDefaults(suiteName: "text-sync-\(UUID().uuidString)")!)
     store.perform(.look(.init(fontName: "Lexend", fontWeight: "Bold", textColorHex: "#F5CF4A",

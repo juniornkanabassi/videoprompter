@@ -75,6 +75,29 @@ import VideoToolbox
     if iPadState?.voiceSource == "iPad" { send(.selectMicrophone(id)); return }
     selectMacMicrophone(id)
   }
+  /// Use the same relay path as a selection made on the iPad itself.
+  func chooseMicrophone(_ id: String, onIPad: Bool) {
+    if onIPad {
+      guard iPadState?.localMicrophones?.contains(where: { $0.id == id }) == true else { return }
+      relay.stop()
+      send(.selectMicrophone(id, onIPad: true))
+    } else {
+      send(.micOn(true))
+      receive(.macMicrophone(id))
+    }
+  }
+
+  func chooseCamera(_ id: String, onIPad: Bool) {
+    if onIPad {
+      guard iPadState?.localCameras?.contains(where: { $0.id == id }) == true else { return }
+      send(.selectCamera(id, onIPad: true))
+    } else {
+      guard cameraSources.contains(where: { $0.id == id }) else { return }
+      selectCamera(id)
+      send(.selectCamera(id))
+    }
+  }
+
   private func selectMacMicrophone(_ id: String) {
     guard id.isEmpty || AudioCapture.inputDevices().contains(where: { $0.uid == id }) else { return }
     AppStore.shared.settings.audioDeviceUID = id.isEmpty ? nil : id
@@ -146,7 +169,7 @@ import VideoToolbox
       },
       selectedCamera: camera.selectedUID, cameraOn: isOn,
       microphones: microphones,
-      selectedMicrophone: relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID ?? "",
+      selectedMicrophone: AudioCapture.resolvedInput(relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID)?.uid,
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
       displayName: macName, connectionKind: pipe?.name, framesSkipped: encoder.framesSkipped, supportsMicSelection: true,
       microphoneChannel: AudioChannel.load(AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid ?? "", defaults: AppStore.preferences()).rawValue)
@@ -181,7 +204,7 @@ import VideoToolbox
 
   private func receive(_ command: PadRemote.Command) {
     switch command {
-    case .selectCamera(let id): selectCamera(id)
+    case .selectCamera(let id, _): selectCamera(id)
     case .cameraOn(let value):
       if !value || !isOn { cameraOwnedByIPad = value }
       receivingCameraRequest = true
@@ -193,7 +216,11 @@ import VideoToolbox
       guard id.isEmpty || AudioCapture.inputDevices().contains(where: { $0.uid == id }) else { return }
       selectMacMicrophone(id)
       macMicOn = true
-      if !relay.isRelaying { relay.startFromIPad(settings: AppStore.shared.settings) }
+      if iPadState?.presenting == nil {
+        send(.voiceSource("Mac"))
+      } else if !relay.isRelaying {
+        relay.startFromIPad(settings: AppStore.shared.settings)
+      }
       publishMacStatus()
     case .microphoneLevel(let level): iPadMicMeter.show(level)
     case .microphoneMeter(let value): pickerMeter = value; publishMacStatus()
@@ -203,7 +230,7 @@ import VideoToolbox
       relay.setChannel(channel)
       meterCapture?.stop(); meterCapture = nil
       publishMacStatus()
-    case .selectMicrophone(let id): selectMacMicrophone(id)
+    case .selectMicrophone(let id, _): selectMacMicrophone(id)
     case .micOn(let value):
       macMicOn = value
       value ? relay.resumeForMic() : relay.pauseForMic()

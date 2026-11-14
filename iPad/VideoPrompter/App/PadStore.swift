@@ -595,6 +595,10 @@ extension PadStore {
   var remoteState: PadRemote.State {
     let open = presentingID != nil
     let words = open ? session.document.spokenTokens.count : 0
+    let localCameras: [PadRemote.Source] = camera.devices.filter { !$0.isMac }.map {
+      .init(id: $0.id, name: $0.name, connection: $0.isExternal ? "USB-C capture" : "Built-in",
+        width: $0.width, height: $0.height, fps: $0.fps)
+    }
     return PadRemote.State(
       scripts: folder.scripts.map {
         let macID = folder.macID(of: $0.id)
@@ -612,12 +616,12 @@ extension PadStore {
         textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
         paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues),
       presets: presets.map(\.name), startDelay: session.startDelay,
-      voiceSource: session.followsRemote ? "Mac" : "iPad",
+      voiceSource: usesMacMic ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
       fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
       editing: editing, rejectionReason: rejectionReason, pictureMode: cameraOnly ? .monitorOnly : pictureMode,
       picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
-      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone, selectedID: selectedID,
+      microphoneSources: microphoneSources, selectedMicrophone: usesMacMic ? selectedMicrophone : AudioCapture.resolvedInput(settings.audioDeviceUID)?.uid, selectedID: selectedID,
       deviceName: camera.link.deviceName,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
@@ -625,7 +629,9 @@ extension PadStore {
       guides: .init(zebras: camera.guides.zebras, falseColour: camera.guides.falseColour,
         thirds: camera.guides.thirds, centre: camera.guides.axes, marker: camera.guides.marker?.label ?? "Off",
         exposureKey: defaults.object(forKey: "presenterExposureKey") as? Bool ?? true),
-      micLevelDB: micOn ? micMeter.levelDB : -60)
+      micLevelDB: micOn ? micMeter.levelDB : -60,
+      localCameras: localCameras, localMicrophones: localMicrophones,
+      localCameraID: camera.isShowingMac ? nil : camera.selectedID, localCameraOn: camera.isOn, cameraUsesMac: camera.isShowingMac)
   }
 
   func perform(_ command: PadRemote.Command) {
@@ -681,9 +687,22 @@ extension PadStore {
     case .picturePriority(let value): setPicturePriority(value)
     case .cleanScreen(let value): setCleanScreen(value)
     case .micOn(let value): setMicOn(value)
-    case .selectCamera(let id): selectCamera(id)
-    case .cameraOn(let value): setCameraOn(value)
-    case .selectMicrophone(let id): selectMicrophone(id)
+    case .selectCamera(let id, let onIPad):
+      if onIPad == true {
+        guard camera.devices.contains(where: { $0.id == id && !$0.isMac }) else { return }
+        camera.selectedID = id
+        camera.isOn = true
+      } else {
+        camera.selectedID = PadCamera.macLinkID
+        selectCamera(id)
+        setCameraOn(true)
+        camera.isOn = true
+      }
+    case .cameraOn(let value):
+      if camera.isShowingMac { setCameraOn(value) } else { camera.isOn = value }
+    case .selectMicrophone(let id, let onIPad):
+      if onIPad == true { chooseMicrophone(id, onMac: false) }
+      else { selectMicrophone(id) }
     case .macStatus(var value):
       // Reply even when nothing changes, so a half-open Wi-Fi link is detected by the Mac.
       if Date().timeIntervalSince(lastLinkReply) >= 1 {

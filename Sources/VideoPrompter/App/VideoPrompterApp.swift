@@ -127,7 +127,7 @@ enum ScriptShortcuts {
     Window("Import from Google Docs", id: "google-docs") { GoogleDocsWindow(store: store).background(CalmInitialFocus()) }
       .defaultSize(width: 520, height: 320)
       .windowResizability(.contentMinSize)
-    Window("iPad", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom) }
+    Window("iPad", id: "ipad-remote") { IPadRemoteView(link: .shared).uiZoom(store.uiZoom).background(IPadWindowConfigurator()) }
       .defaultSize(width: 960, height: 720)
       .commandsRemoved()
       .defaultLaunchBehavior(.suppressed)

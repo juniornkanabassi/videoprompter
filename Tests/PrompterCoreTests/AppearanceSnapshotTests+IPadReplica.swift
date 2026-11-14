@@ -28,17 +28,24 @@ extension AppearanceSnapshotTests {
       deviceName: "Studio iPad", appVersion: "Test", scriptPreview: "Match day", markdown: markdown)
     let imageURL = try XCTUnwrap(Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures"))
     let image = try XCTUnwrap(NSImage(contentsOf: imageURL)?.cgImage(forProposedRect: nil, context: nil, hints: nil))
-    for variant in ["connected-reading", "paused", "not-connected", "camera-only", "devices", "adjust", "text"] {
+    for variant in ["connected-reading", "paused", "not-connected", "camera-only", "devices", "adjust", "text", "camera", "microphone", "full-screen"] {
       var fixture = state
+      fixture.macStatus = .init(cameras: [.init(id: "fx3", name: "Sony FX3")], selectedCamera: "fx3", cameraOn: true,
+        microphones: [.init(id: "mac-mic", name: "MacBook Pro microphone")], selectedMicrophone: "mac-mic")
+      fixture.cameraUsesMac = true
+      fixture.localCameras = [.init(id: "front", name: "iPad front camera")]
+      fixture.localMicrophones = [.init(id: "pad-mic", name: "iPad microphone")]
+      fixture.voiceSource = "Mac"
+      fixture.selectedMicrophone = "mac-mic"
       fixture.pictureMode = .behindScript
       if variant == "connected-reading" { fixture.mode = "Voice"; fixture.voiceSource = "Mac" }
       if variant == "paused" { fixture.running = false }
       if variant == "camera-only" { fixture.cameraOnly = true; fixture.presenting = nil }
       for zoom in [1.0, 1.5] {
       try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: variant == "not-connected" ? nil : fixture, startsLink: false, previewOverride: image,
-        panelOverride: ["devices", "adjust", "text"].contains(variant) ? variant : nil,
+        panelOverride: ["devices", "adjust", "text", "camera", "microphone"].contains(variant) ? variant : nil,
         devicesOverride: [.init(id: "personal", name: "Junior’s iPad Pro"), .init(id: "studio", name: "Footballco Studio iPad")]).uiZoom(zoom),
-        name: "ipad-\(variant)-\(Int(zoom * 100))", size: .init(width: 960 * zoom, height: 720 * zoom),
+        name: "ipad-\(variant)-\(Int(zoom * 100))", size: variant == "full-screen" ? .init(width: 1920, height: 1080) : .init(width: 960 * zoom, height: 720 * zoom),
         scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(300), prepare: { host in
           guard variant == "connected-reading" || variant == "paused" else { return }
           func texts(_ view: NSView) -> [NSTextView] {

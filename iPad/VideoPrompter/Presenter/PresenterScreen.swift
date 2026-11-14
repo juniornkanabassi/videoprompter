@@ -904,7 +904,7 @@ struct DevicePickerCards: View {
           if microphone { Toggle("Show meter", isOn: $showMeter).tint(.yellow).fixedSize() }
         }
         if !microphone { Text("Pick the camera, then make the picture upright.").foregroundStyle(.secondary) }
-        heading(store.macDisplayName ?? "Mac", badge: connected ? "Mac" : "Not connected", active: connected)
+        heading("On " + (store.macDisplayName ?? "Mac"), badge: connected ? "Mac" : "Not connected", active: connected)
         if connected {
           if microphone {
             card(.init(id: "", name: "System default", connection: "Use the Mac’s selected input"), mac: true)
@@ -917,7 +917,8 @@ struct DevicePickerCards: View {
           }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(.gray.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5])))
         }
-        heading("This iPad", badge: "Fallback", active: false)
+        Divider().overlay(.white.opacity(0.25))
+        heading("On " + store.camera.link.deviceName, badge: "iPad", active: !store.usesMacMic)
         if microphone {
           if store.localMicrophones.isEmpty { card(.init(id: "", name: "iPad microphone", connection: "Built-in"), mac: false) }
           ForEach(store.localMicrophones) { card($0, mac: false) }
@@ -966,11 +967,10 @@ struct DevicePickerCards: View {
       } label: {
         HStack {
           VStack(alignment: .leading, spacing: 4) {
-            Text(source.name).font(.body.bold())
+            DeviceChoiceLabel(name: source.name, selected: chosen).font(.body.bold())
             Text(source.detail).font(.callout).foregroundStyle(.white.opacity(0.75))
           }
           Spacer()
-          Image(systemName: chosen ? "checkmark.circle.fill" : "circle").foregroundStyle(chosen ? .yellow : .gray)
         }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
       }.buttonStyle(.plain).accessibilityAddTraits(chosen ? .isSelected : [])
         .disabled(microphone && mac && store.macStatus.supportsMicSelection != true && !store.usesMacMic)

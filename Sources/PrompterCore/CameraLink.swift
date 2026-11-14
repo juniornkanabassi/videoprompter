@@ -176,9 +176,10 @@ public enum PadRemote {
     case pictureMode(PictureMode)
     case picturePriority(PicturePriority)
     case cleanScreen(Bool)
-    case selectCamera(String)
+    /// A missing destination preserves the original Mac-source command on older peers.
+    case selectCamera(String, onIPad: Bool? = nil)
     case cameraOn(Bool)
-    case selectMicrophone(String)
+    case selectMicrophone(String, onIPad: Bool? = nil)
     /// Capability-gated iPad request: nil hands voice back to the iPad; empty UID uses system default.
     case macMicrophone(String?)
     case microphoneChannel(String)
@@ -374,6 +375,12 @@ public enum PadRemote {
     /// The microphone choices for the active voice source.
     public var microphoneSources: [Source]?
     public var selectedMicrophone: String?
+    /// Local lists stay available when the selected source is on the Mac.
+    public var localCameras: [Source]?
+    public var localMicrophones: [Source]?
+    public var localCameraID: String?
+    public var localCameraOn: Bool?
+    public var cameraUsesMac: Bool?
     public var deviceName: String?
     public var appVersion: String?
     public var scriptPreview: String?
@@ -394,8 +401,13 @@ public enum PadRemote {
       macStatus: MacStatus? = nil, microphoneSources: [Source]? = nil, selectedMicrophone: String? = nil,
       selectedID: UUID? = nil, deviceName: String? = nil, appVersion: String? = nil, scriptPreview: String? = nil,
       cameraOnly: Bool? = nil, linkHeartbeat: Bool? = nil, markdown: String? = nil,
-      guides: Guides? = nil, micLevelDB: Double? = nil
+      guides: Guides? = nil, micLevelDB: Double? = nil,
+      localCameras: [Source]? = nil, localMicrophones: [Source]? = nil,
+      localCameraID: String? = nil, localCameraOn: Bool? = nil, cameraUsesMac: Bool? = nil
     ) {
+      self.localCameras = localCameras; self.localMicrophones = localMicrophones
+      self.localCameraID = localCameraID; self.localCameraOn = localCameraOn
+      self.cameraUsesMac = cameraUsesMac
       self.deviceName = deviceName; self.appVersion = appVersion; self.scriptPreview = scriptPreview
       self.cameraOnly = cameraOnly; self.markdown = markdown
       self.guides = guides; self.micLevelDB = micLevelDB

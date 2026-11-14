@@ -70,6 +70,8 @@ struct IPadRemoteView: View {
       if let state = currentState, let panelOverride {
         Group {
           if panelOverride == "devices" { deviceChoices(state).padding(Space.lg).frame(width: 400) }
+          else if panelOverride == "camera" { VStack(alignment: .leading, spacing: Space.md) { cameraMenu(state) }.padding(Space.lg).frame(width: 400) }
+          else if panelOverride == "microphone" { VStack(alignment: .leading, spacing: Space.md) { voiceMenu(state) }.padding(Space.lg).frame(width: 400) }
           else { ScrollView { adjustControls(state).padding(Space.lg) }.frame(width: 460, height: 560) }
         }.background(Color(white: 0.14), in: RoundedRectangle(cornerRadius: Space.md))
           .shadow(radius: Space.md).padding(Space.lg)
@@ -98,10 +100,10 @@ struct IPadRemoteView: View {
   private func setupBar(_ state: PadRemote.State) -> some View {
         HStack(spacing: Space.md) {
           BarGroup(label: "Camera and microphone") {
-            BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: link.cameraOn,
+            BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn,
               showsTitle: true, toggleHelp: "Turn camera on or off", menuLabel: "Choose camera", menuValue: link.selectedCamera ?? "Default",
-              toggle: { link.setCameraOn(!link.cameraOn) }) {
-              ForEach(link.cameraSources) { source in Button(source.name) { link.selectCamera(source.id) } }
+              toggle: { link.send(.cameraOn(!(state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn))) }) {
+              cameraMenu(state)
             }
             BarDivider()
             BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: state.micOn ?? true,
@@ -115,7 +117,12 @@ struct IPadRemoteView: View {
   }
   private var liveCamera: some View {
     Group {
-      if let image = previewOverride {
+      if let id = currentState?.localCameraID {
+        Color.black.overlay {
+          Label(currentState?.localCameras?.first(where: { $0.id == id })?.name ?? "Camera on iPad", systemImage: "ipad")
+            .foregroundStyle(.secondary)
+        }
+      } else if let image = previewOverride {
         Image(decorative: image, scale: 1).resizable().scaledToFit()
       } else if startsLink && link.cameraOn {
         CameraPreview(model: CameraModel.shared, presenter: true)
@@ -155,13 +162,49 @@ struct IPadRemoteView: View {
     }.fixedSize()
       .popover(isPresented: $devicesOpen) { deviceChoices(state).padding(Space.lg).uiZoom(store.uiZoom) }
   }
+  private func cameraMenu(_ state: PadRemote.State) -> some View {
+    Group {
+      Section("On this Mac") {
+        ForEach(state.macStatus?.cameras ?? link.cameraSources) { source in
+          Button { link.chooseCamera(source.id, onIPad: false) } label: {
+            DeviceChoiceLabel(name: source.name, selected: state.cameraUsesMac != false && state.macStatus?.selectedCamera == source.id)
+          }
+        }
+      }
+      Divider()
+      Section("On " + (state.deviceName ?? "iPad")) {
+        ForEach(state.localCameras ?? []) { source in
+          Button { link.chooseCamera(source.id, onIPad: true) } label: {
+            DeviceChoiceLabel(name: source.name, selected: state.localCameraID == source.id)
+          }
+        }
+        if state.localCameras == nil { Text("Update the iPad app to list its cameras") }
+      }
+    }
+  }
   private func voiceMenu(_ state: PadRemote.State) -> some View {
     Group {
-      Button("This Mac") { setVoice("mac", state) }
-      Button("iPad") { setVoice("ipad", state) }
-      Button("Off (scroll)") { setVoice("off", state) }
+      Section("On this Mac") {
+        ForEach(state.macStatus?.microphones ?? link.macStatus.microphones ?? []) { source in
+          Button { link.chooseMicrophone(source.id, onIPad: false) } label: {
+            DeviceChoiceLabel(name: source.name, selected: state.voiceSource == "Mac" && state.selectedMicrophone == source.id)
+          }
+        }
+      }
       Divider()
-      ForEach(link.microphoneSources) { source in Button(source.name) { link.selectMicrophone(source.id) } }
+      Section("On " + (state.deviceName ?? "iPad")) {
+        if let microphones = state.localMicrophones {
+          ForEach(microphones) { source in
+            Button { link.chooseMicrophone(source.id, onIPad: true) } label: {
+              DeviceChoiceLabel(name: source.name, selected: state.voiceSource == "iPad" && state.selectedMicrophone == source.id)
+            }
+          }
+        } else {
+          Button { setVoice("ipad", state) } label: {
+            DeviceChoiceLabel(name: "iPad microphone", selected: state.voiceSource == "iPad")
+          }
+        }
+      }
     }
   }
   private func scriptMenu(_ state: PadRemote.State, title: String? = nil) -> some View {
@@ -308,6 +351,31 @@ struct IPadButton: View {
         if link.iPadState != nil { Circle().fill(.green).frame(width: Space.sm, height: Space.sm) }
       }
     }.help("Open iPad (⌥⌘I)").accessibilityValue(link.iPadState == nil ? "Not connected" : "Connected")
+  }
+}
+#endif
+
+#if os(macOS)
+/// Opt the console into AppKit's standard green-button, View menu and Globe-F actions.
+struct IPadWindowConfigurator: NSViewRepresentable {
+  static func configure(_ window: NSWindow) {
+    window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
+    window.collectionBehavior.insert(.fullScreenPrimary)
+    window.styleMask.insert(.resizable)
+    if let button = window.standardWindowButton(.zoomButton) {
+      button.target = window
+      button.action = #selector(NSWindow.toggleFullScreen(_:))
+    }
+  }
+  final class Anchor: NSView {
+    override func viewDidMoveToWindow() {
+      super.viewDidMoveToWindow()
+      if let window { IPadWindowConfigurator.configure(window) }
+    }
+  }
+  func makeNSView(context: Context) -> NSView { Anchor() }
+  func updateNSView(_ view: NSView, context: Context) {
+    if let window = view.window { Self.configure(window) }
   }
 }
 #endif
