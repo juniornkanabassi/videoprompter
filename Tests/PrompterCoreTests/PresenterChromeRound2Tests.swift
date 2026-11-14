@@ -92,7 +92,7 @@ import XCTest
     let shell = PresenterShell()
     let (window, host) = await LibraryAX.host(view(f, shell: shell), size: .init(width: 1600, height: 1000))
     defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityLabel") == "Presenter script" })
+    XCTAssertTrue(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityLabel") == "Presenter script" })
     let camera = try XCTUnwrap(LibraryAX.named("Camera", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
     XCTAssertTrue(LibraryAX.bool(camera, "accessibilityPerformPress"))
     try await Task.sleep(for: .milliseconds(150))
@@ -123,7 +123,11 @@ import XCTest
     let (window, host) = await LibraryAX.host(view(f, shell: shell), size: .init(width: 1600, height: 1000))
     defer { LibraryAX.close(window) }
     let toggle = try XCTUnwrap(LibraryAX.named("Script", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
-    XCTAssertEqual(LibraryAX.value(toggle, "accessibilityValue"), "Off")
+    XCTAssertEqual(LibraryAX.value(toggle, "accessibilityValue"), "On")
+    XCTAssertTrue(LibraryAX.bool(toggle, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertFalse(shell.scriptPreview)
+    XCTAssertFalse(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-script-content" })
     XCTAssertTrue(LibraryAX.bool(toggle, "accessibilityPerformPress"))
     try await Task.sleep(for: .milliseconds(150))
     XCTAssertTrue(shell.scriptPreview)

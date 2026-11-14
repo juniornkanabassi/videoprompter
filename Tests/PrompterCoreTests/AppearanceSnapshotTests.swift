@@ -388,7 +388,7 @@ import XCTest
       }
       store.uiZoom = 2
       try await snapshot(AppSettingsView(store: store, selectedTab: .reading), name: "settings-navigation-200-\(mode)", size: .init(width: 1120, height: 700), scheme: scheme, destination: destination)
-      store.uiZoom = 1; camera.cleanView = true
+      store.uiZoom = 1; camera.cleanLook = .pictureOnly; camera.keepCleanMicMeter = false; camera.cleanView = true
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-clean-view-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)
       camera.cleanView = false; camera.displayMode = .videoOnly; store.uiZoom = 2
       try await snapshot(PresenterView(store: store, session: store.session, draft: draft, hasScript: false, camera: camera, monitor: monitor, startsCamera: false, recorder: recorder), name: "presenter-camera-only-200-\(mode)", size: .init(width: 1000, height: 700), scheme: scheme, destination: destination)

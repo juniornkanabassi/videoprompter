@@ -47,6 +47,7 @@ struct PresenterView: View {
     _shell = StateObject(wrappedValue: shell ?? PresenterShell(reading: session.isActivelyRunning))
     _presentation = StateObject(wrappedValue: PresenterSessionState(session: session))
   }
+  @State private var barHeight: CGFloat = 160
   @State private var editorNotice: String?
   @State private var cameraSection = "Camera"
   @State private var quietTask: Task<Void, Never>?
@@ -385,8 +386,18 @@ struct PresenterView: View {
 
   private var hasBarContent: Bool { !draft.isEditing || store.shootSetupError != nil || hasBottomNotice }
   private var controlBar: some View {
-    barContent.environment(\.colorScheme, .dark)
-      .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
+    // Keep at least 40% of a short window for the script, including titled windows, wrapped controls and notices.
+    ScrollView(.vertical) {
+      barContent.environment(\.colorScheme, .dark)
+        .frame(width: viewport.width / controlZoom)
+        .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { geometry in
+          Color.clear.onAppear { barHeight = geometry.size.height }
+            .onChange(of: geometry.size.height) { _, height in barHeight = height }
+        })
+    }
+    .frame(height: min(barHeight, viewport.height * 0.55)) // grid: ok proportional reading-space reserve
+
   }
 
   /// Pointer or key activity reveals Clean's exit pill.
