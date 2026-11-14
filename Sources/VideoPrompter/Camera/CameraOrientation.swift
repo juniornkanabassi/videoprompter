@@ -4,9 +4,8 @@ import Vision
 
 /// How far the picture is turned for display. Cam B hands over a 3840x2160 landscape feed while
 /// Junior physically shoots vertical, so 90° and 270° are the normal case rather than the
-/// exception. The angle is counter-clockwise, which is what both
-/// `CGAffineTransform(rotationAngle:)` in the preview layer's own space and
-/// `AVCaptureConnection.videoRotationAngle` measure.
+/// exception. The angle is counter-clockwise in the Mac preview. UIKit needs the
+/// opposite affine angle because its layer coordinates run down the screen.
 enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
   case none = 0, quarter = 90, half = 180, threeQuarters = 270
   var id: Int { rawValue }
@@ -27,7 +26,13 @@ enum CameraRotation: Int, CaseIterable, Codable, Identifiable, Sendable {
 
   /// Mirror horizontally in displayed coordinates, after rotating the raw camera pixels.
   func displayTransform(mirrored: Bool) -> CGAffineTransform {
-    CGAffineTransform(rotationAngle: radians)
+    // UIKit layers have a downward Y axis; AppKit camera layers have an upward Y axis.
+    #if os(iOS)
+    let angle = -radians
+    #else
+    let angle = radians
+    #endif
+    return CGAffineTransform(rotationAngle: angle)
       .concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1))
   }
 

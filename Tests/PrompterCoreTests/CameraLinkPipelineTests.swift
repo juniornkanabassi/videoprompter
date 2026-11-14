@@ -156,6 +156,48 @@ final class CameraLinkPipelineTests: XCTestCase {
     pipe.close()
   }
 
+  /// Persist the real encoder output and AppKit geometry for the headless iPad test.
+  @MainActor func testLinkedPictureOrientationFixture() throws {
+    let pipe = CollectingPipe(name: "orientation")
+    let encoder = LinkEncoder()
+    encoder.attach(pipe)
+    let sample = try Self.frame(320, 180, 0)
+    let pixels = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+    CVPixelBufferLockBaseAddress(pixels, [])
+    let base = CVPixelBufferGetBaseAddressOfPlane(pixels, 0)!.assumingMemoryBound(to: UInt8.self)
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+    // Unequal corner patches distinguish every rotation and reflection.
+    for y in 0..<180 { for x in 0..<320 {
+      base[y * stride + x] = x < 80 && y < 45 ? 220 : (x > 240 && y > 100 ? 100 : 30)
+    } }
+    CVPixelBufferUnlockBaseAddress(pixels, [])
+    encoder.captureOutput(AVCaptureVideoDataOutput(), didOutput: sample, from: Self.connection)
+    encoder.drain()
+    let messages = try Self.wait(for: pipe, frames: 1)
+    guard case .format(_, _, let sets) = messages.first else { return XCTFail("Missing encoder format") }
+    let frames = messages.compactMap { if case .frame(_, _, let data) = $0 { data } else { nil } }
+    XCTAssertEqual(try Self.decode(frames, sets: sets), 1)
+    let markers = [CGPoint(x: 40, y: 22), CGPoint(x: 280, y: 140), CGPoint(x: 120, y: 70)]
+    var expected: [String: [[Double]]] = [:]
+    for rotation in CameraRotation.allCases { for mirror in [false, true] {
+      let root = CALayer()
+      root.bounds = CGRect(x: 0, y: 0, width: 800, height: 600)
+      let picture = CALayer()
+      root.addSublayer(picture)
+      CameraStageView.place(picture, on: rotation.fittedRect(aspect: CGSize(width: 320, height: 180), in: root.bounds), turnedBy: rotation, mirrored: mirror)
+      expected["\(rotation.rawValue)-\(mirror)"] = markers.map { point in
+        let local = CGPoint(x: point.x / 320 * picture.bounds.width, y: (1 - point.y / 180) * picture.bounds.height)
+        let placed = picture.convert(local, to: root)
+        return [Double(placed.x), Double(600 - placed.y)]
+      }
+    } }
+    if let directory = ProcessInfo.processInfo.environment["VP_LINK_FIXTURE_DIR"] {
+      let url = URL(fileURLWithPath: directory)
+      try pipe.bytes.withLock { $0 }.write(to: url.appendingPathComponent("linked-picture.bin"))
+      try JSONEncoder().encode(expected).write(to: url.appendingPathComponent("linked-picture.json"))
+    }
+  }
+
   // MARK: Helpers
 
   static let connection = AVCaptureConnection(inputPorts: [], output: AVCaptureVideoDataOutput())

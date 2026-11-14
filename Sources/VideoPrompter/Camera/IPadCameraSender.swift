@@ -47,7 +47,10 @@ import VideoToolbox
   var recordingState: PadRemote.RecordingState { macStatus.recording ?? .unknown }
   let micMeter = RemoteMicMeter()
   let iPadMicMeter = RemoteMicMeter()
-  func setVoiceSource(_ value: String) { send(.voiceSource(value)) }
+  func setVoiceSource(_ value: String) {
+    if value == "iPad" { chooseMicrophone("", onIPad: true) }
+    else { send(.voiceSource(value)) }
+  }
   func setMirror(_ value: Bool) { send(.look(.init(horizontalMirror: value))) }
   func setFlip(_ value: Bool) { send(.look(.init(verticalMirror: value))) }
   func beginEditing() { send(.editing(true)) }
@@ -88,6 +91,7 @@ import VideoToolbox
         send(.selectMicrophone(id, onIPad: true))
       }
     } else {
+      send(.selectMicrophone(id, onIPad: false))
       send(.micOn(true))
       receive(.macMicrophone(id))
     }
@@ -190,7 +194,7 @@ import VideoToolbox
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
       displayName: macName, connectionKind: pipe?.name, framesSkipped: encoder.framesSkipped, supportsMicSelection: true,
       microphoneChannel: AudioChannel.load(AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid ?? "", defaults: AppStore.preferences()).rawValue,
-      cameraRotation: camera.guides.rotation.rawValue)
+      cameraRotation: camera.guides.rotation.rawValue, cameraMirrored: camera.mirrored)
     if next != macStatus { macStatus = next }
     var update = next
     update.micLevelDB = micMeter.levelDB

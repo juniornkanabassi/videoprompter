@@ -363,6 +363,7 @@ struct IPadRemoteView: View {
   }
   private func setVoice(_ value: String, _ state: PadRemote.State) {
     if value == "mac" {
+      link.send(.selectMicrophone(store.settings.audioDeviceUID ?? "", onIPad: false))
       message = nil
       if state.markdown != nil { link.relay.startFromIPad(settings: store.settings) }
       else if let id = state.scripts.first(where: { $0.id == state.presenting })?.macID,
