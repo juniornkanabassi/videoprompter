@@ -2,7 +2,6 @@
 @preconcurrency import AVFoundation
 import AppKit
 import Combine
-import CoreImage
 import CryptoKit
 import Darwin
 import Network
@@ -281,7 +280,6 @@ import VideoToolbox
   private var unpairedDeviceID: String?
   @Published private(set) var unpairedDeviceName: String?
   @Published private(set) var pairingFailure: String?
-  @Published private(set) var previewImage: CGImage?
 
   @Published private(set) var pairingOffer: PairingOffer?
   @Published private(set) var pairingRequestName: String?
@@ -447,9 +445,6 @@ import VideoToolbox
     codes = store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults) ?? [:]
     selectedWiFiID = defaults.string(forKey: "selectedWiFiIPad")
     refusedLegacyIDs = Set(defaults.stringArray(forKey: "forgottenWiFiIPads") ?? [])
-    encoder.onPreview = { [weak self] image in
-      Task { @MainActor in if self?.isOn == true { self?.previewImage = image } }
-    }
   }
 
   private let output = AVCaptureVideoDataOutput()
@@ -555,7 +550,6 @@ import VideoToolbox
   }
 
   private func stopCamera() {
-    previewImage = nil
     if let pipe {
       if iPadState != nil {
         // Still connected for the remote: the iPad goes back to its own camera once the last
@@ -649,7 +643,6 @@ import VideoToolbox
     macStatus = PadRemote.MacStatus()
     pickerMeter = false
     iPadState = nil
-    previewImage = nil
     status = "Off"
   }
 
@@ -867,7 +860,6 @@ import VideoToolbox
     macStatus = PadRemote.MacStatus()
     pickerMeter = false
     iPadState = nil
-    previewImage = nil
     guard linkOn else { return }
     if oldIPad, !isOn {
       status = "Update Video Prompter on the iPad, then open the iPad window again"
@@ -922,9 +914,6 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   /// The parameter sets last sent, so they go again only when they change.
   private let lastSets = Mutex<[Data]>([])
   private var forceKeyFrame = false
-  var onPreview: (@Sendable (CGImage) -> Void)?
-  private lazy var previewContext = CIContext(options: [.cacheIntermediates: false])
-  private var lastPreviewTime: CFTimeInterval = 0
   private let skipped = Atomic<Int>(0)
   var framesSkipped: Int { skipped.load(ordering: .relaxed) }
   /// Frames inside the encoder, not yet queued on the pipe. Counted with the pipe's waiting frames
@@ -957,14 +946,6 @@ final class LinkEncoder: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       skipped.add(1, ordering: .relaxed)
       forceKeyFrame = true
       return
-    }
-    let now = CACurrentMediaTime()
-    if let onPreview, now - lastPreviewTime >= 0.5 {
-      lastPreviewTime = now
-      let source = CIImage(cvPixelBuffer: image)
-      let scale = min(1, 320 / max(source.extent.width, source.extent.height))
-      let small = source.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-      if let thumbnail = previewContext.createCGImage(small, from: small.extent) { onPreview(thumbnail) }
     }
     let size = CMVideoDimensions(width: Int32(CVPixelBufferGetWidth(image)), height: Int32(CVPixelBufferGetHeight(image)))
     if session == nil || generation != sessionGeneration || sessionSize.map({ $0.width != size.width || $0.height != size.height }) == true {
