@@ -30,11 +30,12 @@ import XCTest
     """
 
   func testBundledFontsAndSpacing() throws {
-    for family in ["Lexend Deca", "Lexend"] {
+    XCTAssertEqual(ScriptRenderer.presenterFonts, ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next", "Poppins", "Lexend", "Lexend Deca"])
+    for family in ["Lexend Deca", "Lexend", "Poppins"] {
       var style = ScriptStyle()
       style.fontName = family
       XCTAssertEqual(ScriptRenderer.font(style).familyName, family)
-      XCTAssertNotNil(Bundle.main.url(forResource: family == "Lexend" ? "Lexend-Variable" : "LexendDeca-Variable", withExtension: "ttf"))
+      XCTAssertNotNil(Bundle.main.url(forResource: family == "Poppins" ? "Poppins-Regular" : family == "Lexend" ? "Lexend-Variable" : "LexendDeca-Variable", withExtension: "ttf"))
     }
     for size in [24.0, 48, 96] {
       var style = ScriptStyle()
@@ -130,7 +131,7 @@ import XCTest
         canvas.mask(VStack(spacing: 0) {
           Color.black
           LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-            .frame(height: 48 * 1.6)
+            .frame(height: 48 * 1.6) // grid: ok Matches the Mac viewport fade.
         })
       }.ignoresSafeArea(), size: size, name: "ipad-text-" + name, directory: directory, beforeDraw: {})
     }
