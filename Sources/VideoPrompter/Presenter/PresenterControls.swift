@@ -400,12 +400,7 @@ struct PresenterSetupBar<Transport: View, Devices: View, Tools: View, Options: V
   @ViewBuilder var tools: () -> Tools
   @ViewBuilder var options: () -> Options
   var body: some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: Space.md) {
-        transport(); Spacer(minLength: Space.md); devices(); tools(); options()
-      }.fixedSize(horizontal: true, vertical: false)
-      rows
-    }.frame(maxWidth: .infinity, alignment: .leading)
+    rows.frame(maxWidth: .infinity, alignment: .leading)
       .environment(\.barControlHeight, scale >= 1.5 ? 36 : PresenterBar.height) // grid: ok UI scale threshold; targets remain at least 54 pt on screen.
       .padding(.vertical, scale >= 1.5 ? Space.xs : Space.sm) // grid: ok UI scale threshold, not a spacing dimension.
   }
@@ -418,7 +413,7 @@ struct PresenterSetupBar<Transport: View, Devices: View, Tools: View, Options: V
       }
       WrapLayout(spacing: rowGap, distributeAfter: 1, leading: true) {
         tools()
-        options()
+        HStack(spacing: Space.sm) { options() }
       }
     }.fixedSize(horizontal: false, vertical: true)
   }
@@ -505,5 +500,41 @@ struct WrapLayout: Layout {
       rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
     }
     return rows
+  }
+}
+
+/// One menu and vocabulary for all three presenter surfaces.
+struct PresenterCleanMenu: View {
+  let selected: PadRemote.CleanLook
+  let active: Bool
+  @Binding var keepMicMeter: Bool
+  var choose: (PadRemote.CleanLook) -> Void
+  var leave: () -> Void
+  var fullScreen: (() -> Void)? = nil
+  @State private var isOpen = false
+  var body: some View {
+    Button { isOpen.toggle() } label: {
+      HStack(spacing: 0) {
+        BarLabel(title: "Clean", symbol: "rectangle")
+        Image(systemName: "chevron.down").font(.caption).padding(.trailing, Space.sm)
+      }
+    }
+    .buttonStyle(BarButtonStyle())
+    .accessibilityLabel("Clean")
+    .accessibilityValue(active ? selected.title : "Off")
+    .popover(isPresented: $isOpen) {
+      VStack(alignment: .leading, spacing: Space.sm) {
+        ForEach(PadRemote.CleanLook.allCases, id: \.self) { look in
+          Button { choose(look); isOpen = false } label: {
+            Label(look.title, systemImage: active && selected == look ? "checkmark" : "rectangle")
+              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+          }.buttonStyle(.plain)
+        }
+        Divider()
+        Toggle("Keep mic meter", isOn: $keepMicMeter).frame(minHeight: 44)
+        if active { Button("Show controls") { leave(); isOpen = false }.frame(minHeight: 44) }
+        if let fullScreen { Button("Full screen") { fullScreen(); isOpen = false }.frame(minHeight: 44) }
+      }.padding(Space.md).frame(minWidth: 240).preferredColorScheme(.dark)
+    }
   }
 }

@@ -134,7 +134,7 @@ import XCTest
 
   func testFocusModeShowsOnlyTextMeterAndExitsFromTheMenuKey() async throws {
     let f = try await fixture()
-    f.4.set(true, forKey: "presenterFocusMode")
+    f.1.cleanLook = .scriptOnly; f.1.cleanView = true
     let (window, host) = await LibraryAX.host(view(f, shell: PresenterShell(reading: true)), size: .init(width: 1600, height: 1000))
     defer { LibraryAX.close(window) }
     for title in ["Pause", "Start reading", "Back to start", "Set up the shot", "Mic", "Focus", "Open script"] {
@@ -142,20 +142,21 @@ import XCTest
     }
     XCTAssertTrue(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityLabel").hasPrefix("Microphone level") }, "The meter stays")
     XCTAssertTrue(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-script-content" })
-    f.4.set(false, forKey: "presenterFocusMode")
+    f.1.cleanView = false
     try await Task.sleep(for: .milliseconds(200))
-    XCTAssertFalse(LibraryAX.named("Set up the shot", in: host).isEmpty, "Leaving Focus brings the bar back")
+    XCTAssertFalse(LibraryAX.named("Camera", in: host).isEmpty, "Leaving Clean brings the bar back")
   }
 
   func testReadingBarIsOneRowOfStatusTransportAndQuietOptions() async throws {
     let f = try await fixture()
     let (window, host) = await LibraryAX.host(view(f, shell: PresenterShell(reading: true)), size: .init(width: 1600, height: 1000))
     defer { LibraryAX.close(window) }
-    for title in ["Back to start", "Start reading", "Set up the shot", "Mic", "Focus", "Reading settings", "Open script"] {
+    for title in ["Back to start", "Start reading", "Camera", "Mic", "Text", "Clean", "Zebras", "False colour", "Guides"] {
       XCTAssertFalse(LibraryAX.named(title, in: host).isEmpty, title)
     }
-    XCTAssertTrue(LibraryAX.named("Camera", in: host).isEmpty)
-    XCTAssertTrue(LibraryAX.elements(host).contains { LibraryAX.value($0, "accessibilityLabel").hasPrefix("Voice · ") }, "One status pill names the mode and state")
+    for title in ["Set up the shot", "Restart", "Focus"] {
+      XCTAssertTrue(LibraryAX.named(title, in: host).isEmpty, title)
+    }
   }
 
   func testChromeGrowsWithTheWindowButNotBelowOne() {
@@ -324,7 +325,7 @@ extension AppearanceSnapshotTests {
 
     func present(_ name: String, size: CGSize, reading: Bool = false, editing: Bool = false, preview: Bool = false, noCamera: Bool = false,
                  zoom: Double = 1, focus: Bool = false, autoHide: Bool = false, adjust: AdjustTab? = nil, script: ScriptRecord? = nil,
-                 level: Float = -9, clipping: Bool = false, latched: Bool = false, fallsTo: Float = -14, zebraChip: Double = 0) async throws {
+                 level: Float = -9, clipping: Bool = false, latched: Bool = false, fallsTo: Float = -14) async throws {
       let script = script ?? record
       store.uiZoom = zoom
       store.session.present(record: script, settings: store.settings)
@@ -333,14 +334,15 @@ extension AppearanceSnapshotTests {
       for meter in [recorder.inputMeter, store.session.meter] { ClipLatchBox.shared(for: meter).clear() }
       for meter in [recorder.inputMeter, store.session.meter] { meter.show(peakDBFS: latched ? -2 : level, isClipping: clipping || latched) }
       if latched { Task { @MainActor in try? await Task.sleep(for: .milliseconds(50)); for meter in [recorder.inputMeter, store.session.meter] { meter.show(peakDBFS: fallsTo, isClipping: false) } } }
-      defaults.set(focus, forKey: "presenterFocusMode")
+      camera.cleanLook = .scriptOnly
+      camera.cleanView = focus
       defaults.set(autoHide, forKey: "presenterAutoHideBar")
       if reading { store.session.play(captureAudio: false) } else { store.session.pause() }
       let draft = PresenterDraft(record: script)
       if editing { draft.begin(session: store.session) }
       let view = PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder,
         shell: PresenterShell(reading: reading, adjustTab: adjust, scriptPreview: preview), referencePicture: noCamera ? nil : reading ? cleanPicture : picture,
-        sourceInfoOverride: noCamera ? nil : source, microphoneNameOverride: atem.name, microphonesOverride: [atem], zebraChipSeconds: zebraChip).environment(\.presenterReduceTransparency, false).defaultAppStorage(defaults)
+        sourceInfoOverride: noCamera ? nil : source, microphoneNameOverride: atem.name, microphonesOverride: [atem]).environment(\.presenterReduceTransparency, false).defaultAppStorage(defaults)
       var caret: ((NSView) -> Void)?
       if editing { caret = { Self.showEditingCaret($0) } }
       try await snapshot(view, name: name, size: size, scheme: .dark, destination: destination, settleDelay: .milliseconds(300), prepare: caret)
@@ -387,9 +389,9 @@ extension AppearanceSnapshotTests {
       try await present("r10-reading-\(label)", size: size, reading: true)
     }
     try await present("r10-reading-200", size: wide, reading: true, zoom: 2)
-    // Just after reading starts the "Zebras off while reading" note is up; the others are its steady state (gone).
-    try await present("r10-reading-1600-chipstart", size: wide, reading: true, zebraChip: 60)
-    try await present("r10-reading-200-chipstart", size: wide, reading: true, zoom: 2, zebraChip: 60)
+    // Exposure aids stay visible throughout reading.
+    try await present("r10-reading-1600-chipstart", size: wide, reading: true)
+    try await present("r10-reading-200-chipstart", size: wide, reading: true, zoom: 2)
     try await present("r10-reading-200-clipearlier", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
     try await present("r10-reading-long-1280", size: laptop, reading: true, script: longRecord)
     try await present("r10-reading-autohide-1600", size: wide, reading: true, autoHide: true)

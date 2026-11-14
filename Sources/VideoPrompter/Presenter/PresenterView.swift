@@ -22,14 +22,12 @@ struct PresenterView: View {
   private let revealsCleanExit: Bool
   private let sourceInfoOverride: CameraSourceInfo?
   private let microphoneNameOverride: String?
-  /// How long the "Zebras off while reading" note stays after reading starts (fixtures: 0 for the steady state).
-  private let zebraChipSeconds: Double
   /// Fixtures: the inputs the Adjust mic card lists, so its selected input can be the one the side meter names.
   private let microphonesOverride: [AudioInputDevice]?
   private var sourceInfo: CameraSourceInfo? { sourceInfoOverride ?? camera.sourceInfo }
 
   init(store: AppStore, session: SessionStore, draft: PresenterDraft, hasScript: Bool = true,
-       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil, revealsCleanExit: Bool = false, sourceInfoOverride: CameraSourceInfo? = nil, microphoneNameOverride: String? = nil, microphonesOverride: [AudioInputDevice]? = nil, zebraChipSeconds: Double = 3) {
+       camera: CameraModel = .shared, monitor: ReferenceMonitor = .shared, startsCamera: Bool = true, recorder: CameraRecorder = .shared, shell: PresenterShell? = nil, referencePicture: NSImage? = nil, revealsCleanExit: Bool = false, sourceInfoOverride: CameraSourceInfo? = nil, microphoneNameOverride: String? = nil, microphonesOverride: [AudioInputDevice]? = nil) {
     self.store = store
     self.session = session
     self.draft = draft
@@ -42,7 +40,6 @@ struct PresenterView: View {
     self.sourceInfoOverride = sourceInfoOverride
     self.microphoneNameOverride = microphoneNameOverride
     self.microphonesOverride = microphonesOverride
-    self.zebraChipSeconds = zebraChipSeconds
     self.recorder = recorder
     // Read now, so the meter's caption never flashes "unavailable" before the devices load.
     _microphones = State(initialValue: startsCamera ? AudioCapture.inputDevices() : [])
@@ -53,27 +50,15 @@ struct PresenterView: View {
   @State private var editorNotice: String?
   @State private var cameraSection = "Camera"
   @State private var quietTask: Task<Void, Never>?
-  @State private var barTask: Task<Void, Never>?
-  @State private var focusHintTask: Task<Void, Never>?
-  @State private var focusHintVisible = false
-  @State private var zebraChipTask: Task<Void, Never>?
-  @State private var zebraChipVisible = false
   @State private var showsSettings = false
   @State private var showsReadingNotice = false
   @State private var cleanControlsRevealed = false
-  @State private var barRevealed = false
-  @State private var barHovered = false
-  @State private var controlBarHeight: CGFloat = 0
   @StateObject private var shell: PresenterShell
   private var showsChrome: Bool { !camera.cleanView }
   @AppStorage("presenterExposureKey") private var exposureKeyEnabled = true
   @State private var adjustOpener = "Adjust"
   // A new key enables the meter once for existing installs, then remembers their choice.
   @AppStorage("presenterMicLevel251") private var showsMicLevel = true
-  /// Reading with nothing but the text, the audio meter and the reading line. Also in View > Focus Mode.
-  @AppStorage("presenterFocusMode") private var focusMode = false
-  /// While reading, the bottom bar slides away and returns on mouse movement.
-  @AppStorage("presenterAutoHideBar") private var autoHidesBar = false
   @State private var microphones: [AudioInputDevice] = []
   @State private var defaultMicrophoneName: String?
   @State private var micListening = true
@@ -120,21 +105,14 @@ struct PresenterView: View {
     return min(saved, max(0.2, Double((height - needed) / max(1, height))))
   }
   /// The strip stays reserved while editing, so the editor wraps its lines exactly as reading does.
-  private var meterReserved: Bool { showsMicLevel && !camera.cleanView && (shell.adjustTab == nil || viewport.width >= 1200) }
+  private var meterReserved: Bool { (camera.cleanView ? camera.keepCleanMicMeter : showsMicLevel) && (shell.adjustTab == nil || viewport.width >= 1200) }
   @State private var viewport = CGSize(width: 1600, height: 1000)
   @AppStorage("presenterExposureKeyExpanded") private var keyExpanded = true
   @ObservedObject private var recorder: CameraRecorder
   /// The script is on screen: reading, editing, the setup preview, or the camera being off.
-  private var showsScript: Bool { !camera.cleanView && hasScript && (shell.reading || draft.isEditing || shell.scriptPreview) }
+  private var showsScript: Bool { hasScript && (camera.cleanView ? camera.cleanLook.showsScript : (draft.isEditing || shell.scriptPreview)) }
   /// Clean full screen while reading: only the text, the meter and the reading line.
-  private var focusActive: Bool { focusMode && shell.reading && !draft.isEditing && !camera.cleanView }
-  private var barOverlays: Bool { shell.reading && !draft.isEditing && (focusMode || autoHidesBar) }
-  private var readingBarHidden: Bool {
-    guard barOverlays else { return false }
-    if focusMode { return true }
-    return session.isActivelyRunning && !barRevealed && !barHovered && shell.adjustTab == nil
-      && !showsSettings && !showsReadingNotice && !hasBottomNotice
-  }
+  private var focusActive: Bool { camera.cleanView && camera.cleanLook == .scriptOnly }
   private var stage: some View { readingStage }
   private var inputName: String {
     microphoneNameOverride ?? (Features.recording && recorder.usesSeparateMicrophone
@@ -152,7 +130,7 @@ struct PresenterView: View {
       let keyVisible = exposureKeyEnabled && camera.presentsWithVideo && hasPicture && !camera.cleanView && camera.exposureIsConfigured && !camera.exposureBypassed && !editing && !focusActive
       let stripWidth = MicMeterView.stripWidth(typeScale: meterTypeScale)
       let meterWidth = meterReserved ? stripWidth * meterZoom : 0
-      let setup = !shell.reading && !editing && !camera.cleanView && camera.presentsWithVideo
+      let setup = !editing && !camera.cleanView && camera.presentsWithVideo
       let pictureSize = referencePicture?.size ?? camera.pictureSize ?? CGSize(width: 16, height: 9)
       let pictureAspect = referencePicture != nil ? pictureSize.width / max(1, pictureSize.height) :
         (camera.guides.rotation.swapsAxes ? pictureSize.height / max(1, pictureSize.width) : pictureSize.width / max(1, pictureSize.height))
@@ -163,8 +141,8 @@ struct PresenterView: View {
       let regionWidth = max(1, setup ? geometry.size.width - 2 * cardColumn : geometry.size.width - meterWidth)
       let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
       let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
-      let scriptTopInset = keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0
-      let bottomInset = Self.readingBottomInset + (barOverlays && !focusActive ? max(controlBarHeight, 60 * controlZoom) : 0)
+      let scriptTopInset: CGFloat = 0
+      let bottomInset = Self.readingBottomInset
       let scriptHeight = max(1, geometry.size.height - scriptTopInset - bottomInset)
       let guideFraction = Self.readingGuideFraction(saved: store.settings.guideFraction, height: scriptHeight, fontSize: store.settings.fontSize)
       HStack(alignment: .top, spacing: 0) {
@@ -185,7 +163,7 @@ struct PresenterView: View {
           if camera.presentsWithVideo || camera.cleanView {
             Group {
               if let referencePicture { Image(nsImage: referencePicture).resizable().scaledToFit() }
-              else { CameraPreview(model: camera, presenter: true, hidesExposureAids: shell.reading && !editing) }
+              else { CameraPreview(model: camera, presenter: true, hidesExposureAids: false) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
               // Focus keeps the picture running (a take may be on) but out of sight: no zebras, false colour or guides behind the words.
               .opacity(focusActive ? 0 : 1)
@@ -208,27 +186,6 @@ struct PresenterView: View {
                 topInset: scriptTopInset, bottomInset: bottomInset)
                 .clipped()
             }
-          }
-          if keyVisible && shell.reading && !editing {
-            Button { keyExpanded.toggle() } label: {
-              HStack(spacing: Space.sm) {
-                if keyExpanded {
-                  if camera.guides.falseColour {
-                    HStack(spacing: 0) { ForEach([Color.pink, .red, Color(red: 1, green: 1, blue: 0), .green, .blue], id: \.self) { $0 } }.frame(width: 24, height: 16)
-                  } else { PresenterZebraSwatch().frame(width: 24, height: 16) }
-                  Text(camera.guides.falseColour ? "False colour off while reading" : "Zebras off while reading")
-                } else { Text("Exposure key") }
-                Image(systemName: keyExpanded ? "chevron.up" : "chevron.down")
-              }.font(.system(size: 15, weight: .semibold))
-                .frame(minHeight: ceil(AlphaStyle.minTarget / controlZoom)).padding(.horizontal, Space.sm)
-                .background(.black.opacity(0.8), in: Capsule())
-            }.buttonStyle(.plain).help(keyExpanded ? "Hide key" : "Show key")
-              .accessibilityLabel(keyExpanded ? "Hide key" : "Show key")
-              .uiZoom(controlZoom).frame(maxWidth: .infinity, alignment: .leading).padding(Space.md)
-              .accessibilityIdentifier("presenter-exposure-legend")
-              // A reminder on entering reading, then gone: it fades out (or just hides with Reduce Motion).
-              .opacity(zebraChipVisible ? 1 : 0).allowsHitTesting(zebraChipVisible).accessibilityHidden(!zebraChipVisible)
-              .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: zebraChipVisible)
           }
           if referencePicture == nil && camera.presentsWithVideo && camera.needsRecovery && !showsScript && !camera.cleanView {
             // Give the zoom wrapper an explicit picture-sized frame to centre within.
@@ -312,8 +269,8 @@ struct PresenterView: View {
   private var trackedStage: some View {
     stage
     // Between takes the meter listens through the recording microphone's test; a take feeds it itself.
-    .task(id: "\(showsMicLevel && !camera.cleanView && startsCamera && micListening && !draft.isEditing)-\(recorder.isRecording || recorder.isBusy)-\(store.settings.audioDeviceUID ?? "")-\(store.audioChannelRevision)") {
-      guard showsMicLevel && !camera.cleanView && startsCamera && micListening && !draft.isEditing else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
+    .task(id: "\((camera.cleanView ? camera.keepCleanMicMeter : showsMicLevel) && startsCamera && micListening && !draft.isEditing)-\(recorder.isRecording || recorder.isBusy)-\(store.settings.audioDeviceUID ?? "")-\(store.audioChannelRevision)") {
+      guard (camera.cleanView ? camera.keepCleanMicMeter : showsMicLevel) && startsCamera && micListening && !draft.isEditing else { if recorder.isTestingInput { recorder.stopInputTest() }; return }
       if !recorder.isRecording && !recorder.isBusy {
         recorder.stopInputTest()
         recorder.useSettings(store.settings)
@@ -332,14 +289,13 @@ struct PresenterView: View {
     .onReceive(session.$manualCompleted.removeDuplicates().dropFirst()) { _ in presentation.objectWillChange.send() }
     .onChange(of: session.isActivelyRunning) { _, active in if active && !camera.cleanView { shell.reading = true } }
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
-    .onDisappear { quietTask?.cancel(); barTask?.cancel(); zebraChipTask?.cancel() }
+    .onDisappear { quietTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
       if clean { shell.cleanEntered(session: session); showsReadingNotice = false; showsSettings = false }
       cleanControlsRevealed = false
       if clean { quietTask?.cancel() }
       announce("Clean view " + (clean ? "on" : "off"))
     }
-    .onChange(of: focusMode) { _, on in announce("Focus mode " + (on ? "on" : "off")) }
   }
   var body: some View {
     GeometryReader { geometry in
@@ -352,7 +308,7 @@ struct PresenterView: View {
     trackedStage
     .onAppear { recorder.useSettings(store.settings); camera.recorder = recorder; if camera.cleanView { shell.cleanEntered(session: session) } }
     .onExitCommand {
-      if focusActive { focusMode = false }
+      if camera.cleanView { camera.cleanView = false }
       else if shell.escape(camera: camera, session: session) {}
       else if showsSettings { showsSettings = false }
       else if draft.isEditing { draft.requestCancel() }
@@ -379,48 +335,16 @@ struct PresenterView: View {
       if camera.cleanView {
         exitPill("Exit Clean · Esc", revealed: cleanControlsRevealed || cleanExitFocused || revealsCleanExit) { camera.cleanView = false }
           .focused($cleanExitFocused)
-      } else if focusActive {
-        ZStack {
-          focusHint
-          exitPill("Exit Focus · ⌥⌘F", revealed: barRevealed) { focusMode = false }
-        }
-      }
-    }
-    .onChange(of: shell.reading && !draft.isEditing, initial: true) { _, reading in
-      zebraChipTask?.cancel()
-      zebraChipVisible = reading && zebraChipSeconds > 0
-      guard zebraChipVisible else { return }
-      zebraChipTask = Task { @MainActor in
-        try? await Task.sleep(for: .seconds(zebraChipSeconds))
-        guard !Task.isCancelled else { return }
-        zebraChipVisible = false
-      }
-    }
-    .onChange(of: focusActive, initial: true) { _, active in
-      focusHintTask?.cancel()
-      focusHintVisible = active
-      guard active else { return }
-      focusHintTask = Task { @MainActor in
-        try? await Task.sleep(for: .seconds(3.5))
-        guard !Task.isCancelled else { return }
-        focusHintVisible = false
+
       }
     }
     .onContinuousHover { phase in
       guard case .active = phase else { return }
-      if camera.cleanView { revealControls() } else if barOverlays { revealControls() }
+      if camera.cleanView { revealControls() }
     }
     .safeAreaInset(edge: .bottom, spacing: 0) {
-      if showsChrome && !barOverlays && hasBarContent { controlBar.environment(\.colorScheme, .dark) }
+      if showsChrome && hasBarContent { controlBar.environment(\.colorScheme, .dark) }
     }
-    .overlay(alignment: .bottom) {
-      if showsChrome && barOverlays && !readingBarHidden {
-        controlBar.environment(\.colorScheme, .dark)
-          .onHover { barHovered = $0 }
-          .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-      }
-    }
-    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: readingBarHidden)
     .overlay {
       if shell.adjustTab != nil, !camera.cleanView, adjustIsSheet {
         adjustPanel(width: viewport.width)
@@ -448,17 +372,7 @@ struct PresenterView: View {
     .onChange(of: draft.isEditing) { _, isEditing in if isEditing { editorNotice = nil } }
   }
 
-  /// On entering Focus: a small reminder of the way out, which fades after a few seconds.
-  private var focusHint: some View {
-    Text("Esc to exit").font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.85))
-      .padding(.horizontal, Space.md).frame(minHeight: 32)
-      .background(.black.opacity(0.6), in: Capsule())
-      .opacity(focusHintVisible && !barRevealed ? 1 : 0)
-      .animation(reduceMotion ? nil : .easeOut(duration: 0.8), value: focusHintVisible)
-      .padding(Space.xxl).allowsHitTesting(false).accessibilityHidden(true)
-  }
-
-  /// The pill that leaves Clean or Focus: faded out until the pointer moves, still reachable by keyboard.
+  /// A keyboard-accessible exit that appears on pointer activity.
   private func exitPill(_ title: String, revealed: Bool, action: @escaping () -> Void) -> some View {
     Button(action: action) {
       Label(title, systemImage: "xmark")
@@ -473,10 +387,9 @@ struct PresenterView: View {
   private var controlBar: some View {
     barContent.environment(\.colorScheme, .dark)
       .uiZoom(controlZoom).fixedSize(horizontal: false, vertical: true)
-      .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { controlBarHeight = $0 }
   }
 
-  /// Pointer or key activity: Clean's exit pill, and the bar while it is sliding away.
+  /// Pointer or key activity reveals Clean's exit pill.
   private func revealControls() {
     if camera.cleanView {
       cleanControlsRevealed = true
@@ -486,16 +399,9 @@ struct PresenterView: View {
         guard !Task.isCancelled else { return }
         cleanControlsRevealed = false
       }
-    } else if barOverlays {
-      barRevealed = true
-      barTask?.cancel()
-      barTask = Task { @MainActor in
-        try? await Task.sleep(for: .seconds(2.5))
-        guard !Task.isCancelled else { return }
-        barRevealed = false
-      }
     }
   }
+
   private var barContent: some View {
     VStack(spacing: Space.sm) {
       if let error = store.shootSetupError {
@@ -508,7 +414,7 @@ struct PresenterView: View {
         Group { if shell.reading { readingNotice } else { bottomNotice } }.padding(.top, Space.sm)
       }
       if !draft.isEditing {
-        if shell.reading { readingBar } else { setupBar }
+        setupBar
       }
     }.padding(.horizontal, viewport.width / controlZoom < 900 ? Space.sm : Space.lg)
       // The bar's rows carry their own vertical room, so a two-row bar can keep it tight.
@@ -551,12 +457,14 @@ struct PresenterView: View {
 
   /// Every transport button has its word; Back to start and Open script may take their short forms.
   @ViewBuilder private func setupTransport(short: Bool, shortOpen: Bool = false, snug: Bool = false) -> some View {
-    Button { shell.reading = true; session.startReading() } label: { BarLabel(title: "Start reading", symbol: "play.fill", snug: snug) }
-      .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel("Start reading")
+    Button { shell.reading = true; session.toggle() } label: { BarLabel(title: session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", symbol: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", snug: snug).frame(minWidth: 144) }
+      .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Start reading")
       .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
     Button { session.restart() } label: { BarLabel(title: short ? "Back" : "Back to start", symbol: "arrow.counterclockwise", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
+    Text("\(session.isActivelyRunning ? "Reading" : "Paused") · word \(session.document.spokenTokens.isEmpty ? 0 : session.tokenIndex + 1) of \(session.document.spokenTokens.count)")
+      .font(.caption).foregroundStyle(.secondary).lineLimit(1)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -685,8 +593,11 @@ struct PresenterView: View {
       BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled && hasPicture, showsTitle: titles, displayTitle: "Key",
         help: exposureKeyEnabled ? "Hide the exposure key: what the zebras and colours mean" : "Show the exposure key: what the zebras and colours mean") { exposureKeyEnabled.toggle() }
         .disabled(!camera.exposureIsConfigured).opacity(hasPicture ? 1 : 0.45)
-      BarToggle(title: "Clean", symbol: "rectangle", isOn: false, showsTitle: titles, displayTitle: nil,
-                help: "Hide everything but the picture. Move the pointer to bring the controls back (⌥⌘K).", traits: [], value: nil) { camera.cleanView = true }
+      PresenterCleanMenu(selected: camera.cleanLook, active: camera.cleanView,
+        keepMicMeter: $camera.keepCleanMicMeter, choose: { look in
+          let leaving = camera.cleanView && camera.cleanLook == look
+          camera.cleanLook = look; camera.cleanView = !leaving
+        }, leave: { camera.cleanView = false }, fullScreen: { controller.toggleFullScreen() })
     }
   }
 
@@ -705,88 +616,6 @@ struct PresenterView: View {
   private func toggleExposure(_ key: WritableKeyPath<CameraGuides, Bool>) {
     let enabled = camera.exposureBinding(key).wrappedValue
     camera.exposureBinding(key).wrappedValue = !enabled
-  }
-
-  // MARK: Reading bar
-
-  /// One slim row: a status pill, the transport in the middle, the options on the right. Every control keeps its
-  /// word and the Space hint stays. As the window narrows or the interface grows, Open script shortens to Open,
-  /// the status shrinks to its short form, then the bar takes two compact rows (status and transport above, the options
-  /// below). Only a window too narrow even for that drops the words, and the hint, to icons.
-  private var readingBar: some View {
-    ViewThatFits(in: .horizontal) {
-      readingRow(pill: .full, hint: true).padding(.vertical, Space.sm)
-      readingRow(pill: .full, hint: true, openShort: true).padding(.vertical, Space.sm)
-      readingRow(pill: .compact, hint: true, openShort: true).padding(.vertical, Space.sm)
-      readingRows(pill: .compact, hint: true)
-      readingRows(pill: .dot, hint: false)
-      readingRow(pill: nil, hint: false, titles: false).padding(.vertical, Space.sm)
-    }
-  }
-  private func readingRow(pill: BarStatusPill.Style?, hint: Bool, titles: Bool = true, openShort: Bool = false) -> some View {
-    HStack(spacing: Space.md) {
-      // The options keep their full width (a variant only fits if they do), the status takes what is left
-      // and the transport sits beside the options; without a status the transport floats in the room.
-      if let pill { readingPill(pill).frame(maxWidth: .infinity, alignment: .leading) }
-      else { Spacer(minLength: 0) }
-      // A variant fits only if the transport keeps its width; the last one has nothing to give up, so it may squeeze.
-      HStack(spacing: Space.sm) { readingTransport(titles: true, hint: hint) }.fixedSize(horizontal: pill != nil, vertical: false)
-      if pill == nil { Spacer(minLength: Space.md) }
-      readingOptions(titles: titles, micTitle: pill != nil, openShort: openShort).fixedSize()
-    }
-  }
-  /// The status and the transport on one row, the options under them: the same words, a taller but compact bar.
-  private func readingRows(pill: BarStatusPill.Style, hint: Bool) -> some View {
-    VStack(spacing: Self.compactRowGap) {
-      HStack(spacing: Space.md) {
-        readingPill(pill)
-        Spacer(minLength: Space.md)
-        HStack(spacing: Space.sm) { readingTransport(titles: true, hint: hint) }
-      }
-      HStack(spacing: 0) {
-        Spacer(minLength: 0)
-        readingOptions(titles: true, openShort: true)
-      }
-    }.environment(\.barControlHeight, Self.compactControlHeight(zoom: controlZoom)).padding(.vertical, Space.xs)
-  }
-  private func readingPill(_ style: BarStatusPill.Style) -> some View {
-    BarStatusPill(text: readingPillText, shortText: readingPillShortText, isActive: session.isActivelyRunning, style: style)
-  }
-  private func readingOptions(titles: Bool, micTitle: Bool = true, openShort: Bool = false) -> some View {
-    BarGroup(label: "Reading options") {
-      micControl(titles: micTitle, snug: !titles)
-      BarDivider()
-      BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: focusMode, showsTitle: titles,
-                help: "Focus: only the text, the level meter and the reading line (⌥⌘F)") { focusMode.toggle() }
-        .contextMenu { Toggle("Auto-hide these controls while reading", isOn: $autoHidesBar) }
-      Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size", showsTitle: titles) }
-        .buttonStyle(BarButtonStyle()).help("Reading mode, speed and text size").accessibilityLabel("Reading settings")
-      editButton(titled: titles)
-      scriptButton(short: openShort, titled: titles)
-    }
-  }
-  private var readingPillText: String {
-    let state = session.visibleReadingState
-    return store.settings.mode == "Voice" ? "Voice · \(state)" : "Automatic · \(Int(store.settings.speed)) wpm · \(state)"
-  }
-  /// The mode and the state, without the speed: "Voice · Listening" is already that short.
-  private var readingPillShortText: String { (store.settings.mode == "Voice" ? "Voice" : "Auto") + " · " + session.visibleReadingState }
-
-  @ViewBuilder private func readingTransport(titles: Bool, hint: Bool = true) -> some View {
-    let running = session.isActivelyRunning || session.isCountingDown
-    Button { session.restart() } label: { BarLabel(title: "Restart", symbol: "arrow.counterclockwise", showsTitle: titles) }
-      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start").help("Back to the first word (Home)")
-    Button { session.toggle() } label: {
-      HStack(spacing: Space.sm) {
-        BarLabel(title: running ? "Pause" : "Start reading", symbol: running ? "pause.fill" : "play.fill")
-        if running && hint { KeyCap(text: "Space").padding(.trailing, Space.md) }
-      }
-    }.buttonStyle(BarButtonStyle(role: running ? .secondary : .prominent))
-      .accessibilityLabel(running ? "Pause" : "Start reading").help((running ? "Pause" : "Start reading") + " (Space)")
-    // Leaves reading for the setup screen (camera, picture tools, levels): named, since an icon alone read as a display setting.
-    Button { session.pause(); shell.reading = false } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder", showsTitle: titles) }
-      .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Set up the shot")
-      .help("Back to setting up the shot: camera, picture tools and microphone (Esc)")
   }
 
   private func announce(_ message: String) {

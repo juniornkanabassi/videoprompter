@@ -295,6 +295,20 @@ public enum PadRemote {
   }
 
   /// A partial look update: nil leaves the value as it is. The iPad repairs out-of-range values.
+  public enum CleanLook: String, Codable, CaseIterable, Sendable {
+    case pictureOnly, pictureAndScript, scriptOnly
+    public var title: String {
+      switch self {
+      case .pictureOnly: return "Picture only"
+      case .pictureAndScript: return "Picture and script"
+      case .scriptOnly: return "Script only"
+      }
+    }
+    public var showsPicture: Bool { self != .scriptOnly }
+    public var showsScript: Bool { self != .pictureOnly }
+    public var showsGuides: Bool { self == .pictureAndScript }
+  }
+
   public struct Look: Codable, Equatable, Sendable {
     public var horizontalMirror: Bool?
     public var verticalMirror: Bool?
@@ -314,14 +328,18 @@ public enum PadRemote {
     public var readingBandOpacity: Double?
     public var videoDimming: Double?
     public var focusMode: Bool?
+    public var cleanLook: CleanLook?
+    public var keepMicMeter: Bool?
     public init(
       horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
       textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil,
       fontName: String? = nil, fontWeight: String? = nil, textColorHex: String? = nil,
       textOpacity: Double? = nil, paragraphSpacing: Double? = nil, alignment: String? = nil, showCues: Bool? = nil,
       scriptVisible: Bool? = nil, presenterSetup: Bool? = nil, focusMode: Bool? = nil,
-      readingBandOpacity: Double? = nil, videoDimming: Double? = nil
+      readingBandOpacity: Double? = nil, videoDimming: Double? = nil,
+      cleanLook: CleanLook? = nil, keepMicMeter: Bool? = nil
     ) {
+      self.cleanLook = cleanLook; self.keepMicMeter = keepMicMeter
       self.readingBandOpacity = readingBandOpacity; self.videoDimming = videoDimming
       self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
       self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
@@ -357,6 +375,12 @@ public enum PadRemote {
   }
 
   public struct State: Codable, Equatable, Sendable {
+    /// Older peers report Focus independently of Clean.
+    public var activeCleanLook: CleanLook? {
+      if cleanScreen == true { return look?.cleanLook ?? (look?.focusMode == true ? .scriptOnly : .pictureOnly) }
+      if look?.cleanLook == nil && look?.focusMode == true && look?.presenterSetup != true { return .scriptOnly }
+      return nil
+    }
     public var scripts: [Script]
     /// The script in the presenter, if it is open.
     public var presenting: UUID?

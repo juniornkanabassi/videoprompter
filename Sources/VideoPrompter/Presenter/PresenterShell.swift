@@ -8,21 +8,19 @@ import SwiftUI
   /// off switches it on, so the presenter then sees just the script.
   @Published var scriptPreview: Bool
 
-  init(reading: Bool = false, adjustTab: AdjustTab? = nil, scriptPreview: Bool = false) {
+  init(reading: Bool = false, adjustTab: AdjustTab? = nil, scriptPreview: Bool = true) {
     self.reading = reading
     self.adjustTab = adjustTab
     self.scriptPreview = scriptPreview
   }
 
   func cleanEntered(session: SessionStore) {
-    session.pause()
     adjustTab = nil
   }
 
   @discardableResult func escape(camera: CameraModel, session: SessionStore) -> Bool {
     if camera.cleanView { camera.cleanView = false }
     else if adjustTab != nil { adjustTab = nil }
-    else if reading { session.pause(); reading = false }
     else { return false }
     return true
   }

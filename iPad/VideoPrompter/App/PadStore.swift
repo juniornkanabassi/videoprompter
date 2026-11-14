@@ -32,6 +32,8 @@ import AVFoundation
   @Published var scriptVisible = true
   @Published var presenterSetup = true
   @Published var focusMode = false
+  @Published var cleanLook: PadRemote.CleanLook = .pictureOnly
+  @Published var keepMicMeter = true { didSet { defaults.set(keepMicMeter, forKey: "padKeepMicMeter") } }
   @Published private(set) var micOn = true
   @Published private(set) var macStatus = PadRemote.MacStatus()
   let micMeter = RemoteMicMeter()
@@ -161,6 +163,13 @@ import AVFoundation
     askMacForPicture()
   }
   func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value; defaults.set(value.rawValue, forKey: "padPicturePriority") }
+  func chooseCleanLook(_ look: PadRemote.CleanLook) {
+    let leaving = cleanScreen && cleanLook == look
+    cleanLook = look
+    defaults.set(look.rawValue, forKey: "padCleanLook")
+    focusMode = look == .scriptOnly
+    setCleanScreen(!leaving)
+  }
   func setCleanScreen(_ value: Bool) { cleanScreen = value; defaults.set(value, forKey: "padCleanScreen") }
   func selectCamera(_ id: String) { camera.link.send(.selectCamera(id)) }
   func setCameraRotation(_ value: Int) {
@@ -228,6 +237,8 @@ import AVFoundation
     pictureMode = Self.savedPictureMode(defaults)
     picturePriority = defaults.string(forKey: "padPicturePriority").flatMap(PadRemote.PicturePriority.init(rawValue:)) ?? .realTime720p
     cleanScreen = defaults.bool(forKey: "padCleanScreen")
+    cleanLook = defaults.string(forKey: "padCleanLook").flatMap(PadRemote.CleanLook.init(rawValue:)) ?? .pictureOnly
+    keepMicMeter = defaults.object(forKey: "padKeepMicMeter") as? Bool ?? true
     knownIDs = defaults.dictionary(forKey: Self.knownIDsKey) as? [String: [String]] ?? [:]
     if let data = defaults.data(forKey: Self.settingsKey),
       let saved = try? JSONDecoder().decode(PrompterSettings.self, from: data)
@@ -395,7 +406,6 @@ import AVFoundation
   func startReading() {
     if presentingID == nil, !cameraOnly, let script = selected { present(script) }
     guard presentingID != nil, micOn || settings.mode != "Voice" else { return }
-    revealScript()
     presenterSetup = false
     session.startReading()
   }
@@ -706,7 +716,7 @@ extension PadStore {
         guideFraction: settings.guideFraction, fontName: settings.fontName, fontWeight: settings.fontWeight,
         textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
         paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues,
-        scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: focusMode, readingBandOpacity: settings.readingBandOpacity, videoDimming: settings.videoDimming),
+        scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: cleanScreen && cleanLook == .scriptOnly, readingBandOpacity: settings.readingBandOpacity, videoDimming: settings.videoDimming, cleanLook: cleanLook, keepMicMeter: keepMicMeter),
       presets: presets.map(\.name), startDelay: session.startDelay,
       voiceSource: usesMacMic ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
@@ -865,7 +875,12 @@ extension PadStore {
     case .look(let look):
       if let value = look.scriptVisible { scriptVisible = value }
       if let value = look.presenterSetup { presenterSetup = value; if value { session.pause() } }
-      if let value = look.focusMode { focusMode = value }
+      if let value = look.keepMicMeter { keepMicMeter = value }
+      if let value = look.cleanLook { cleanLook = value; focusMode = value == .scriptOnly }
+      else if let value = look.focusMode {
+        focusMode = value
+        if value { cleanLook = .scriptOnly; setCleanScreen(true) }
+      }
       var next = settings
       if let value = look.readingBandOpacity, value.isFinite { next.readingBandOpacity = value }
       if let value = look.videoDimming, value.isFinite { next.videoDimming = value }

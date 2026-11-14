@@ -21,21 +21,21 @@ import XCTest
     return (store, camera, CameraRecorder(defaults: defaults), PresenterDraft(record: record))
   }
 
-  func testEscapeClosesAdjustThenReturnsToSetupAndExitsClean() async throws {
+  func testEscapeClosesAdjustAndExitsCleanWithoutChangingReading() async throws {
     let (store, camera, _, _) = try await fixture()
     let shell = PresenterShell(reading: true, adjustTab: .zebras)
     XCTAssertTrue(shell.escape(camera: camera, session: store.session))
     XCTAssertNil(shell.adjustTab)
     XCTAssertTrue(shell.reading)
-    XCTAssertTrue(shell.escape(camera: camera, session: store.session))
-    XCTAssertFalse(shell.reading)
+    XCTAssertFalse(shell.escape(camera: camera, session: store.session))
+    XCTAssertTrue(shell.reading)
     camera.cleanView = true
     XCTAssertTrue(shell.escape(camera: camera, session: store.session))
     XCTAssertFalse(camera.cleanView)
     XCTAssertFalse(shell.escape(camera: camera, session: store.session))
   }
 
-  func testCleanPausesOnExactWordAndHidesEveryControl() async throws {
+  func testCleanPreservesPlaybackAndHidesEveryControl() async throws {
     let (store, camera, recorder, draft) = try await fixture()
     let shell = PresenterShell(reading: true)
     let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder, shell: shell), size: .init(width: 1600, height: 1000))
@@ -46,8 +46,8 @@ import XCTest
     camera.cleanView = true
     try await Task.sleep(for: .milliseconds(100))
     host.layoutSubtreeIfNeeded()
-    XCTAssertFalse(store.session.isActivelyRunning)
-    XCTAssertEqual(store.session.tokenIndex, word)
+    XCTAssertTrue(store.session.isActivelyRunning)
+    XCTAssertGreaterThanOrEqual(store.session.tokenIndex, word)
     for title in ["Start reading", "Pause", "Camera", "Adjust", "Clean", "Back to start"] {
       XCTAssertTrue(LibraryAX.named(title, in: host).isEmpty, title)
     }
@@ -59,8 +59,8 @@ import XCTest
     host.layoutSubtreeIfNeeded()
     XCTAssertFalse(LibraryAX.named("Exit Clean · Esc", in: host).isEmpty, "Faded Clean exit remains reachable by keyboard")
     shell.escape(camera: camera, session: store.session)
-    XCTAssertEqual(store.session.tokenIndex, word)
-    XCTAssertFalse(store.session.isActivelyRunning)
+    XCTAssertGreaterThanOrEqual(store.session.tokenIndex, word)
+    XCTAssertTrue(store.session.isActivelyRunning)
   }
 
   func testSetupLabelsAndRealToggleValuesPersistAt200Percent() async throws {
@@ -69,7 +69,7 @@ import XCTest
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 1600, height: 1200))
       for title in ["Start reading", "Back to start", "Script", "Camera", "Zebras", "False colour", "Guides", "Mirror", "Flip", "Text", "Key", "Clean"] {
-        let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { ["AXButton", "AXCheckBox"].contains(LibraryAX.value($0, "accessibilityRole")) }, title)
+        let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { ["AXButton", "AXCheckBox", "AXMenuButton"].contains(LibraryAX.value($0, "accessibilityRole")) }, title)
         let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
         XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "\(title) at \(zoom): \(frame)")
         XCTAssertGreaterThanOrEqual(frame.height, 44)
@@ -105,15 +105,23 @@ import XCTest
     XCTAssertFalse(LibraryAX.named("Close Adjust", in: host).isEmpty)
   }
 
-  func testReadingShowsOnlyReadingTransport() async throws {
+  func testReadingKeepsTheSameControlsAndExposure() async throws {
     let (store, camera, recorder, draft) = try await fixture()
-    let shell = PresenterShell(reading: true)
+    let shell = PresenterShell()
     let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder, shell: shell), size: .init(width: 1600, height: 1000))
-    defer { LibraryAX.close(window) }
-    XCTAssertFalse(LibraryAX.named("Set up the shot", in: host).isEmpty)
-    XCTAssertTrue(LibraryAX.named("Adjust", in: host).isEmpty)
-    XCTAssertTrue(LibraryAX.named("Camera", in: host).isEmpty)
+    defer { store.session.pause(); LibraryAX.close(window) }
+    for running in [false, true, false] {
+      if running { store.session.play(captureAudio: false) } else { store.session.pause() }
+      try await Task.sleep(for: .milliseconds(100))
+      host.layoutSubtreeIfNeeded()
+      for title in ["Camera", "Mic", "Script", "Zebras", "False colour", "Guides", "Mirror", "Flip", "Text", "Key", "Clean", "Back to start"] {
+        XCTAssertFalse(LibraryAX.named(title, in: host).isEmpty, title)
+      }
+      XCTAssertTrue(camera.previewGuides.zebras)
+      for title in ["Set up the shot", "Restart", "Focus"] { XCTAssertTrue(LibraryAX.named(title, in: host).isEmpty) }
+    }
   }
+
 }
 
 extension AppearanceSnapshotTests {
@@ -134,11 +142,12 @@ extension AppearanceSnapshotTests {
     camera.setRotation(.threeQuarters)
     camera.pictureSizeOverride = .init(width: 1920, height: 1080)
     let destination = URL(fileURLWithPath: output)
-    for state in ["setup", "reading", "clean", "setup-200"] {
+    for state in ["setup", "reading", "pictureOnly", "pictureAndScript", "scriptOnly", "setup-200"] {
       store.uiZoom = state == "setup-200" ? 2 : 1
-      camera.cleanView = state == "clean"
+      camera.cleanLook = PadRemote.CleanLook(rawValue: state) ?? .pictureOnly
+      camera.cleanView = PadRemote.CleanLook(rawValue: state) != nil
       if state == "reading" { store.session.play(captureAudio: false) } else { store.session.pause() }
-      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder, shell: PresenterShell(reading: state == "reading"), referencePicture: NSImage(contentsOf: Bundle.module.url(forResource: "presenter-" + (state.hasPrefix("setup") ? "zebras" : "clean"), withExtension: "png", subdirectory: "Fixtures")!)).environment(\.presenterReduceTransparency, false)
+      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder, shell: PresenterShell(reading: state == "reading", scriptPreview: true), referencePicture: NSImage(contentsOf: Bundle.module.url(forResource: "presenter-" + (state.hasPrefix("setup") ? "zebras" : "clean"), withExtension: "png", subdirectory: "Fixtures")!)).environment(\.presenterReduceTransparency, false)
       try await snapshot(view, name: "pkgE-\(state)", size: .init(width: 1600, height: 1000), scheme: .dark, destination: destination)
     }
     store.session.pause()
@@ -170,7 +179,7 @@ extension AppearanceSnapshotTests {
           store.uiZoom = zoom
           if state == "reading" { store.session.play(captureAudio: false) } else { store.session.pause() }
           let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera,
-            startsCamera: false, recorder: recorder, shell: PresenterShell(reading: state == "reading"), referencePicture: picture, sourceInfoOverride: CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)).environment(\.presenterReduceTransparency, false)
+            startsCamera: false, recorder: recorder, shell: PresenterShell(reading: state == "reading", scriptPreview: true), referencePicture: picture, sourceInfoOverride: CameraSourceInfo(displayName: "Sony FX3", connection: .hdmiCapture, width: 3840, height: 2160, nominalFrameRate: 25)).environment(\.presenterReduceTransparency, false)
           let (window, host) = await LibraryAX.host(view, size: size)
           let stage = try XCTUnwrap(LibraryAX.elements(host).first { LibraryAX.value($0, "accessibilityIdentifier") == "presenter-visible-stage" })
           let frame = try XCTUnwrap(stage.value(forKey: "accessibilityFrame") as? NSValue).rectValue
