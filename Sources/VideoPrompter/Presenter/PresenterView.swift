@@ -163,9 +163,6 @@ struct PresenterView: View {
       let regionWidth = max(1, setup ? geometry.size.width - 2 * cardColumn : geometry.size.width - meterWidth)
       let measure = ScriptTextView.measureCappedFraction(width: regionWidth, textWidth: store.settings.textWidth, fontSize: store.settings.fontSize)
       let columnInset = ScriptTextView.sideInset(width: regionWidth, textWidth: measure)
-      // The current-line band reaches the same distance past the text column on both sides; the backing a little further.
-      let bandWidth = max(1, min(regionWidth, regionWidth - 2 * columnInset + 2 * Space.xxl))
-      let backingWidth = max(1, min(regionWidth, bandWidth + 2 * ReadingBacking.margin))
       let scriptTopInset = keyVisible && shell.reading ? (36 + Space.md * 2) * controlZoom : 0
       let bottomInset = Self.readingBottomInset + (barOverlays && !focusActive ? max(controlBarHeight, 60 * controlZoom) : 0)
       let scriptHeight = max(1, geometry.size.height - scriptTopInset - bottomInset)
@@ -197,16 +194,6 @@ struct PresenterView: View {
           if showsScript {
             Color(nsColor: NSColor(hex: store.settings.backgroundColorHex) ?? .black)
               .opacity(editing ? 1 : Self.backdropOpacity(saved: store.settings.backdropOpacity(withVideo: camera.presentsWithVideo), reduceTransparency: reduceTransparency))
-            if !editing && camera.presentsWithVideo && !focusActive {
-              ReadingBacking(opacity: reduceTransparency ? 0.96 : 0.93).frame(width: backingWidth).frame(maxHeight: .infinity)
-            }
-            // A soft band behind the current line and a clear full-width line under it, in the line gap.
-            if !editing {
-              PresenterReadingLine(settings: store.settings)
-                .frame(width: bandWidth)
-                .offset(y: scriptTopInset + ScriptTextView.visualGuideY(height: scriptHeight, fraction: guideFraction)
-                  - PresenterReadingLine.bandHeight(fontSize: store.settings.fontSize) / 2)
-            }
             if editing {
               // Save and Cancel stay upright; only the text itself follows the mirror and rotation settings.
               PresenterEditingSurface(session: session, draft: draft, settings: store.settings, width: regionWidth, centreShift: meterWidth / 2, zoom: controlZoom,
@@ -629,6 +616,8 @@ struct PresenterView: View {
     }
     Divider()
     CameraRotationMenu(angle: camera.guides.rotation.rawValue) { if let rotation = CameraRotation(rawValue: $0) { camera.setRotation(rotation) } }
+    Text("Dim picture · \(Int(store.settings.videoDimming * 100))%")
+    Slider(value: $store.settings.videoDimming, in: 0...1).accessibilityLabel("Dim picture")
     Button("Refresh cameras") { camera.refresh() }
     Button("Camera settings…") { adjustOpener = "Camera"; shell.adjustTab = .camera }
   }
@@ -962,7 +951,7 @@ private struct PresenterScriptView: View {
       fontWeight: settings.fontWeight, textColorHex: settings.textColorHex,
       lineSpacing: settings.lineSpacing, paragraphSpacing: settings.paragraphSpacing,
       horizontalMargin: sideInset, alignment: settings.alignment,
-      overVideo: overVideo, showCues: settings.showCues, highlightActiveWord: settings.highlightActiveWord,
+      overVideo: overVideo, showCues: settings.showCues, readingBandOpacity: settings.readingBandOpacity, highlightActiveWord: settings.highlightActiveWord,
       manualPosition: session.isManual ? { session.manualPosition() }
         : ScriptTextView.Coordinator.reducesMotion() ? nil : { session.voicePosition() },
       onSeek: session.seek, onUserScroll: session.seekFromUserScroll

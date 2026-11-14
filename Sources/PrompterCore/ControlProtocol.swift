@@ -112,7 +112,7 @@ public enum ControlProtocol {
       .init("textVisibility", "integer", range: InputValidation.textOpacity.percentRange, help: "Text opacity percentage"),
       .init("backgroundDarkness", "integer", range: InputValidation.backgroundOpacity.percentRange, help: "Backdrop opacity percentage for the current view; at most 90 over the camera"),
       .init("readingLine", "integer", range: InputValidation.guideFraction.percentRange, help: "Reading line position as a percentage of the height"),
-      .init("readingLineVisibility", "integer", range: InputValidation.guideOpacity.percentRange, help: "Reading line opacity percentage; 0 hides it"),
+      .init("readingLineVisibility", "integer", range: InputValidation.guideOpacity.percentRange, help: "Reading band opacity percentage; 0 hides it"),
       .init("lineSpacing", "integer", range: InputValidation.lineSpacing.percentRange, help: "Line spacing percentage"),
       .init("paragraphSpacing", "integer", range: InputValidation.paragraphSpacing.percentRange, help: "Paragraph spacing percentage"),
       .init("textColour", help: "Text colour as #RRGGBB"),

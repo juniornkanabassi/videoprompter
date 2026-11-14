@@ -33,7 +33,7 @@ struct IPadRemoteView: View {
           if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly || state.look?.scriptVisible == false {
             liveCamera
           } else {
-            if state.pictureMode == .behindScript && !focusActive { liveCamera.opacity(0.55) }
+            if state.pictureMode == .behindScript && !focusActive { liveCamera.opacity(1 - InputValidation.videoDimming.repair(state.look?.videoDimming ?? 0.5)) }
             VStack(spacing: 0) {
               IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
               HStack(spacing: Space.md) {
@@ -239,6 +239,7 @@ struct IPadRemoteView: View {
         Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
         Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
       }
+      lookSlider("Dim picture", value: state.look?.videoDimming ?? 0.5, range: 0...1, percentage: true) { link.send(.look(.init(videoDimming: $0))) }
       Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
         Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
         Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
@@ -323,6 +324,9 @@ struct IPadRemoteView: View {
       lookSlider("Margins", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
       lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
       lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
+      DisclosureGroup("Advanced") {
+        lookSlider("Reading band (0 = off)", value: state.look?.readingBandOpacity ?? 0.12, range: 0...1) { link.send(.look(.init(readingBandOpacity: $0))) }
+      }
       lookSlider("Reading line", value: state.look?.guideFraction ?? 0.35, range: InputValidation.guideFraction.range) { link.send(.look(.init(guideFraction: $0))) }
       Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
         Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
@@ -352,8 +356,8 @@ struct IPadRemoteView: View {
       else { link.send(.mode("Manual")) }
     }
   }
-  private func lookSlider(_ title: String, value: Double, range: ClosedRange<Double>, set: @escaping (Double) -> Void) -> some View {
-    HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 56) }
+  private func lookSlider(_ title: String, value: Double, range: ClosedRange<Double>, percentage: Bool = false, set: @escaping (Double) -> Void) -> some View {
+    HStack { Text(title).frame(width: 120, alignment: .leading); Slider(value: Binding(get: { value }, set: set), in: range); Text(percentage ? "\(Int(value * 100))%" : value.formatted(.number.precision(.fractionLength(0...2)))).frame(width: 56) }
   }
 }
 

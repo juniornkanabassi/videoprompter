@@ -12,6 +12,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   var backgroundOpacity = 0.82 { didSet { backgroundOpacity = InputValidation.backgroundOpacity.repair(backgroundOpacity) } }
   /// The backdrop's opacity over the camera picture; the Prompter-only 0.82 blacked it out.
   var videoDimming = 0.5 { didSet { videoDimming = InputValidation.videoDimming.repair(videoDimming) } }
+  var readingBandOpacity = 0.12 { didSet { readingBandOpacity = InputValidation.guideOpacity.repair(readingBandOpacity) } }
   var guideFraction = 0.35 { didSet { guideFraction = InputValidation.guideFraction.repair(guideFraction) } }
   var guideOpacity = 0.82 { didSet { guideOpacity = InputValidation.guideOpacity.repair(guideOpacity) } }
   var horizontalMirror = false
@@ -68,6 +69,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     backgroundOpacity = InputValidation.backgroundOpacity.repair(backgroundOpacity)
     videoDimming = InputValidation.videoDimming.repair(videoDimming)
     guideFraction = InputValidation.guideFraction.repair(guideFraction)
+    readingBandOpacity = InputValidation.guideOpacity.repair(readingBandOpacity)
     guideOpacity = InputValidation.guideOpacity.repair(guideOpacity)
     speed = InputValidation.speed.repair(speed)
     inputGain = InputValidation.inputGain.repair(inputGain)
@@ -98,6 +100,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     backgroundOpacity = c.preference(.backgroundOpacity, default: 0.82)
     videoDimming = c.preference(.videoDimming, default: 0.25)
     guideFraction = c.preference(.guideFraction, default: 0.35)
+    readingBandOpacity = c.preference(.readingBandOpacity, default: 0.12)
     guideOpacity = c.preference(.guideOpacity, default: 0.82)
     horizontalMirror = c.preference(.horizontalMirror, default: false)
     verticalMirror = c.preference(.verticalMirror, default: false)

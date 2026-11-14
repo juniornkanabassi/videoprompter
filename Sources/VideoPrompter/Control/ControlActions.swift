@@ -637,7 +637,7 @@ import Speech
     value["textVisibility"] = percent(s.textOpacity)
     value["backgroundDarkness"] = percent(s.backdropOpacity(withVideo: camera.presentsWithVideo))
     value["readingLine"] = percent(s.guideFraction)
-    value["readingLineVisibility"] = percent(s.guideOpacity)
+    value["readingLineVisibility"] = percent(s.readingBandOpacity)
     value["lineSpacing"] = percent(s.lineSpacing)
     value["paragraphSpacing"] = percent(s.paragraphSpacing)
     value["textColour"] = s.textColorHex
@@ -688,7 +688,7 @@ import Speech
       s.setBackdropOpacity(value / 100, withVideo: withVideo)
     }
     if let value = number(params, "readingLine") { s.guideFraction = value / 100 }
-    if let value = number(params, "readingLineVisibility") { s.guideOpacity = value / 100 }
+    if let value = number(params, "readingLineVisibility") { s.readingBandOpacity = value / 100 }
     if let value = number(params, "lineSpacing") { s.lineSpacing = value / 100 }
     if let value = number(params, "paragraphSpacing") { s.paragraphSpacing = value / 100 }
     if let colour = params["textColour"] {

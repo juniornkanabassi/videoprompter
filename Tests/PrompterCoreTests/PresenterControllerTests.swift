@@ -1446,29 +1446,22 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertEqual(stored["backgroundOpacity"] as? Double, 0.5)
   }
 
-  /// The reading line's opacity persists and is what the line is drawn with.
-  func testGuideOpacityPersistsAndReachesTheLine() async throws {
+  /// The band's strength survives reopening the app, including turning it off.
+  func testReadingBandOpacityPersists() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
     let defaults = freshDefaults()
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
-    XCTAssertEqual(store.settings.guideOpacity, 0.82, "the default keeps the current look")
-    store.settings.guideOpacity = 0.25
+    XCTAssertEqual(store.settings.readingBandOpacity, 0.12)
+    store.settings.readingBandOpacity = 0.25
     let flushed = await store.flushPendingSaves()
     XCTAssertTrue(flushed)
-    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)).settings
-    XCTAssertEqual(reopened.guideOpacity, 0.25)
-
-    func drawnAlpha(_ settings: PrompterSettings) throws -> CGFloat {
-      let renderer = ImageRenderer(content: GuideLine(settings: settings).frame(width: 100))
-      renderer.scale = 1
-      let image = try XCTUnwrap(renderer.cgImage)
-      let bitmap = NSBitmapImageRep(cgImage: image)
-      // A full-width line, as the first versions drew it: the same opacity at the edge and in the middle.
-      XCTAssertEqual(try XCTUnwrap(bitmap.colorAt(x: 50, y: 1)).alphaComponent, try XCTUnwrap(bitmap.colorAt(x: 4, y: 1)).alphaComponent, accuracy: 0.02, "The reading line runs the full width")
-      return try XCTUnwrap(bitmap.colorAt(x: 4, y: 1)).alphaComponent
-    }
-    XCTAssertEqual(try drawnAlpha(reopened), 0.25, accuracy: 0.02)
-    XCTAssertEqual(try drawnAlpha(PrompterSettings()), 0.82, accuracy: 0.02)
+    let reopened = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    XCTAssertEqual(reopened.settings.readingBandOpacity, 0.25)
+    reopened.settings.readingBandOpacity = 0
+    let flushedOff = await reopened.flushPendingSaves()
+    XCTAssertTrue(flushedOff)
+    XCTAssertEqual(flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults)).settings.readingBandOpacity, 0)
   }
 
   /// A 4K landscape feed turned 90° shows as 9:16, so the presenter becomes a tall window as

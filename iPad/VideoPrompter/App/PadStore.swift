@@ -645,7 +645,7 @@ extension PadStore {
         guideFraction: settings.guideFraction, fontName: settings.fontName, fontWeight: settings.fontWeight,
         textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
         paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues,
-        scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: focusMode),
+        scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: focusMode, readingBandOpacity: settings.readingBandOpacity, videoDimming: settings.videoDimming),
       presets: presets.map(\.name), startDelay: session.startDelay,
       voiceSource: usesMacMic ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
@@ -792,6 +792,8 @@ extension PadStore {
       if let value = look.presenterSetup { presenterSetup = value; if value { session.pause() } }
       if let value = look.focusMode { focusMode = value }
       var next = settings
+      if let value = look.readingBandOpacity, value.isFinite { next.readingBandOpacity = value }
+      if let value = look.videoDimming, value.isFinite { next.videoDimming = value }
       if let value = look.horizontalMirror { next.horizontalMirror = value }
       if let value = look.verticalMirror { next.verticalMirror = value }
       if let value = look.fontSize, value.isFinite { next.fontSize = value }

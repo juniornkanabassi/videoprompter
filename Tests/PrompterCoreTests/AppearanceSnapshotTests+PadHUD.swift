@@ -37,13 +37,10 @@ extension AppearanceSnapshotTests {
     for size in [CGSize(width: 1180, height: 820), CGSize(width: 1366, height: 1024)] {
       let view = ZStack(alignment: .top) {
         Color.black
-        PresenterReadingLine(settings: store.settings)
-          .frame(width: size.width - 2 * ScriptTextView.sideInset(width: size.width, textWidth: store.settings.textWidth) + 2 * Space.xxl)
-          .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
         ScriptTextView(document: store.session.document, tokenIndex: 24, lastConfirmedTokenIndex: 23,
           guideFraction: 0.35, fontName: store.settings.fontName, fontSize: 48, textOpacity: 1,
           horizontalMargin: ScriptTextView.sideInset(width: size.width, textWidth: store.settings.textWidth),
-          highlightActiveWord: true, onSeek: { _ in })
+          readingBandOpacity: store.settings.readingBandOpacity, highlightActiveWord: true, onSeek: { _ in })
       }
       try await snapshot(view, name: "mac-text-\(Int(size.width))x\(Int(size.height))", size: size,
         scheme: .dark, destination: URL(fileURLWithPath: output))

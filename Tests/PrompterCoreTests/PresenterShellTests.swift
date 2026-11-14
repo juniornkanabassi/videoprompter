@@ -1,3 +1,4 @@
+import PrompterCore
 import AppKit
 import SwiftUI
 import XCTest
@@ -189,5 +190,45 @@ extension AppearanceSnapshotTests {
     let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera,
       startsCamera: false, recorder: recorder, referencePicture: NSImage(contentsOf: Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures")!), revealsCleanExit: true)
     if let output { try await snapshot(view, name: "f1-exit-pill-visible", size: CGSize(width: 1600, height: 1000), scheme: .dark, destination: URL(fileURLWithPath: output)) }
+  }
+}
+
+
+extension AppearanceSnapshotTests {
+  func testReadingBandDimmingShots() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    for dimming in [0.0, 0.5, 0.9] {
+      let defaults = freshDefaults("ReadingBandSnapshots")
+      let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+      defer { try? FileManager.default.removeItem(at: root) }
+      let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+      let record = try await store.createScript(title: "Matchday", markdown: "Welcome to the show. Tonight we look at the title race.\n\nFirst the champions won again. But the chasing pack are closing the gap.")
+      store.settings.mode = "Manual"
+      store.settings.fontSize = 48
+      store.settings.videoDimming = dimming
+      store.session.present(record: record, settings: store.settings)
+      store.session.seek(to: 7)
+      let camera = CameraModel(defaults: defaults), recorder = CameraRecorder(defaults: defaults)
+      camera.displayMode = .prompterWithVideo
+      let picture = NSImage(contentsOf: Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures")!)!
+      if dimming == 0 {
+        let replica = PadRemote.State(scripts: [], presenting: UUID(), running: false, mode: "Manual", speed: 120,
+          word: 8, words: 40, look: .init(fontSize: 48, readingBandOpacity: 0.12), markdown: record.markdown)
+        try await snapshot(IPadReplicaView(state: replica, onSeek: { _ in }), name: "mac-ipad-replica-band",
+          size: .init(width: 1180, height: 820), scheme: .dark, destination: URL(fileURLWithPath: output))
+      }
+      let surface = ZStack {
+        Image(nsImage: picture).resizable().scaledToFit()
+        Color.black.opacity(store.settings.videoDimming)
+        ScriptTextView(document: store.session.document, tokenIndex: 7,
+          guideFraction: 0.35, fontName: store.settings.fontName, fontSize: 48, textOpacity: 1,
+          horizontalMargin: 80, overVideo: true, readingBandOpacity: store.settings.readingBandOpacity,
+          highlightActiveWord: true, onSeek: { _ in })
+      }
+      try await snapshot(surface, name: "mac-surface-dim-\(Int(dimming * 100))",
+        size: .init(width: 1180, height: 820), scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(500))
+      let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: recorder, shell: PresenterShell(reading: true), referencePicture: picture).environment(\.presenterReduceTransparency, false).compositingGroup()
+      try await snapshot(view, name: "mac-band-dim-\(Int(dimming * 100))", size: .init(width: 1600, height: 1000), scheme: .dark, destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(500))
+    }
   }
 }

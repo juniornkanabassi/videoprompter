@@ -31,10 +31,6 @@ struct IPadReplicaView: View {
         let guide = InputValidation.guideFraction.repair(look?.guideFraction ?? 0.35)
         ZStack(alignment: .top) {
           if state.presenting != nil, state.markdown != nil {
-            Rectangle().fill(Color.yellow.opacity(0.1))
-              .frame(height: size * 1.25) // grid: ok reading band follows the font size
-              .offset(y: ScriptTextView.visualGuideY(height: geometry.size.height, fraction: guide) - size * 0.625)
-              .allowsHitTesting(false)
             ScriptTextView(
               document: script.document, tokenIndex: max(0, state.word - 1),
               isActivelyRunning: state.running, seekRevision: state.seekRevision ?? 0,
@@ -45,7 +41,7 @@ struct IPadReplicaView: View {
               paragraphSpacing: InputValidation.paragraphSpacing.repair(look?.paragraphSpacing ?? 0.34),
               horizontalMargin: ScriptTextView.sideInset(width: geometry.size.width, textWidth: InputValidation.textWidth.repair(look?.textWidth ?? 0.75)),
               alignment: look?.alignment ?? "Left", showCues: look?.showCues ?? false,
-              highlightActiveWord: true, onSeek: onSeek, onUserScroll: onSeek)
+              readingBandOpacity: look?.readingBandOpacity ?? 0.12, highlightActiveWord: true, onSeek: onSeek, onUserScroll: onSeek)
               .disabled(state.editing == true)
           } else {
             Text(state.cameraOnly == true ? "The iPad is showing the camera only" : state.presenting == nil ? "Open a script on the iPad to begin" : "This iPad version does not send the reading view")
