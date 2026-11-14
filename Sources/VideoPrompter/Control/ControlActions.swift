@@ -646,6 +646,8 @@ import Speech
     value["stageDirections"] = on(s.showCues)
     value["highlightWord"] = on(s.highlightActiveWord)
     value["followRepeats"] = on(s.allowsBackwardVoiceTracking)
+    value["speechEngine"] = s.speechEngine
+    value["speechEngineStatus"] = store.session.speechEngineStatus
     value["language"] = s.speechLanguage
     value["microphone"] = s.audioDeviceUID as Any? ?? NSNull()
     value["microphoneVolume"] = percent(s.inputGain)
@@ -666,6 +668,7 @@ import Speech
     // Read after the await, so a change made meanwhile is not overwritten.
     var s = store.settings
     if let language { s.speechLanguage = language }
+    if let engine = params["speechEngine"] { s.speechEngine = engine }
     if let value = number(params, "speed") { s.speed = value }
     if let value = number(params, "textSize") { s.fontSize = value }
     if let font = params["font"] {

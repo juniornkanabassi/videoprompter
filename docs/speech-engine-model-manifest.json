@@ -1,0 +1,82 @@
+[
+  {
+    "path": "decoder.mlmodelc/analytics/coremldata.bin",
+    "size": 243,
+    "sha256": "3996975a8cbc1949159c55605b3132b39b2484f51acbd55d796d93c70de02b49"
+  },
+  {
+    "path": "decoder.mlmodelc/coremldata.bin",
+    "size": 497,
+    "sha256": "c3ccbff963d8cf07e2be2bd56ea3384a89ea49628922c6bd95ff62e2ae57dc34"
+  },
+  {
+    "path": "decoder.mlmodelc/metadata.json",
+    "size": 3283,
+    "sha256": "0977480649f2756894b0acfe2fdf4231a991f25e3fe02562bfb71b65ca944575"
+  },
+  {
+    "path": "decoder.mlmodelc/model.mil",
+    "size": 7409,
+    "sha256": "b7c084a35bdbc887d69d6226cd533e2c11b2792c37d7352cf878f9f6f3c13555"
+  },
+  {
+    "path": "decoder.mlmodelc/weights/weight.bin",
+    "size": 7873600,
+    "sha256": "0b4cacecdcd9df79ab1e56de67230baf5a8664d2afe0bb8f3408eefa972cb2f4"
+  },
+  {
+    "path": "joint_decision.mlmodelc/analytics/coremldata.bin",
+    "size": 243,
+    "sha256": "5bca32ad130dcad6605cc00044c752aa5b45ef57d14c17f2d1a2fa49d6cf55b5"
+  },
+  {
+    "path": "joint_decision.mlmodelc/coremldata.bin",
+    "size": 493,
+    "sha256": "22d4abc4625b935ee035b5f8ce7cb28d1041b9b01c12173e287bf4b5f5d99625"
+  },
+  {
+    "path": "joint_decision.mlmodelc/metadata.json",
+    "size": 3181,
+    "sha256": "e970ae87137730020690d24d971813db3633bbdfed602d43b6a9c84deced6dc8"
+  },
+  {
+    "path": "joint_decision.mlmodelc/model.mil",
+    "size": 9608,
+    "sha256": "45e8590bc87e34c162b547e43a4f60e64db15b017f48395d7835a6867884804f"
+  },
+  {
+    "path": "joint_decision.mlmodelc/weights/weight.bin",
+    "size": 2794182,
+    "sha256": "7039b2010a269153f5a96edf28637f921a86ef8822f248f2d6712f7a6bce84b4"
+  },
+  {
+    "path": "streaming_encoder.mlmodelc/analytics/coremldata.bin",
+    "size": 243,
+    "sha256": "a981b257db79b4f86e6fa06a92562160a0ae71554746c24af24d8634b85f0356"
+  },
+  {
+    "path": "streaming_encoder.mlmodelc/coremldata.bin",
+    "size": 670,
+    "sha256": "e762abc60d999bcd10aab985b68191a602f2e8e03165cf08671c60f93936037a"
+  },
+  {
+    "path": "streaming_encoder.mlmodelc/metadata.json",
+    "size": 5327,
+    "sha256": "75be31534cdd91711b08ba3a46046523eb9be9909618cd569cce1ea79e842a95"
+  },
+  {
+    "path": "streaming_encoder.mlmodelc/model.mil",
+    "size": 639646,
+    "sha256": "709f9280eb0bba1fd698cc252275ba802885c2c53cdb60d399277281dac09b5d"
+  },
+  {
+    "path": "streaming_encoder.mlmodelc/weights/weight.bin",
+    "size": 212691776,
+    "sha256": "12cd781a4300b52b6687587b7d8e37e0ce5c8ccb1dbea036008275e6abf5070c"
+  },
+  {
+    "path": "vocab.json",
+    "size": 17437,
+    "sha256": "83fd42ad33dae1bd3ceee6c0bb6c625f314cf0b2dc8430be441ac1e2643d5c36"
+  }
+]

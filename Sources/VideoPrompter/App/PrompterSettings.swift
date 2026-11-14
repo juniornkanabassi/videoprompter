@@ -27,6 +27,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   /// "Automatic" for new settings: one recogniser in the script's language. On 25 October the
   /// French half of "Mixed" heard English speech as noise and once sent Voice 26 words ahead.
   /// Saved settings keep their choice; missing values use automatic detection.
+  var speechEngine = "apple"
   var speechLanguage = "Automatic"
   var speechLocales: [String: String] = [:]
   var fontWeight = "Regular"
@@ -77,6 +78,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     paragraphSpacing = InputValidation.paragraphSpacing.repair(paragraphSpacing)
     textWidth = Self.clampedTextWidth(textWidth)
     mode = Self.normalisedMode(mode)
+    if !["apple", "parakeet"].contains(speechEngine) { speechEngine = "apple" }
     let rawLanguage = speechLanguage
     speechLanguage = ScriptLanguage.setting(rawLanguage) ?? "Automatic"
     if speechLanguage != "Automatic", rawLanguage != speechLanguage,
@@ -108,6 +110,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     mode = c.preference(.mode, default: "Voice")
     speed = c.preference(.speed, default: 120)
     inputGain = c.preference(.inputGain, default: 1)
+    speechEngine = c.preference(.speechEngine, default: "apple")
     speechLanguage = c.preference(.speechLanguage, default: "Automatic")
     speechLocales = c.preference(.speechLocales, default: [:])
     fontWeight = c.preference(.fontWeight, default: "Regular")

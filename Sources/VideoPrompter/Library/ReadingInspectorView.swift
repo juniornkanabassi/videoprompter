@@ -24,6 +24,9 @@ struct ReadingSettingsPage: View {
         ScriptLanguageRow(store: store)
         if store.settings.mode == "Manual" { AutomaticScrollDelay(session: store.session) }
         ReadingChoice(title: "Mode", values: ["Voice", "Manual"], names: ["Voice follow", "Automatic scroll"], selection: $store.settings.mode, zoom: store.uiZoom)
+        if store.settings.mode == "Voice" {
+          SpeechEngineRow(store: store, session: store.session)
+        }
         if store.settings.mode == "Manual" {
           slider("Reading speed", value: $store.settings.speed, range: 20...300, readout: "\(Int(store.settings.speed)) words/min", spoken: "\(Int(store.settings.speed)) words per minute")
         }
@@ -185,6 +188,25 @@ struct ScriptLanguageRow: View {
       availability = installed.contains(locale)
         ? "On-device speech is ready."
         : "Speech files need a download. Start Voice following while connected to the internet."
+    }
+  }
+}
+
+private struct SpeechEngineRow: View {
+  @ObservedObject var store: AppStore
+  @ObservedObject var session: SessionStore
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      ReadingChoice(title: "Speech engine", values: ["apple", "parakeet"],
+        names: ["Apple", "Parakeet"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
+      if store.settings.speechEngine == "parakeet" {
+        Text("Experimental · English only. Downloads 224 MB on first use, then works offline.")
+          .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      }
+      if !session.speechEngineStatus.isEmpty {
+        Text(session.speechEngineStatus).font(.callout).fixedSize(horizontal: false, vertical: true)
+        if session.isPreparingVoice { ProgressView().controlSize(.small) }
+      }
     }
   }
 }

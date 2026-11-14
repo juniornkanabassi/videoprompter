@@ -29,6 +29,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var seekRevision = 0
   @Published private(set) var state: RunState = .stopped
   @Published private(set) var isPreparingVoice = false
+  @Published private(set) var speechEngineStatus = ""
   @Published private(set) var hasLiveRecognition = false
   @Published private(set) var countdownRemaining = 0
   @Published var startDelay = 3 {
@@ -271,7 +272,7 @@ final class SessionStore: ObservableObject {
     if value.mode != "Voice" || settings.audioDeviceUID != value.audioDeviceUID {
       stopMicrophoneTest()
     }
-    let modeChanged = settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || (settings.speechLanguage != value.speechLanguage || settings.speechLocales != value.speechLocales)
+    let modeChanged = settings.speechEngine != value.speechEngine || settings.mode != value.mode || settings.audioDeviceUID != value.audioDeviceUID || (settings.speechLanguage != value.speechLanguage || settings.speechLocales != value.speechLocales)
     if modeChanged { anchorNotice = nil; cancelCountdown() }
     let speedChanged = settings.speed != value.speed
     // Manual first catches up to now at the old speed, so a new speed continues from here.
@@ -748,6 +749,7 @@ final class SessionStore: ObservableObject {
     voiceEndTask?.cancel(); voiceEndTask = nil
     cancelCountdown()
     isPreparingVoice = false
+    speechEngineStatus = ""
     hasLiveRecognition = false
     lifecycleGeneration &+= 1
     pendingSpeechCandidate = nil
@@ -839,9 +841,18 @@ final class SessionStore: ObservableObject {
       guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
       do {
         self.state = .uncertain("Preparing \(self.scriptLanguage.rawValue) speech recognition. Missing speech files will download before listening.")
+        let selectedEngine = self.selectedSpeechEngine
+        let locales = selectedEngine == .parakeet ? [Locale(identifier: "en-GB")] : try await self.speechLocales()
+        if selectedEngine == .parakeet, self.scriptLanguage != .english {
+          throw SpeechProvider.Error.analysisFailed("Parakeet supports English only. Choose Apple for this script.")
+        }
         let format = try await self.speechProvider.prepare(
-          locales: try await self.speechLocales(),
-          contextualStrings: SpeechProvider.upcomingContext(self.document.spokenTokens, at: self.tokenIndex), engine: .dictation)
+          locales: locales,
+          contextualStrings: SpeechProvider.upcomingContext(self.document.spokenTokens, at: self.tokenIndex),
+          engine: selectedEngine, onPreparation: { [weak self] message in
+            guard let self, self.lifecycleGeneration == generation else { return }
+            self.speechEngineStatus = message
+          })
         guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
         let capture = AudioCapture(
           device: device, outputFormat: format, gain: Float(self.settings.inputGain), channel: AudioChannel.load(device.uid, defaults: self.defaults))
@@ -920,6 +931,15 @@ final class SessionStore: ObservableObject {
         }
       }
     }
+  }
+
+  var selectedSpeechEngine: SpeechProvider.Engine {
+    // The iPad keeps using Apple locally; the Mac's Parakeet position is relayed unchanged.
+    #if os(macOS)
+    settings.speechEngine == "parakeet" ? .parakeet : .dictation
+    #else
+    .dictation
+    #endif
   }
 
   private func speechLocales() async throws -> [Locale] {
