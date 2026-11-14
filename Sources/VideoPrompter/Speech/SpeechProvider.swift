@@ -13,9 +13,10 @@ public struct SpeechCandidate: Sendable, Hashable {
   /// The recogniser's own result text, whose runs carry each word's audio time range. Nothing in the
   /// app reads it; replays measure per-word latency from it.
   public var transcript = AttributedString()
+  public var source = "apple"
 }
 public actor SpeechProvider {
-  public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet }
+  public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet, both, unified, bothUnified }
   public enum Error: Swift.Error, Sendable, LocalizedError {
     case unavailable, notPrepared, reservationLimit
     case analysisFailed(String)
@@ -30,6 +31,7 @@ public actor SpeechProvider {
   }
   #if os(macOS)
   private var parakeet: ParakeetSpeechStream?
+  private var pairedProviders: [SpeechProvider] = []
   #endif
   private var analyzer: SpeechAnalyzer?
   private var modules: [SpeechTranscriber] = []
@@ -53,6 +55,9 @@ public actor SpeechProvider {
   }
 
   public func updateContext(_ strings: [String]) async throws {
+    #if os(macOS)
+    if (engine == .both || engine == .bothUnified) { try await pairedProviders.first?.updateContext(strings); return }
+    #endif
     guard engine == .dictation, let analyzer else { return }
     let context = AnalysisContext()
     context.contextualStrings[.general] = strings
@@ -73,13 +78,32 @@ public actor SpeechProvider {
     resultTasks = []
     analyzer = nil
     #if os(macOS)
+    for provider in pairedProviders { await provider.stop() }
+    pairedProviders = []
     await parakeet?.stop()
     try checkCurrent(op)
     parakeet = nil
-    if engine == .parakeet {
+    if (engine == .both || engine == .bothUnified) {
+      let apple = SpeechProvider(), local = SpeechProvider()
+      pairedProviders = [apple, local]
+      do {
+        let format = try await apple.prepare(locales: requested, naturalFormat: naturalFormat,
+          contextualStrings: contextualStrings, engine: .dictation)
+        try checkCurrent(op)
+        _ = try await local.prepare(locales: requested, engine: engine == .bothUnified ? .unified : .parakeet,
+          modelDirectory: modelDirectory, onPreparation: onPreparation)
+        try checkCurrent(op)
+        self.engine = engine
+        return format
+      } catch {
+        await apple.stop(); await local.stop()
+        throw error
+      }
+    }
+    if (engine == .parakeet || engine == .unified) {
       guard requested.allSatisfy({ $0.language.languageCode?.identifier == "en" }) else { throw Error.unavailable }
       let stream = ParakeetSpeechStream()
-      try await stream.prepare(directory: modelDirectory, onPreparation: onPreparation)
+      try await stream.prepare(directory: modelDirectory, unified: engine == .unified, onPreparation: onPreparation)
       try checkCurrent(op)
       self.engine = engine
       parakeet = stream
@@ -87,14 +111,14 @@ public actor SpeechProvider {
       return AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
     }
     #else
-    if engine == .parakeet { throw Error.unavailable }
+    if (engine == .parakeet || engine == .unified) || (engine == .both || engine == .bothUnified) { throw Error.unavailable }
     #endif
     var newModules: [SpeechTranscriber] = []
     var newDictationModules: [DictationTranscriber] = []
     var newLocales: [Locale] = []
     for requestedLocale in requested {
       let supported: Locale? = switch engine {
-      case .parakeet: nil
+      case .parakeet, .both, .unified, .bothUnified: nil
       case .transcription:
         await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale)
       case .dictation:
@@ -104,7 +128,7 @@ public actor SpeechProvider {
       guard let supported
       else { throw Error.unavailable }
       switch engine {
-      case .parakeet: break
+      case .parakeet, .both, .unified, .bothUnified: break
       case .transcription:
         newModules.append(
           SpeechTranscriber(locale: supported, preset: .timeIndexedProgressiveTranscription))
@@ -117,7 +141,7 @@ public actor SpeechProvider {
     }
     let activeModules: [any SpeechModule]
     switch engine {
-    case .parakeet: activeModules = []
+    case .parakeet, .both, .unified, .bothUnified: activeModules = []
     case .transcription: activeModules = newModules
     case .dictation: activeModules = newDictationModules
     }
@@ -181,7 +205,48 @@ public actor SpeechProvider {
     onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
     #if os(macOS)
-    if engine == .parakeet {
+    if (engine == .both || engine == .bothUnified) {
+      guard pairedProviders.count == 2 else { throw Error.notPrepared }
+      generation = externalGeneration ?? (generation &+ 1)
+      let g = generation
+      let apple = pairedProviders[0], local = pairedProviders[1]
+      let a = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1024))
+      let b = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1024))
+      let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+      let converter = AudioCapture(device: .init(id: 0, uid: "paired", name: "Paired speech"), outputFormat: format)
+      do {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+          group.addTask { try await apple.start(input: a.stream, generation: g, onCandidate: onCandidate) }
+          group.addTask { try await local.start(input: b.stream, generation: g, onCandidate: onCandidate) }
+          group.addTask {
+            defer { a.continuation.finish(); b.continuation.finish() }
+            var prepared = false
+            for try await item in input {
+              try Task.checkCancellation()
+              if !prepared { try converter.prepareConverter(sampleRate: item.buffer.format.sampleRate); prepared = true }
+              guard let converted = converter.process(item.buffer)?.buffer else { throw Error.unavailable }
+              if case .dropped = a.continuation.yield(item) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
+              if case .dropped = b.continuation.yield(AnalyzerInput(buffer: converted, bufferStartTime: item.bufferStartTime)) {
+                throw Error.analysisFailed("Parakeet speech fell behind the audio.")
+              }
+            }
+          }
+          do { while try await group.next() != nil {} }
+          catch {
+            a.continuation.finish(); b.continuation.finish()
+            group.cancelAll()
+            await apple.stop(); await local.stop()
+            throw error
+          }
+        }
+      } catch {
+        a.continuation.finish(); b.continuation.finish()
+        await apple.stop(); await local.stop()
+        throw error
+      }
+      return
+    }
+    if (engine == .parakeet || engine == .unified) {
       guard let parakeet else { throw Error.notPrepared }
       generation = externalGeneration ?? (generation &+ 1)
       try await parakeet.start(input: input, generation: generation, onCandidate: onCandidate)
@@ -197,7 +262,7 @@ public actor SpeechProvider {
     let dictationModules = dictationModules
     let locales = locales
     switch engine {
-    case .parakeet: throw Error.unavailable
+    case .parakeet, .both, .unified, .bothUnified: throw Error.unavailable
     case .transcription:
       for (i, module) in modules.enumerated() {
         resultTasks.append(
@@ -243,6 +308,8 @@ public actor SpeechProvider {
   public func stop() async {
     operation &+= 1
     #if os(macOS)
+    for provider in pairedProviders { await provider.stop() }
+    pairedProviders = []
     await parakeet?.stop()
     parakeet = nil
     #endif

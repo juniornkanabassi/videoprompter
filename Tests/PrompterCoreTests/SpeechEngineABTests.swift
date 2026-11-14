@@ -1,5 +1,8 @@
 import AVFoundation
 import Foundation
+import CoreML
+import Darwin
+import FluidAudio
 import Speech
 import XCTest
 @testable import VideoPrompter
@@ -19,6 +22,15 @@ import PrompterCore
     settings = try JSONDecoder().decode(PrompterSettings.self, from: JSONEncoder().encode(settings))
     session.updateSettings(settings)
     XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
+    settings.speechEngine = "both"
+    session.updateSettings(settings)
+    XCTAssertEqual(session.selectedSpeechEngine, .both)
+    settings.speechEngine = "unified"
+    session.updateSettings(settings)
+    XCTAssertEqual(session.selectedSpeechEngine, .unified)
+    settings.speechEngine = "both-unified"
+    session.updateSettings(settings)
+    XCTAssertEqual(session.selectedSpeechEngine, .bothUnified)
     settings.speechEngine = "bad"
     settings.sanitise()
     XCTAssertEqual(settings.speechEngine, "apple")
@@ -62,6 +74,71 @@ import PrompterCore
     XCTAssertEqual(tracker.tokenIndex, 0, "Buffered speech before a seek must not undo it")
   }
 
+  func testBothKeepsEngineRevisionsIndependentAndSeeksTogether() throws {
+    let name = "BothCandidates.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    var settings = PrompterSettings(); settings.speechEngine = "both"
+    session.present(record: .init(metadata: .init(title: "Both", fileName: "both.md"),
+      markdown: "Liverpool won the football match today against Arsenal Liverpool won the football match today"), settings: settings)
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    func send(_ text: String, _ source: String, _ end: Double = 2) {
+      session.acceptSpeechCandidate(.init(replacementID: "same-id", generation: 1,
+        locale: Locale(identifier: "en-GB"), text: text,
+        range: .init(start: .zero, end: CMTime(seconds: end, preferredTimescale: 16000)),
+        isFinal: false, source: source))
+    }
+    send("Liverpool won the football", "parakeet")
+    let first = session.tokenIndex
+    send("Liverpool won the football", "apple")
+    XCTAssertEqual(session.tokenIndex, first, "Second engine must not double-credit repeated text")
+    send("Liverpool won the football match today against Arsenal", "apple", 3)
+    let ahead = session.tokenIndex
+    XCTAssertGreaterThan(ahead, first)
+    send("Liverpool won the football", "parakeet", 3)
+    XCTAssertEqual(session.tokenIndex, ahead, "Lagging recogniser must not roll back the leader")
+    session.noteSubmittedAudioEnd(through: 3)
+    session.seek(to: 0)
+    send("Liverpool won the football match today against Arsenal", "apple", 3.2)
+    send("Liverpool won the football match today against Arsenal", "parakeet", 3.2)
+    XCTAssertEqual(session.tokenIndex, 0, "Both histories must honour the seek watermark")
+    session.pause()
+    send("Liverpool won the football match today against Arsenal Liverpool", "apple", 4)
+    XCTAssertEqual(session.tokenIndex, 0)
+    session.play(captureAudio: false)
+    send("Liverpool won the football match today against Arsenal Liverpool", "apple", 5)
+    XCTAssertEqual(session.tokenIndex, 0, "Old-generation callbacks must stay invalid after resuming")
+    session.restart()
+    XCTAssertEqual(session.tokenIndex, 0)
+  }
+
+  func testBothRejectsLateFirstResultAfterSeekAndUnrelatedWords() throws {
+    let name = "BothLateSeek.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    var settings = PrompterSettings(); settings.speechEngine = "both"
+    session.present(record: .init(metadata: .init(title: "Both", fileName: "both.md"),
+      markdown: "Liverpool won the football match today against Arsenal"), settings: settings)
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    func send(_ text: String, _ source: String, _ end: Double) {
+      session.acceptSpeechCandidate(.init(replacementID: source, generation: 1,
+        locale: Locale(identifier: "en-GB"), text: text,
+        range: .init(start: .zero, end: CMTime(seconds: end, preferredTimescale: 16000)),
+        isFinal: false, source: source))
+    }
+    send("random unrelated noise", "apple", 1)
+    XCTAssertEqual(session.tokenIndex, 0)
+    send("Liverpool won the football", "apple", 2)
+    session.noteSubmittedAudioEnd(through: 3)
+    session.seek(to: 0)
+    send("Liverpool won the football match today", "parakeet", 3.2)
+    XCTAssertEqual(session.tokenIndex, 0, "An unseen engine must inherit the seek watermark")
+  }
+
   func testModelVerificationRejectsCorruption() throws {
     let file = ParakeetModel.files.first { $0.path == "vocab.json" }!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -69,6 +146,7 @@ import PrompterCore
     try Data(repeating: 0, count: file.size).write(to: root)
     XCTAssertFalse(try ParakeetModel.valid(root, file: file))
     XCTAssertEqual(ParakeetModel.size, 224047838)
+    XCTAssertEqual(UnifiedModel.size, 608328567)
   }
 
   /// Opt-in file replay. No audio devices, windows, or permissions are requested.
@@ -98,8 +176,7 @@ import PrompterCore
     let heard = WordLatency.heard(Array(reference.values))
     let alignment = WordLatency.align(heard, script: tokens)
     let expected = heard.first?.map(\.word) ?? []
-    let engines: [SpeechProvider.Engine] = env["VP_SPEECH_AB_ENGINE"] == "apple" ? [.dictation]
-      : env["VP_SPEECH_AB_ENGINE"] == "parakeet" ? [.parakeet] : [.parakeet, .dictation]
+    let engines = env["VP_SPEECH_AB_ENGINE"].map { [$0] } ?? ["apple", "parakeet", "both"]
     for engine in engines {
       FileHandle.standardError.write(Data("Preparing \(engine)\n".utf8))
       let suite = "SpeechABReplay.\(UUID())"
@@ -107,23 +184,27 @@ import PrompterCore
       defer { TestDefaults.remove(suite) }
       let session = SessionStore(defaults: defaults)
       session.voiceEndGrace = .seconds(60)
-      session.present(record: .init(metadata: .init(title: "AB", fileName: "ab.md"), markdown: script), settings: .init())
+      session.present(record: .init(metadata: .init(title: "AB", fileName: "ab.md"), markdown: script), settings: { var settings = PrompterSettings(); settings.speechEngine = engine.hasPrefix("both") ? (engine.contains("unified320") ? "both-unified" : "both") : "apple"; return settings }())
       session.play(captureAudio: false)
-      let provider = SpeechProvider()
+      let provider = ReplayRecognizer(engine: engine)
       let file = try AVAudioFile(forReading: audioURL)
       let format = try await provider.prepare(locales: [Locale(identifier: "en-GB")], naturalFormat: file.processingFormat,
-        contextualStrings: SpeechProvider.contextualPhrases(from: script), engine: engine, modelDirectory: modelURL)
+        contextualStrings: SpeechProvider.contextualPhrases(from: script), modelDirectory: modelURL)
       let capture = AudioCapture(device: .init(id: 0, uid: "ab-replay", name: "A/B replay"), outputFormat: format)
       try capture.prepareConverter(sampleRate: file.processingFormat.sampleRate)
       let stream = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .unbounded)
       var published = [Double?](repeating: nil, count: tokens.count)
       var firstPartial: Double?
-      var transcripts: [(start: Double, end: Double, text: String)] = []
+      var transcripts: [String: [(start: Double, end: Double, text: String)]] = [:]
+      var candidates: [[String: Any]] = []
+      var usageStart = rusage()
+      getrusage(RUSAGE_SELF, &usageStart)
       let start = ProcessInfo.processInfo.systemUptime
       let producer = Task {
         defer { stream.continuation.finish() }
         var frame: Int64 = 0
         while file.framePosition < file.length {
+          if let limit = env["VP_SPEECH_AB_SECONDS"].flatMap(Double.init), Double(file.framePosition) / file.processingFormat.sampleRate >= limit { break }
           let source = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.processingFormat.sampleRate / 30))!
           try file.read(into: source)
           guard source.frameLength > 0, let output = capture.process(source)?.buffer else { continue }
@@ -140,7 +221,8 @@ import PrompterCore
           let a = candidate.range.start.seconds, b = candidate.range.end.seconds
           // Dictation can revise the segment's start as well as its text. Replace overlapping
           // versions rather than counting both as new speech in WER.
-          Self.appendTranscript((a, b, candidate.text), to: &transcripts)
+          Self.appendTranscript((a, b, candidate.text), to: &transcripts[candidate.source, default: []])
+          candidates.append(["source": candidate.source, "time": now, "start": a, "end": b, "text": candidate.text, "id": candidate.replacementID, "final": candidate.isFinal])
           session.acceptSpeechCandidate(candidate)
           if let index = session.lastConfirmedTokenIndex {
             for i in 0...min(index, tokens.count - 1) where published[i] == nil { published[i] = now }
@@ -152,21 +234,34 @@ import PrompterCore
       }
       await provider.stop()
       session.pause()
-      let actual = PrompterDocument(markdown: transcripts.sorted { $0.start < $1.start }
+      let measuredSource = transcripts[engine.contains("both") ? "apple" : (transcripts.keys.first ?? "apple")] ?? []
+      let actual = PrompterDocument(markdown: measuredSource.sorted { $0.start < $1.start }
         .map(\.text).joined(separator: " ")).spokenTokens.map(\.normalised)
       let errors = Self.distance(expected, actual)
-      let result: [String: Any] = ["engine": engine == .dictation ? "apple" : "parakeet", "firstPartial": firstPartial ?? -1,
+      var usageEnd = rusage()
+      getrusage(RUSAGE_SELF, &usageEnd)
+      func cpu(_ usage: rusage) -> Double {
+        Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+      }
+      let result: [String: Any] = ["engine": engine, "firstPartial": firstPartial ?? -1,
+        "cpuSeconds": cpu(usageEnd) - cpu(usageStart), "wallSeconds": ProcessInfo.processInfo.systemUptime - start, "peakRSSBytes": usageEnd.ru_maxrss,
         "p50": WordLatency.percentiles(WordLatency.latencies(display: published, spoken: alignment.spoken)).p50,
         "p90": WordLatency.percentiles(WordLatency.latencies(display: published, spoken: alignment.spoken)).p90,
         "falseAdvances": WordLatency.early(display: published, alignment: alignment, script: tokens).count,
         "published": published.compactMap { $0 }.count, "scriptWords": tokens.count,
         "referenceWords": expected.count, "editErrors": errors, "wer": Double(errors) / Double(expected.count),
         "transcript": actual.joined(separator: " "),
-        "segments": transcripts.map { ["start": $0.start, "end": $0.end, "text": $0.text] as [String: Any] }]
+        "format": format.description, "candidates": candidates, "publishedTimes": published.map { $0 ?? -1 },
+        "wordLatencySamples": WordLatency.latencies(display: published, spoken: alignment.spoken),
+        "earlyTokens": WordLatency.early(display: published, alignment: alignment, script: tokens).map { $0.token },
+        "sourceWER": transcripts.mapValues { segments in
+          Double(Self.distance(expected, PrompterDocument(markdown: segments.sorted { $0.start < $1.start }.map(\.text).joined(separator: " ")).spokenTokens.map(\.normalised))) / Double(expected.count)
+        },
+        "segments": measuredSource.map { ["start": $0.start, "end": $0.end, "text": $0.text] as [String: Any] }]
       let out = URL(fileURLWithPath: try XCTUnwrap(env["VP_SPEECH_AB_OUTPUT"]))
-        .appendingPathComponent(engine == .dictation ? "apple.json" : "parakeet.json")
+        .appendingPathComponent(engine + ".json")
       try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: out)
-      print("SPEECH_AB \(result.filter { $0.key != "transcript" })")
+      print("SPEECH_AB \(result.filter { !["transcript", "candidates", "segments", "publishedTimes", "wordLatencySamples"].contains($0.key) })")
       XCTAssertGreaterThan(published.compactMap { $0 }.count, 0)
     }
   }
@@ -200,4 +295,105 @@ import PrompterCore
     XCTAssertEqual(Self.distance(["one", "two"], ["one", "three", "four"]), 2)
     XCTAssertEqual(Self.distance([], ["one"]), 1)
   }
+}
+
+/// Benchmark-only adapters load explicit directories; they never download or touch the shared cache.
+private actor ReplayRecognizer {
+  let engine: String
+  let provider = SpeechProvider()
+  var local: (any StreamingAsrManager)?
+  var paired: ReplayRecognizer?
+  var warmContinuation: AsyncStream<AnalyzerInput>.Continuation?
+  var warmTask: Task<Void, Error>?
+  var callback: (@MainActor @Sendable (SpeechCandidate) -> Void)?
+  init(engine: String) { self.engine = engine }
+  func prepare(locales: [Locale], naturalFormat: AVAudioFormat, contextualStrings: [String], modelDirectory: URL) async throws -> AVAudioFormat {
+    let base = engine.replacingOccurrences(of: "both-", with: "")
+    if ["apple", "apple16", "appleWarm", "transcription", "parakeet", "both", "unified320", "both-unified320"].contains(engine) {
+      let format = try await provider.prepare(locales: locales, naturalFormat: naturalFormat, contextualStrings: contextualStrings,
+        engine: engine.hasPrefix("apple") ? .dictation : engine == "transcription" ? .transcription : engine == "both-unified320" ? .bothUnified : engine == "unified320" ? .unified : engine == "both" ? .both : .parakeet,
+        modelDirectory: modelDirectory)
+      if engine == "appleWarm" {
+        let stream = AsyncStream<AnalyzerInput>.makeStream()
+        warmContinuation = stream.continuation
+        warmTask = Task {
+          try await self.provider.start(input: stream.stream) { candidate in
+            Task { await self.deliver(candidate) }
+          }
+        }
+        try await Task.sleep(for: .seconds(3))
+      }
+      return engine == "apple16" ? AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)! : format
+    }
+    if engine.hasPrefix("both-") {
+      let child = ReplayRecognizer(engine: base)
+      _ = try await child.prepare(locales: locales, naturalFormat: naturalFormat, contextualStrings: contextualStrings, modelDirectory: modelDirectory)
+      paired = child
+      return try await provider.prepare(locales: locales, naturalFormat: naturalFormat, contextualStrings: contextualStrings, engine: .dictation)
+    }
+    let config = MLModelConfiguration()
+    config.computeUnits = .cpuAndNeuralEngine
+    if base == "unified" || base == "unified320" {
+      let manager = StreamingUnifiedAsrManager(configuration: config, config: .init(chunkFrames: base == "unified320" ? 2 : 7, rightFrames: base == "unified320" ? 2 : 1))
+      try await manager.loadModels(from: modelDirectory)
+      local = manager
+    } else if base == "eou320" {
+      let manager = StreamingEouAsrManager(configuration: config, chunkSize: .ms320)
+      try await manager.loadModels(from: modelDirectory)
+      local = manager
+    } else {
+      guard ["nemotron560", "nemotron1120", "nemotron2240"].contains(base) else { throw SpeechProvider.Error.unavailable }
+      let manager = StreamingNemotronAsrManager(configuration: config)
+      try await manager.loadModels(from: modelDirectory)
+      local = manager
+    }
+    return AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+  }
+  func start(input: AsyncStream<AnalyzerInput>, onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void) async throws {
+    if let warmContinuation, let warmTask {
+      callback = onCandidate
+      for await item in input { warmContinuation.yield(item) }
+      warmContinuation.finish()
+      try await warmTask.value
+    } else if let paired {
+      let a = AsyncStream<AnalyzerInput>.makeStream(), b = AsyncStream<AnalyzerInput>.makeStream()
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { try await self.provider.start(input: a.stream, onCandidate: onCandidate) }
+        group.addTask { try await paired.start(input: b.stream, onCandidate: onCandidate) }
+        group.addTask {
+          defer { a.continuation.finish(); b.continuation.finish() }
+          for await item in input { a.continuation.yield(item); b.continuation.yield(item) }
+        }
+        do { while try await group.next() != nil {} }
+        catch {
+          a.continuation.finish(); b.continuation.finish(); group.cancelAll()
+          await self.provider.stop(); await paired.stop()
+          throw error
+        }
+      }
+    } else if let local {
+      var previous = "", end = CMTime.zero
+      let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true)!
+      let converter = AudioCapture(device: .init(id: 0, uid: "replay", name: "Replay"), outputFormat: format)
+      var prepared = false
+      for await input in input {
+        if !prepared { try converter.prepareConverter(sampleRate: input.buffer.format.sampleRate); prepared = true }
+        let buffer = try XCTUnwrap(converter.process(input.buffer)?.buffer)
+        try await local.appendAudio(buffer)
+        try await local.processBufferedAudio()
+        end = CMTimeAdd(input.bufferStartTime ?? end, CMTime(seconds: Double(input.buffer.frameLength) / input.buffer.format.sampleRate, preferredTimescale: 16000))
+        let text = await local.getPartialTranscript()
+        if var candidate = ParakeetSpeechStream.candidate(text: text, previous: previous, generation: 1, end: end) {
+          previous = text; candidate.source = engine
+          await onCandidate(candidate)
+        }
+      }
+      let text = try await local.finish()
+      if var candidate = ParakeetSpeechStream.candidate(text: text, previous: previous, generation: 1, end: end) {
+        candidate.source = engine; await onCandidate(candidate)
+      }
+    } else { try await provider.start(input: input, onCandidate: onCandidate) }
+  }
+  func deliver(_ candidate: SpeechCandidate) async { await callback?(candidate) }
+  func stop() async { await provider.stop(); await paired?.stop(); await local?.cleanup() }
 }

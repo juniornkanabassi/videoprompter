@@ -1,0 +1,404 @@
+[
+  {
+    "cpuSeconds": 6.678028,
+    "editErrors": 17,
+    "engine": "apple",
+    "falseAdvances": 1,
+    "firstPartial": 6.0422350833250675,
+    "format": "<AVAudioFormat 0x7aa14d4910:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.4763662499818011,
+    "p90": 1.5127678749919937,
+    "peakRSSBytes": 62193664,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.36987429164583,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 6.791443,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "apple16",
+    "falseAdvances": 1,
+    "firstPartial": 5.887656083330512,
+    "format": "<AVAudioFormat 0x79e16880f0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.47727854167693096,
+    "p90": 1.4883242500002964,
+    "peakRSSBytes": 65175552,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.23921312499442,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 8.330134,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "appleWarm",
+    "falseAdvances": 1,
+    "firstPartial": 5.8549059166398365,
+    "format": "<AVAudioFormat 0x7b635e6f80:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.47514366665040164,
+    "p90": 1.484603124997811,
+    "peakRSSBytes": 65077248,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.22078791665263,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 17.880706,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-eou320",
+    "falseAdvances": 1,
+    "firstPartial": 5.856651125010103,
+    "format": "<AVAudioFormat 0x74a7f58140:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.42281445832271114,
+    "p90": 0.8220505833253213,
+    "peakRSSBytes": 108625920,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "eou320": 0.1917808219178082
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.2411150833359,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 12.046313,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-nemotron1120",
+    "falseAdvances": 1,
+    "firstPartial": 5.8624726249836385,
+    "format": "<AVAudioFormat 0x7ae55d5b80:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.4397064999886737,
+    "p90": 0.9549940416566081,
+    "peakRSSBytes": 153485312,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "nemotron1120": 0.1780821917808219
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.25119545831694,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 24.927263,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-nemotron2240",
+    "falseAdvances": 1,
+    "firstPartial": 5.891318583337124,
+    "format": "<AVAudioFormat 0x7c1204c050:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.46667583332396845,
+    "p90": 1.0931815416750084,
+    "peakRSSBytes": 3313123328,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "nemotron2240": 0.17465753424657535
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.24060662501142,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 15.063315000000001,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-nemotron560",
+    "falseAdvances": 1,
+    "firstPartial": 5.868789500003913,
+    "format": "<AVAudioFormat 0x763c4d82d0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.33797450000885476,
+    "p90": 0.7567884999944425,
+    "peakRSSBytes": 156778496,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "nemotron560": 0.18493150684931506
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.29895274998853,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 20.80931,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-unified",
+    "falseAdvances": 1,
+    "firstPartial": 5.761822041677078,
+    "format": "<AVAudioFormat 0x7a3f4f1310:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.4245347083394897,
+    "p90": 0.8784138750121926,
+    "peakRSSBytes": 111067136,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "unified": 0.18835616438356165
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.2234751250071,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 45.03777,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both-unified320",
+    "falseAdvances": 1,
+    "firstPartial": 5.828991208341904,
+    "format": "<AVAudioFormat 0x7a815e6f80:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.3967188750184141,
+    "p90": 0.7526913750055257,
+    "peakRSSBytes": 716947456,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "unified": 0.1815068493150685
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.24532541667577,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 22.761543,
+    "earlyTokens": [
+      36
+    ],
+    "editErrors": 17,
+    "engine": "both",
+    "falseAdvances": 1,
+    "firstPartial": 5.859674374980386,
+    "format": "<AVAudioFormat 0x78b158ef80:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.17106420833850677,
+    "p90": 0.645111583335094,
+    "peakRSSBytes": 332398592,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.05821917808219178,
+      "parakeet": 0.21232876712328766
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 doue is a better champions league player than lamine yamal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and it should be fairly uncontroversial do we played fewer seasons fewer games in the champions league and has few minutes in the champions league yet despite that using uefa's own stats your mom's only got one more gf than duet and that's only because he takes penalties only counting non penalty g8 do is actually got more g8 than you all and before you try to say that doue is only stop happening against small teams over 70 of dewey g8 in the champions league in the knockout stages not to mention the fact that dewey has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that daisy doue is a better champions league player than lamine mall conceding this does not mean that duet is a better player than your all in the same way that can see that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got a confirmation bias you're just looking for points that see your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.24164820832084,
+    "wer": 0.05821917808219178
+  },
+  {
+    "cpuSeconds": 20.613722,
+    "earlyTokens": [],
+    "editErrors": 56,
+    "engine": "eou320",
+    "falseAdvances": 0,
+    "firstPartial": 6.423458416655194,
+    "format": "<AVAudioFormat 0x796957f570:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.5398463749943758,
+    "p90": 2.1871238333184735,
+    "peakRSSBytes": 306675712,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "eou320": 0.1917808219178082
+    },
+    "transcript": "dewey is a better champions league player than yamal as of the twenty eighth of august twenty twenty six dejai due is a better champions league player than laminyamal now get what i'm not saying i am not saying he's a better player than jamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial duly's played fewer seasons fewer games in the champions league and has fewer minutes in the champions league you have despite that using uefa's own stats yamalls only got one more ga than due and that's only because he takes penalties only counting non penalty g eight due he's actually than yamal and before you try to say that dui is only stat padding against small teams over seventy percent of dui's ga in the champions leagues are in the knockout stages not to mention the fact that dewey's has played against better opposition and performed better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that these douay is a better champions league player than laminamal conceding this does not mean that due is a better player than yamal in the same way that conceding that ronaldo is a better champions league plan doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 107.85800641664537,
+    "wer": 0.1917808219178082
+  },
+  {
+    "cpuSeconds": 9.803176,
+    "earlyTokens": [],
+    "editErrors": 52,
+    "engine": "nemotron1120",
+    "falseAdvances": 0,
+    "firstPartial": 6.778356208320474,
+    "format": "<AVAudioFormat 0x7cb19795e0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.9084100416488923,
+    "p90": 4.210586208326276,
+    "peakRSSBytes": 708608000,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "nemotron1120": 0.1780821917808219
+    },
+    "transcript": "duet is a better champions league player than yamal as of the twenty eighth of august twenty twenty six desi duae is a better champions league player than la mina mal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial duis played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than dua and that's only because he takes penalties only counting non penalty g eight duis actually got more g eight than yamal and before you try to say that dewey's only statting against small teams over seventy percent of dewey's g eight in the champions leagues are in the knockout stages not to mention the fact that duay's has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desiree douais is a better champions league player than la mina mall conceding this does not mean that douai is a better player than yamall in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that duay plays for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 107.88660433332552,
+    "wer": 0.1780821917808219
+  },
+  {
+    "cpuSeconds": 22.022565,
+    "earlyTokens": [],
+    "editErrors": 51,
+    "engine": "nemotron2240",
+    "falseAdvances": 0,
+    "firstPartial": 6.979089833330363,
+    "format": "<AVAudioFormat 0x7ca15e6e40:  1 ch,  16000 Hz, Int16>",
+    "p50": 2.0978561666549638,
+    "p90": 8.29556904166239,
+    "peakRSSBytes": 3120414720,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "nemotron2240": 0.17465753424657535
+    },
+    "transcript": "duet is a better champions league player than yamal as of the twenty eighth of august twenty twenty six desi duae is a better champions league player than la mina mal now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial duis played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than dua and that's only because he takes penalties only counting non penalty g eight duis actually got more g eight than yamal and before you try to say that dewey's only statting against small teams over seventy percent of dewey's g eight in the champions leagues are in the knockout stages not to mention the fact that duay's has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desiree douais is a better champions league player than la mina mall conceding this does not mean that duet is a better player than yamall in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that duay plays for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.06122337499983,
+    "wer": 0.17465753424657535
+  },
+  {
+    "cpuSeconds": 15.752845,
+    "earlyTokens": [],
+    "editErrors": 54,
+    "engine": "nemotron560",
+    "falseAdvances": 0,
+    "firstPartial": 6.213964208320249,
+    "format": "<AVAudioFormat 0x770c11c140:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.42705754166236076,
+    "p90": 2.2455819166649604,
+    "peakRSSBytes": 151879680,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "nemotron560": 0.18493150684931506
+    },
+    "transcript": "du a is a better champions league player than yamal as of the twenty eighth of august twenty twenty six desiree duay is a better champions league player than la mina mall now get what i'm not saying i am not saying he's a better player than yamall i'm simply saying he's a better champions league player and this should be fairly uncontroversial duis played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than dua and that's only because he takes penalties only counting non penalty g eight dewey's actually got more g eight than yamal and before you try to say that dewey's only statting against small teams over seventy percent of dewey's g eight in the champions leagues are in the knockout stages not to mention the fact that duays has played against better opposition and perform better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desiree douais is a better champions league player than la mina mall conceding this does not mean that douai is a better player than yamall in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that duay plays for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 107.87904683331726,
+    "wer": 0.18493150684931506
+  },
+  {
+    "cpuSeconds": 17.182971,
+    "earlyTokens": [],
+    "editErrors": 62,
+    "engine": "parakeet",
+    "falseAdvances": 0,
+    "firstPartial": 5.874650208337698,
+    "format": "<AVAudioFormat 0x78635e7ed0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.17350462499423713,
+    "p90": 2.5419470416498378,
+    "peakRSSBytes": 327794688,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "parakeet": 0.21232876712328766
+    },
+    "transcript": "do we is a better champions league player than yamal as of the twenty eighth of august twenty twenty six is a better champions league player than laminar now get what i'm not saying i am not saying he's able to play than jamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial duis played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than ue and that's only because he takes penalties only counting non penalty do he's actually got more g eight than your mom and before you try to say that dewey is only statning and small teams or seventy percent of dewey's g eight in the champions leagues are in the knockout stage not to mention the fact that dewey's has played against better opposition and performed better in big champions league games so with all the evidence presented if one is to be intellectual honest one ought to conclude that desire due is a better champions league player than laminium all conceding this does not mean that dewey is a better player than yamal in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact that i'm sorry to say you're just being dogmatic and if you try to use the excuse that due a place for a better team then i'm sorry you have just got confirmation bias you just looking for points that see your narrative without actually addressing the main point of the argument",
+    "wallSeconds": 107.85562412498984,
+    "wer": 0.21232876712328766
+  },
+  {
+    "cpuSeconds": 4.705304000000001,
+    "earlyTokens": [],
+    "editErrors": 44,
+    "engine": "transcription",
+    "falseAdvances": 0,
+    "firstPartial": 5.88675629167119,
+    "format": "<AVAudioFormat 0x78634d6300:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.6878762500244164,
+    "p90": 1.2897546250093725,
+    "peakRSSBytes": 61521920,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "apple": 0.1506849315068493
+    },
+    "transcript": "duet is a better champions league player than yamal as of the 28th of august 2026 dizihaidui is a better champions league player than la minia mall now get what i'm not saying i am not saying he's a better player than jamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial dewey's played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats your mall's only got one more ga than dua and that's only because he takes penalties only counting non penalty g8 dewey's actually got more g8 than yamal and before you try to say that dewey's only stat patterning against small teams over 70 of dewey's g8 in the champions leagues are in the knockout stages not to mention the fact that dewey's has played against better opposition and performed better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desiree douet is a better champions league player than la mignon mall conceding this does not mean that duet is a better player than yamal in the same way that conceiing that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a place for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 108.13473195835832,
+    "wer": 0.1506849315068493
+  },
+  {
+    "cpuSeconds": 19.897817999999997,
+    "earlyTokens": [],
+    "editErrors": 55,
+    "engine": "unified",
+    "falseAdvances": 0,
+    "firstPartial": 5.770379541645525,
+    "format": "<AVAudioFormat 0x7901993ed0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.6459870833309793,
+    "p90": 1.9760112916480281,
+    "peakRSSBytes": 106741760,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "unified": 0.18835616438356165
+    },
+    "transcript": "do a is a better champion league player than yamal as of the 28th of august 2026 desiray douay is a better champions league player than la mina mall now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial dewey played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than douai and that's only because he takes penalties only counting non penalty g8 do he's actually got more g8 than yamal and before you try to say that dewey's only stat pattern against small teams over 70 of dewey's ga in the champions leagues are in the knockout stages not to mention the fact that dewey's has played against better opposition and performed better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desir unk dou unk is a better champions league player than la mina moll conceding this does not mean that douai is a better player than yamal in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that duet plays for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 107.90151812499971,
+    "wer": 0.18835616438356165
+  },
+  {
+    "cpuSeconds": 41.892564,
+    "earlyTokens": [],
+    "editErrors": 53,
+    "engine": "unified320",
+    "falseAdvances": 0,
+    "firstPartial": 5.836862875003135,
+    "format": "<AVAudioFormat 0x75a35e7ed0:  1 ch,  16000 Hz, Int16>",
+    "p50": 0.44421858330956354,
+    "p90": 0.808550791664743,
+    "peakRSSBytes": 714653696,
+    "published": 288,
+    "referenceWords": 292,
+    "scriptWords": 288,
+    "sourceWER": {
+      "unified": 0.1815068493150685
+    },
+    "transcript": "duay is a better champion league player than yamal as of the 28th of august 2026 desi is a better champions league player than la mina maul now get what i'm not saying i am not saying he's a better player than yamal i'm simply saying he's a better champions league player and this should be fairly uncontroversial does played fewer seasons fewer games in the champions league and has fewer minutes in the champions league yet despite that using uefa's own stats yamal's only got one more ga than douay and that's only because he takes penalties only counting non penalty g8 does actually got more g8 than yamal and before you try to say that dewey's only stat pattern against small teams over 70 of dewey's ga in the champions leagues are in the knockout stages not to mention the fact that dewey's has played against better opposition and performed better in big champions league games so with all this evidence presented if one is to be intellectually honest one ought to conclude that desir unk dou unk is a better champions league player than la migne molling this does not mean that douay is a better player than yamal in the same way that conceding that ronaldo is a better champions league player than messi doesn't make ronaldo better than messi if you're unable to admit this fact then i'm sorry to say you're just being dogmatic and if you try to use the excuse that do a plays for a better team then i'm sorry you have just got confirmation bias you're just looking for points that suit your narrative without actually addressing the main points of the argument",
+    "wallSeconds": 107.91277583333431,
+    "wer": 0.1815068493150685
+  }
+]

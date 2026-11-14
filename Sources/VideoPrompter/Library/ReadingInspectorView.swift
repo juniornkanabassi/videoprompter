@@ -197,10 +197,16 @@ private struct SpeechEngineRow: View {
   @ObservedObject var session: SessionStore
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      ReadingChoice(title: "Speech engine", values: ["apple", "parakeet"],
-        names: ["Apple", "Parakeet"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
-      if store.settings.speechEngine == "parakeet" {
-        Text("Experimental · English only. Downloads 224 MB on first use, then works offline.")
+      ReadingChoice(title: "Speech engine", values: ["apple", "parakeet", "both", "unified", "both-unified"],
+        names: ["Apple", "Parakeet", "Both (fastest wins)", "Parakeet Unified", "Apple + Unified"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
+      if store.settings.speechEngine != "apple" {
+        Text(store.settings.speechEngine.contains("unified")
+          ? "Experimental · English only. Downloads 608 MB on first use, then works offline."
+          : "Experimental · English only. Downloads 224 MB on first use, then works offline.")
+          .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      }
+      if store.settings.speechEngine.hasPrefix("both") {
+        Text("Fastest matching result wins. To reread, move back with the reading controls.")
           .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       if !session.speechEngineStatus.isEmpty {

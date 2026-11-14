@@ -24,7 +24,7 @@ Sources (primary): [NVIDIA model card](https://huggingface.co/nvidia/parakeet_re
 - Mac Settings → Reading → Following → **Speech engine: Apple / Parakeet**. Apple remains the decoded/default value. Reading presets preserve the chosen engine, as they preserve microphone and language.
 - CLI: `videoprompter settings set --speechEngine parakeet` or `--speechEngine apple`. `settings get` includes `speechEngine` and preparation status. The MCP manifest is generated from this same command table.
 - Choosing Parakeet then starting Voice follow asynchronously downloads/verifies/loads its model with a visible status and spinner. No model work occurs at launch. Pausing/switching invalidates old candidates. Download/network failure pauses with the existing error notice; it never silently switches engines.
-- Only one engine consumes the existing capture stream at a time. `SpeechProvider.start` delivers both to `SessionStore.acceptSpeechCandidate`; matcher, backward/false-advance guards, glide and iPad relay are unchanged.
+- In the original two-option implementation, only one engine consumed the capture stream at a time; the follow-up below adds simultaneous consumption. `SpeechProvider.start` delivers both to `SessionStore.acceptSpeechCandidate`; matcher, backward/false-advance guards, glide and iPad relay are unchanged.
 - Apple retains rolling script context. Parakeet EOU's RNNT decoder exposes no contextual/hotword bias API. No invented substitutions or forced script words were added.
 - Parakeet emits a cumulative partial under one revision ID per generation. Its range records submitted audio, **not word timestamps**. Do not calculate word-end latency by subtracting that range end.
 - Transport to `AnalyzerInput` is mono 16 kHz Int16, converted by the existing capture converter; FluidAudio converts to Float32. This avoids an observed macOS 27 `AnalyzerInput.data(from:)` trap on Float32. No change to Apple's negotiated format.
@@ -87,3 +87,77 @@ The two engines ran in separate XCTest processes with overlapping wall time, eac
 Apple corrected replay: `/tmp/vp-speech-ab-apple-corrected.log`; Parakeet: `/tmp/vp-speech-ab-parakeet-final.log`. Both passed. Machine-readable results and final text are in `speech-engine-ab-results.json`. The single Apple early flag uses the older ASR-derived word alignment and is not human-verified. No claim that Parakeet is safer follows from one flag versus zero.
 
 **Decision:** leave Apple enabled. Parakeet gives roughly 306 ms faster median following on this recording, but poorer recognition and a slower p90. It does not meet “as accurate or better”. The opt-in switch makes the requested personal trial possible without changing any matcher safeguards. A release-build trial during real video encoding and a human-labelled British football sample are required before any default change. Consider a packaged Moonshine Small/Medium streaming trial next if retaining Parakeet's faster median is not worth its errors.
+
+
+## Follow-up: fastest matching engine (14 November 2026)
+
+Base `f1e7c0a`. The Mac now offers **Both (fastest wins)**, keeping Apple as the default. Both consumes the same captured PCM: Apple gets its negotiated format, Parakeet gets an independently converted mono 16 kHz Int16 copy. Each engine has its own candidate source and recognition tracker. Only a strictly newer confirmed script position is published. A delayed result cannot overwrite the other engine's revision or roll the published position back. Both intentionally follows forward; use the reading controls to reread. Seeks restart both live recognisers, and both histories honour the audio watermark during the transition. Pause, restart, engine change and failed preparation cancel both providers. A bounded input queue fails visibly if an engine cannot keep up instead of silently dropping audio.
+
+### Method
+
+Same canonical WAV, 288-word script, frozen 292-word ASR-derived reference, real-time 30 Hz file input, synchronous SessionStore publication, Debug build on M3 Max / macOS 27.3. No microphone, camera, playback, simulator boot, windows or encoding. Full runs are sequential. All numbers are word end to publication, not model chunk sizes. Negative differences are retained and the existing early-advance detector is unchanged. Reference WER measures disagreement with the older Apple-derived transcript, not human-labelled accuracy. It can favour Apple.
+
+Both is a position race, not transcript fusion. Its WER column reports the two independent transcripts; there is no honest single combined WER. CPU is this process's user+system CPU time divided by elapsed replay time (100% = one core). Apple service CPU and ANE utilisation are excluded. Peak RSS is process high-water memory including preparation. CPU+ANE is requested for local models; utilisation is not measured.
+
+`SpeechEngineABTests.testRecordedAB` supports `apple`, `parakeet`, `both`, `transcription`, `apple16`, `appleWarm`, `eou320`, `unified`, `unified320`, `nemotron560`, `nemotron1120`, `nemotron2240` and `both-` plus each local model name. Use the command above with `VP_SPEECH_AB_ENGINE` and an explicit model directory. `VP_SPEECH_AB_SECONDS=8` is a smoke test only, not a full accuracy result. JSON includes source-specific WER, candidates with actual delivery times, publication times, audio format, CPU time and peak RSS.
+
+### Apple tuning
+
+The production provider already checks/installs locale assets, sets context, calls `prepareToAnalyze`, uses `bestAvailableAudioFormat`, and forwards the very first volatile result. There is no final-result or stability wait to remove. The existing matcher immediately accepts a matching frontier tail, with additional ambiguity/false-advance guards. Unconditionally crediting any occurrence of the next word would reuse earlier words in cumulative revisions. Those safeguards are retained.
+
+The current countdown is **manual-scroll only**; Voice starts preparation immediately, so there is no Voice countdown to overlap. `appleWarm` tests starting the analyser three seconds before file input without synthesising speech or silence. `apple16` explicitly supplies 16 kHz Int16; ordinary Apple already negotiates this format on this machine. `transcription` uses `SpeechTranscriber` with `.timeIndexedProgressiveTranscription` instead of contextual DictationTranscriber. None changes the shipping Apple behaviour unless the replay demonstrates a latency win with no extra early flags.
+
+### Available model variants
+
+FluidAudio remains exactly **0.18.0**, released 28 October 2026. 0.18.1/0.18.2 (1 November) and 0.18.3 (7 November) are less than two weeks old as of this experiment and are ineligible. Its `NemotronChunkSize` offers only 560/1120/2240 ms: no 320 or 80 ms Nemotron Streaming 0.6B export is available in an eligible release. Do not confuse the model's 80 ms encoder frame with an exposed streaming chunk. EOU 320 ms is still **120M**, not a larger model. Unified is **0.6B** and really streams; cached [70,7,1] has 640 ms chunk+lookahead, and [70,2,2] has 320 ms. Both are measured.
+
+Models used for experiments are either read directly from the existing FluidAudio cache (`loadModels(from:)`, no download/recovery APIs), or downloaded into `/tmp/vp-dual-models` at immutable Hugging Face revisions with recorded sizes/SHA-256. The user's FluidAudio cache was never modified. No weights or audio are committed.
+
+Primary sources: [FluidAudio 0.18.0 release](https://github.com/FluidInference/FluidAudio/releases/tag/v0.18.0), [Nemotron documentation at 0.18.0](https://github.com/FluidInference/FluidAudio/blob/v0.18.0/Documentation/ASR/Nemotron.md), [Unified model and streaming tiers](https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml), [Apple preparation API](https://developer.apple.com/documentation/speech/speechanalyzer/preparetoanalyze(in:)).
+
+
+### Full replay results
+
+Milliseconds; CPU is % of one core. Every completed row reached 288/288 words. In paired WER cells, values are Apple / local recogniser respectively. These are *two transcripts*, not a merged transcript's WER. Model size is decimal MB, excluding Apple's OS-managed assets. Local models request CPU+ANE; actual ANE utilisation and external Apple service CPU are not measured.
+
+| Engine / mode | Median | p90 | Reference WER | Early | Words | Process CPU | Peak RSS MB | Model MB |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Apple Dictation (default) | 476 | 1513 | 5.82% | 1 | 288/288 | 6.2% | 62 | OS |
+| Parakeet EOU 160 | 174 | 2542 | 21.23% | 0 | 288/288 | 15.9% | 328 | 224.0 |
+| Both: Apple + EOU 160 | 171 | 645 | 5.82% / 21.23% | 1 | 288/288 | 21.0% | 332 | 224.0 |
+| Apple SpeechTranscriber | 688 | 1290 | 15.07% | 0 | 288/288 | 4.4% | 62 | OS |
+| Apple explicit 16 kHz | 477 | 1488 | 5.82% | 1 | 288/288 | 6.3% | 65 | OS |
+| Apple started 3 s early | 475 | 1485 | 5.82% | 1 | 288/288 | 7.7% | 65 | OS |
+| Parakeet EOU 320 | 540 | 2187 | 19.18% | 0 | 288/288 | 19.1% | 307 | 224.3 |
+| Apple + EOU 320 | 423 | 822 | 5.82% / 19.18% | 1 | 288/288 | 16.5% | 109 | 224.3 |
+| Unified 640 | 646 | 1976 | 18.84% | 0 | 288/288 | 18.4% | 107 | 608.5 |
+| Apple + Unified 640 | 425 | 878 | 5.82% / 18.84% | 1 | 288/288 | 19.2% | 111 | 608.5 |
+| Unified 320 | 444 | 809 | 18.15% | 0 | 288/288 | 38.8% | 715 | 608.3 |
+| Apple + Unified 320 | 397 | 753 | 5.82% / 18.15% | 1 | 288/288 | 41.6% | 717 | 608.3 |
+| Nemotron 560 | 427 | 2246 | 18.49% | 0 | 288/288 | 14.6% | 152 | 625.8 |
+| Apple + Nemotron 560 | 338 | 757 | 5.82% / 18.49% | 1 | 288/288 | 13.9% | 157 | 625.8 |
+| Nemotron 1120 | 908 | 4211 | 17.81% | 0 | 288/288 | 9.1% | 709 | 626.2 |
+| Apple + Nemotron 1120 | 440 | 955 | 5.82% / 17.81% | 1 | 288/288 | 11.1% | 153 | 626.2 |
+| Nemotron 2240 | 2098 | 8296 | 17.47% | 0 | 288/288 | 20.4% | 3120 | 626.9 |
+| Apple + Nemotron 2240 | 467 | 1093 | 5.82% / 17.47% | 1 | 288/288 | 23.0% | 3313 | 626.9 |
+
+**Decision:** propose **Both (Apple + EOU 160)** for the lead's default decision: 171 ms median and 645 ms p90 beat Apple's 476 / 1,513 ms with the same one flagged early advance. Leave Apple as the decoded and initial default. The result is from one short recording, with ASR-derived alignment and no camera encoding; it is not broad safety or real-studio certification. Both's forward-only behaviour is explicit in settings and CLI help.
+
+**Additional option:** Parakeet Unified 320 ms trades a slower 444 ms median than EOU 160 for a much better 809 ms p90 and lower 18.15% reference WER (versus 21.23%). This qualifies as a different speed/accuracy trade-off, not Pareto dominance. Its shipping paired mode is 397 / 753 ms; the benchmark-only adapter measured 398 / 757 ms. Both new choices remain opt-in. Nemotron 560 plus Apple gives 338 / 757 ms and lower process CPU, but the original EOU pair is faster overall on this recording; adding every measured option would clutter settings without establishing a better default. Unified is selected for its stronger standalone p90 and reference accuracy. Larger Nemotron chunks add too much delay. No eligible 80/320 ms Nemotron Streaming 0.6B model was found.
+
+**Run history and limits:** The first EOU 160 run overlapped compilation and measured 354 / 2,773 ms. The clean repeat measured 174 / 2,542 ms and is the table row. The first paired EOU run filled an 80-buffer queue and failed safely after ~37 seconds. The final queue is bounded at 1,024 buffers and throws on overrun; the complete repeat passed. This queue prevents short recognition stalls from losing audio, not an unlimited backlog. The first Nemotron 2240 load was stopped after four minutes waiting in Core ML/ANE model load. A second attempt loaded after 73 s but was stopped during diagnosis; the complete retry loaded after 16 s and supplies the table. Its >3 GB peak RSS includes model loading. No services were reset, no devices accessed, and no shared models changed. The Apple baseline test passed; its temporary shell wrapper emitted a parse error after completion while being edited, so that wrapper exit is not a test failure. Final JSON is the metric authority.
+
+Machine-readable full results: `speech-engine-dual-results.json`. Experiment model pins: `speech-engine-experiment-models.json`. Shipping Unified 320 pins: `speech-engine-unified-model-manifest.json`, mirrored by `UnifiedModel.files`, exact revision `d32e972dd4315f1dc3f6be28fb2aab0ab3e80358`. 13 required files total 608,328,567 bytes, CC BY 4.0 attribution/licence bundled. The EOU model/pin is unchanged. Models remain on-demand and outside Git.
+
+### Follow-up validation
+
+- PASS Mac `swift build` and `swift build --build-tests` using `/tmp/vp-dual-build`.
+- PASS generic iPad simulator build with `CODE_SIGNING_ALLOWED=NO`, `/tmp/vp-dual-ipad`; no simulator boot or app launch.
+- PASS 66 focused tests (1 opt-in replay skipped): settings/default/CLI routes, revision identity, duplicate confirmation, seek watermark including a late first source, pause/resume stale generation, matcher regressions and seven frozen offline replays.
+- PASS CLI generated MCP manifest contains `apple`, `parakeet`, `both`, `unified`, `both-unified`; Apple stays default.
+- PASS whitespace checks. No models, WAVs or screenshots in the diff.
+- NOT RUN visible UI, live microphone/camera, real iPad, encoding/thermal load, `test.sh`, `checks/ipad-link-e2e.sh`, or full suite. No push/merge/install.
+
+Shipping-adapter confirmation: Unified 320 measured 444 / 809 ms, 18.15% WER, zero early, 288/288; Apple + Unified measured 397 / 753 ms, one early, 288/288. These replace the benchmark-only adapter rows above. Original adapter numbers are retained here for comparison (440 / 826 and 398 / 757 ms). Final standalone Unified CPU 38.8%, paired 41.6%, peak RSS ~715/717 MB. Full per-candidate traces remain in `/tmp/vp-dual-results`, not Git.
+
+Final EOU paired shipping-adapter repeat: 171 / 645 ms, one early flag, 288/288; previous full run was 171 / 647 ms. Both independent transcripts retain 5.82% / 21.23% reference WER.

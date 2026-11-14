@@ -128,6 +128,7 @@ final class SessionStore: ObservableObject {
   }
 
   private var tracker = RecognitionTracker()
+  private var pairedTrackers: [String: RecognitionTracker] = [:]
   private var runTask: Task<Void, Never>?
   private var latestAudioEnd: TimeInterval = 0
   /// Monotonic seconds. Injectable so Manual's timeline is tested without sleeping.
@@ -426,6 +427,9 @@ final class SessionStore: ObservableObject {
       voiceEndTask?.cancel(); voiceEndTask = nil
       rebaseManual(to: Double(tokenIndex))
       pendingSpeechCandidate = nil
+      for source in pairedTrackers.keys {
+        pairedTrackers[source]?.reanchor(to: tokenIndex, minimumAudioStart: latestAudioEnd)
+      }
       seekRevision &+= 1
       lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { tokenIndex > 0 ? min($0, tokenIndex - 1) : nil }
       if isActivelyRunning, settings.mode == "Voice" {
@@ -441,6 +445,10 @@ final class SessionStore: ObservableObject {
     anchorNotice = nil
     refreshSpeechContext()
     rememberSoon()
+    if incrementSeekRevision, settings.speechEngine.hasPrefix("both"), audioCapture != nil {
+      stopTasks()
+      startAudioMode()
+    }
   }
   func nextPassage() {
     seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
@@ -631,6 +639,7 @@ final class SessionStore: ObservableObject {
     hasLiveRecognition = true
     let tokens = document.spokenTokens
     if speechGeneration != candidate.generation {
+      pairedTrackers.removeAll()
       speechGeneration = candidate.generation
       tracker = RecognitionTracker(generation: candidate.generation, tokenIndex: tokenIndex, matcher: languageMatcher())
     }
@@ -639,6 +648,18 @@ final class SessionStore: ObservableObject {
       isFinal: candidate.isFinal, timestamp: candidate.range.end.seconds,
       localeIdentifier: candidate.locale.identifier, audioStart: candidate.range.start.seconds,
       audioEnd: candidate.range.end.seconds)
+    if settings.speechEngine.hasPrefix("both") {
+      // Each engine follows its own revisions; only the furthest confirmed position is published.
+      // The slower engine cannot reinterpret old audio at the faster engine's new position.
+      var own = pairedTrackers[candidate.source] ?? tracker
+      let update = own.consume(event, script: tokens, allowsBackward: false)
+      pairedTrackers[candidate.source] = own
+      let old = lastConfirmedTokenIndex ?? (tokenIndex - 1)
+      if update.status == .advanced, update.tokenIndex > old {
+        advance(toConfirmed: update.tokenIndex, old: old)
+      }
+      return
+    }
     if let pending = pendingSpeechCandidate,
       pending.event.generation == event.generation,
       pending.event.localeIdentifier != event.localeIdentifier,
@@ -756,6 +777,9 @@ final class SessionStore: ObservableObject {
     runTask?.cancel()
     runTask = nil
     latestAudioEnd = 0
+    pairedTrackers.removeAll()
+    if settings.speechEngine.hasPrefix("both"), let speechGeneration { minimumSpeechGeneration = speechGeneration + 1 }
+    if settings.speechEngine.hasPrefix("both") { speechGeneration = nil }
     analyzerContinuation?.finish()
     analyzerContinuation = nil
     microphoneTestTask?.cancel()
@@ -842,8 +866,8 @@ final class SessionStore: ObservableObject {
       do {
         self.state = .uncertain("Preparing \(self.scriptLanguage.rawValue) speech recognition. Missing speech files will download before listening.")
         let selectedEngine = self.selectedSpeechEngine
-        let locales = selectedEngine == .parakeet ? [Locale(identifier: "en-GB")] : try await self.speechLocales()
-        if selectedEngine == .parakeet, self.scriptLanguage != .english {
+        let locales = selectedEngine != .dictation ? [Locale(identifier: "en-GB")] : try await self.speechLocales()
+        if selectedEngine != .dictation, self.scriptLanguage != .english {
           throw SpeechProvider.Error.analysisFailed("Parakeet supports English only. Choose Apple for this script.")
         }
         let format = try await self.speechProvider.prepare(
@@ -936,7 +960,7 @@ final class SessionStore: ObservableObject {
   var selectedSpeechEngine: SpeechProvider.Engine {
     // The iPad keeps using Apple locally; the Mac's Parakeet position is relayed unchanged.
     #if os(macOS)
-    settings.speechEngine == "parakeet" ? .parakeet : .dictation
+    settings.speechEngine == "both-unified" ? .bothUnified : settings.speechEngine == "unified" ? .unified : settings.speechEngine == "both" ? .both : settings.speechEngine == "parakeet" ? .parakeet : .dictation
     #else
     .dictation
     #endif
