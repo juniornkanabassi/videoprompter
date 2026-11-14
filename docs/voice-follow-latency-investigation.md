@@ -7,6 +7,7 @@ Base: `8ae0abc`. No production behaviour change is justified by these replays. T
 All playback was file-to-recogniser, without audio output, live capture, app launching or a Simulator. XCTest links TestOffscreen. Runtime app launches were not needed.
 
 - Mac tap request: 256 frames (5.33 ms at 48 kHz); iPad: 1024 (21.33 ms). These requests do not prove actual callback sizes. Replay used 4800-frame / 100 ms input chunks.
+- Read-only CoreAudio query of the built-in MacBook Pro microphone: 48 kHz, 512 buffer frames, 50 safety frames, 1439 stream-latency frames, zero device-latency frames. Those reported components total about 41.7 ms; this is nominal device configuration, not a live capture measurement.
 - 48-to-16 kHz conversion: 10 seconds of synthetic input retained 2.625 ms, with no accumulating backlog; 100 conversions took 125.64 ms total in a debug test.
 - Matcher: growing partial hypotheses of 50 / 100 / 200 / 400 words took roughly 2 / 2 / 3 / 5 ms. Partial results advanced immediately; no final-result gate or debounce.
 - Short continuous synthesised reading: current dictation delivered result ranges about 55 ms after their audio end, p90 97 ms. This is NOT per-word recognition latency: a result range can end after the last recognised word.
