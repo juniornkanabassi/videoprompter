@@ -284,10 +284,11 @@ extension AppearanceSnapshotTests {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let spec = try String(contentsOf: root.appendingPathComponent("DESIGN-SPEC.md"), encoding: .utf8)
     let section = try XCTUnwrap(spec.components(separatedBy: "### 2.2 Presenter").last?.components(separatedBy: "### 2.3").first)
-    let labels = ["Start reading", "Back to start", "Pause", "Set up the shot", "Camera", "Zebras", "False colour", "Guides", "Mic", "Adjust", "Clean"]
+    let labels = ["Start reading", "Back to start", "Pause", "Camera", "Zebras", "False colour", "Guides", "Mic", "Text", "Clean"]
     let presenter = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterController.swift"), encoding: .utf8)
       + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterView.swift"), encoding: .utf8)
-    let camera = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/CameraWindow.swift"), encoding: .utf8)
+    let camera = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterControls.swift"), encoding: .utf8)
+      + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/CameraWindow.swift"), encoding: .utf8)
       + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Camera/CameraModel.swift"), encoding: .utf8)
     for label in labels {
       XCTAssertTrue(section.contains(label), "Undocumented vocabulary: \(label)")

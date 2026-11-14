@@ -406,6 +406,7 @@ import AVFoundation
   func startReading() {
     if presentingID == nil, !cameraOnly, let script = selected { present(script) }
     guard presentingID != nil, micOn || settings.mode != "Voice" else { return }
+    revealScript()
     presenterSetup = false
     session.startReading()
   }

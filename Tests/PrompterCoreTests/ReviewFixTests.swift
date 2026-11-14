@@ -289,7 +289,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
       }
       host.layoutSubtreeIfNeeded()
       if taking {
-        XCTAssertFalse(LibraryAX.named("Set up the shot", in: host).isEmpty, "Setup remains reachable while reading")
+        XCTAssertFalse(LibraryAX.named("Camera", in: host).isEmpty, "Camera controls remain reachable while reading")
         XCTAssertFalse(LibraryAX.named("Review this change.", in: host).isEmpty, "The notice stays visible while reading")
 
       }

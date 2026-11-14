@@ -81,6 +81,7 @@ extension AppearanceSnapshotTests {
         let recorder = CameraRecorder(defaults: defaults)
         camera.recorder = recorder
         camera.displayMode = state == "camera" ? .videoOnly : .prompterWithVideo
+        camera.cleanLook = .pictureOnly; camera.keepCleanMicMeter = false
         camera.cleanView = state == "clean"; camera.guides.falseColour = state == "exposure"
         recorder.phase = state == "recording" ? .recording : .idle
         recorder.phase = .recording; recorder.errorMessage = state == "failed" ? "Camera disconnected." : nil

@@ -55,7 +55,7 @@ import XCTest
     XCTAssertEqual(on.marker, CameraAspect(width: 9, height: 16))
     state.look?.presenterSetup = false
     let reading = IPadRemoteView.replicaGuides(state, base: base)
-    XCTAssertFalse(reading.zebras || reading.falseColour)
+    XCTAssertTrue(reading.zebras && reading.falseColour, "Exposure aids remain visible while reading")
     XCTAssertTrue(reading.thirds && reading.axes)
     state.guides = .init(thirds: false, centre: true, marker: "Off")
     let centre = IPadRemoteView.replicaGuides(state, base: base)

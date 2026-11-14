@@ -36,11 +36,11 @@ enum WelcomeScript {
 
     The first time you use a new language, stay connected to the internet so the Mac can download it.
 
-    ## Set up the shot
+    ## Camera and reading
 
-    Choose **Set up the shot** to go back to the camera.
+    The same controls stay available while you read. **Start reading** becomes **Pause** in place.
 
-    The bar along the bottom has **Camera**, **Mic**, **Zebras**, **False colour**, **Guides**, **Adjust** and **Clean**.
+    The bar along the bottom has **Camera**, **Mic**, **Zebras**, **False colour**, **Guides**, **Text** and **Clean**.
 
     Choose **Camera** to pick your camera and how it is turned. Choose **Mic** to pick your microphone. If your microphone has two channels, you can use the left, the right or both.
 
@@ -54,11 +54,11 @@ enum WelcomeScript {
 
     ## Clean
 
-    **Clean** shows only the picture. Press **Escape** to leave it.
+    **Clean** lets you choose Picture only, Picture and script, or Script only. Choose Keep mic meter to keep your level visible. Press **Escape** to leave it.
 
     ## Your scripts
 
-    Choose **Script** in the bar to open the editor while the presenter stays open. Paste or write your own script, and the library saves it for you.
+    Choose **Script** to show or hide the words. Choose **Edit** to edit them while the presenter stays open. Paste or write your own script, and the library saves it for you.
 
     That is everything. Thank you again for using Video Prompter. [Smile.] Have fun.
     """

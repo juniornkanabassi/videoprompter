@@ -157,6 +157,7 @@ extension AppearanceSnapshotTests {
         for state in ["idle", "retake", "recording", "clean", "key", "camera"] {
           recorder.phase = state == "recording" ? .recording : .idle
           camera.displayMode = state == "camera" ? .videoOnly : .prompterWithVideo
+          camera.cleanLook = .pictureOnly; camera.keepCleanMicMeter = false
           camera.cleanView = state == "clean"
           camera.guides.zebras = state == "key"; camera.guides.falseColour = state == "key"
           store.session.seek(to: state == "retake" ? 12 : 0)

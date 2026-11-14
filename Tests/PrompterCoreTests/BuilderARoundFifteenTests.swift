@@ -34,7 +34,8 @@ import XCTest
   func testPresenterUsesTheAlphaVocabulary() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let source = try String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterView.swift"), encoding: .utf8)
-    for name in ["Start reading", "Back to start", "Set up the shot", "Camera", "Zebras", "False colour", "Guides", "Mic", "Adjust", "Clean"] {
+      + String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Presenter/PresenterControls.swift"), encoding: .utf8)
+    for name in ["Start reading", "Back to start", "Camera", "Zebras", "False colour", "Guides", "Mic", "Text", "Clean"] {
       XCTAssertTrue(source.contains("\"" + name + "\""), name)
     }
     for retired in ["hudTool(", "var zebraControls", "var toolsSurface", "struct PresenterMicLevel"] {

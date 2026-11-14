@@ -53,13 +53,13 @@ import XCTest
     XCTAssertTrue(LibraryAX.named("Hide key", in: nextHost).isEmpty)
     shell.reading = true
     try await Task.sleep(for: .milliseconds(100))
-    XCTAssertFalse(LibraryAX.named("Open script", in: nextHost).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Script options", in: nextHost).isEmpty)
     let readingKey = try XCTUnwrap(LibraryAX.named("Show key", in: nextHost).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
     XCTAssertTrue(LibraryAX.bool(readingKey, "accessibilityPerformPress"))
     XCTAssertTrue(defaults.bool(forKey: "presenterExposureKeyExpanded"))
     camera.cleanView = true
     try await Task.sleep(for: .milliseconds(100))
-    XCTAssertTrue(LibraryAX.named("Open script", in: nextHost).isEmpty)
+    XCTAssertTrue(LibraryAX.named("Script options", in: nextHost).isEmpty)
   }
 
   }
