@@ -722,7 +722,9 @@ final class TrackingTextView: NSTextView {
     manager.ensureLayout(for: container)
     let glyph = manager.glyphIndexForCharacter(at: range.location)
     let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-    return CGRect(x: textContainerOrigin.x - 24, y: line.minY + textContainerOrigin.y,
+    let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
+    // Extra line spacing belongs around the band, not above the rendered text.
+    return CGRect(x: textContainerOrigin.x - 24, y: used.midY - line.height / 2 + textContainerOrigin.y,
       width: container.size.width + 48, height: line.height)
   }
 

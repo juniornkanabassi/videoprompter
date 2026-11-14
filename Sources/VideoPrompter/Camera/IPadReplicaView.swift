@@ -17,6 +17,7 @@ struct IPadReplicaView: View {
 
   var body: some View {
     VStack(spacing: 0) {
+      if state.cleanScreen != true {
       HStack {
         Text("iPad presenter").bold()
         Text(state.running ? "Reading" : "Paused").foregroundStyle(.secondary)
@@ -25,6 +26,7 @@ struct IPadReplicaView: View {
         if state.look?.verticalMirror == true { Text("Flipped on iPad") }
         Text("Word \(state.word) of \(state.words)").monospacedDigit()
       }.font(.callout).padding(12)
+      }
       GeometryReader { geometry in
         let look = state.look
         let size = InputValidation.fontSize.repair(look?.fontSize ?? 44)
@@ -40,7 +42,7 @@ struct IPadReplicaView: View {
               lineSpacing: InputValidation.lineSpacing.repair(look?.lineSpacing ?? 0.16),
               paragraphSpacing: InputValidation.paragraphSpacing.repair(look?.paragraphSpacing ?? 0.34),
               horizontalMargin: ScriptTextView.sideInset(width: geometry.size.width, textWidth: InputValidation.textWidth.repair(look?.textWidth ?? 0.75)),
-              alignment: look?.alignment ?? "Left", showCues: look?.showCues ?? false,
+              alignment: look?.alignment ?? "Left", overVideo: state.pictureMode == .behindScript, showCues: look?.showCues ?? false,
               readingBandOpacity: look?.readingBandOpacity ?? 0.12, highlightActiveWord: true, onSeek: onSeek, onUserScroll: onSeek)
               .disabled(state.editing == true)
           } else {
@@ -49,8 +51,10 @@ struct IPadReplicaView: View {
           }
         }.clipped()
       }
+      if state.cleanScreen != true {
       Text(state.editing == true ? "Editing on iPad. Reading controls are paused." : "Click a word or scroll to move the iPad’s reading position")
         .font(.caption).foregroundStyle(.secondary).padding(8)
+      }
     }
     .background(state.pictureMode == .behindScript ? Color.clear : Color.black)
     .onChange(of: state.markdown) { _, markdown in
@@ -62,5 +66,50 @@ struct IPadReplicaView: View {
 private final class ReplicaScript: ObservableObject {
   @Published var document: PrompterDocument
   init(markdown: String) { document = PrompterDocument(markdown: markdown) }
+}
+#endif
+
+#if os(macOS)
+/// The wire state owns this preview's aids; never inherit the Mac monitor's saved framing.
+extension IPadRemoteView {
+  static func replicaGuides(_ state: PadRemote.State, base: CameraGuides = CameraGuides()) -> CameraGuides {
+    var guides = base
+    guides.thirds = state.guides?.thirds ?? false
+    guides.axes = state.guides?.centre ?? false
+    guides.bullseye = false
+    guides.marker = CameraAspect.presets.first { $0.label == state.guides?.marker }
+    guides.zebras = state.guides?.zebras ?? false
+    guides.falseColour = state.guides?.falseColour ?? false
+    if let value = state.guides?.rotation, let rotation = CameraRotation(rawValue: value) { guides.rotation = rotation }
+    // The iPad hides exposure aids while reading, but keeps composition guides.
+    if state.look?.presenterSetup == false && state.cameraOnly != true && state.pictureMode != .monitorOnly {
+      guides.zebras = false
+      guides.falseColour = false
+    }
+    return guides
+  }
+
+  static func microphoneName(_ state: PadRemote.State) -> String {
+    let sources = state.voiceSource == "iPad" ? state.localMicrophones : state.macStatus?.microphones
+    return sources?.first { $0.id == state.selectedMicrophone }?.name
+      ?? (state.voiceSource == "iPad" ? "iPad microphone" : "Mac microphone")
+  }
+}
+
+/// Adapts the link's lightweight level stream to the same meter the iPad presenter uses.
+struct IPadReplicaMeter: View {
+  @ObservedObject var meter: RemoteMicMeter
+  let name: String
+  var isListening: Bool
+  @State private var input = InputMeter()
+  var body: some View {
+    MicMeterView(meter: input, micName: name, isListening: isListening)
+      .background(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).fill(Surfaces.scrim))
+      .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in update() }
+      .onChange(of: meter.levelDB, initial: true) { _, _ in update() }
+  }
+  private func update() {
+    input.show(peakDBFS: Float(meter.levelDB), isClipping: meter.levelDB >= -0.1)
+  }
 }
 #endif

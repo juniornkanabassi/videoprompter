@@ -5,6 +5,53 @@ import XCTest
 @testable import VideoPrompter
 
 extension AppearanceSnapshotTests {
+  func testIPadReplicaParity() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("ReplicaParity")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let link = IPadCameraSender(defaults: defaults)
+    link.searchesForIPad = false; link.capturesCamera = false
+    defer { link.disconnect() }
+    let markdown = "Welcome to the show.\n\nThe midfield is finding space between the lines.\n\nWatch the runner on the far side.\n\nThere is still time to change the game."
+    let imageURL = try XCTUnwrap(Bundle.module.url(forResource: "presenter-clean", withExtension: "png", subdirectory: "Fixtures"))
+    let image = try XCTUnwrap(NSImage(contentsOf: imageURL)?.cgImage(forProposedRect: nil, context: nil, hints: nil))
+    // Warm AppKit's offscreen glyph cache before the evidence captures.
+    for (name, size, level, guides) in [
+      ("warmup", 32.0, -40.0, PadRemote.Guides()),
+      ("off-small-40", 32.0, -40.0, PadRemote.Guides()),
+      ("thirds-small-12", 32.0, -12.0, .init(thirds: true)),
+      ("centre-large-3", 56.0, -3.0, .init(centre: true)),
+      ("marker-large-clip", 56.0, 0.0, .init(marker: "9:16")),
+      ("focus", 32.0, -12.0, .init(thirds: true)),
+      ("clean", 32.0, -12.0, .init()),
+      ("picture-off", 32.0, -12.0, .init()),
+      ("mac-mic", 32.0, -12.0, .init())
+    ] {
+      link.iPadMicMeter.show(level)
+      let state = PadRemote.State(scripts: [], presenting: UUID(), running: false, mode: "Manual", speed: 120,
+        word: 8, words: 35, look: .init(fontSize: size, lineSpacing: 0.3, presenterSetup: true, readingBandOpacity: 0.3),
+        markdown: markdown, guides: guides)
+      var fixture = state
+      fixture.voiceSource = "iPad"; fixture.selectedMicrophone = "pad"
+      fixture.localMicrophones = [.init(id: "pad", name: "iPad microphone")]
+      fixture.pictureMode = .behindScript
+      fixture.scripts = [.init(id: fixture.presenting!, title: "Match day")]
+      if name == "focus" { fixture.look?.presenterSetup = false; fixture.look?.focusMode = true }
+      if name == "clean" { fixture.cleanScreen = true; fixture.look?.presenterSetup = false }
+      if name == "picture-off" { fixture.pictureMode = .off }
+      if name == "mac-mic" {
+        fixture.voiceSource = "Mac"; fixture.selectedMicrophone = "mac"
+        fixture.macStatus = .init(microphones: [.init(id: "mac", name: "USB microphone")])
+        link.micMeter.show(level)
+      }
+      try await snapshot(IPadRemoteView(link: link, store: store, stateOverride: fixture, startsLink: false, previewOverride: image),
+        name: "replica-parity-\(name)", size: .init(width: 1180, height: 820), scheme: .dark,
+        destination: URL(fileURLWithPath: output), settleDelay: .milliseconds(400))
+    }
+  }
+
   func testIPadReplicaMidRead() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

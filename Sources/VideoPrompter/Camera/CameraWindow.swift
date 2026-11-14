@@ -8,9 +8,10 @@ struct CameraPreview: NSViewRepresentable {
   var presenter = false
   /// While reading, the picture is a dimmed reference behind the words: no zebras or false colour on it.
   var hidesExposureAids = false
+  var guidesOverride: CameraGuides?
   func makeNSView(context: Context) -> CameraStageView { CameraStageView(frame: .zero) }
   func updateNSView(_ view: CameraStageView, context: Context) {
-    var guides = presenter ? model.previewGuides : model.monitorGuides
+    var guides = guidesOverride ?? (presenter ? model.previewGuides : model.monitorGuides)
     if hidesExposureAids { guides.zebras = false; guides.falseColour = false }
     view.apply(uid: model.selectedUID, guides: guides, mirrored: model.mirrored)
   }
