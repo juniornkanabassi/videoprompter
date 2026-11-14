@@ -530,7 +530,11 @@ struct PresenterSettingsPopover: View {
       Picker("Settings page", selection: $tab) {
         ForEach(SettingsTab.allCases, id: \.self) { Text($0.label).tag($0) }
       }.pickerStyle(.menu).fixedSize().padding(Space.sm).initialPopoverFocus()
-      SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
+      if tab == .reading {
+        ScrollView { PresenterTextSettings(store: store).padding(Space.lg) }
+      } else {
+        SettingsPage(store: store, tab: tab, cameraSection: initialCameraSection)
+      }
     }.uiZoom(store.uiZoom).frame(width: 560, height: 600).popoverEntryFocus()
       .onAppear { tab = initialTab }
   }

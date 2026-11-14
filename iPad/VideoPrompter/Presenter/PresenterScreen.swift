@@ -648,45 +648,9 @@ struct PresenterScreen: View {
     }
   }
 
-  private var lookPopover: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Picker("Font", selection: $store.settings.fontName) {
-        ForEach(ScriptRenderer.presenterFonts, id: \.self) { Text($0).tag($0) }
-      }
-      Picker("Reading mode", selection: $store.settings.mode) {
-        Text("Voice follow").tag("Voice"); Text("Automatic scroll").tag("Manual")
-      }
-      if !isVoice { Stepper("\(Int(settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10) }
-      HStack {
-        Text("Text size")
-        Spacer(minLength: 24)
-        stepper("Smaller text", "A−") { stepFont(-4) }
-        Text("\(Int(settings.fontSize)) pt").monospacedDigit().frame(minWidth: 64)
-        stepper("Larger text", "A+") { stepFont(4) }
-      }
-      HStack {
-        Text("Margins")
-        Spacer(minLength: 24)
-        stepper("Wider margins", "−") { stepWidth(-0.05) }
-        Text("\(Int((settings.textWidth * 100).rounded()))%").monospacedDigit().frame(minWidth: 64)
-        stepper("Narrower margins", "+") { stepWidth(0.05) }
-      }
-    }
-    .font(.system(size: 17))
-    .foregroundStyle(PresenterTheme.text)
-    .padding(16)
-    .frame(width: 380)
-    .background(PresenterTheme.card, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+  var lookPopover: some View {
+    PadPresenterTextSettings(store: store, session: session)
     .presentationCompactAdaptation(.popover)
-  }
-
-  private func stepper(_ title: String, _ symbol: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Text(symbol).font(.system(size: 17, weight: .semibold)).frame(width: 44, height: 44)
-        .background(PresenterTheme.card2, in: RoundedRectangle(cornerRadius: 8))
-    }
-    .buttonStyle(.plain)
-    .accessibilityLabel(title)
   }
 
   // MARK: Clean full screen
@@ -982,5 +946,26 @@ struct DevicePickerCards: View {
     Button(label) { store.setPictureMode(mode) }.font(.callout)
       .frame(maxWidth: .infinity, minHeight: 44)
       .background(store.pictureMode == mode ? Color.yellow.opacity(0.2) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+  }
+}
+
+/// A concrete view also lets headless snapshots exercise the real popover bindings.
+struct PadPresenterTextSettings: View {
+  @ObservedObject var store: PadStore
+  @ObservedObject var session: SessionStore
+  var body: some View {
+    ScrollView {
+      PresenterTextPanel(mode: $store.settings.mode, countdown: $session.startDelay,
+        fontName: $store.settings.fontName, fontSize: $store.settings.fontSize,
+        textWidth: $store.settings.textWidth, lineSpacing: $store.settings.lineSpacing,
+        paragraphSpacing: $store.settings.paragraphSpacing, guideFraction: $store.settings.guideFraction,
+        bandOpacity: $store.settings.readingBandOpacity, fonts: ScriptRenderer.presenterFonts,
+        readingExtras: AnyView(Group {
+          if store.settings.mode != "Voice" { Stepper("\(Int(store.settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10).frame(minHeight: 44) }
+        }))
+        .padding(Space.lg)
+    }
+    .frame(width: 440, height: 800)
+    .background(Surfaces.presenterPanel)
   }
 }
