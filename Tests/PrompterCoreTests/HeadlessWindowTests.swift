@@ -12,6 +12,20 @@ import XCTest
     return window
   }
 
+  func testLibraryIdentifierCannotBeConfusedWithPresenterTitle() {
+    let tracker = Headless(arguments: [])
+    let library = window()
+    let presenter = PresenterPanel(captureVisible: false)
+    presenter.title = "Video Prompter script"
+    tracker.registerLibraryWindow(library)
+    XCTAssertEqual(library.identifier?.rawValue, "VideoPrompter.library")
+    XCTAssertNotEqual(presenter.identifier, library.identifier)
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let actions = try! String(contentsOf: root.appendingPathComponent("Sources/VideoPrompter/Control/ControlActions.swift"), encoding: .utf8)
+    XCTAssertTrue(actions.contains("$0.identifier == NSUserInterfaceItemIdentifier(\"VideoPrompter.library\")"))
+    XCTAssertFalse(actions.contains("$0.title.contains(\"Video Prompter\")"))
+  }
+
   func testPrefersCurrentLibraryAndKeepsSurvivorWhenFirstCloses() {
     let tracker = Headless(arguments: ["test"])
     let first = window(), second = window(), unrelated = window()

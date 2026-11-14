@@ -49,6 +49,7 @@ import PrompterCore
   private var fingerprint = ""
   private var knownRevision = 0
   private var wantsRunning = false
+  private var requestedMacVoice = false
   private var micPaused = false
   private var resumeAfterMic = false
   private var iPadRunning = false
@@ -98,7 +99,7 @@ import PrompterCore
     if resume { play() }
   }
 
-  /// Pauses the iPad, then lets go. The voice source is left for the user to change.
+  /// Returns voice following to the iPad and pauses it before releasing the relay.
   func stop() { finish("Stopped", pausingIPad: true) }
 
   /// A microphone toggle suspends capture without ending the relay or losing its place.
@@ -137,7 +138,6 @@ import PrompterCore
     // edit; upgrade by sending the saved text in State and remapping with ScriptTransfer. Until then it
     // hands the voice back to the iPad's own microphone instead of waiting for words nobody sends.
     guard state.fingerprint == fingerprint else {
-      if state.voiceSource == "Mac" { link?.send(.voiceSource("iPad")) }
       return finish("The script was edited on the iPad, so the Mac's voice stopped. The iPad is using its own microphone", pausingIPad: true)
     }
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
@@ -201,6 +201,7 @@ import PrompterCore
     guard current() else { return }
     guard opened else { return finish("The iPad did not open the script", pausingIPad: false) }
     if presentedID == nil { remember(wanted, for: macID) }
+    requestedMacVoice = true
     link?.send(.voiceSource("Mac"))
     let switched = await wait({ [self] in iPadState?.voiceSource == "Mac" })
     guard current() else { return }
@@ -311,11 +312,13 @@ import PrompterCore
 
   // MARK: - Ending
 
-  /// Refused before anything started: only the status says why.
-  private func fail(_ message: String) { status = message }
+  /// A refused start also returns an unserved voice source to the iPad.
+  private func fail(_ message: String) { finish(message, pausingIPad: false) }
 
   private func finish(_ message: String, pausingIPad: Bool) {
-    guard phase != .idle else { return }
+    if iPadState != nil, requestedMacVoice || iPadState?.voiceSource == "Mac" { link?.send(.voiceSource("iPad")) }
+    requestedMacVoice = false
+    guard phase != .idle else { status = message; return }
     run += 1
     startTask?.cancel()
     startTask = nil
