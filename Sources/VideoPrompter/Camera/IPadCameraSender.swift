@@ -373,7 +373,8 @@ import VideoToolbox
           let shared = try PairingExchange.key(key, peer: publicKey, salt: current.secret)
           let installed = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
           guard installed.id == request.id, installed.code == "installed" else { throw PairingOffer.Failure.foreign }
-          guard self.requestConnection == nil else { throw PairingOffer.Failure.foreign }
+          // A newer scan replaces one still waiting; its own numbers must still be matched.
+          self.requestConnection?.cancel()
           self.requestConnection = connection
           self.pairingRequestName = request.name
           self.pairingRequestCode = PairingExchange.confirmationCode(shared)
@@ -424,6 +425,7 @@ import VideoToolbox
     // A selected USB connection must also yield to an explicit Wi-Fi device choice.
     disconnect()
     selectedWiFiID = device.id
+    wifiPicked = true
     usesWiFi = true
     controlsIPad = true
     if pairingCode(id: device.id, name: device.name) != nil { return }
@@ -506,6 +508,8 @@ import VideoToolbox
   private var browser: NWBrowser?
   private var wifiTargets: [NWEndpoint] = []
   private var usbDevices: [Int] = []
+  /// Set when Wi-Fi was chosen by hand in this session; until the cable is plugged in again, Wi-Fi is tried first.
+  private var wifiPicked = false
   /// The open connection; settable so tests can stand one in.
   var pipe: LinkPipe?
   private var connecting = false
@@ -702,9 +706,9 @@ import VideoToolbox
 
   private func usbChanged(_ devices: [Int]) {
     // A plugged or swapped iPad may be an updated one.
-    if devices != usbDevices { oldIPad = false }
+    if devices != usbDevices { oldIPad = false; if !devices.isEmpty { wifiPicked = false } }
     usbDevices = devices
-    if selectedWiFiID == nil, !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
+    if !wifiPicked, !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
     connectIfNeeded()
   }
 
@@ -765,17 +769,20 @@ import VideoToolbox
   private func connectIfNeeded() {
     guard linkOn, pipe == nil, !connecting, isOn || !oldIPad else { return }
     connecting = true
-    let usb = selectedWiFiID == nil ? usbDevices : []
+    let usb = usbDevices
+    let wifiFirst = wifiPicked
     let wifi = wifiTargets
     let run = generation
     Task {
       var opened: LinkPipe?
-      for device in usb {
-        if let socket = await USBMux.connect(device: device, port: CameraLink.usbPort) {
-          opened = SocketPipe(socket: socket, name: "USB-C")
-          break
+      // The cable needs no key, so it always works; it comes second only after a hand-picked Wi-Fi iPad.
+      func openUSB() async -> LinkPipe? {
+        for device in usb {
+          if let socket = await USBMux.connect(device: device, port: CameraLink.usbPort) { return SocketPipe(socket: socket, name: "USB-C") }
         }
+        return nil
       }
+      if !wifiFirst { opened = await openUSB() }
       if opened == nil {
         for endpoint in wifi {
           guard let serviceName = Self.serviceName(endpoint) else { continue }
@@ -801,6 +808,7 @@ import VideoToolbox
           if opened != nil { break }
         }
       }
+      if opened == nil, wifiFirst { opened = await openUSB() }
       connecting = false
       // Turned off, restarted, or Wi-Fi switched off while this was connecting: drop it.
       guard linkOn, run == generation, opened?.name != "Wi-Fi" || usesWiFi else {

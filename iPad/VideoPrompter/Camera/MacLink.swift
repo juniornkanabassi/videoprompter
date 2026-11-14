@@ -75,11 +75,14 @@ import VideoToolbox
   }
   func forgetTypedKey() { newPairingCode() }
   private func remember(_ id: String, name: String, code: String) throws {
+    try setCredential(id, Credential(name: name, code: code))
+    KnownMacs.note(name: name, kind: "Wi-Fi")
+  }
+  private func setCredential(_ id: String, _ credential: Credential?) throws {
     var next = credentials
-    next[id] = Credential(name: name, code: code)
+    next[id] = credential
     guard credentialStore.save(next, key: "pairedMacCredentials") else { throw PairingOffer.Failure.foreign }
     credentials = next
-    KnownMacs.note(name: name, kind: "Wi-Fi")
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
   func approvePairing(_ allow: Bool) {
@@ -145,6 +148,8 @@ import VideoToolbox
     guard let offer = scannedOffer else { return }
     scannedOffer = nil
     guard allow, !pairingAvailability.presenting else { scanStatus = "Pairing cancelled."; return }
+    let macID = offer.macID.uuidString, previous = credentials[macID]
+    var stage = 0 // 0 reaching the Mac, 1 waiting for its Numbers match, 2 key installed
     do {
       scanStatus = "Connecting to \(offer.name)…"
       allowsWiFi = true
@@ -155,16 +160,24 @@ import VideoToolbox
         publicKeyCommitment: PairingExchange.commitment(key.publicKey.rawRepresentation), offer: offer)
       try await PairingExchange.send(JSONEncoder().encode(request), on: connection)
       let publicKey = try await PairingExchange.receive(on: connection)
+      stage = 1
       let shared = try PairingExchange.key(key, peer: publicKey, salt: offer.secret)
       scanStatus = "Check \(PairingExchange.confirmationCode(shared)) matches on \(offer.name), then click Numbers match on the Mac."
       try await PairingExchange.send(key.publicKey.rawRepresentation, on: connection)
       // Install before acknowledging, so the Mac's first secure connection finds its key.
-      try remember(offer.macID.uuidString, name: offer.name, code: PairingExchange.credential(shared))
+      try remember(macID, name: offer.name, code: PairingExchange.credential(shared))
+      stage = 2
       try await PairingExchange.send(PairingExchange.seal(.init(id: deviceID, name: deviceName, code: "installed"), key: shared), on: connection)
       let reply = try PairingExchange.open(await PairingExchange.receive(on: connection), key: shared)
       guard reply.id == offer.macID.uuidString, reply.code == "accepted" else { throw PairingOffer.Failure.foreign }
       scanStatus = "Paired with \(offer.name). Waiting for the connection…"
-    } catch { scanStatus = "Can’t find that Mac on this Wi-Fi. Try scanning a new code." }
+    } catch {
+      // The Mac never accepted, so the key it still holds stays valid.
+      if stage == 2 { try? setCredential(macID, previous) }
+      scanStatus = stage == 0
+        ? "Can’t reach \(offer.name). Check both are on the same network, then scan again."
+        : "\(offer.name) didn’t confirm. Scan again, then click Numbers match on the Mac."
+    }
   }
 
   func disconnect() { receiver.disconnect() }

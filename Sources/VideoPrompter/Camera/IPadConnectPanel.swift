@@ -27,8 +27,6 @@ struct IPadConnectPanel: View {
                 Image(decorative: image, scale: 1).interpolation(.none).resizable()
                   .frame(width: 224, height: 224).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 16))
                   .accessibilityLabel("Pairing QR code")
-                Text("New code in \(Int(offer.expires.timeIntervalSince(context.date)) / 60):\(String(format: "%02d", Int(offer.expires.timeIntervalSince(context.date)) % 60))")
-                  .foregroundStyle(.secondary).monospacedDigit()
               } else {
                 Text("This code has expired")
                 Button("New code") { link.refreshPairingOffer() }
