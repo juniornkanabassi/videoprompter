@@ -342,13 +342,68 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
       return "Allow camera access in System Settings > Privacy & Security > Camera."
     }
     if Self.resolve(selectedUID, in: devices) == nil {
+      if returnedAfterRestart { return "Your camera is back. Restart Video Prompter to use it." }
       return selectedUID == nil ? (devices.isEmpty ? "Connect a camera, then choose it in the camera menu." : "Choose a camera to show its picture. Virtual cameras are never selected automatically.") : "The chosen camera is unavailable. Reconnect it or choose another camera."
     }
     return nil
   }
 
+  // MARK: A camera back after its driver restarted
+
+  nonisolated static let listCamerasArgument = "--list-camera-ids"
+  /// The chosen camera is back, but only a newly started Video Prompter can see it.
+  @Published private(set) var returnedAfterRestart = false
+  private var returnCheck: Task<Void, Never>?
+
+  /// When a camera driver restarts (Blackmagic Desktop Video's does), macOS never lists its inputs
+  /// again to an app that was already open, while a newly started process sees them at once.
+  /// So while the chosen camera is missing, a short-lived copy of this app is asked what it sees.
+  func watchForReturnedCamera() {
+    guard returnCheck == nil, !returnedAfterRestart, !CaptureAccess.isAgentOrTest,
+      let executable = Bundle.main.executableURL else { return }
+    returnCheck = Task { [weak self] in
+      var delay = 3.0
+      while !Task.isCancelled, let uid = self?.selectedUID, self?.devices.contains(where: { $0.uid == uid }) == false {
+        if await Self.freshProcessLists(uid, executable: executable) { self?.returnedAfterRestart = true; break }
+        try? await Task.sleep(for: .seconds(delay))
+        delay = min(60, delay * 1.5)
+      }
+      self?.returnCheck = nil
+    }
+  }
+
+  nonisolated private static func freshProcessLists(_ uid: String, executable: URL) async -> Bool {
+    await withCheckedContinuation { done in
+      let process = Process()
+      let output = Pipe()
+      process.executableURL = executable
+      process.arguments = [listCamerasArgument]
+      process.standardOutput = output
+      process.standardError = FileHandle.nullDevice
+      process.terminationHandler = { _ in
+        let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        done.resume(returning: text.split(separator: "\n").contains { $0 == uid })
+      }
+      do { try process.run() } catch { done.resume(returning: false); return }
+      DispatchQueue.global().asyncAfter(deadline: .now() + 10) { if process.isRunning { process.terminate() } }
+    }
+  }
+
+  /// Quits and opens this app again once it has gone, so the returned camera is listed.
+  static func relaunch() {
+    let restart = Process()
+    restart.executableURL = URL(fileURLWithPath: "/bin/sh")
+    restart.arguments = ["-c", "for i in $(seq 150); do kill -0 \"$1\" 2>/dev/null || break; sleep 0.2; done; /usr/bin/open \"$0\"",
+      Bundle.main.bundlePath, String(ProcessInfo.processInfo.processIdentifier)]
+    try? restart.run()
+    NSApp.terminate(nil)
+  }
+
   /// Inventory only: validating a setup must not select a camera or open capture.
-  func refreshDevices() { devices = Self.discovered().map { device in var d = device; d.nickname = nicknames[d.uid]; return d } }
+  func refreshDevices() {
+    devices = Self.discovered().map { device in var d = device; d.nickname = nicknames[d.uid]; return d }
+    if let selectedUID, !devices.contains(where: { $0.uid == selectedUID }) { watchForReturnedCamera() }
+  }
 
   func refresh() {
     let previousMessage = unavailableMessage

@@ -360,6 +360,7 @@ import Speech
       var value = cameraState
       value["cameras"] = camera.devices.map { device -> [String: Any] in ["id": device.uid, "name": device.name, "selected": device.uid == camera.selectedUID] }
       value["access"] = Self.access(AVCaptureDevice.authorizationStatus(for: .video))
+      value["backAfterDriverRestart"] = camera.returnedAfterRestart
       return .ok(value)
     case "camera_select":
       if let error = Self.cameraChangeError(recording: recorder.isRecording, busy: recorder.isBusy) { return error }

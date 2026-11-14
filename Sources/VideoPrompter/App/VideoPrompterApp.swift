@@ -25,6 +25,11 @@ enum ScriptShortcuts {
   @StateObject private var store = AppStore.shared
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   init() {
+    // A child copy that only reports the cameras a fresh process can see (see CameraModel.watchForReturnedCamera).
+    if CommandLine.arguments.contains(CameraModel.listCamerasArgument) {
+      print(CameraModel.discovered().map(\.uid).joined(separator: "\n"))
+      exit(0)
+    }
     // A launch by the command line or MCP (--headless) is a background service with no library window or Dock tile.
     // Restored windows (the Second monitor window, extra library windows) would bypass the hidden-window path.
     if Headless.shared.active { UserDefaults.standard.register(defaults: ["ApplePersistenceIgnoreState": true]) }

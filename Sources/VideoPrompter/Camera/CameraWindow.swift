@@ -544,6 +544,8 @@ struct CameraRecoveryView: View {
           }
         } else if model.authorization == .notDetermined {
           Button("Allow Camera Access") { model.start() }
+        } else if model.returnedAfterRestart {
+          Button("Restart Video Prompter") { CameraModel.relaunch() }
         } else { Button(prominent ? "Choose camera" : "Choose Camera", action: chooseCamera) }
       }
       .modifier(RecoveryButton(prominent: prominent)).initialPopoverFocus()
@@ -565,6 +567,7 @@ struct CameraRecoveryView: View {
   private var title: String {
     if model.authorization == .denied || model.authorization == .restricted { return "Camera access is off" }
     if model.authorization == .notDetermined { return "Allow your camera" }
+    if model.returnedAfterRestart { return "Your camera is back" }
     return model.selectedUID == nil ? "Connect a camera" : "Camera picture unavailable"
   }
   private var message: String {
@@ -572,6 +575,7 @@ struct CameraRecoveryView: View {
       return "Allow Video Prompter in System Settings > Privacy & Security > Camera."
     }
     if model.authorization == .notDetermined { return "Allow camera access to see your picture." }
+    if model.returnedAfterRestart { return "Its driver restarted, and macOS only shows it to Video Prompter after a quick restart." }
     let name = model.devices.first { $0.uid == model.selectedUID }?.displayName
     return name.map { "Check \($0) is connected and switched on, then choose your camera." }
       ?? "Connect and switch on your camera, then choose it here."
