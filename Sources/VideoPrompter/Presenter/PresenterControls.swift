@@ -439,9 +439,9 @@ struct PresenterLevel: View {
   let level: Double
   var body: some View {
     HStack(spacing: Space.sm) {
-      MeterZones.unlitTrack().frame(width: 40, height: 6).clipShape(Capsule())
+      MeterZones.unlitTrack().frame(width: 40, height: 6).clipShape(Capsule()) // grid: ok meter bar thickness
         .overlay(alignment: .leading) {
-          MeterZones.zoneTrack().frame(width: 40, height: 6).mask(alignment: .leading) {
+          MeterZones.zoneTrack().frame(width: 40, height: 6).mask(alignment: .leading) { // grid: ok meter bar thickness
             Rectangle().frame(width: 40 * MeterZones.position(Float(level)))
           }.clipShape(Capsule())
         }
