@@ -1,5 +1,6 @@
 @preconcurrency import AVFoundation
 import CoreGraphics
+import CoreImage
 
 extension Notification.Name {
   static let cameraExposureDidChange = Notification.Name("VideoPrompter.cameraExposureDidChange")
@@ -151,6 +152,63 @@ final class CameraExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
       }
     }
     return out
+  }
+
+  // The GPU samples the exact shared byte LUT at texel centres, without interpolating bands.
+  private let context = CIContext(options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull()])
+  private static let lookupKernel = CIKernel(source: """
+    kernel vec4 exposureTable(sampler source, sampler table) {
+      vec4 pixel = sample(source, samplerTransform(source, destCoord()));
+      float code = floor(clamp(dot(pixel.rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0) * 255.0 + 0.5);
+      return sample(table, samplerTransform(table, vec2(code + 0.5, 0.5)));
+    }
+    """)
+  private var gpuSettings: Settings?
+  private var gpuMask: CIImage?
+  private var gpuColour: CIImage?
+
+  /// Decode/capture luma is already the Mac's full-range signal. Preserve it exactly rather than
+  /// deriving brightness from colour-managed RGB. Other formats are normalised by Core Image.
+  func processDecoded(_ pixels: CVPixelBuffer, settings: Settings) -> Frame {
+    guard settings.isOn else { return Frame() }
+    guard CVPixelBufferGetPixelFormatType(pixels) == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange else {
+      return process(image: CIImage(cvPixelBuffer: pixels), settings: settings)
+    }
+    CVPixelBufferLockBaseAddress(pixels, .readOnly)
+    defer { CVPixelBufferUnlockBaseAddress(pixels, .readOnly) }
+    guard let base = CVPixelBufferGetBaseAddressOfPlane(pixels, 0) else { return Frame() }
+    let width = CVPixelBufferGetWidthOfPlane(pixels, 0)
+    let height = CVPixelBufferGetHeightOfPlane(pixels, 0)
+    let stride = CVPixelBufferGetBytesPerRowOfPlane(pixels, 0)
+    let data = Data(bytes: base, count: stride * height)
+    let image = CIImage(bitmapData: data, bytesPerRow: stride,
+      size: CGSize(width: width, height: height), format: .L8, colorSpace: nil)
+    return process(image: image, settings: settings)
+  }
+
+  func process(image: CIImage, settings: Settings) -> Frame {
+    guard settings.isOn, let kernel = Self.lookupKernel else { return Frame() }
+    if gpuSettings != settings {
+      func lut(_ values: [UInt32]) -> CIImage {
+        let data = values.withUnsafeBytes { Data($0) }
+        return CIImage(bitmapData: data, bytesPerRow: 1024, size: CGSize(width: 256, height: 1),
+          format: .RGBA8, colorSpace: nil)
+      }
+      let codes = Self.zebraCodes(level: settings.zebraLevel, range: settings.zebraRange)
+      gpuMask = lut((0...255).map { codes.contains(UInt8($0)) ? .max : 0 })
+      gpuColour = lut(settings.colourTable)
+      gpuSettings = settings
+    }
+    let scale = min(1, 960 / max(image.extent.width, image.extent.height))
+    let image = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+    func render(_ lut: CIImage?) -> CGImage? {
+      guard let lut, let result = kernel.apply(extent: image.extent, roiCallback: { index, rect in
+        index == 1 ? CGRect(x: 0, y: 0, width: 256, height: 1) : rect
+      }, arguments: [image, lut]) else { return nil }
+      return context.createCGImage(result, from: image.extent, format: .RGBA8, colorSpace: nil)
+    }
+    return Frame(zebraMask: settings.zebras ? render(gpuMask) : nil,
+      falseColour: settings.falseColour ? render(gpuColour) : nil)
   }
 
   private let output = AVCaptureVideoDataOutput()

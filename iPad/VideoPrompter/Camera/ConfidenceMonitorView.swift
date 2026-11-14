@@ -66,7 +66,7 @@ struct ConfidenceMonitorView: View {
             let size = fitSize(in: area.size, fill: fill)
             Group {
               if let referencePicture { Image(uiImage: referencePicture).resizable().scaledToFit() }
-              else { MonitorPicture(link: camera.link, fill: fill) }
+              else { LinkPreview(fill: fill, camera: camera, link: camera.link) }
             }
               .frame(width: size.width, height: size.height)
               .overlay {
@@ -153,37 +153,5 @@ private struct MonitorMeter: View {
   var body: some View {
     DBMeter(levelDB: meter.levelDB, axis: .vertical)
       .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
-  }
-}
-
-private struct MonitorPicture: UIViewRepresentable {
-  @ObservedObject var link: MacLink
-  var fill: Bool
-  func makeUIView(context: Context) -> PictureView { PictureView(layer: link.displayLayer) }
-  func updateUIView(_ view: PictureView, context: Context) {
-    view.display.videoGravity = fill ? .resizeAspectFill : .resizeAspect
-    view.setNeedsLayout()
-  }
-  final class PictureView: UIView {
-    let display: AVSampleBufferDisplayLayer
-    init(layer: AVSampleBufferDisplayLayer) {
-      display = layer
-      super.init(frame: .zero)
-      backgroundColor = .black
-      clipsToBounds = true
-      display.cornerRadius = AlphaStyle.cardCorner
-      display.masksToBounds = true
-      display.removeFromSuperlayer()
-      self.layer.addSublayer(display)
-    }
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
-    override func layoutSubviews() {
-      super.layoutSubviews()
-      CATransaction.begin()
-      CATransaction.setDisableActions(true)
-      display.transform = CATransform3DIdentity
-      display.frame = bounds
-      CATransaction.commit()
-    }
   }
 }
