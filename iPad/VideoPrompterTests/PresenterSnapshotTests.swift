@@ -194,6 +194,93 @@ import XCTest
     }
   }
 
+  func testPresenterDefaultsPreserveSavedOrientation() throws {
+    let suite = "orientation-defaults-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let fresh = PadStore(defaults: defaults)
+    XCTAssertTrue(fresh.mirror, "First launch is ready for teleprompter glass")
+    XCTAssertFalse(fresh.flip)
+    for mirror in [false, true] {
+      for flip in [false, true] {
+        var saved = PrompterSettings()
+        saved.horizontalMirror = mirror
+        saved.verticalMirror = flip
+        defaults.set(try JSONEncoder().encode(saved), forKey: "padSettings")
+        let restored = PadStore(defaults: defaults)
+        XCTAssertEqual(restored.mirror, mirror)
+        XCTAssertEqual(restored.flip, flip)
+      }
+    }
+  }
+
+  /// Exercise the actual native camera hosts, not only ExposureReferencePicture's still layer.
+  func testNativeCameraAndTextSharePresenterOrientation() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "native-orientation-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    let script = try store.folder.create(title: "Orientation fixture", markdown: Self.script)
+    func descendants(_ view: UIView) -> [UIView] { [view] + view.subviews.flatMap(descendants) }
+    func assertOrientation(_ view: UIView, in root: UIView, mirror: Bool, flip: Bool, label: String) {
+      let origin = view.convert(CGPoint.zero, to: root)
+      let x = view.convert(CGPoint(x: 10, y: 0), to: root)
+      let y = view.convert(CGPoint(x: 0, y: 10), to: root)
+      XCTAssertEqual(x.x - origin.x, mirror ? -10 : 10, accuracy: 0.01, label)
+      XCTAssertEqual(y.y - origin.y, flip ? -10 : 10, accuracy: 0.01, label)
+    }
+    for source in ["local", "mac"] {
+      for cameraOnly in [false, true] {
+        for mirror in [false, true] {
+          for flip in [false, true] {
+            for cameraMirror in [false, true] {
+              store.closePresenter()
+              if cameraOnly { store.presentCamera() } else { store.present(script) }
+              store.setPictureMode(.behindScript)
+              store.camera.link.pickerSnapshotConnection(source == "mac" ? "Fixture Mac" : nil)
+              store.perform(.macStatus(.init(cameraOn: source == "mac")))
+              store.camera.selectedID = source == "mac" ? PadCamera.macLinkID : "capture"
+              store.camera.isOn = true
+              store.camera.mirrored = cameraMirror
+              store.camera.guides.rotation = .quarter
+              store.camera.guides.thirds = true
+              store.setMirror(mirror)
+              store.setFlip(flip)
+              let label = "\(source)-\(cameraOnly ? "camera" : "script")-m\(mirror)-f\(flip)-selfie\(cameraMirror)"
+              _ = try await render(PresenterScreen(session: store.session, camera: store.camera, startsReading: true)
+                .environmentObject(store), size: CGSize(width: 1180, height: 820),
+                name: "ipad-native-\(label)", directory: directory, inspect: { root in
+                  let views = descendants(root)
+                  let previews = views.filter { $0 is CameraPreview.PreviewView || $0 is LinkPreview.LinkView }
+                  XCTAssertEqual(previews.count, 1, label)
+                  for preview in previews {
+                    assertOrientation(preview, in: root, mirror: mirror, flip: flip, label: label)
+                    let exposure = (preview as? CameraPreview.PreviewView)?.exposure
+                      ?? (preview as? LinkPreview.LinkView)?.exposure
+                    if let exposure {
+                      let origin = exposure.convert(CGPoint.zero, to: root.layer)
+                      let x = exposure.convert(CGPoint(x: 10, y: 0), to: root.layer)
+                      let y = exposure.convert(CGPoint(x: 0, y: 10), to: root.layer)
+                      // Rotate the sensor 90 degrees, apply selfie mirror, then turn the whole stage.
+                      XCTAssertEqual(x.x - origin.x, 0, accuracy: 0.01, label)
+                      XCTAssertEqual(x.y - origin.y, flip ? -10 : 10, accuracy: 0.01, label)
+                      XCTAssertEqual(y.x - origin.x, cameraMirror != mirror ? 10 : -10, accuracy: 0.01, label)
+                      XCTAssertEqual(y.y - origin.y, 0, accuracy: 0.01, label)
+                    } else { XCTFail("Missing exposure layer: \(label)") }
+                  }
+                  if !cameraOnly {
+                    let texts = views.compactMap { $0 as? UITextView }
+                    XCTAssertFalse(texts.isEmpty, label)
+                    for text in texts { assertOrientation(text, in: root, mirror: mirror, flip: flip, label: label) }
+                  }
+                }, beforeDraw: {})
+            }
+          }
+        }
+      }
+    }
+    store.camera.isOn = false
+  }
+
   func testRotationShots() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "rotation-shots-\(UUID().uuidString)")!)
