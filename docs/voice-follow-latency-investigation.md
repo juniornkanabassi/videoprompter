@@ -2,7 +2,28 @@
 
 Updated 14 November 2026. Base `8ae0abc`; resumed from `732dfdc`.
 
-## Confirmed software delay and fix
+## Review follow-up: braking at the lead limit
+
+The independent review correctly identified a gap in the earlier smoothness checks: p99 acceleration could pass while an individual frame stopped abruptly at `goal + lead`.
+
+The follow-up retains the acceleration cap and adds a stopping-distance velocity envelope (nominal 60 words/s² braking), followed by a distance-proportional approach near the lead limit. The latter includes the frame duration so a delayed frame still cannot consume all remaining distance. The hard position bound remains defensive; the tested bursts no longer reach it abruptly.
+
+The new regression measures **the largest per-frame deceleration**, not a percentile, and counts entries into the lead clamp for 1-, 3-, 8- and 12-word bursts at both 60 and 120 Hz. It also checks nonnegative motion and the existing lead bound. It failed on the previous code and passes on the follow-up.
+
+| Rate | Burst | 90% response before / after | Largest deceleration before / after | Clamp entries before / after |
+| --- | ---: | ---: | ---: | ---: |
+| 60 Hz | 3 words | 317 / 317 ms | 53 / 53 words/s² | 0 / 0 |
+| 60 Hz | 8 words | 433 / 450 ms | 113 / 84 words/s² | 1 / 0 |
+| 60 Hz | 12 words | 517 / 567 ms | 249 / 79 words/s² | 1 / 0 |
+| 120 Hz | 3 words | 308 / 308 ms | 53 / 53 words/s² | 0 / 0 |
+| 120 Hz | 8 words | 433 / 458 ms | 113 / 82 words/s² | 1 / 0 |
+| 120 Hz | 12 words | 517 / 575 ms | 456 / 77 words/s² | 1 / 0 |
+
+These before/after numbers compare the reviewed `7392e4b` implementation with this follow-up, not the original slow implementation. The one-word coasting allowance is unchanged. Evidence: `/private/tmp/vp-braking-before.log` and `/private/tmp/vp-braking-final-bursts.log`. The native coordinator replay after the follow-up reaches the 12-word destination in 567 / 575 ms at 60 / 120 Hz. Composing the existing iPad offset filter gives 650 / 667 ms. Three-word response is unchanged. The recorded replays still pass their original accuracy and motion checks: canonical/Short 173/Short 172 added-lag medians are 60 / 50 / 30 ms and p90s are 230 / 200 / 230 ms.
+
+Validation: the repeated complete `./test.sh` exited 0 on 14 November 2026. Its main suite passed 1,114 tests (92 conditional skips); light and dark snapshots each passed 61 tests (one skip each); the final 117-file grid check passed. Log: `/private/tmp/vp-braking-full-retry.log`. The first full run had two assertions fail in the unrelated large-message CLI/MCP test; that test subsequently passed both alone and in the complete repeat. No unrelated code or test was changed to obtain the pass. The generic iPad build passed at `/private/tmp/vp-braking-ipad.log`, with no Simulator boot. Implementation commit: `9eb6744`.
+
+## Original investigation: software delay and first fix
 
 Recognition was only part of the delay. The production presenter adds `VoiceGlide` after SessionStore publishes the recognised word. Its position catch-up (0.5 s) and velocity filter (0.15 s) compounded the lag, especially when speech resumed or results arrived in a burst. The iPad adds its existing 0.08 s offset filter afterwards.
 
@@ -10,7 +31,7 @@ The fix reduces those two shared time constants to 0.15 s and 0.08 s. A 90 words
 
 This fixes a measured post-recognition delay. It does not prove that every part of the user's hardware symptom is resolved.
 
-## Before and after
+## First-fix measurements (before the braking follow-up)
 
 The recorded tests feed identical recogniser candidates into the unchanged matcher, then advance the production glide at 120 Hz. These numbers are **additional scroll delay after word acceptance**, not recogniser latency.
 
@@ -63,7 +84,7 @@ Then run `./test.sh -XCTest PrompterCoreTests.SpeechSessionIntegrationTests/test
 
 `VIDEOPROMPTER_AUDIO_LATENCY=1` enables the optional production input/conversion/matching/meter diagnostics. Logs contain timing and token indices, not transcript text. Real-device capture was not performed under this task's restrictions.
 
-## Validation status
+## First-fix validation (before the braking follow-up)
 
 PASS: complete `./test.sh`, 1,113 main tests (92 conditional skips), both light/dark appearance passes (61 tests each, one skip each), and the final 117-file grid check. Zero failures. Log: `/private/tmp/vp-voice-full-final.log`. Focused response, jump/hold, no-false-word, render-contention and recorded smoothness checks passed. The generic iPad Simulator-target build also passed without booting a Simulator. No app was installed or released.
 
