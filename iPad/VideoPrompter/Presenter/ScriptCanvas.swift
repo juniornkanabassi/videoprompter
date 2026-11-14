@@ -278,9 +278,7 @@ struct ScriptCanvas: UIViewRepresentable {
           target = settle.from + (target - settle.from) * CGFloat(1 - (1 - t) * (1 - t))
         }
       }
-      if !snapNext, parent?.isActivelyRunning == true, !UIAccessibility.isReduceMotionEnabled {
-        target = PadPresenterLayout.smoothedOffset(current: textView.contentOffset.y, target: target, delta: frameDelta)
-      }
+      // The continuous source is already smoothed by VoiceGlide (or the Manual clock).
       if abs(textView.contentOffset.y - target) > 0.01 {
         painting = true
         textView.contentOffset = CGPoint(x: 0, y: target)

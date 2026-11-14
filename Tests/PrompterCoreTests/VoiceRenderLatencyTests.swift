@@ -20,6 +20,49 @@ private struct LiveVoiceText: View {
 
 @MainActor
 final class VoiceRenderLatencyTests: XCTestCase {
+  func testHighlightChangesInTheLayoutPassBeforeScrollCatchesUp() async throws {
+    let session = SessionStore(defaults: freshDefaults("HighlightLatency"))
+    var now = 0.0
+    session.clock = { now }
+    var settings = PrompterSettings(); settings.mode = "Voice"
+    session.present(record: .init(metadata: .init(title: "Highlight", fileName: "highlight.md"),
+      markdown: "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november"), settings: settings)
+    let host = NSHostingView(rootView: LiveVoiceText(session: session))
+    let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 700),
+      styleMask: [.borderless], backing: .buffered, defer: false)
+    window.isReleasedWhenClosed = false
+    window.contentView = host
+    window.orderFront(nil)
+    defer { session.pause(); window.contentView = nil; window.close() }
+    XCTAssertEqual(window.alphaValue, 0)
+    session.play(captureAudio: false)
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(100))
+    _ = session.voicePosition()
+    now = 4
+    _ = session.voicePosition()
+    session.acceptSpeechCandidate(.init(replacementID: "partial", generation: 1,
+      locale: .init(identifier: "en-GB"), text: "alpha bravo charlie delta echo foxtrot",
+      range: .init(start: .zero, duration: .init(seconds: 2, preferredTimescale: 48000)), isFinal: false))
+    XCTAssertEqual(session.tokenIndex, 6, "The partial must publish without a final or another word")
+    XCTAssertLessThan(session.voicePosition(), 1, "Highlight must not wait for the scroll")
+    // Force the representable's layout, without yielding to its deferred scroll block.
+    host.rootView = LiveVoiceText(session: session)
+    host.layoutSubtreeIfNeeded()
+    func text(in view: NSView) -> NSTextView? {
+      if let value = view as? NSTextView { return value }
+      return view.subviews.lazy.compactMap { text(in: $0) }.first
+    }
+    let view = try XCTUnwrap(text(in: host))
+    var highlighted = ""
+    view.textStorage?.enumerateAttribute(.foregroundColor, in: NSRange(location: 0, length: view.string.utf16.count)) { value, range, _ in
+      if let colour = value as? NSColor, colour == NSColor.systemYellow.withAlphaComponent(1) {
+        highlighted += (view.string as NSString).substring(with: range)
+      }
+    }
+    XCTAssertEqual(highlighted.trimmingCharacters(in: .whitespacesAndNewlines), "golf")
+  }
+
   func testPartialResultThroughHostedProductionText() async throws {
     try await replay(withExposure: false)
   }

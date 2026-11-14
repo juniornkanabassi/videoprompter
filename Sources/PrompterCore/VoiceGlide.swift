@@ -13,7 +13,7 @@ import Foundation
 public struct VoiceGlide: Sendable {
   /// Keep post-recognition catch-up short; stacking slow position and velocity filters made
   /// a partial burst take over 0.7 s to reach the guide. Replay tests also bound acceleration.
-  static let catchUpSeconds = 0.15
+  static let catchUpSeconds = 0.10
   static let velocitySeconds = 0.08
   static let brakingAcceleration = 60.0
   static let paceWindow = 3.0

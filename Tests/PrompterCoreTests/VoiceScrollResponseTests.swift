@@ -7,8 +7,8 @@ import PrompterCore
 final class VoiceScrollResponseTests: XCTestCase {
   func testPartialBurstReachesItsLinePromptlyAfterSilence() throws {
     for frameRate in [30, 60, 120] {
-      for count in [3, 12] {
-      let script = (0..<30).map { "Line \($0) has words to read." }.joined(separator: "\n\n")
+      for count in [1, 3, 12] {
+      let script = (0..<30).map { "\($0 == 0 ? "Zephyr" : "Line") \($0) has words to read." }.joined(separator: "\n\n")
       let session = SessionStore()
       var now = 0.0
       session.clock = { now }
@@ -42,13 +42,14 @@ final class VoiceScrollResponseTests: XCTestCase {
         XCTAssertLessThanOrEqual(position, Double(count) + VoiceGlide.lead)
         coordinator.applyManualPosition(position, in: scroll)
         let mac = scroll.contentView.bounds.origin.y
-        pad = PadPresenterLayout.smoothedOffset(current: pad, target: mac, delta: 1.0 / Double(frameRate))
+        // ScriptCanvas applies the already-smoothed fractional position directly.
+        pad = mac
         if macReached == nil, mac >= initial + (target - initial) * 0.9 { macReached = now - start }
         if padReached == nil, pad >= initial + (target - initial) * 0.9 { padReached = now - start }
       }
       print("VOICE PARTIAL TO SCROLL 90% for \(count) words at \(frameRate) Hz: Mac=\(macReached ?? -1)s iPad=\(padReached ?? -1)s")
-      XCTAssertLessThan(try XCTUnwrap(macReached), count == 3 ? 0.4 : 0.6)
-      XCTAssertLessThan(try XCTUnwrap(padReached), count == 3 ? 0.5 : 0.7)
+      XCTAssertLessThan(try XCTUnwrap(macReached), count == 1 ? 0.24 : count == 3 ? 0.31 : 0.6)
+      XCTAssertLessThan(try XCTUnwrap(padReached), count == 1 ? 0.24 : count == 3 ? 0.31 : 0.6)
       }
     }
   }
