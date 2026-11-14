@@ -9,26 +9,38 @@ import Speech
 
 /// The same 16 kHz PCM stream and candidate boundary as Apple. No microphone or matcher lives here.
 actor ParakeetSpeechStream {
-  private var manager: StreamingEouAsrManager?
+  private var manager: (any StreamingAsrManager)?
+  private var source = "parakeet"
   private var operation: UInt64 = 0
 
-  func prepare(directory: URL?, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
+  func prepare(directory: URL?, unified: Bool = false, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
     operation &+= 1
     let current = operation
+    source = unified ? "unified" : "parakeet"
+    let name = unified ? "Parakeet Unified" : "Parakeet"
     let root = directory ?? ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier,
-      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent("Models/parakeet-eou-160ms")
-    try await ParakeetModel.ensure(at: root, progress: onPreparation)
+      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(unified ? "Models/parakeet-unified-320ms" : "Models/parakeet-eou-160ms")
+    try await ParakeetModel.ensure(at: root, files: unified ? UnifiedModel.files : ParakeetModel.files,
+      baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL, name: name, progress: onPreparation)
     try Task.checkCancellation()
     guard current == operation else { throw CancellationError() }
-    await onPreparation("Preparing Parakeet on this Mac…")
+    await onPreparation("Preparing \(name) on this Mac…")
     let configuration = MLModelConfiguration()
     configuration.computeUnits = .cpuAndNeuralEngine
-    let loaded = StreamingEouAsrManager(configuration: configuration, chunkSize: .ms160)
-    try await loaded.loadModels(from: root)
+    let loaded: any StreamingAsrManager
+    if unified {
+      let model = StreamingUnifiedAsrManager(configuration: configuration, config: .init(chunkFrames: 2, rightFrames: 2))
+      try await model.loadModels(from: root)
+      loaded = model
+    } else {
+      let model = StreamingEouAsrManager(configuration: configuration, chunkSize: .ms160)
+      try await model.loadModels(from: root)
+      loaded = model
+    }
     try Task.checkCancellation()
     guard current == operation else { throw CancellationError() }
     manager = loaded
-    await onPreparation("Parakeet ready · on-device · English")
+    await onPreparation("\(name) ready · on-device · English")
   }
 
   func start<S: AsyncSequence>(input: S, generation: UInt64,
@@ -41,12 +53,13 @@ actor ParakeetSpeechStream {
     for try await input in input {
       try Task.checkCancellation()
       guard current == operation else { throw CancellationError() }
-      _ = try await manager.process(audioBuffer: input.buffer)
+      try await manager.appendAudio(input.buffer)
+      try await manager.processBufferedAudio()
       end = CMTimeAdd(input.bufferStartTime ?? end,
         CMTime(seconds: Double(input.buffer.frameLength) / input.buffer.format.sampleRate, preferredTimescale: 16000))
       guard current == operation, !Task.isCancelled else { throw CancellationError() }
       let text = await manager.getPartialTranscript()
-      if let candidate = Self.candidate(text: text, previous: previous, generation: generation, end: end) {
+      if let candidate = Self.candidate(text: text, previous: previous, generation: generation, end: end, source: source) {
         previous = text
         await onCandidate(candidate)
       }
@@ -55,19 +68,19 @@ actor ParakeetSpeechStream {
     guard current == operation else { throw CancellationError() }
     let text = try await manager.finish()
     guard current == operation, !Task.isCancelled else { throw CancellationError() }
-    if let candidate = Self.candidate(text: text, previous: previous, generation: generation, end: end) {
+    if let candidate = Self.candidate(text: text, previous: previous, generation: generation, end: end, source: source) {
       await onCandidate(candidate)
     }
   }
 
-  static func candidate(text: String, previous: String, generation: UInt64, end: CMTime) -> SpeechCandidate? {
+  static func candidate(text: String, previous: String, generation: UInt64, end: CMTime, source: String = "parakeet") -> SpeechCandidate? {
     guard !text.isEmpty, text != previous else { return nil }
     // shortcut: one cumulative revision for a reading session; segment it if long-form memory grows.
     // The existing seek baseline discards speech heard before a reanchor.
     // Range is submitted audio, not fabricated word alignment; A/B timing uses an external word track.
-    return .init(replacementID: "\(generation)-parakeet", generation: generation,
+    return .init(replacementID: "\(generation)-\(source)", generation: generation,
       locale: Locale(identifier: "en-GB"), text: text,
-      range: CMTimeRange(start: .zero, end: end), isFinal: false)
+      range: CMTimeRange(start: .zero, end: end), isFinal: false, source: source)
   }
 
   func stop() { operation &+= 1; manager = nil }
@@ -108,17 +121,18 @@ enum ParakeetModel {
     return hash.finalize().map { String(format: "%02x", $0) }.joined() == file.sha256
   }
 
-  static func ensure(at root: URL, progress: @escaping @MainActor @Sendable (String) -> Void) async throws {
+  static func ensure(at root: URL, files: [File] = files, baseURL: String = baseURL, name: String = "Parakeet", progress: @escaping @MainActor @Sendable (String) -> Void) async throws {
+    let size = files.reduce(0) { $0 + $1.size }
     var completed = 0
     for file in files {
       try Task.checkCancellation()
       let destination = root.appendingPathComponent(file.path)
       if try !valid(destination, file: file) {
-        await progress("Downloading Parakeet: \(completed * 100 / size)% · \(file.path.components(separatedBy: "/").first!)")
+        await progress("Downloading \(name): \(completed * 100 / size)% · \(file.path.components(separatedBy: "/").first!)")
         let (temporary, response) = try await URLSession.shared.download(from: URL(string: baseURL + file.path)!)
         defer { try? FileManager.default.removeItem(at: temporary) }
         guard (response as? HTTPURLResponse)?.statusCode == 200, try valid(temporary, file: file) else {
-          throw SpeechProvider.Error.analysisFailed("Parakeet download failed verification. Try again while online.")
+          throw SpeechProvider.Error.analysisFailed("\(name) download failed verification. Try again while online.")
         }
         try Task.checkCancellation()
         try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)

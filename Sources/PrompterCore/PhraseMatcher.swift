@@ -369,12 +369,12 @@ public struct RecognitionTracker: Sendable {
     postSeekBaselined.removeAll()
     seekBaselines = revisions.mapValues(\.words)
   }
-  public mutating func consume(_ event: RecognitionEvent, script: [DocumentToken])
+  public mutating func consume(_ event: RecognitionEvent, script: [DocumentToken], allowsBackward: Bool = true)
     -> RecognitionUpdate
   {
-    consumeCandidates([event], script: script)
+    consumeCandidates([event], script: script, allowsBackward: allowsBackward)
   }
-  public mutating func consumeCandidates(_ events: [RecognitionEvent], script: [DocumentToken])
+  public mutating func consumeCandidates(_ events: [RecognitionEvent], script: [DocumentToken], allowsBackward: Bool = true)
     -> RecognitionUpdate
   {
     guard !events.isEmpty else { return .init(status: .held, tokenIndex: tokenIndex) }
@@ -419,7 +419,7 @@ public struct RecognitionTracker: Sendable {
       revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)
       sawFresh = true
       if let match = matcher.match(recognised: wordsToMatch, script: script, currentIndex: tokenIndex),
-        !(match.direction == .backward && old?.advanced == true && !appended)
+        !(match.direction == .backward && (!allowsBackward || old?.advanced == true && !appended))
           && !(match.direction == .forward && old?.advanced == true
             && appendedWords?.isEmpty == false
             && appendedWords?.allSatisfy { matcher.common.contains($0) } == true

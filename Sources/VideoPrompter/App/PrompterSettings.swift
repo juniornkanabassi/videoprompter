@@ -78,7 +78,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     paragraphSpacing = InputValidation.paragraphSpacing.repair(paragraphSpacing)
     textWidth = Self.clampedTextWidth(textWidth)
     mode = Self.normalisedMode(mode)
-    if !["apple", "parakeet"].contains(speechEngine) { speechEngine = "apple" }
+    if !["apple", "parakeet", "both", "unified", "both-unified"].contains(speechEngine) { speechEngine = "apple" }
     let rawLanguage = speechLanguage
     speechLanguage = ScriptLanguage.setting(rawLanguage) ?? "Automatic"
     if speechLanguage != "Automatic", rawLanguage != speechLanguage,
