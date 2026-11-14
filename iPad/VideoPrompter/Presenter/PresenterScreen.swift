@@ -168,7 +168,7 @@ struct PresenterScreen: View {
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
     if let referencePicture, store.pictureMode == .behindScript, !focusActive, !store.cameraOnly {
-      ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides).scaleEffect(x: store.mirror ? -1 : 1)
+      ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
       Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.videoDimming).ignoresSafeArea()
     } else if store.pictureMode == .behindScript, camera.isOn, !focusActive, !store.cameraOnly {
       Group {
@@ -178,8 +178,6 @@ struct PresenterScreen: View {
           CameraPreview(camera: camera)
         }
       }
-      // Mirror turns the text for the glass but not the picture: through the glass the presenter sees themself as in a mirror. Flip still turns both, so the picture is never upside down.
-      .scaleEffect(x: store.mirror ? -1 : 1)
       .ignoresSafeArea()
       Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.videoDimming).ignoresSafeArea()
     } else {
@@ -271,8 +269,7 @@ struct PresenterScreen: View {
       } else if camera.isOn {
         CameraPreview(camera: camera)
       }
-      }.scaleEffect(x: store.mirror ? -1 : 1) // As behind the script: a mirror view through the glass.
-      .clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)).padding(16)
+      }.clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner)).padding(16)
       if recording != .standby {
         RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(recordingColour(recording), lineWidth: recording == .recording ? 8 : 5).padding(16)
       }
