@@ -916,6 +916,12 @@ import VideoToolbox
       oldIPad = true
       pipe.send(CameraLink.Message.goodbye.encoded())
       pipe.close()
+      // A sleeping or still-launching iPad is silent too, so ask again later rather than giving up for good.
+      let run = generation
+      try? await Task.sleep(for: .seconds(10))
+      guard run == generation, oldIPad, self.pipe == nil else { return }
+      oldIPad = false
+      connectIfNeeded()
     }
   }
 
