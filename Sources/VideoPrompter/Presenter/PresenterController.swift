@@ -394,7 +394,7 @@ import SwiftUI
     }
     return value
   }
-  private func recoverVisibleFrame(_ panel: NSPanel) {
+  private func recoverVisibleFrame(_ panel: PresenterPanel) {
     guard !isFullScreen, !Self.hasReachableTitleBar(panel.frame, visibleFrames: NSScreen.screens.map(\.visibleFrame)),
       let target = NSScreen.main ?? NSScreen.screens.first
     else { return }
@@ -493,11 +493,8 @@ enum PresenterFrameMemory {
   }
 }
 
-/// The presenter window. At rest it is `.fullScreenAuxiliary`, which is what lets it float over
-/// another app's full-screen Space (OBS, verified on 7 September). It turns `.fullScreenPrimary`
-/// only for a full-screen Space of its own, and every way in comes through `toggleFullScreen`:
-/// Prompter > Presenter Full Screen, View > Enter Full Screen (Ctrl-Cmd-F) and the green button.
-class PresenterPanel: NSPanel {
+/// A normal window that retains the presenter’s saved display and frame.
+class PresenterPanel: NSWindow {
   override func setFrame(_ frameRect: NSRect, display flag: Bool) {
     var frame = frameRect
     if let screen = NSScreen.screens.max(by: { $0.visibleFrame.intersection(frame).area < $1.visibleFrame.intersection(frame).area }) {
@@ -542,11 +539,10 @@ class PresenterPanel: NSPanel {
   convenience init(captureVisible: Bool) {
     self.init(
       contentRect: NSRect(x: 100, y: 100, width: 760, height: 520),
-      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel],
+      styleMask: [.titled, .closable, .resizable, .miniaturizable, .fullSizeContentView],
       backing: .buffered, defer: false)
     sharingType = captureVisible ? .readOnly : .none
     acceptsMouseMovedEvents = true
-    hidesOnDeactivate = false
     isMovableByWindowBackground = true
     isReleasedWhenClosed = false
     isOpaque = false
@@ -556,38 +552,33 @@ class PresenterPanel: NSPanel {
     minSize = PresenterFrameMemory.minimumSize(in: (screen ?? NSScreen.main)?.visibleFrame ?? NSRect(x: 0, y: 0, width: 720, height: 520))
     settle()
   }
-  static func collectionBehavior(fullScreen: Bool) -> NSWindow.CollectionBehavior {
-    [.canJoinAllSpaces, .canJoinAllApplications, fullScreen ? .fullScreenPrimary : .fullScreenAuxiliary]
-  }
   /// Internal so a test can stand in for a window in its own full-screen Space.
   var isInFullScreen: Bool { styleMask.contains(.fullScreen) }
 
   override func toggleFullScreen(_ sender: Any?) {
-    // Primary for the transition either way; `settle` puts Auxiliary back once it is over.
-    collectionBehavior = Self.collectionBehavior(fullScreen: true)
+    // Keep native full-screen behaviour through both transition directions.
+    collectionBehavior = [.fullScreenPrimary]
     redirectZoomButton()
     performFullScreenTransition(sender)
   }
   /// Internal so a test can stand in for AppKit's transition.
   func performFullScreenTransition(_ sender: Any?) { super.toggleFullScreen(sender) }
 
-  /// Level and behaviour for the state the window is really in: floating and Auxiliary outside
-  /// full screen; normal and Primary inside it, which is also where a failed exit leaves it.
+  /// Keep the presenter at the standard window level after a full-screen transition.
   func settle() {
-    let fullScreen = isInFullScreen
-    collectionBehavior = Self.collectionBehavior(fullScreen: fullScreen)
-    level = fullScreen ? .normal : .floating
+    collectionBehavior = [.fullScreenPrimary]
+    level = .normal
     redirectZoomButton()
   }
 
-  /// An Auxiliary window's green button only zooms; send it to full screen as a Primary one does.
+  /// Keep the standard full-screen action after restoring the presenter.
   private func redirectZoomButton() {
     guard let zoom = standardWindowButton(.zoomButton) else { return }
     zoom.target = self
     zoom.action = #selector(toggleFullScreen(_:))
   }
 
-  /// View > Enter Full Screen is disabled for an Auxiliary window unless the panel says otherwise.
+  /// Keep the View menu title in sync with the actual full-screen state.
   override func validateMenuItem(_ item: NSMenuItem) -> Bool {
     guard item.action == #selector(toggleFullScreen(_:)) else { return super.validateMenuItem(item) }
     item.title = isInFullScreen ? "Exit Full Screen" : "Enter Full Screen"

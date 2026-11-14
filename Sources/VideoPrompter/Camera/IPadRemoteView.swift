@@ -370,10 +370,10 @@ struct IPadButton: View {
   var body: some View {
     Button { openWindow(id: "ipad-remote") } label: {
       HStack(spacing: Space.sm) {
-        Label("iPad", systemImage: "ipad")
+        Label("iPad Control", systemImage: "ipad")
         if link.iPadState != nil { Circle().fill(.green).frame(width: Space.sm, height: Space.sm) }
       }
-    }.help("Open iPad (⌥⌘I)").accessibilityValue(link.iPadState == nil ? "Not connected" : "Connected")
+    }.help("Open iPad Control (⌥⌘I)").accessibilityValue(link.iPadState == nil ? "Not connected" : "Connected")
   }
 }
 #endif
@@ -384,7 +384,9 @@ struct IPadWindowConfigurator: NSViewRepresentable {
   static func configure(_ window: NSWindow) {
     window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
     window.collectionBehavior.insert(.fullScreenPrimary)
-    window.styleMask.insert(.resizable)
+    window.styleMask.remove(.nonactivatingPanel)
+    window.styleMask.formUnion([.titled, .closable, .miniaturizable, .resizable])
+    window.level = .normal
     if let button = window.standardWindowButton(.zoomButton) {
       button.target = window
       button.action = #selector(NSWindow.toggleFullScreen(_:))

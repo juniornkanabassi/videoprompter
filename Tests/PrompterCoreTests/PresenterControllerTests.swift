@@ -1139,26 +1139,26 @@ final class PresenterControllerTests: XCTestCase {
     return (panel, start, fitted)
   }
 
-  /// At rest the panel is Auxiliary, so it floats over another app's full-screen Space (OBS). It
-  /// is Primary only while a full screen of its own lasts, however that was asked for, and a close
-  /// from full screen leaves the Space before the window goes.
-  func testFullScreenIsPrimaryOnlyWhileItLastsAndClosingFromItLeavesTheSpaceFirst() throws {
+  /// A normal primary window leaves its full-screen Space before closing.
+  func testFullScreenRemainsPrimaryAndClosingFromItLeavesTheSpaceFirst() throws {
     let controller = PresenterController(camera: videoModel().0)
     let panel = FakePanel(captureVisible: false)
     panel.delegate = controller
     controller.panel = panel
     func note(_ name: Notification.Name) -> Notification { Notification(name: name, object: panel) }
     func assertResting(_ message: String, line: UInt = #line) {
-      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
-      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
-      XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
-      XCTAssertEqual(panel.level, .floating, message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
+      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
+      XCTAssertEqual(panel.level, .normal, message, line: line)
     }
     func assertPrimary(_ message: String, line: UInt = #line) {
       XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
       XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
     }
     XCTAssertTrue(panel.styleMask.contains(.resizable))
+    XCTAssertFalse(panel.styleMask.contains(.nonactivatingPanel))
+    XCTAssertFalse(panel.isKind(of: NSPanel.self))
     assertResting("at rest")
 
     // Prompter > Presenter Full Screen.
@@ -1182,7 +1182,7 @@ final class PresenterControllerTests: XCTestCase {
     XCTAssertFalse(controller.closesAfterFullScreen)
     assertResting("after the exit")
 
-    // The green button goes to full screen too, and a failed entry puts Auxiliary back.
+    // The green button goes to full screen too, and a failed entry keeps the normal window.
     panel.shown = true
     panel.orderedOut = false
     let zoom = try XCTUnwrap(panel.standardWindowButton(.zoomButton))

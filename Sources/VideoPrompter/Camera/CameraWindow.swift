@@ -280,7 +280,7 @@ struct CameraGuideSections: View {
 }
 
 /// Always-on-top belongs to the window, not to the preview inside it.
-private struct CameraWindowLevel: NSViewRepresentable {
+struct CameraWindowLevel: NSViewRepresentable {
   let alwaysOnTop: Bool
   func makeCoordinator() -> Coordinator { Coordinator() }
   func makeNSView(context: Context) -> NSView {
@@ -298,7 +298,8 @@ private struct CameraWindowLevel: NSViewRepresentable {
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     func observe(_ window: NSWindow?) {
       guard let window else { return }
-      window.level = alwaysOnTop ? .floating : .normal
+      IPadWindowConfigurator.configure(window)
+      window.level = alwaysOnTop && !window.styleMask.contains(.fullScreen) ? .floating : .normal
       guard self.window !== window else { return }
       self.window = window
       observers.forEach(NotificationCenter.default.removeObserver)
@@ -307,6 +308,12 @@ private struct CameraWindowLevel: NSViewRepresentable {
           MainActor.assumeIsolated { PresenterController.shared.preserveRecordingStatus() }
         }
       }
+      observers.append(NotificationCenter.default.addObserver(forName: NSWindow.willEnterFullScreenNotification, object: window, queue: .main) { _ in
+        MainActor.assumeIsolated { window.level = .normal }
+      })
+      observers.append(NotificationCenter.default.addObserver(forName: NSWindow.didExitFullScreenNotification, object: window, queue: .main) { [weak self] _ in
+        MainActor.assumeIsolated { self?.observe(window) }
+      })
     }
     deinit { observers.forEach(NotificationCenter.default.removeObserver) }
   }
