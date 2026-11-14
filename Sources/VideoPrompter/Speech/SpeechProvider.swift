@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Speech
+import PrompterCore
 
 public struct SpeechCandidate: Sendable, Hashable {
   public let replacementID: String
@@ -37,14 +38,22 @@ public actor SpeechProvider {
   private var operation: UInt64 = 0
   public init() {}
   public static func contextualPhrases(from script: String) -> [String] {
-    let words = script.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty }
+    let words = PrompterDocument(markdown: script).spokenTokens.prefix(48).map(\.text)
     var phrases: [String] = []
-    for (first, second) in zip(words, words.dropFirst()) where first.first?.isUppercase == true || second.first?.isUppercase == true {
-      let phrase = "\(first) \(second)"
+    for phrase in words + zip(words, words.dropFirst()).map({ "\($0) \($1)" }) {
       if !phrases.contains(phrase) { phrases.append(phrase) }
-      if phrases.count == 100 { break }
     }
     return phrases
+  }
+  public static func upcomingContext(_ tokens: [DocumentToken], at index: Int) -> [String] {
+    contextualPhrases(from: tokens.dropFirst(max(0, index)).prefix(48).map(\.text).joined(separator: " "))
+  }
+
+  public func updateContext(_ strings: [String]) async throws {
+    guard engine == .dictation, let analyzer else { return }
+    let context = AnalysisContext()
+    context.contextualStrings[.general] = strings
+    try await analyzer.setContext(context)
   }
   public func prepare(
     locales requested: [Locale] = [.init(identifier: "en-GB"), .init(identifier: "fr-FR")],

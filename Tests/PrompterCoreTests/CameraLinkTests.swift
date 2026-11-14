@@ -529,7 +529,7 @@ final class CameraLinkTests: XCTestCase {
   }
 
   @MainActor
-  func testMacMeterRetainsPeakBetweenTicksWithoutPublishingTheSender() {
+  func testMacMeterPublishesBeforeStatusTickWithoutPublishingTheSender() {
     let sender = IPadCameraSender(defaults: freshDefaults())
     sender.searchesForIPad = false
     let meter = InputMeter()
@@ -538,11 +538,9 @@ final class CameraLinkTests: XCTestCase {
     defer { observation.cancel() }
     sender.sampleMicLevel(meter)
     meter.show(peakDBFS: -3, isClipping: false)
+    XCTAssertEqual(sender.micMeter.levelDB, -3, "No status tick is needed for an attack")
     meter.show(peakDBFS: -42, isClipping: false)
-    sender.sampleMicLevel(meter)
-    XCTAssertEqual(sender.micMeter.levelDB, -3)
-    sender.sampleMicLevel(meter)
-    XCTAssertEqual(sender.micMeter.levelDB, -42, "each interval consumes its peak")
+    XCTAssertEqual(sender.micMeter.levelDB, -42, "Release comes from the input envelope")
     XCTAssertEqual(changes, 0, "meter samples must not rebuild menus and the remote window")
     let replacement = InputMeter()
     replacement.show(peakDBFS: -25, isClipping: false)
@@ -564,13 +562,15 @@ final class CameraLinkTests: XCTestCase {
     pipe.send(CameraLink.Message.frame(time: 1, keyFrame: true, data: Data()).encoded())
     pipe.send(CameraLink.Message.frame(time: 2, keyFrame: false, data: Data()).encoded())
     pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -40))).encoded())
+    pipe.send(CameraLink.Message.command(.macStatus(.init(cameraOn: true))).encoded())
     pipe.send(CameraLink.Message.command(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0))).encoded())
     pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -10))).encoded())
-    for _ in 0..<4 { pipe.advance() }
+    for _ in 0..<5 { pipe.advance() }
     var reader = CameraLink.Reader()
     let messages = try reader.append(pipe.writes.reduce(into: Data()) { $0.append($1) })
     XCTAssertEqual(messages, [
       .frame(time: 1, keyFrame: true, data: Data()),
+      .command(.macStatus(.init(cameraOn: true))),
       .command(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0))),
       .command(.macStatus(.init(micLevelDB: -10))),
       .frame(time: 2, keyFrame: false, data: Data())

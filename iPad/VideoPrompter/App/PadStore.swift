@@ -554,10 +554,10 @@ extension PadStore {
     link.onCommand = { [weak self] in self?.perform($0) }
     Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
       .sink { [weak self] _ in self?.updateSetupMeter() }.store(in: &bag)
-    micMeter.$levelDB.dropFirst().throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
-      .sink { [weak self] _ in
+    micMeter.$levelDB.dropFirst()
+      .sink { [weak self] level in
         guard let self, link.macName != nil, !session.followsRemote else { return }
-        link.send(.microphoneLevel(micOn ? micMeter.levelDB : -60))
+        link.send(.microphoneLevel(micOn ? level : -60))
       }.store(in: &bag)
     camera.objectWillChange.receive(on: DispatchQueue.main)
       .sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)

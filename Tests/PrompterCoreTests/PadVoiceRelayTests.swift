@@ -136,21 +136,21 @@ final class PadVoiceRelayTests: XCTestCase {
     relay.stop()
   }
 
-  func testFollowsAreSentAndCoalescedToTheNewestWord() async throws {
+  func testFollowsAreSentInsideTheRecognitionTurn() async throws {
     let (relay, link) = try await started()
+    defer { relay.stop() }
+    let start = ProcessInfo.processInfo.systemUptime
     hear(relay, "alpha bravo")
+    XCTAssertEqual(link.follows.count, 1, "A free transport receives the word synchronously")
     hear(relay, "charlie delta echo")
-    XCTAssertTrue(link.follows.isEmpty, "nothing is written inside the turn that heard the words")
-    try await until("follow") { !link.follows.isEmpty }
-    try await Task.sleep(for: .milliseconds(50))
-    XCTAssertEqual(link.follows.count, 1, "two words in one turn make one message")
+    XCTAssertEqual(link.follows.count, 2)
     let confirmed = try XCTUnwrap(relay.session?.lastConfirmedTokenIndex)
     XCTAssertGreaterThanOrEqual(confirmed, 4)
-    XCTAssertEqual(link.follows.first, PadRemote.Follow(confirmed: confirmed, fingerprint: fingerprint, seekRevision: 4))
+    XCTAssertEqual(link.follows.last, PadRemote.Follow(confirmed: confirmed, fingerprint: fingerprint, seekRevision: 4))
+    print("RELAY two recognition calls to transport: \((ProcessInfo.processInfo.systemUptime - start) * 1000) ms")
     hear(relay, "foxtrot")
-    try await until("second follow") { link.follows.count == 2 }
+    XCTAssertEqual(link.follows.count, 3)
     XCTAssertEqual(link.follows.last?.confirmed, relay.session?.lastConfirmedTokenIndex)
-    relay.stop()
   }
 
   func testAnIPadSeekMovesTheRelayOnceAndWordChangesAloneDoNot() async throws {
@@ -160,7 +160,7 @@ final class PadVoiceRelayTests: XCTestCase {
     // The iPad's word moving as it follows us is not a seek.
     for word in [2, 3, 4] { relay.iPadStateChanged(state(running: true, word: word)) }
     XCTAssertEqual(session.seekRevision, before)
-    // A word heard but not yet sent is stale once the iPad has seeked elsewhere.
+    // The pre-seek word is already sent with the old revision; the iPad rejects it if it arrives late.
     hear(relay, "alpha bravo")
     relay.iPadStateChanged(state(running: true, word: 15, revision: 5))
     XCTAssertEqual(session.seekRevision, before + 1)
@@ -169,11 +169,11 @@ final class PadVoiceRelayTests: XCTestCase {
     relay.iPadStateChanged(state(running: true, word: 17, revision: 5))
     XCTAssertEqual(session.seekRevision, before + 1, "exactly one re-seek")
     try await Task.sleep(for: .milliseconds(100))
-    XCTAssertTrue(link.follows.isEmpty, "the follow made before the seek is dropped, not sent with the new revision")
+    XCTAssertEqual(link.follows.map(\.seekRevision), [4], "A pre-seek follow must retain its old revision")
     // The next word goes out with the new revision, and the relay's own seek was not echoed.
     hear(relay, "papa quebec")
     try await until("follow") { !link.follows.isEmpty }
-    XCTAssertEqual(link.follows.map(\.seekRevision), [5])
+    XCTAssertEqual(link.follows.map(\.seekRevision), [4, 5])
     XCTAssertEqual(session.seekRevision, before + 1, "and still only the one seek")
     relay.stop()
   }
