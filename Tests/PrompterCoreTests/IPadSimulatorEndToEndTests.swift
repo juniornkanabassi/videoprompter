@@ -1,6 +1,7 @@
 @preconcurrency import AVFoundation
 import Synchronization
 import Network
+import Security
 import XCTest
 
 @testable import PrompterCore
@@ -16,7 +17,16 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let documents = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["VP_IPAD_E2E_CONTAINER"]))
       .appendingPathComponent("Documents")
     let defaults = freshDefaults()
-    let store = PairingKeyStore.ephemeral()
+    // The real Keychain, as the shipped app uses: this test binary has no team, like the local Alpha
+    // that once lost every key it was given. A throwaway service keeps the user's keys untouched.
+    let service = "VideoPrompter.e2e-pairing.\(UUID().uuidString)"
+    let store = PairingKeyStore(service: service)
+    defer {
+      for dataProtection in [true, false] {
+        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+          kSecUseDataProtectionKeychain as String: dataProtection] as CFDictionary)
+      }
+    }
     let sender = IPadCameraSender(defaults: defaults, credentialStore: store)
     sender.searchesForIPad = false
     sender.refreshPairingOffer()
@@ -37,7 +47,9 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     }
     XCTAssertTrue(confirmedOnMac)
     XCTAssertTrue(try String(contentsOf: result, encoding: .utf8).hasPrefix("Paired with"))
-    let codes = try XCTUnwrap(store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults))
+    XCTAssertNil(sender.pairingFailure, "The Mac must keep the key it was given")
+    // Read back through a new store, as the app does after a relaunch.
+    let codes = try XCTUnwrap(PairingKeyStore(service: service).load([String: String].self, key: "sendCameraPairingCodes", defaults: freshDefaults()))
     let padID = try XCTUnwrap(codes.keys.first)
     let code = try XCTUnwrap(codes[padID])
     let name = try XCTUnwrap(pairedName)

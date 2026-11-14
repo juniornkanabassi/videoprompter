@@ -6,25 +6,38 @@ public final class PairingKeyStore {
   private let read: (String) -> Data?
   private let write: (String, Data) -> Bool
   public init(service: String) {
+    // A Mac build signed without a team (the locally signed Alpha) is refused the data-protection
+    // keychain with errSecMissingEntitlement, so it falls back to the login keychain.
+    #if os(macOS)
+    let keychains = [true, false]
+    #else
+    let keychains = [true]
+    #endif
     read = { key in
-      var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service, kSecAttrAccount as String: key,
-        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-        kSecUseDataProtectionKeychain as String: true]
-      query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
-      var value: CFTypeRef?
-      return SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess ? value as? Data : nil
+      for dataProtection in keychains {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: service, kSecAttrAccount as String: key,
+          kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
+          kSecUseDataProtectionKeychain as String: dataProtection]
+        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        var value: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data { return data }
+      }
+      return nil
     }
     write = { key, data in
-      let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service, kSecAttrAccount as String: key,
-        kSecUseDataProtectionKeychain as String: true]
-      let attributes: [String: Any] = [kSecValueData as String: data,
-        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-      let result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-      if result == errSecSuccess { return true }
-      guard result == errSecItemNotFound else { return false }
-      return SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) == errSecSuccess
+      for dataProtection in keychains {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+          kSecAttrService as String: service, kSecAttrAccount as String: key,
+          kSecUseDataProtectionKeychain as String: dataProtection]
+        let attributes: [String: Any] = [kSecValueData as String: data,
+          kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        var result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if result == errSecItemNotFound { result = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) }
+        if result == errSecSuccess { return true }
+        guard result == errSecMissingEntitlement else { return false }
+      }
+      return false
     }
   }
   public init(read: @escaping (String) -> Data?, write: @escaping (String, Data) -> Bool) {
