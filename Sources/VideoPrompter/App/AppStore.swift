@@ -872,6 +872,7 @@ private enum PresenterSaveError: LocalizedError {
     var compared = preset
     compared.id = settings.id; compared.name = settings.name
     compared.audioDeviceUID = settings.audioDeviceUID
+    compared.speechEngine = settings.speechEngine
     compared.speechLanguage = settings.speechLanguage
     compared.speechLocales = settings.speechLocales
     return compared == settings
@@ -884,6 +885,7 @@ private enum PresenterSaveError: LocalizedError {
     applied.mode = PrompterSettings.normalisedMode(applied.mode)
     applied.name = settings.name
     applied.audioDeviceUID = settings.audioDeviceUID
+    applied.speechEngine = settings.speechEngine
     applied.speechLanguage = settings.speechLanguage
     applied.speechLocales = settings.speechLocales
     settings = applied

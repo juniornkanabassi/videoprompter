@@ -7,11 +7,12 @@ let package = Package(
     products: [.library(name: "PrompterCore", targets: ["PrompterCore"]), .executable(name: "VideoPrompter", targets: ["VideoPrompter"]), .executable(name: "VideoPrompterCLI", targets: ["VideoPrompterCLI"])],
     dependencies: [
         // Self-updating, the same Sparkle release as Talk & Read. Mac only: the iPad app uses PrompterCore alone.
-        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
+        .package(url: "https://github.com/FluidInference/FluidAudio", exact: "0.18.0", traits: [])
     ],
     targets: [
         .target(name: "PrompterCore", path: "Sources/PrompterCore"),
-        .executableTarget(name: "VideoPrompter", dependencies: ["PrompterCore", .product(name: "Sparkle", package: "Sparkle")],
+        .executableTarget(name: "VideoPrompter", dependencies: ["PrompterCore", .product(name: "Sparkle", package: "Sparkle"), .product(name: "FluidAudio", package: "FluidAudio")],
                           path: "Sources/VideoPrompter",
                           // build.sh embeds Sparkle.framework in Contents/Frameworks; a bare SwiftPM binary finds it beside itself.
                           linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks",

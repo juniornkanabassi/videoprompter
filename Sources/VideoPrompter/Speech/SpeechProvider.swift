@@ -15,7 +15,7 @@ public struct SpeechCandidate: Sendable, Hashable {
   public var transcript = AttributedString()
 }
 public actor SpeechProvider {
-  public enum Engine: Sendable, Equatable { case transcription, dictation }
+  public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet }
   public enum Error: Swift.Error, Sendable, LocalizedError {
     case unavailable, notPrepared, reservationLimit
     case analysisFailed(String)
@@ -28,6 +28,9 @@ public actor SpeechProvider {
       }
     }
   }
+  #if os(macOS)
+  private var parakeet: ParakeetSpeechStream?
+  #endif
   private var analyzer: SpeechAnalyzer?
   private var modules: [SpeechTranscriber] = []
   private var dictationModules: [DictationTranscriber] = []
@@ -57,7 +60,8 @@ public actor SpeechProvider {
   }
   public func prepare(
     locales requested: [Locale] = [.init(identifier: "en-GB"), .init(identifier: "fr-FR")],
-    naturalFormat: AVAudioFormat? = nil, contextualStrings: [String] = [], engine: Engine = .transcription
+    naturalFormat: AVAudioFormat? = nil, contextualStrings: [String] = [], engine: Engine = .transcription,
+    modelDirectory: URL? = nil, onPreparation: @escaping @MainActor @Sendable (String) -> Void = { _ in }
   ) async throws -> AVAudioFormat {
     // A first download can take half a minute, and a pause, a resume or a new language can
     // start another preparation or a stop meanwhile; only the latest one may set the analyzer.
@@ -68,11 +72,29 @@ public actor SpeechProvider {
     resultTasks.forEach { $0.cancel() }
     resultTasks = []
     analyzer = nil
+    #if os(macOS)
+    await parakeet?.stop()
+    try checkCurrent(op)
+    parakeet = nil
+    if engine == .parakeet {
+      guard requested.allSatisfy({ $0.language.languageCode?.identifier == "en" }) else { throw Error.unavailable }
+      let stream = ParakeetSpeechStream()
+      try await stream.prepare(directory: modelDirectory, onPreparation: onPreparation)
+      try checkCurrent(op)
+      self.engine = engine
+      parakeet = stream
+      // AnalyzerInput accepts integer PCM on macOS 27; FluidAudio converts it to Float32.
+      return AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+    }
+    #else
+    if engine == .parakeet { throw Error.unavailable }
+    #endif
     var newModules: [SpeechTranscriber] = []
     var newDictationModules: [DictationTranscriber] = []
     var newLocales: [Locale] = []
     for requestedLocale in requested {
-      let supported = switch engine {
+      let supported: Locale? = switch engine {
+      case .parakeet: nil
       case .transcription:
         await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale)
       case .dictation:
@@ -82,6 +104,7 @@ public actor SpeechProvider {
       guard let supported
       else { throw Error.unavailable }
       switch engine {
+      case .parakeet: break
       case .transcription:
         newModules.append(
           SpeechTranscriber(locale: supported, preset: .timeIndexedProgressiveTranscription))
@@ -94,6 +117,7 @@ public actor SpeechProvider {
     }
     let activeModules: [any SpeechModule]
     switch engine {
+    case .parakeet: activeModules = []
     case .transcription: activeModules = newModules
     case .dictation: activeModules = newDictationModules
     }
@@ -156,6 +180,14 @@ public actor SpeechProvider {
     input: S, generation externalGeneration: UInt64? = nil,
     onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
+    #if os(macOS)
+    if engine == .parakeet {
+      guard let parakeet else { throw Error.notPrepared }
+      generation = externalGeneration ?? (generation &+ 1)
+      try await parakeet.start(input: input, generation: generation, onCandidate: onCandidate)
+      return
+    }
+    #endif
     guard let analyzer else { throw Error.notPrepared }
     resultTasks.forEach { $0.cancel() }
     resultTasks = []
@@ -165,6 +197,7 @@ public actor SpeechProvider {
     let dictationModules = dictationModules
     let locales = locales
     switch engine {
+    case .parakeet: throw Error.unavailable
     case .transcription:
       for (i, module) in modules.enumerated() {
         resultTasks.append(
@@ -209,6 +242,10 @@ public actor SpeechProvider {
   }
   public func stop() async {
     operation &+= 1
+    #if os(macOS)
+    await parakeet?.stop()
+    parakeet = nil
+    #endif
     generation &+= 1
     resultTasks.forEach { $0.cancel() }
     await analyzer?.cancelAndFinishNow()

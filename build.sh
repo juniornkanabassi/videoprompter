@@ -55,6 +55,7 @@ if (( ! DEVELOPER_ID_AVAILABLE )) && [[ -z $CHANNEL ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $REAL_ID.development" "$APP/Contents/Info.plist"
 fi
 cp "$ROOT/LICENSE" "$APP/Contents/Resources/LICENSE"
+cp -R "$ROOT/Resources/SpeechLicences" "$APP/Contents/Resources/SpeechLicences"
 # Everything taken from the source tree is copied before the commit is stamped below.
 if [[ -f "$ROOT/Resources/AppIcon/$ICON.icns" ]]; then cp "$ROOT/Resources/AppIcon/$ICON.icns" "$APP/Contents/Resources/AppIcon.icns"; fi
 if [[ -d "$ROOT/Resources/SkinTones" ]]; then cp -R "$ROOT/Resources/SkinTones" "$APP/Contents/Resources/SkinTones"; fi
