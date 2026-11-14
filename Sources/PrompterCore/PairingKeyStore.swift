@@ -7,37 +7,36 @@ public final class PairingKeyStore {
   private let write: (String, Data) -> Bool
   public init(service: String) {
     // A Mac build signed without a team (the locally signed Alpha) is refused the data-protection
-    // keychain with errSecMissingEntitlement, so it falls back to the login keychain.
-    #if os(macOS)
-    let keychains = [true, false]
-    #else
-    let keychains = [true]
-    #endif
+    // keychain (errSecMissingEntitlement), and the login keychain asks for the password after every
+    // rebuild, freezing launch. Such builds keep keys in their own preferences instead.
+    // shortcut: plain preferences for teamless test builds only; team-signed releases never get here.
+    let fallbackKey = { (key: String) in "\(service).\(key)" }
     read = { key in
-      for dataProtection in keychains {
-        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-          kSecAttrService as String: service, kSecAttrAccount as String: key,
-          kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-          kSecUseDataProtectionKeychain as String: dataProtection]
-        query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
-        var value: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data { return data }
-      }
+      var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service, kSecAttrAccount as String: key,
+        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
+        kSecUseDataProtectionKeychain as String: true]
+      query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+      var value: CFTypeRef?
+      if SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data { return data }
+      #if os(macOS)
+      return UserDefaults.standard.data(forKey: fallbackKey(key))
+      #else
       return nil
+      #endif
     }
     write = { key, data in
-      for dataProtection in keychains {
-        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-          kSecAttrService as String: service, kSecAttrAccount as String: key,
-          kSecUseDataProtectionKeychain as String: dataProtection]
-        let attributes: [String: Any] = [kSecValueData as String: data,
-          kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-        var result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if result == errSecItemNotFound { result = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) }
-        if result == errSecSuccess { return true }
-        guard result == errSecMissingEntitlement else { return false }
-      }
-      return false
+      let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service, kSecAttrAccount as String: key,
+        kSecUseDataProtectionKeychain as String: true]
+      let attributes: [String: Any] = [kSecValueData as String: data,
+        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+      var result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+      if result == errSecItemNotFound { result = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) }
+      #if os(macOS)
+      if result == errSecMissingEntitlement { UserDefaults.standard.set(data, forKey: fallbackKey(key)); return true }
+      #endif
+      return result == errSecSuccess
     }
   }
   public init(read: @escaping (String) -> Data?, write: @escaping (String, Data) -> Bool) {

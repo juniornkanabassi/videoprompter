@@ -17,15 +17,14 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     let documents = URL(fileURLWithPath: try XCTUnwrap(ProcessInfo.processInfo.environment["VP_IPAD_E2E_CONTAINER"]))
       .appendingPathComponent("Documents")
     let defaults = freshDefaults()
-    // The real Keychain, as the shipped app uses: this test binary has no team, like the local Alpha
+    // The real store, as the shipped app uses: this test binary has no team, like the local Alpha
     // that once lost every key it was given. A throwaway service keeps the user's keys untouched.
     let service = "VideoPrompter.e2e-pairing.\(UUID().uuidString)"
     let store = PairingKeyStore(service: service)
     defer {
-      for dataProtection in [true, false] {
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-          kSecUseDataProtectionKeychain as String: dataProtection] as CFDictionary)
-      }
+      SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
+        kSecUseDataProtectionKeychain as String: true] as CFDictionary)
+      UserDefaults.standard.removeObject(forKey: service + ".sendCameraPairingCodes")
     }
     let sender = IPadCameraSender(defaults: defaults, credentialStore: store)
     sender.searchesForIPad = false
