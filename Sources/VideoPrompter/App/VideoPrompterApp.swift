@@ -195,7 +195,7 @@ struct ExposureMenuItems: View {
     Toggle("Clean", isOn: $camera.cleanView).help(CameraModel.cleanViewExplanation).keyboardShortcut("k", modifiers: [.option, .command])
     Toggle("Zebras", isOn: camera.exposureBinding(\.zebras)).keyboardShortcut("z", modifiers: [.option, .command])
     Toggle("False colour", isOn: camera.exposureBinding(\.falseColour)).keyboardShortcut("x", modifiers: [.option, .command])
-    Button("Script only") { camera.cleanLook = .scriptOnly; camera.cleanView.toggle() }
+    Button("Script only") { camera.chooseCleanLook(.scriptOnly) }
       .keyboardShortcut("f", modifiers: [.option, .command])
   }
 }

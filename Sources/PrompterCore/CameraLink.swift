@@ -304,6 +304,13 @@ public enum PadRemote {
       case .scriptOnly: return "Script only"
       }
     }
+    public var description: String {
+      switch self {
+      case .pictureOnly: return "Clean camera feed. No text, no guides."
+      case .pictureAndScript: return "Feed with the script, guides and band."
+      case .scriptOnly: return "Hides the picture. Was Focus."
+      }
+    }
     public var showsPicture: Bool { self != .scriptOnly }
     public var showsScript: Bool { self != .pictureOnly }
     public var showsGuides: Bool { self == .pictureAndScript }
@@ -399,6 +406,7 @@ public enum PadRemote {
     public var look: Look?
     public var presets: [String]?
     public var startDelay: Int?
+    public var countdownRemaining: Int?
     public var voiceSource: String?
     public var seekRevision: Int?
     public var fingerprint: String?
@@ -432,7 +440,7 @@ public enum PadRemote {
     public var linkHeartbeat: Bool?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
-      version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil,
+      version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil, countdownRemaining: Int? = nil,
       voiceSource: String? = nil, seekRevision: Int? = nil, fingerprint: String? = nil,
       editing: Bool? = nil, rejectionReason: String? = nil, pictureMode: PictureMode? = nil,
       picturePriority: PicturePriority? = nil, cleanScreen: Bool? = nil, micOn: Bool? = nil,
@@ -453,6 +461,7 @@ public enum PadRemote {
       self.scripts = scripts; self.presenting = presenting; self.selectedID = selectedID; self.running = running
       self.mode = mode; self.speed = speed; self.word = word; self.words = words
       self.version = version; self.look = look; self.presets = presets; self.startDelay = startDelay
+      self.countdownRemaining = countdownRemaining
       self.voiceSource = voiceSource; self.seekRevision = seekRevision; self.fingerprint = fingerprint
       self.editing = editing; self.rejectionReason = rejectionReason; self.pictureMode = pictureMode
       self.picturePriority = picturePriority; self.cleanScreen = cleanScreen; self.micOn = micOn

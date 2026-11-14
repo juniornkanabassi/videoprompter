@@ -62,7 +62,12 @@ struct IPadRemoteView: View {
 
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
         RelayNotice(relay: link.relay)
-        if state.activeCleanLook == nil { setupBar(state) }
+        if state.activeCleanLook != nil {
+          Button("Exit Clean · Esc") { leaveClean() }
+            .keyboardShortcut(.escape, modifiers: [])
+            .buttonStyle(.bordered).clipShape(Capsule())
+        }
+        setupBar(state)
       } else {
         IPadConnectPanel(link: link).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -91,7 +96,7 @@ struct IPadRemoteView: View {
           .shadow(radius: Space.md).padding(Space.lg)
       }
     }
-    .padding(currentState?.activeCleanLook != nil ? 0 : Space.md)
+    .padding(Space.md)
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
     .tint(yellow).preferredColorScheme(.dark)
     .frame(minWidth: 760, idealWidth: 960, maxWidth: .infinity, minHeight: 500, idealHeight: 720, maxHeight: .infinity)
@@ -121,13 +126,15 @@ struct IPadRemoteView: View {
       deviceMenu(state)
       Button {
         link.send(.look(.init(presenterSetup: false)))
-        link.send(state.running ? .pause : .play)
-      } label: { BarLabel(title: state.running ? "Pause" : "Start reading", symbol: state.running ? "pause.fill" : "play.fill").frame(minWidth: 144) }
+        link.send(state.running || (state.countdownRemaining ?? 0) > 0 ? .pause : .play)
+      } label: { BarLabel(title: state.running || (state.countdownRemaining ?? 0) > 0 ? "Pause" : "Start reading", symbol: state.running || (state.countdownRemaining ?? 0) > 0 ? "pause.fill" : "play.fill").frame(minWidth: 144) }
         .buttonStyle(BarButtonStyle(role: .prominent)).keyboardShortcut(.space, modifiers: [])
-        .disabled(state.presenting == nil || state.cameraOnly == true || state.editing == true)
+        .accessibilityLabel((state.countdownRemaining ?? 0) > 0 ? "Pause, cancel countdown" : state.running ? "Pause" : "Start reading")
+        .help((state.countdownRemaining ?? 0) > 0 ? "Pause and cancel countdown (Space)" : state.running ? "Pause (Space)" : "Start reading (Space)")
+        .disabled(!state.running && (state.countdownRemaining ?? 0) == 0 && (state.presenting == nil || state.cameraOnly == true || state.editing == true))
       Button { link.send(.backToStart) } label: { BarLabel(title: "Back", symbol: "arrow.counterclockwise") }
         .buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.home, modifiers: [])
-      Text("\(state.running ? "Reading" : "Paused") · word \(state.word) of \(state.words)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+      Text("\((state.countdownRemaining ?? 0) > 0 ? "Starting in \(state.countdownRemaining ?? 0)" : state.running ? "Reading" : "Paused") · word \(state.word) of \(state.words)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
     } devices: {
       BarGroup(label: "Camera, microphone and script") {
         BarDeviceControl(offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill",

@@ -18,6 +18,8 @@ import SwiftUI
   private var keepsRecordingOnClose = false
   private var videoObserver: AnyCancellable?
   private var cleanObserver: AnyCancellable?
+  private var cleanEnteredFullScreen = false
+  private var cleanWasActive = false
   /// Closing from full screen waits for the exit, so no empty full-screen Space is left behind.
   private(set) var closesAfterFullScreen = false
   private var isFullScreen: Bool { panel?.isInFullScreen == true }
@@ -36,14 +38,25 @@ import SwiftUI
     self.frameDefaults = frameDefaults
     super.init()
     cleanObserver = camera.$cleanView.removeDuplicates().sink { [weak self] clean in
-      if clean { self?.activeSession?.pause() }
-      self?.panel?.cleanViewActive = clean
-      self?.panel?.setWindowControlsHidden(clean)
+      self?.cleanDidChange(clean)
     }
     // The capsule button, Prompter > Present with Video and the inspector's Mode all flip this one
     // property. `dropFirst` skips the value the presenter opens with.
     videoObserver = camera.$displayMode.dropFirst().map { $0 != .prompterOnly }.removeDuplicates().sink { [weak self] on in
       MainActor.assumeIsolated { self?.videoDidChange(on) }
+    }
+  }
+
+  private func cleanDidChange(_ clean: Bool) {
+    panel?.cleanViewActive = clean
+    panel?.setWindowControlsHidden(clean)
+    guard clean != cleanWasActive else { return }
+    cleanWasActive = clean
+    if clean {
+      cleanEnteredFullScreen = panel != nil && !isFullScreen
+      if cleanEnteredFullScreen { panel?.toggleFullScreen(nil) }
+    } else if cleanEnteredFullScreen {
+      if isFullScreen { cleanEnteredFullScreen = false; panel?.toggleFullScreen(nil) }
     }
   }
 
@@ -61,6 +74,10 @@ import SwiftUI
     (notification.object as? NSWindow)?.level = .normal
   }
   func windowDidEnterFullScreen(_ notification: Notification) {
+    if !camera.cleanView && cleanWasActive == false && cleanEnteredFullScreen {
+      cleanEnteredFullScreen = false
+      panel?.toggleFullScreen(nil)
+    }
     // A close that arrived while the window was still entering full screen could not leave it then.
     finishPendingClose()
   }

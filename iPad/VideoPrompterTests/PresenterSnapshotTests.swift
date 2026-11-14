@@ -35,7 +35,7 @@ import XCTest
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "text-panel-\(UUID().uuidString)")!, discoverMicrophones: { [] })
     _ = try await render(PadPresenterTextSettings(store: store, session: store.session),
-      size: CGSize(width: 440, height: 800), name: "ipad-presenter-text", directory: directory, beforeDraw: {})
+      size: CGSize(width: 440, height: 680), name: "ipad-presenter-text", directory: directory, beforeDraw: {})
   }
 
   func testLinkedSensorFrameMatchesMacPreview() async throws {
@@ -99,6 +99,26 @@ import XCTest
     XCTAssertTrue(chosen.microphoneChosen)
     XCTAssertFalse(chosen.requestDefaultMacMicrophone())
     XCTAssertFalse(chosen.session.followsRemote)
+  }
+
+  func testLegacyFocusOffAndCountdownCancellation() throws {
+    let store = PadStore(defaults: UserDefaults(suiteName: "legacy-focus-\(UUID())")!, discoverMicrophones: { [] })
+    store.perform(.look(.init(focusMode: true)))
+    XCTAssertTrue(store.cleanScreen)
+    store.perform(.look(.init(focusMode: false)))
+    XCTAssertFalse(store.cleanScreen)
+    XCTAssertEqual(store.remoteState.look?.focusMode, false)
+    store.chooseCleanLook(.pictureOnly)
+    store.perform(.look(.init(focusMode: false)))
+    XCTAssertTrue(store.cleanScreen, "Legacy Focus off must leave other looks alone")
+    let script = try store.folder.create(title: "Countdown", markdown: Self.script)
+    store.present(script)
+    store.settings.mode = "Manual"
+    store.session.startDelay = 3
+    store.perform(.play)
+    XCTAssertGreaterThan(store.remoteState.countdownRemaining ?? 0, 0)
+    store.perform(.pause)
+    XCTAssertFalse(store.session.isCountingDown)
   }
 
   func testCleanLooksPreserveReadingAndRoundTrip() throws {

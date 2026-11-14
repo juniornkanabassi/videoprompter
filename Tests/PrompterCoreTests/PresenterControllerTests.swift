@@ -1099,6 +1099,23 @@ final class PresenterControllerTests: XCTestCase {
 
   /// A presenter panel that never reaches the screen. Visibility, minimising, full screen and
   /// AppKit's transition are stood in for, and ordering out is recorded.
+  func testCleanRestoresWindowedAndFullScreenStates() {
+    let (camera, _) = videoModel()
+    let controller = PresenterController(camera: camera, frameDefaults: nil)
+    let panel = FakePanel(captureVisible: false)
+    controller.panel = panel
+    camera.chooseCleanLook(.pictureOnly)
+    XCTAssertEqual(panel.transitions, 1)
+    panel.fullScreen = true
+    camera.chooseCleanLook(.scriptOnly)
+    XCTAssertEqual(panel.transitions, 1, "Changing looks must not toggle full screen")
+    camera.cleanView = false
+    XCTAssertEqual(panel.transitions, 2)
+    camera.cleanView = true
+    camera.cleanView = false
+    XCTAssertEqual(panel.transitions, 2, "Already full screen must stay full screen")
+  }
+
   private final class FakePanel: PresenterPanel {
     var shown = true
     var minimised = false

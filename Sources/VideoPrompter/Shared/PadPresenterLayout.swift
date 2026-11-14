@@ -48,7 +48,7 @@ enum PadPresenterLayout {
     let top = topChrome + (lostPaused ? lostNoticeBand : 0)
     let bottom: CGFloat
     if setup {
-      bottom = (iconOnly(width: width) ? 200 : setupBar) + (offNote ? offNoteRow : 0)
+      bottom = (iconOnly(width: width) ? 200 : setupBar) + (offNote ? offNoteRow : 0) + (lostPaused ? lostCardRow : 0)
     } else {
       let extra = lostPaused ? (lostCardStacks(width: width) ? lostCardRow : 0) : (statusStacks(width: width) ? statusRow : 0)
       bottom = transportRow + extra

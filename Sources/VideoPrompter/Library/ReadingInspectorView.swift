@@ -221,7 +221,10 @@ struct PresenterTextSettings: View {
       paragraphSpacing: $store.settings.paragraphSpacing, guideFraction: $store.settings.guideFraction,
       bandOpacity: $store.settings.readingBandOpacity, fonts: AvailableFonts.presenter,
       readingExtras: AnyView(Group {
-        if store.settings.mode == "Voice" { SpeechEngineRow(store: store, session: store.session) }
+        if store.settings.mode == "Voice" {
+          ScriptLanguageRow(store: store)
+          SpeechEngineRow(store: store, session: store.session)
+        }
         else { Stepper("\(Int(store.settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10) }
       }))
   }

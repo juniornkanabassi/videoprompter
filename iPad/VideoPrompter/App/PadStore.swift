@@ -717,7 +717,7 @@ extension PadStore {
         textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
         paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues,
         scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: cleanScreen && cleanLook == .scriptOnly, readingBandOpacity: settings.readingBandOpacity, videoDimming: settings.videoDimming, cleanLook: cleanLook, keepMicMeter: keepMicMeter),
-      presets: presets.map(\.name), startDelay: session.startDelay,
+      presets: presets.map(\.name), startDelay: session.startDelay, countdownRemaining: session.countdownRemaining,
       voiceSource: usesMacMic ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
       fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
@@ -880,6 +880,7 @@ extension PadStore {
       else if let value = look.focusMode {
         focusMode = value
         if value { cleanLook = .scriptOnly; setCleanScreen(true) }
+        else if cleanLook == .scriptOnly { setCleanScreen(false) }
       }
       var next = settings
       if let value = look.readingBandOpacity, value.isFinite { next.readingBandOpacity = value }

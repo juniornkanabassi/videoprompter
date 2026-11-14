@@ -42,12 +42,16 @@ struct PresenterTextPanel: View {
       }
       Divider()
       section("FONT") {
-        Picker("Font", selection: $fontName) {
-          ForEach(Array(Set(fonts + [fontName])).sorted(), id: \.self) { Text($0).tag($0) }
-        }.frame(minHeight: target)
+        HStack {
+          symbol("textformat", title: "Font")
+          Picker("Font", selection: $fontName) {
+            ForEach(Array(Set(fonts + [fontName])).sorted(), id: \.self) { Text($0).tag($0) }
+          }.frame(minHeight: target)
+        }
         HStack(spacing: Space.sm) {
           symbol("textformat", title: "Text size")
           slider("Text size", value: $fontSize, range: InputValidation.fontSize.range, spoken: "\(Int(fontSize)) points")
+          Text("\(Int(fontSize))").monospacedDigit().accessibilityHidden(true)
           sizeButton("A−", title: "Smaller text", delta: -4)
           sizeButton("A+", title: "Larger text", delta: 4)
         }

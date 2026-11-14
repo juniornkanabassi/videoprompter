@@ -3,6 +3,28 @@ import PrompterCore
 @testable import VideoPrompter
 
 final class CleanLookTests: XCTestCase {
+  @MainActor func testCleanSelectionAndPreferences() {
+    let defaults = freshDefaults("CleanSelection")
+    let camera = CameraModel(defaults: defaults)
+    camera.chooseCleanLook(.pictureOnly)
+    camera.chooseCleanLook(.scriptOnly)
+    XCTAssertTrue(camera.cleanView, "Switching looks must keep Clean open")
+    camera.keepCleanMicMeter = false
+    let restored = CameraModel(defaults: defaults)
+    XCTAssertEqual(restored.cleanLook, .scriptOnly)
+    XCTAssertFalse(restored.keepCleanMicMeter)
+    camera.chooseCleanLook(.scriptOnly)
+    XCTAssertFalse(camera.cleanView, "Only selecting the active look exits Clean")
+  }
+
+  func testCountdownStateIsBackwardCompatible() throws {
+    let old = Data(#"{"scripts":[],"running":false,"mode":"Manual","speed":120,"word":0,"words":0}"#.utf8)
+    var state = try JSONDecoder().decode(PadRemote.State.self, from: old)
+    XCTAssertNil(state.countdownRemaining)
+    state.countdownRemaining = 3
+    XCTAssertEqual(try JSONDecoder().decode(PadRemote.State.self, from: JSONEncoder().encode(state)).countdownRemaining, 3)
+  }
+
   func testLooksRoundTripAndOldPeersDecode() throws {
     for look in PadRemote.CleanLook.allCases {
       let value = PadRemote.Look(cleanLook: look, keepMicMeter: false)
