@@ -75,15 +75,15 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     }
     for scale in [1.0, 1.5] {
       store.uiZoom = scale
-      // Wide enough for the restored camera picker and Framing guides to share one row at 150%;
-      // narrow-window wrapping is covered by UIZoomTests.
+      // Exercise the approved setup bar with full labels; narrow-window wrapping
+      // is also covered by UIZoomTests.
       panel.setContentSize(NSSize(width: 1100, height: 520))
       await settle()
       let start = try buttonFrame("Start reading")
       let camera = try buttonFrame("Camera")
-      let edit = try buttonFrame("Adjust")
+      let text = try buttonFrame("Text")
       let screenBounds = panel.convertToScreen(content.bounds)
-      for frame in [start, camera, edit] {
+      for frame in [start, camera, text] {
         XCTAssertTrue(screenBounds.contains(frame), "\(scale): controls stay inside the presenter")
       }
       // Package E wraps complete labelled tiles instead of maintaining the old Tools row.

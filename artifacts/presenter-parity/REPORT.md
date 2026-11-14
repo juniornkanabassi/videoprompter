@@ -1,102 +1,141 @@
-# Presenter parity audit
+# Presenter parity and rotation
 
-Baseline: 8ae0abc. Scope update: A–C approved; D (bar layout) held for an approved mockup.
+Base: `8ae0abc`. Branch: `t3/presenter-ui-parity`.
+Approved layout: `2026-11-14 Presenter parity mockup.html` in the Video Prompter Outputs folder.
 
-Each cell is before → after. “Unchanged” means deliberately held, not parity passed.
+## Control parity
+
+The setup bar uses the same shared `PresenterSetupBar`, `BarGroup`, `BarDeviceControl`,
+`BarToggle`, turn controls and live-meter treatment. One row is used when it fits;
+otherwise transport/devices and picture/view tools occupy two rows. At large
+accessibility sizes, the existing wrapping layout keeps controls inside the window.
 
 | Control | Mac presenter | iPad presenter | Mac iPad console |
 |---|---|---|---|
-| Camera picker | Local cameras; selection tick → unchanged | Mac/local cards without divider → named sections + divider | Mac cameras only; no tick → both devices + live tick |
-| Microphone picker | Default/input/other sections → unchanged | Mac/local cards without divider → named sections + divider | Active side only, separate source buttons → both devices + live tick |
-| Camera on/off | Split button → unchanged | Split button → unchanged | Split button → follows selected side |
-| Mic on/off | Split button → unchanged | Split button → unchanged | Split button → unchanged |
-| Mic meter | Optional live meter → unchanged | Live meter / picker meter → unchanged | Live meter → unchanged |
-| Voice / manual mode | Presenter settings → unchanged | Reading mode controls → unchanged | Mode menu → unchanged |
-| Start / pause / restart | Bar → unchanged | Bar → unchanged | Bar → unchanged |
-| Previous / next passage | Keyboard → unchanged | Keyboard → unchanged | Buttons / keyboard → unchanged |
-| Reading position | Text / scroll → unchanged | Text / scroll → unchanged | Slider / text → unchanged |
-| Speed / countdown | Settings → unchanged | Mode controls / settings → unchanged | Speed visible, countdown More → unchanged |
-| Script visible | Bar toggle → unchanged | Bar toggle → unchanged | No equivalent toggle → unchanged |
-| Choose / send script | Library / Open → unchanged | Library → unchanged | Script menu / Send → unchanged |
-| Edit script | Presenter edit → unchanged | Presenter edit → unchanged | No remote editing UI → unchanged |
-| Zebras | Bar; long press adjusts → unchanged | Bar → unchanged | More → unchanged |
-| False colour | Bar; long press adjusts → unchanged | Bar → unchanged | More → unchanged |
-| Guides | Bar, squareshape.split.3x3 → unchanged | Bar, grid → unchanged | More (thirds / centre / marker) → unchanged |
-| Zebra range / exposure mode / skin reference | Adjust panel → unchanged | No matching presenter adjustments → unchanged | No matching adjustments → unchanged |
-| Guide style / frame marker | Adjust panel → unchanged | Library/settings → unchanged | More (thirds / centre / frame marker) → unchanged |
-| Mic channel / input gain | Input menu / settings → unchanged | Picker channel / library gain → unchanged | No matching console controls → unchanged |
-| Meter visibility | Mic menu → unchanged | Picker switch → unchanged | Always shown → unchanged |
-| Auto-hide reading controls | Focus context menu → unchanged | Reading mode hides controls → unchanged | No matching option → unchanged |
-| Exposure key | Bar → unchanged | Bar → unchanged | More → unchanged |
-| Mirror / flip | Bar → unchanged | Bar → unchanged | More → unchanged |
-| Clean screen | Bar → unchanged | Bar → unchanged | More → unchanged |
-| Focus | Reading bar → unchanged | No matching mode → unchanged | No matching mode → unchanged |
-| Text size / margins | Text/settings → unchanged | Text popover → unchanged | More, then text page → unchanged |
-| Font family / weight | Settings → unchanged | Library settings; absent presenter popover → unchanged | Family in text page, no weight control → unchanged |
-| Line / paragraph spacing | Settings → unchanged | Library settings; absent presenter popover → unchanged | More text page → unchanged |
-| Reading line position | Settings → unchanged | Library settings → unchanged | More text page → unchanged |
-| Colour / opacity / alignment / cues | Settings → unchanged | Library settings → unchanged | No matching controls → unchanged |
-| Reading presets | Settings → unchanged | Library settings → unchanged | More text page → unchanged |
-| Picture mode / quality | Local video/monitor → unchanged | Picker/settings → unchanged | More → unchanged |
-| Recording | Mac recording controls → unchanged | Mac tally/status → unchanged | No matching recording controls → unchanged |
-| Full screen | Native presenter → unchanged | Native iPad scene → unchanged | Default window → explicit primary full-screen, green button and native action |
-| Connection / rename / forget | Separate iPad window → unchanged | Connection screen → unchanged | Device menu → unchanged |
+| Start reading / Back | Row 1 | Row 1 | Row 1 |
+| Camera / Mic / live level / Script | Row 1 group | Row 1 group | Row 1 group |
+| Zebras / False colour / Guides | Row 2 group, direct buttons | Same | Same; removed from More |
+| Mirror / Flip | Row 2 group | Same | Same; removed from More |
+| Text | Row 2, opens settings | Same, font/size/speed/margins | Same, font/size/speed/margins |
+| Key / Clean | Row 2 | Same | Same; removed from More |
+| iPad switcher | App menu | Connection screen | Far left of row 1 |
+| Reading status / Pause / Set up / Focus | Existing reading controls preserved | Equivalent reading controls | Equivalent reading controls |
+| Microphone while reading | Existing reading options | Reading options | Reading options with live level |
+| Camera rotation | Rotate menu, 0/90/180/270 | Rotate menu for current source | Rotate menu for current source |
+| Camera/mic picker sections | Local inputs in standalone presenter | Named Mac and iPad sections, divider | On this Mac / On named iPad, divider |
+| Selection ticks | Local live configuration | Active source | iPad-reported state, not the last click |
+| Camera on/off | Own camera | Current source | Current source |
+| Microphone on/off | Own microphone | Current source | Current source / relay |
+| Font / text size / margins / speed | Text settings | Text popover | Text popover |
+| Line/paragraph spacing / presets / countdown | Existing settings | Existing library/settings | Text popover |
+| Detailed exposure adjustments | Tool long-press/context menu | Existing settings | Direct toggles; guide details in context menu |
+| Picture mode / link quality | Local camera settings | Existing picker/settings | Camera picker |
+| Full screen | Existing native presenter | Native iPad scene | Primary full-screen window and standard AppKit action |
 
-The iPad ConfidenceMonitorView is a separate monitor surface: fit/fill, script line,
-mirror, flip, Done, recording tally and connection status. It does not expose the
-presenter’s camera/mic pickers, exposure tools or text controls. This remains a D gap.
+### Baseline → final audit
 
-No voice-latency or audio-capture implementation changes are included.
+This records the full audit, including deeper controls outside the approved bar
+layout. “Retained” means the existing behaviour remains; it does not claim the
+settings panels are identical.
 
-## Approved E: full screen
+| Control | Mac presenter: before → final | iPad presenter: before → final | Mac console: before → final |
+|---|---|---|---|
+| Camera picker | Local list → retained, Rotate menu | Unseparated device cards → named sections/divider, Rotate menu | Mac-only list → both devices, live tick, Rotate menu |
+| Mic picker | Local/default sections → retained | Unseparated device cards → named sections/divider | Separate source buttons → both devices, live tick |
+| Camera / mic on-off | Split buttons → retained | Split buttons → retained | Split buttons → selected-source routing |
+| Live mic level | Optional meter → shared level treatment | Live/picker meter → shared level treatment | Live meter → shared level treatment |
+| Start / pause / restart | Bar → retained reading bar | Bar → shared setup + equivalent reading controls | Bar → shared setup + equivalent reading controls |
+| Status / Focus / Set up | Reading controls → retained | No matching Focus → equivalent reading controls | No matching Focus → equivalent reading controls |
+| Script visibility | Bar → device group | Bar → device group | Missing → device group, linked state |
+| Choose / send script | Library/Open → library | Library → retained | Script menu/Send → retained outside setup bar |
+| Edit script | Presenter editor → retained | Presenter editor → retained | No remote editor → retained limitation |
+| Zebras / false colour | Bar → shared row 2 | Bar → shared row 2 | More → shared row 2 |
+| Guides | Bar / different icons → shared row 2 icon | Bar / different icon → shared row 2 icon | More → shared row 2 icon |
+| Mirror / flip | Bar → shared row 2 | Bar → shared row 2 | More → shared row 2 |
+| Exposure key / Clean | Bar → shared Key/Clean | Bar → shared Key/Clean | More → shared Key/Clean |
+| Font family / size / margins | Settings → Text | Size/margins only → Text also includes font | More/text page → Text |
+| Voice / automatic mode | Settings → retained | Reading controls → Text | Mode menu → Text |
+| Speed | Settings → retained | Mode controls → Text | Visible → Text |
+| Countdown / presets | Settings → retained | Library/settings → retained | More → Text |
+| Line / paragraph spacing | Settings → retained | Library/settings → retained | More/text page → Text |
+| Font weight | Settings → retained | Library settings → retained | Missing → still absent |
+| Reading line position | Settings → retained | Library settings → retained | More/text page → Text |
+| Text colour / opacity / alignment / cues | Settings → retained | Library settings → retained | Missing → still absent |
+| Zebra range / exposure mode / skin reference | Adjust → existing settings/context controls | No matching presenter adjustments → retained limitation | No matching adjustments → retained limitation |
+| Guide style / frame marker | Adjust → existing controls | Library/settings → retained | More → Guides context menu |
+| Mic channel / gain | Input/settings → retained | Picker/library → retained | No matching controls → retained limitation |
+| Meter visibility | Mic menu → retained | Picker switch → retained | Always visible → retained |
+| Auto-hide reading controls | Focus context → retained | Reading hides controls → Focus equivalent | Missing → Focus equivalent |
+| Picture mode / link quality | Local video/monitor → retained | Picker/settings → retained | More → Camera picker |
+| Previous/next passage | Keyboard → retained | Keyboard → retained | Buttons/keyboard → retained |
+| Reading position | Text/scroll → retained | Text/scroll → retained | Slider/text → retained |
+| Rotation | Local camera → retained | Missing → local/linked source Rotate menu | Missing → linked source Rotate menu |
+| Recording | Mac recording controls → retained | Mac tally/status → retained | No recorder controls → retained limitation |
+| Full screen | Native → retained | Native scene → retained | Default window → fullScreenPrimary + native action |
+| Connection / rename / forget | Separate iPad window → retained | Connection screen → retained | Device menu → far-left switcher |
 
-The console window opts into `fullScreenPrimary`, remains resizable, and routes
-its green button to AppKit's `toggleFullScreen:`. AppKit owns the standard View
-menu and Control-Command-F / Globe-F full-screen handling. The existing flexible
-replica occupies remaining height and the transport/setup controls follow it at
-the bottom. A 1920×1080 offscreen snapshot checks the expanded layout; tests inspect
-window flags and the green-button selector without performing a screen transition.
+The Mac's reading-state layout was not replaced. The iPad confidence monitor retains
+its specialised tally, fit/fill and script-line controls; its picture geometry now
+honours camera rotation. Recording controls and library editing remain on their
+existing surfaces.
 
-## Compatibility and limits
+## Link and rotation behaviour
 
-Only optional fields were added to the Codable payloads. Destination-less camera
-and microphone commands keep their prior Mac selection meaning. New local-iPad
-commands are offered only when the iPad advertises its local lists. Protocol tests
-cover old payload decoding and the older decoder ignoring the optional destination.
+Only optional Codable fields were added. Destination-less device commands preserve
+their original meaning. Old peers retain the basic iPad microphone fallback.
 
-The picker ticks use iPad-reported state, including its echoed Mac status. They do
-not update merely because a row was clicked. A missing or unplugged source is not
-invented as a selectable entry. System-default microphone reporting resolves to a
-real device ID so the tick can match the corresponding row.
+The Mac keeps encoded frames in sensor coordinates and sends its chosen rotation
+as optional status metadata. The iPad applies that rotation to both the decoded
+picture and exposure layers, and draws guides on the rotated picture bounds. Local
+iPad camera rotation composes with the built-in camera's horizon orientation.
+Mirror and flip remain display transforms. Shared geometry and iPad layer tests
+cover all quarter-turns, mirroring, flipping, zebras and false-colour alignment.
 
-An iPad local camera can be selected, but the current link has no reverse video
-stream. The console labels that source instead of showing the unrelated Mac feed.
-Physical device switching and native full-screen transitions need hardware checks;
-this work deliberately performs neither on the user's screens.
+Picking a Mac mic uses the existing relay path. Picking an iPad mic stops the relay.
+The camera and microphone ticks come from the state reported by the iPad, including
+its echoed Mac status. System-default microphone selection resolves to a device ID.
 
-## Representative snapshot paths
+## Evidence
 
-All paths below are relative to `artifacts/presenter-parity/`. Both phases use dark mode.
-Device names and readings are deterministic fixtures, not hardware evidence.
+Dark-mode, offscreen output lives in `final/`; baseline output remains in `before/`.
+`SNAPSHOTS.txt` lists absolute paths. Key files (relative to this directory):
 
-| Surface | Before | After |
+| Surface | Before | Final snapshot |
 |---|---|---|
-| Mac presenter | `before/mac-setup-1180x820.png` | `after/mac-setup-1180x820.png` |
-| iPad presenter | `before/ipad/ipad-setup-1180x820.png` | `after/ipad/ipad-setup-1180x820.png` |
-| Mac console | `before/ipad-paused-100.png` | `after/ipad-paused-100.png` |
-| iPad camera picker | `before/ipad/ipad-picker-3A-1180x820.png` | `after/ipad/ipad-picker-3A-1180x820.png` |
-| iPad mic picker | `before/ipad/ipad-picker-3B-1180x820.png` | `after/ipad/ipad-picker-3B-1180x820.png` |
-| Console camera picker | Existing console surface above | `after/ipad-camera-100.png` |
-| Console mic picker | Existing console surface above | `after/ipad-microphone-100.png` |
-| Expanded console | Existing console surface above | `after/ipad-full-screen-100.png` |
+| Mac setup | `before/mac-setup-1180x820.png` | `final/mac-setup-1180x820.png` |
+| Mac reading | See setup baseline | `final/mac-reading-camera-1180x820.png` |
+| iPad setup | `before/ipad/ipad-setup-1180x820.png` | `final/ipad/ipad-setup-1180x820.png` |
+| iPad reading | See setup baseline | `final/ipad/ipad-reading-camera-1180x820.png` |
+| Console setup | `before/ipad-paused-100.png` | `final/ipad-paused-100.png` |
+| Console reading | See setup baseline | `final/ipad-connected-reading-100.png` |
+| Expanded console | See setup baseline | `final/ipad-full-screen-100.png` |
+| Console camera / mic menus | See setup baseline | `final/ipad-camera-100.png`, `final/ipad-microphone-100.png` |
+| iPad rotation | Not supported | `final/ipad/ipad-rotation-0.png`, `90`, `180`, `270` |
 
-These representative images are committed. The complete local harness output is
-retained in the ignored `before/` and `after/` directories, with an inventory in
-`SNAPSHOTS.txt`. Baseline iPad images were rendered from an archived 8ae0abc tree.
+Fixtures use deterministic device names, levels and reference pictures. They prove
+rendered layout and transforms, not physical camera or microphone performance.
+Representative final images are committed; bulk harness images remain ignored.
 
-## Paused WIP update
+## Verification
 
-F (rotation) was subsequently authorised and is partially implemented. The user
-then paused work to close the laptop. See the root `PROGRESS.md` for precise status,
-validation results and next commands. Do not treat the rotation changes or final
-full-suite verification as complete. D remains held for the approved mockup.
+Implementation commit: `0a9cb56`. The final evidence commit also aligns the iPad Start reading label and updates the obsolete Adjust-button test expectation.
+
+| Check | Result |
+|---|---|
+| Focused UI regression | 46 passed |
+| Compact controls and stage-space regression | 8 passed |
+| iPad full test harness | 12 passed, including rotation/overlays and smooth scrolling |
+| Generic iOS Simulator build | Passed |
+| End-to-end link harness | 5 passed, including rotation and presenter-state round trips |
+| Final full `./test.sh` | PASS: 1115 executed / 92 skipped / 0 failures; light and dark snapshot passes each 61 executed / 1 skipped / 0 failures; grid passed |
+
+The final full script exited 0 (`/private/tmp/parity-final-all-v3.log`). Final iPad
+image refresh passed after the last source edit (2 tests); the generic simulator
+build was then repeated successfully. Earlier WIP test totals are historical only.
+
+## Limits
+
+No visible app window, Simulator window, permission prompt, sound, push or release
+was used. Native full-screen entry and physical camera/microphone switching remain
+unverified. The link still does not send the iPad's local camera video back to the
+Mac: the console names that source rather than showing an unrelated Mac picture.

@@ -461,7 +461,7 @@ struct PresenterScreen: View {
 
   private var primaryTitle: String {
     if session.isActivelyRunning || counting { return "Pause" }
-    return session.hasStartedReading ? "Resume" : "Start reading"
+    return "Start reading"
   }
 
   private func primaryAction() {
