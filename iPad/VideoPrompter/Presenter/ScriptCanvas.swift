@@ -55,7 +55,7 @@ struct ScriptCanvas: UIViewRepresentable {
     view.showsHorizontalScrollIndicator = false
     view.alwaysBounceVertical = true
     view.contentInsetAdjustmentBehavior = .never
-    view.textContainer.lineFragmentPadding = 0
+    view.textContainer.lineFragmentPadding = 5
     view.accessibilityLabel = "Presenter script"
     view.delegate = context.coordinator
     let doubleTap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.doubleTapped(_:)))
@@ -151,7 +151,7 @@ struct ScriptCanvas: UIViewRepresentable {
       guard let parent else { return baseColour }
       let confirmed = parent.lastConfirmedTokenIndex.map { index <= $0 } ?? false
       let alpha = confirmed ? textOpacity * 0.5 : textOpacity
-      return index == parent.tokenIndex && !confirmed && (renderedStyle?.highlightActiveWord ?? false)
+      return index == parent.tokenIndex && !confirmed && parent.style.highlightActiveWord
         ? Self.currentWord.withAlphaComponent(alpha) : baseColour.withAlphaComponent(alpha)
     }
 
@@ -216,18 +216,15 @@ struct ScriptCanvas: UIViewRepresentable {
       return (manager, guideY)
     }
 
-    /// Where the reading rule rests for the line holding this word: just under that line's text,
-    /// halfway into the leading below it, from the measured line bounds (not a font-size guess).
+    /// The same measured glyph midpoint that the Mac places on its guide.
     private func ruleY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
       linePositions[range.location] ?? measureRuleY(range, manager: manager)
     }
 
     private func measureRuleY(_ range: NSRange, manager: NSLayoutManager) -> CGFloat {
       guard let textView else { return 0 }
-      let glyph = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil).location
-      let used = manager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
-      let fragment = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-      return used.maxY + max(3, (fragment.maxY - used.maxY) / 2) + textView.textContainerInset.top
+      let glyphs = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+      return manager.boundingRect(forGlyphRange: glyphs, in: textView.textContainer).midY + textView.textContainerInset.top
     }
 
     func alignVoice() {
@@ -247,8 +244,7 @@ struct ScriptCanvas: UIViewRepresentable {
       snapNext = false
     }
 
-    /// Words on one line share one scroll position, the rule resting just under that line; the text
-    /// glides to the next line during the second half of the line's last word (see lineTransition).
+    /// Spread each line's travel across all its words, exactly as the Mac's manualScrollY does.
     func alignManual() {
       guard !isDragging, let textView else { return }
       guard let position = parent?.manualPosition?(), !mappings.isEmpty else {
@@ -265,12 +261,15 @@ struct ScriptCanvas: UIViewRepresentable {
       }
       let current = max(0, low - 1)
       let here = y(current)
+      var first = current
+      while first > 0, abs(y(first - 1) - here) < 2 { first -= 1 }
       var next = current + 1
       while next < mappings.count, abs(y(next) - here) < 2 { next += 1 }
       var target = here
       if next < mappings.count {
-        let lastToken = Double(mappings[next - 1].token), nextFirst = Double(mappings[next].token)
-        target = here + (y(next) - here) * CGFloat(PadPresenterLayout.lineTransition(position: position, lastToken: lastToken, nextFirstToken: nextFirst))
+        let from = Double(mappings[first].token), to = Double(mappings[next].token)
+        let fraction = PadPresenterLayout.lineTransition(position: position, firstToken: from, nextFirstToken: to)
+        target = here + (y(next) - here) * CGFloat(fraction)
       }
       target = max(0, target)
       if let settle {

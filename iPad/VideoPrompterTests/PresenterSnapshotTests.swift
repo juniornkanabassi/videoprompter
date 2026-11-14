@@ -45,15 +45,37 @@ import XCTest
       XCTAssertEqual(paragraph.paragraphSpacing, max(10, size * style.paragraphSpacing))
       XCTAssertTrue(rendered.text.string.contains("\n\n"))
     }
+    let document = PrompterDocument(markdown: "Current word")
+    var highlighted = ScriptStyle()
+    highlighted.highlightActiveWord = true
+    let view = UITextView()
+    let coordinator = ScriptCanvas.Coordinator()
+    coordinator.textView = view
+    coordinator.parent = ScriptCanvas(document: document, tokenIndex: 0,
+      layoutGuideFraction: 0.35, style: highlighted, textWidth: 0.75, onSeek: { _ in })
+    coordinator.render(document: document, style: highlighted)
+    XCTAssertEqual((view.textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor)?.resolvedColor(with: view.traitCollection), UIColor.systemYellow.resolvedColor(with: view.traitCollection))
     XCTAssertEqual(ScriptCanvas.sideInset(width: 1366, textWidth: 1, fontSize: 24), (1366 - 720) / 2)
     for width: CGFloat in [1180, 1366] {
       XCTAssertEqual(ScriptCanvas.sideInset(width: width, textWidth: 0.8), max(42, width * 0.1), accuracy: 0.001)
     }
   }
 
+  func testRemoteTypographySettings() {
+    let store = PadStore(defaults: UserDefaults(suiteName: "text-sync-\(UUID().uuidString)")!)
+    store.perform(.look(.init(fontName: "Lexend", fontWeight: "Bold", textColorHex: "#F5CF4A",
+      textOpacity: 0.8, paragraphSpacing: 0.6, alignment: "Center", showCues: true)))
+    XCTAssertEqual(store.settings.fontName, "Lexend")
+    XCTAssertEqual(store.settings.fontWeight, "Bold")
+    XCTAssertEqual(store.settings.textOpacity, 0.8)
+    XCTAssertEqual(store.settings.paragraphSpacing, 0.6)
+    XCTAssertEqual(store.settings.alignment, "Center")
+    XCTAssertTrue(store.settings.showCues)
+  }
+
   func testDisplayLinkScrollSmoothness() async throws {
     let start = CACurrentMediaTime()
-    let document = PrompterDocument(markdown: Array(repeating: "Reading", count: 120).joined(separator: "\n\n"))
+    let document = PrompterDocument(markdown: String(repeating: "Reading this sentence keeps the scrolling continuously in motion. ", count: 120))
     let canvas = ScriptCanvas(document: document, tokenIndex: 0, isActivelyRunning: true,
       layoutGuideFraction: 0.35, style: ScriptStyle(), textWidth: 0.75,
       manualPosition: { floor((CACurrentMediaTime() - start) * 8) }, onSeek: { _ in })
@@ -105,8 +127,12 @@ import XCTest
         PresenterReadingLine(settings: settings)
           .frame(width: size.width - 2 * ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth) + 64)
           .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
-        canvas
-      }, size: size, name: "ipad-text-" + name, directory: directory, beforeDraw: {})
+        canvas.mask(VStack(spacing: 0) {
+          Color.black
+          LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+            .frame(height: 48 * 1.6)
+        })
+      }.ignoresSafeArea(), size: size, name: "ipad-text-" + name, directory: directory, beforeDraw: {})
     }
   }
 
