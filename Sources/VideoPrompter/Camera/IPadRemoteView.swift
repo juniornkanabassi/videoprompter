@@ -36,6 +36,7 @@ struct IPadRemoteView: View {
             if state.pictureMode == .behindScript && !focusActive { liveCamera.opacity(1 - InputValidation.videoDimming.repair(state.look?.videoDimming ?? 0.5)) }
             VStack(spacing: 0) {
               IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
+              if state.cleanScreen != true {
               HStack(spacing: Space.md) {
                 Text("Reading position").font(.caption).foregroundStyle(.secondary)
                 Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }), in: 1...Double(max(2, state.words))) { editing in
@@ -43,11 +44,19 @@ struct IPadRemoteView: View {
                 }.labelsHidden().accessibilityLabel("Reading position")
                   .disabled(state.words < 2 || state.editing == true)
               }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
+              }
             }
-            if state.pictureMode != .behindScript && !focusActive {
+            if state.pictureMode != .behindScript && state.pictureMode != .off && !focusActive {
               liveCamera.frame(width: 192, height: 108).padding(Space.md) // grid: ok 16:9 camera thumbnail
             }
           }
+        }
+        .overlay(alignment: .trailing) {
+          IPadReplicaMeter(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter,
+            name: Self.microphoneName(state), isListening: state.micOn ?? true)
+            .frame(width: MicMeterView.stripWidth(typeScale: 1))
+            .padding(.top, 48).padding(.bottom, 48).padding(.trailing, Space.sm)
+            .allowsHitTesting(false)
         }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
 
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
@@ -169,15 +178,25 @@ struct IPadRemoteView: View {
   }
   private var liveCamera: some View {
     Group {
-      if let id = currentState?.localCameraID {
+      if currentState?.pictureMode == .off && currentState?.cameraOnly != true {
+        Color.black
+      } else if let id = currentState?.localCameraID {
         Color.black.overlay {
           Label(currentState?.localCameras?.first(where: { $0.id == id })?.name ?? "Camera on iPad", systemImage: "ipad")
             .foregroundStyle(.secondary)
         }
       } else if let image = previewOverride {
         Image(decorative: image, scale: 1).resizable().scaledToFit()
+          .overlay {
+            GeometryReader { geometry in
+              let guides = currentState.map { Self.replicaGuides($0) } ?? CameraGuides()
+              let picture = guides.rotation.fittedRect(aspect: CGSize(width: image.width, height: image.height), in: CGRect(origin: .zero, size: geometry.size))
+              Path(CameraOverlay.guidePath(picture: picture, guides: guides)).stroke(Color(cgColor: guides.strokeColor), lineWidth: 1)
+            }
+          }
       } else if startsLink && link.cameraOn {
-        CameraPreview(model: CameraModel.shared, presenter: true)
+        CameraPreview(model: CameraModel.shared, presenter: true,
+          guidesOverride: currentState.map { Self.replicaGuides($0, base: CameraModel.shared.guides) })
       } else {
         Color.black.overlay { Label("Camera off", systemImage: "video.slash").foregroundStyle(.secondary) }
       }

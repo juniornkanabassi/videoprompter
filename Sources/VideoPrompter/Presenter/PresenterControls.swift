@@ -438,9 +438,19 @@ struct PresenterTurnControls: View {
 struct PresenterLevel: View {
   let level: Double
   var body: some View {
-    DBMeter(levelDB: level, axis: .horizontal, showsScale: false)
-      .frame(width: 48, height: 24).padding(.horizontal, Space.xs)
+    HStack(spacing: Space.sm) {
+      MeterZones.unlitTrack().frame(width: 40, height: 6).clipShape(Capsule())
+        .overlay(alignment: .leading) {
+          MeterZones.zoneTrack().frame(width: 40, height: 6).mask(alignment: .leading) {
+            Rectangle().frame(width: 40 * MeterZones.position(Float(level)))
+          }.clipShape(Capsule())
+        }
+      Text(MicMeterView.readout(Float(level)))
+        .font(.system(size: 12, weight: .medium)).monospacedDigit().fixedSize()
+    }.padding(.horizontal, Space.xs)
+      .accessibilityElement(children: .ignore)
       .accessibilityLabel("Microphone level")
+      .accessibilityValue(MicMeterView.readout(Float(level)))
   }
 }
 
