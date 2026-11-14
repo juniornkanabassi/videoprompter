@@ -69,12 +69,13 @@ import XCTest
       }.uiZoom(zoom), size: .init(width: 1000, height: 5000))
       defer { LibraryAX.close(window) }
       let sliders = LibraryAX.elements(host).filter { LibraryAX.value($0, "accessibilityRole") == "AXSlider" }
-      XCTAssertGreaterThanOrEqual(sliders.count, 10)
+      // The reading band's opacity sits in a collapsed Advanced group, so nine show.
+      XCTAssertGreaterThanOrEqual(sliders.count, 9)
       for slider in sliders {
         XCTAssertGreaterThanOrEqual(frame(slider).height, 24 * zoom - 0.5, LibraryAX.value(slider, "accessibilityLabel"))
       }
       let nativeSliders = LibraryAX.elements(host).compactMap { $0 as? NSSlider }
-      XCTAssertEqual(nativeSliders.count, 10)
+      XCTAssertEqual(nativeSliders.count, 9)
       for slider in nativeSliders {
         XCTAssertGreaterThanOrEqual(slider.bounds.height, 24)
         for y in [2.0, slider.bounds.height - 2] {

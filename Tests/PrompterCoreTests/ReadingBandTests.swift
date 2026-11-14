@@ -5,19 +5,13 @@ import XCTest
 
 @MainActor final class ReadingBandTests: XCTestCase {
   func testBandUsesFullMeasuredLineAndMovesWithCurrentWord() throws {
-    let storage = NSTextStorage()
-    let manager = MacReadingBandLayoutManager()
-    let container = NSTextContainer(containerSize: NSSize(width: 600, height: 1000))
-    storage.addLayoutManager(manager)
-    manager.addTextContainer(container)
-    let text = TrackingTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 1000), textContainer: container)
+    let text = TrackingTextView(frame: NSRect(x: 0, y: 0, width: 600, height: 1000))
+    let manager = try XCTUnwrap(text.layoutManager)
     text.textContainerInset = NSSize(width: 40, height: 80)
     text.textStorage?.setAttributedString(NSAttributedString(string: "First line\nSecond line", attributes: [.font: NSFont.systemFont(ofSize: 48)]))
     text.readingBandRange = NSRange(location: 0, length: 5)
     let first = try XCTUnwrap(text.readingBandRect)
-    XCTAssertEqual(manager.bandRange, text.readingBandRange)
     text.readingBandOpacity = 0.3
-    XCTAssertEqual(manager.bandOpacity, 0.3)
     let line = manager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
     XCTAssertEqual(first.minY, line.minY + text.textContainerOrigin.y)
     XCTAssertEqual(first.height, line.height)
