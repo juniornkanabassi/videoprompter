@@ -113,7 +113,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var acceptedWords = 0
   @Published private(set) var anchorNotice: String?
   /// The microphone level lives in its own object: the presenter and the settings form observe
-  /// the session, and a level published 20 times a second re-rendered both, camera controls and
+  /// the session, and publishing levels there re-rendered both, camera controls and
   /// all, for as long as Voice was listening. Only the meters observe `meter`.
   let meter = InputMeter()
   var audioPeakDBFS: Float { meter.peakDBFS }
@@ -147,6 +147,8 @@ final class SessionStore: ObservableObject {
   private var minimumSpeechGeneration: UInt64 = 0
   private var pendingSpeechCandidate: (event: RecognitionEvent, tracker: RecognitionTracker)?
   private let speechProvider = SpeechProvider()
+  private var contextTask: Task<Void, Never>?
+  private var contextWindow: Int?
   private var audioCapture: AudioCapture?
   private var speechTask: Task<Void, Never>?
   private var microphoneTestTask: Task<Void, Never>?
@@ -436,6 +438,7 @@ final class SessionStore: ObservableObject {
       globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
     if !incrementSeekRevision { tracker.seek(to: tokenIndex) }
     anchorNotice = nil
+    refreshSpeechContext()
     rememberSoon()
   }
   func nextPassage() {
@@ -542,12 +545,11 @@ final class SessionStore: ObservableObject {
         else { throw AudioCaptureError.conversionUnavailable }
         let capture = AudioCapture(device: device, outputFormat: format, gain: Float(gain), channel: AudioChannel.load(device.uid, defaults: defaults))
         self.audioCapture = capture
+        let meterDelivery = self.meterDelivery(generation: generation)
         try capture.start(
-          onBuffer: { [weak self] _, time, _, peak, clipping in
-            Task { @MainActor in
-              guard let self, self.lifecycleGeneration == generation else { return }
-              self.publishMeter(peak: peak, clipping: clipping, capturedAt: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
-            }
+          onBuffer: { _, time, _, peak, _ in
+            meterDelivery.receive(peaks: [peak], callback: ProcessInfo.processInfo.systemUptime,
+              capture: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
           },
           onStop: { [weak self] error in
             Task { @MainActor in
@@ -585,7 +587,6 @@ final class SessionStore: ObservableObject {
     audioCapture?.stop()
     audioCapture = nil
     isTestingMicrophone = false
-    pendingPeak = 0
     meter.reset()
   }
 
@@ -600,19 +601,16 @@ final class SessionStore: ObservableObject {
     audioCapture.stop(reason: .deviceLost)
   }
 
-  /// Only the meter observes these changes. Keep transients at up to display cadence.
-  private var lastMeterPublish: TimeInterval = 0
-  private var pendingPeak: Float = 0
-  func publishMeter(peak: Float, clipping: Bool, capturedAt: Double? = nil) {
-    pendingPeak = max(pendingPeak, peak)
-    let now = ProcessInfo.processInfo.systemUptime
-    guard clipping != isClipping || now - lastMeterPublish >= 1.0 / 60.0 else { return }
-    lastMeterPublish = now
-    // The loudest buffer since the last publish, so throttling cannot hide a transient peak.
-    meter.show(peakDBFS: AudioCapture.decibels(fullScalePeak: pendingPeak), isClipping: clipping)
-    pendingPeak = 0
-    if ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1", let capturedAt {
-      NSLog("Speech meter: capture-to-publish=%.3f ms", (ProcessInfo.processInfo.systemUptime - capturedAt) * 1000)
+  /// AudioMeterDelivery coalesces capture callbacks, preserving transients with fast attack.
+  func publishMeter(peak: Float, clipping: Bool) {
+    meter.show(peakDBFS: AudioCapture.decibels(fullScalePeak: peak), isClipping: clipping)
+  }
+
+  private func meterDelivery(generation: UInt64) -> AudioMeterDelivery {
+    AudioMeterDelivery { [weak self] peaks in
+      guard let self, self.lifecycleGeneration == generation else { return }
+      let peak = peaks.first ?? 0
+      self.publishMeter(peak: peak, clipping: peak >= 0.98)
     }
   }
 
@@ -711,6 +709,7 @@ final class SessionStore: ObservableObject {
         globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
     }
     anchorNotice = nil
+    refreshSpeechContext()
     if confirmed < document.spokenTokens.count - 1 {
       voiceEndTask?.cancel(); voiceEndTask = nil
     } else if confirmed > old {
@@ -745,6 +744,7 @@ final class SessionStore: ObservableObject {
     return max(0.01, (position.rounded(.down) + 1 - position) / tokensPerSecond + 0.002)
   }
   private func stopTasks() {
+    contextTask?.cancel(); contextTask = nil; contextWindow = nil
     voiceEndTask?.cancel(); voiceEndTask = nil
     cancelCountdown()
     isPreparingVoice = false
@@ -767,7 +767,6 @@ final class SessionStore: ObservableObject {
       await previousStop?.value
       await speechProvider.stop()
     }
-    pendingPeak = 0
     meter.reset()
     isTestingMicrophone = false
     audioDeviceObserver = nil
@@ -842,24 +841,26 @@ final class SessionStore: ObservableObject {
         self.state = .uncertain("Preparing \(self.scriptLanguage.rawValue) speech recognition. Missing speech files will download before listening.")
         let format = try await self.speechProvider.prepare(
           locales: try await self.speechLocales(),
-          contextualStrings: SpeechProvider.contextualPhrases(from: self.document.markdown), engine: .dictation)
+          contextualStrings: SpeechProvider.upcomingContext(self.document.spokenTokens, at: self.tokenIndex), engine: .dictation)
         guard !Task.isCancelled, self.lifecycleGeneration == generation, self.isActivelyRunning else { return }
         let capture = AudioCapture(
           device: device, outputFormat: format, gain: Float(self.settings.inputGain), channel: AudioChannel.load(device.uid, defaults: self.defaults))
         self.audioCapture = capture
+        let meterDelivery = self.meterDelivery(generation: generation)
         let pair = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
         self.analyzerContinuation = pair.continuation
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
-          onBuffer: { [weak self] buffer, time, _, peak, clipping in
-            // One main-actor hop per buffer, not two: at ~47 Hz the second hop was pure overhead.
+          onBuffer: { [weak self] buffer, time, _, peak, _ in
+            // Feed recognition immediately; progress bookkeeping and coalesced metering hop to main.
             let start = counter.next(buffer.frameLength)
             pair.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
+            meterDelivery.receive(peaks: [peak], callback: ProcessInfo.processInfo.systemUptime,
+              capture: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
             let submittedEnd = start.seconds + Double(buffer.frameLength) / format.sampleRate
             Task { @MainActor in
               guard let self, self.lifecycleGeneration == generation else { return }
               self.noteSubmittedAudioEnd(through: submittedEnd)
-              self.publishMeter(peak: peak, clipping: clipping, capturedAt: time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : nil)
             }
           },
           onStop: { [weak self] error in
@@ -881,6 +882,7 @@ final class SessionStore: ObservableObject {
           return
         }
         self.isPreparingVoice = false
+        self.refreshSpeechContext()
         self.state = .uncertain("Microphone ready. Read the script to begin following.")
         try await self.speechProvider.start(input: pair.stream) { [weak self] candidate in
           guard let self, self.lifecycleGeneration == generation else { return }
@@ -896,6 +898,27 @@ final class SessionStore: ObservableObject {
   private func failAudio(_ message: String) {
     pause()
     anchorNotice = message
+  }
+
+  private func refreshSpeechContext() {
+    guard audioCapture != nil, !isPreparingVoice, settings.mode == "Voice", !followsRemote else { return }
+    let window = tokenIndex / 24 * 24
+    guard contextWindow != window else { return }
+    contextWindow = window
+    let strings = SpeechProvider.upcomingContext(document.spokenTokens, at: window)
+    let generation = lifecycleGeneration
+    let previous = contextTask
+    contextTask = Task { [weak self] in
+      await previous?.value
+      guard let self, !Task.isCancelled, self.lifecycleGeneration == generation else { return }
+      do { try await self.speechProvider.updateContext(strings) }
+      catch {
+        // Context is a recognition hint; failure must not stop the microphone or lose words.
+        if ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1" {
+          NSLog("Voice context update failed: %@", error.localizedDescription)
+        }
+      }
+    }
   }
 
   private func speechLocales() async throws -> [Locale] {

@@ -1,10 +1,49 @@
 import XCTest
 import AVFoundation
+import PrompterCore
 @testable import VideoPrompter
 
 @MainActor private final class LatencyResult { var old = 0.0; var new = 0.0 }
 
 final class AudioMeterLatencyTests: XCTestCase {
+  @MainActor func testCaptureDeliveryReachesSessionAndRemoteMeterWithinTarget() async throws {
+    final class Pipe: LinkPipe, @unchecked Sendable {
+      var messages: [Data] = []
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) {
+        messages.append(data); done()
+      }
+    }
+    let session = SessionStore(defaults: freshDefaults())
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    let pipe = Pipe(name: "meter-test")
+    sender.pipe = pipe
+    defer { sender.pipe = nil }
+    sender.sampleMicLevel(session.meter)
+    let published = expectation(description: "session meter published")
+    let start = ProcessInfo.processInfo.systemUptime
+    var local = 0.0
+    let delivery = AudioMeterDelivery { levels in
+      session.publishMeter(peak: levels[0], clipping: false)
+      local = ProcessInfo.processInfo.systemUptime - start
+      published.fulfill()
+    }
+    delivery.receive(peaks: [0.8], callback: start, capture: start)
+    await fulfillment(of: [published], timeout: 1)
+    XCTAssertEqual(sender.micMeter.levelDB, Double(session.meter.peakDBFS), accuracy: 0.001)
+    for _ in 0..<100 where pipe.messages.isEmpty { try await Task.sleep(for: .milliseconds(1)) }
+    let elapsed = ProcessInfo.processInfo.systemUptime - start
+    let message = try XCTUnwrap(pipe.messages.last)
+    var reader = CameraLink.Reader()
+    let decoded = try reader.append(message)
+    guard case .command(.macStatus(let status)) = decoded.last else { return XCTFail("Expected a partial meter status") }
+    XCTAssertEqual(try XCTUnwrap(status.micLevelDB), Double(session.meter.peakDBFS), accuracy: 0.001)
+    XCTAssertNil(status.microphones, "A meter update must not enumerate sources")
+    print(String(format: "METER callback to local=%.3f ms remote transport=%.3f ms (no physical network/display)", local * 1000, elapsed * 1000))
+    XCTAssertLessThan(local, 0.05)
+    XCTAssertLessThan(elapsed, 0.05)
+  }
+
   @MainActor func testCoalescesWithoutLosingStereoTransient() async {
     let delivered = expectation(description: "meter published")
     var values: [[Float]] = []
@@ -14,6 +53,26 @@ final class AudioMeterLatencyTests: XCTestCase {
     await fulfillment(of: [delivered], timeout: 1)
     XCTAssertEqual(values.count, 1)
     XCTAssertEqual(values[0], [0.9, 0.8])
+  }
+
+  @MainActor func testPendingAttackPublishesOnNextFrameWithoutAnotherBuffer() async {
+    let first = expectation(description: "first frame")
+    let next = expectation(description: "pending attack")
+    var levels: [Float] = []
+    var times: [Double] = []
+    let meter = AudioMeterDelivery { value in
+      levels.append(value[0]); times.append(ProcessInfo.processInfo.systemUptime)
+      (levels.count == 1 ? first : next).fulfill()
+    }
+    meter.receive(peaks: [0.1], callback: ProcessInfo.processInfo.systemUptime)
+    await fulfillment(of: [first], timeout: 1)
+    meter.receive(peaks: [0.95], callback: ProcessInfo.processInfo.systemUptime)
+    meter.receive(peaks: [0.1], callback: ProcessInfo.processInfo.systemUptime)
+    await fulfillment(of: [next], timeout: 1)
+    XCTAssertEqual(levels, [0.1, 0.95], "Keep the attack even if the last input is quiet")
+    XCTAssertGreaterThanOrEqual(times[1] - times[0], 0.015)
+    XCTAssertLessThan(times[1] - times[0], 0.05)
+    print(String(format: "METER pending attack=%.3f ms; no extra buffer required", (times[1] - times[0]) * 1000))
   }
 
   @MainActor func testReleaseAndImmediateAttack() async {

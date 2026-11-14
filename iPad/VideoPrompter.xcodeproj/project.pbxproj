@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D16666666666666666666666 /* AudioMeterDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = D26666666666666666666666 /* AudioMeterDelivery.swift */; };
         ABCDEF123456789000000001 /* PairingExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABCDEF123456789000000002; };
 		F4E97043B1774B2D8FDD0011 /* CameraExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */; };
 		A11111111111111111111111 /* DBMeter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22222222222222222222222 /* DBMeter.swift */; };
@@ -36,6 +37,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D26666666666666666666666 /* AudioMeterDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Audio/AudioMeterDelivery.swift; sourceTree = "<group>"; };
         ABCDEF123456789000000002 /* PairingExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/PairingExchange.swift; sourceTree = "<group>"; };
 		F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Camera/CameraExposure.swift; sourceTree = "<group>"; };
 		A22222222222222222222222 /* DBMeter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/DBMeter.swift; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 				A22222222222222222222222 /* DBMeter.swift */,
 				B22222222222222222222222 /* PadPresenterLayout.swift */,
 				C26C84FA553FEA2B823DA12A /* SessionStore.swift */,
+				D26666666666666666666666 /* AudioMeterDelivery.swift */,
 				3D855FD629A122F15A7FE97E /* PrompterSettings.swift */,
 				7C1A0E5D2B9F4A6381D05E72 /* AudioChannel.swift */,
 				0AD650CCB71926F8862A6220 /* SpeechProvider.swift */,
@@ -284,6 +287,7 @@
 				A11111111111111111111111 /* DBMeter.swift in Sources */,
 				B11111111111111111111111 /* PadPresenterLayout.swift in Sources */,
 				FDA5FCABB024DE129E7206F0 /* SessionStore.swift in Sources */,
+				D16666666666666666666666 /* AudioMeterDelivery.swift in Sources */,
 				DF2CBE2BDB54685DEB3BF363 /* DesignTokens.swift in Sources */,
 				73B8E45F3D8FD6F2498942B5 /* MicMeter.swift in Sources */,
 				5686F7AB3365F44837A8D184 /* MeterZones.swift in Sources */,

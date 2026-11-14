@@ -146,21 +146,18 @@ import VideoToolbox
   private var microphones: [PadRemote.Source] = []
   private weak var sampledMeter: InputMeter?
   private var meterSubscription: AnyCancellable?
-  private var pendingPeak: Double = -60
+  private var meterLinkSubscription: AnyCancellable?
 
-  /// Retain every observed peak until the 15 Hz status tick consumes it.
+  /// Observe the active microphone directly; source/status discovery stays on its slower tick.
   func sampleMicLevel(_ meter: InputMeter) {
     if sampledMeter !== meter {
       sampledMeter = meter
-      pendingPeak = -60
       meterSubscription = meter.$peakDBFS.sink { [weak self] level in
-        guard let self, level.isFinite else { return }
-        pendingPeak = max(pendingPeak, Double(level))
+        guard let self else { return }
+        micMeter.show(macMicOn ? Double(level) : -60)
       }
     }
-    let current = meter.isFresh() ? Double(meter.peakDBFS) : -60
-    micMeter.show(macMicOn && meter.isFresh() ? max(pendingPeak, current) : -60)
-    pendingPeak = -60
+    micMeter.show(macMicOn && meter.isFresh() ? Double(meter.peakDBFS) : -60)
   }
 
   private func refreshSources() {
@@ -520,6 +517,10 @@ import VideoToolbox
     codes = store.load([String: String].self, key: "sendCameraPairingCodes", defaults: defaults) ?? [:]
     selectedWiFiID = defaults.string(forKey: "selectedWiFiIPad")
     refusedLegacyIDs = Set(defaults.stringArray(forKey: "forgottenWiFiIPads") ?? [])
+    meterLinkSubscription = micMeter.$levelDB.dropFirst()
+      .sink { [weak self] level in
+        self?.pipe?.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: level))).encoded())
+      }
   }
 
   private let output = AVCaptureVideoDataOutput()
@@ -715,7 +716,6 @@ import VideoToolbox
     statusTimer = nil
     meterSubscription = nil
     sampledMeter = nil
-    pendingPeak = -60
     micMeter.show(-60)
     macMicOn = true
     macStatus = PadRemote.MacStatus()
@@ -937,7 +937,6 @@ import VideoToolbox
     statusTimer = nil
     meterSubscription = nil
     sampledMeter = nil
-    pendingPeak = -60
     micMeter.show(-60)
     macMicOn = true
     macStatus = PadRemote.MacStatus()
@@ -1179,7 +1178,7 @@ class LinkPipe: @unchecked Sendable {
   private let pending = Atomic<Int>(0)
   /// Written one message at a time from here, so a control message (anything but format or
   /// frame) can overtake the video still waiting, never the one already being written. At most
-  /// one `.follow` and one latest Mac status wait at a time.
+  /// one `.follow`, one full Mac status and one meter-only status wait at a time.
   private let backlog = Mutex((control: [(data: Data, key: UInt8)](), video: [Data](), writing: false))
   /// Queued bytes above which the encoder drops a frame. Lower while the voice relay runs, so its
   /// word messages are never far behind.
@@ -1233,7 +1232,9 @@ class LinkPipe: @unchecked Sendable {
     else { return 0 }
     switch command {
     case .follow: return 1
-    case .macStatus: return 2
+    case .macStatus(let status):
+      // Frequent meter readings must not evict a pending source/controls update.
+      return status.micLevelDB != nil && status == .init(micLevelDB: status.micLevelDB) ? 3 : 2
     default: return 0
     }
   }

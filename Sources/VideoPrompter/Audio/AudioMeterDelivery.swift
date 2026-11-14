@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
 import Foundation
 
-/// A single pending main-actor update retains peaks without queuing stale meter readings.
+/// A single pending update retains peaks at up to 60 Hz without queuing stale readings.
 final class AudioMeterDelivery: @unchecked Sendable {
   private let lock = NSLock()
   private var pending: [Float] = []
@@ -9,12 +9,14 @@ final class AudioMeterDelivery: @unchecked Sendable {
   private var oldestCallback = 0.0
   private var oldestCapture: Double?
   private var previousCallback: Double?
+  private var lastDelivery: Double?
   private var envelope: [Float] = []
   private let onLevels: @MainActor @Sendable ([Float]) -> Void
   private let logsLatency = ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1"
 
   init(onLevels: @escaping @MainActor @Sendable ([Float]) -> Void) { self.onLevels = onLevels }
 
+  #if os(macOS)
   func receive(_ buffer: CMSampleBuffer, clock: CMClock? = nil) {
     let now = CMClockGetTime(CMClockGetHostTimeClock()).seconds
     if logsLatency {
@@ -27,6 +29,8 @@ final class AudioMeterDelivery: @unchecked Sendable {
     receive(peaks: RecordingAudioTest.channelPeaks(in: buffer), callback: now, capture: capture)
   }
 
+  #endif
+
   func receive(peaks: [Float], callback: Double, capture: Double? = nil) {
     lock.lock()
     // Instant attack, 20 dB/second release. Preserve a short transient until the UI consumes it.
@@ -38,13 +42,16 @@ final class AudioMeterDelivery: @unchecked Sendable {
     if !scheduled { oldestCallback = callback; oldestCapture = capture }
     pending = envelope.enumerated().map { index, peak in max(peak, index < pending.count ? pending[index] : 0) }
     let enqueue = !scheduled
+    let delay = max(0, 1.0 / 60 - (ProcessInfo.processInfo.systemUptime - (lastDelivery ?? -.infinity)))
     scheduled = true
     lock.unlock()
     guard enqueue else { return }
     Task { @MainActor [self] in
+      if delay > 0 { try? await Task.sleep(for: .seconds(delay)) }
       let value = lock.withLock { () -> ([Float], Double, Double?) in
         let value = (pending, oldestCallback, oldestCapture)
         pending = []; scheduled = false
+        lastDelivery = ProcessInfo.processInfo.systemUptime
         return value
       }
       onLevels(value.0)

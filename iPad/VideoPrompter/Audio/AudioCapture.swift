@@ -114,6 +114,7 @@ public final class AudioCapture: @unchecked Sendable {
     }
     do {
       try session.setPreferredInput(port)
+      try? session.setPreferredIOBufferDuration(0.005)
       try session.setActive(true)
     } catch { throw AudioCaptureError.engineFailure(error.localizedDescription) }
     // Ask for two input channels when the port has them, then check what really arrived: the session's
@@ -128,7 +129,7 @@ public final class AudioCapture: @unchecked Sendable {
       throw AudioCaptureError.engineFailure(channel.separateChannelsMessage)
     }
     if logsLatency {
-      NSLog("Voice input: rate=%.0f Hz requestedFrames=1024 voiceProcessing=%d", native.sampleRate, node.isVoiceProcessingEnabled ? 1 : 0)
+      NSLog("Voice input: rate=%.0f Hz requestedFrames=256 voiceProcessing=%d", native.sampleRate, node.isVoiceProcessingEnabled ? 1 : 0)
       NSLog("Voice session: category=%@ mode=%@ ioBuffer=%.3f ms inputLatency=%.3f ms", session.category.rawValue, session.mode.rawValue, session.ioBufferDuration * 1000, session.inputLatency * 1000)
     }
     try prepareConverter(sampleRate: native.sampleRate)
@@ -138,7 +139,7 @@ public final class AudioCapture: @unchecked Sendable {
       running = true
       pendingBuffers = 0
     }
-    node.installTap(onBus: 0, bufferSize: 1024, format: native) { [weak self] buffer, time in
+    node.installTap(onBus: 0, bufferSize: 256, format: native) { [weak self] buffer, time in
       self?.enqueue(buffer, time: time)
     }
     do { try engine.start() } catch {
@@ -204,7 +205,8 @@ public final class AudioCapture: @unchecked Sendable {
 
   private func enqueue(_ source: AVAudioPCMBuffer, time: AVAudioTime) {
     let accepted = stateLock.withLock { () -> Bool in
-      guard running, pendingBuffers < 4 else { return false }
+      // Preserve the previous nominal 85 ms processing allowance with 256-frame taps.
+      guard running, pendingBuffers < 16 else { return false }
       pendingBuffers += 1
       return true
     }

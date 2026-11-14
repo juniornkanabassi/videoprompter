@@ -55,8 +55,6 @@ import PrompterCore
   private var iPadRunning = false
   /// Set while the relay itself moves the session, so its own seek is not sent back.
   private var movingSession = false
-  private var pendingFollow: Int?
-  private var flushScheduled = false
 
   init(link: PadRelayLink? = nil, suiteName: String = "VideoPrompter.padRelay", defaults: UserDefaults = .standard) {
     self.link = link
@@ -107,7 +105,6 @@ import PrompterCore
     guard phase == .live, !micPaused else { return }
     micPaused = true
     resumeAfterMic = wantsRunning
-    pendingFollow = nil
     pause()
   }
 
@@ -143,7 +140,6 @@ import PrompterCore
     guard state.voiceSource == "Mac" else { return finish("The iPad is listening with its own microphone", pausingIPad: false) }
     if state.editing == true {
       resumeAfterMic = false
-      pendingFollow = nil
       pause()
       iPadRunning = false
       return
@@ -159,7 +155,6 @@ import PrompterCore
     // (the counter wraps) is a seek to adopt, and a follow stamped earlier is already stale.
     if let revision = state.seekRevision, revision != knownRevision {
       knownRevision = revision
-      pendingFollow = nil
       move(to: state.word - 1)
       // The relay stopped itself at the end of the script; a seek on a running iPad starts it again.
       if state.running, session?.isActivelyRunning == false { play() }
@@ -232,8 +227,10 @@ import PrompterCore
     move(to: state.word - 1)
     session.$lastConfirmedTokenIndex.dropFirst().sink { [weak self] index in
       guard let self, !self.movingSession, let index else { return }
-      self.pendingFollow = index
-      self.scheduleFlush()
+      guard self.phase == .live, self.iPadState?.editing != true,
+        self.iPadState?.micOn != false else { return }
+      // LinkPipe already coalesces unsent follows behind an in-flight write.
+      self.link?.send(.follow(.init(confirmed: index, fingerprint: self.fingerprint, seekRevision: self.knownRevision)))
     }.store(in: &bag)
     // The failure shows once the session has settled, so its notice is already set.
     session.$state.dropFirst().sink { [weak self] _ in
@@ -297,19 +294,6 @@ import PrompterCore
     }
   }
 
-  /// At most one follow per turn of the main actor, always the newest word.
-  private func scheduleFlush() {
-    guard !flushScheduled else { return }
-    flushScheduled = true
-    Task { @MainActor [weak self] in
-      guard let self else { return }
-      self.flushScheduled = false
-      guard self.phase == .live, self.iPadState?.editing != true, self.iPadState?.micOn != false, let confirmed = self.pendingFollow else { return }
-      self.pendingFollow = nil
-      self.link?.send(.follow(.init(confirmed: confirmed, fingerprint: self.fingerprint, seekRevision: self.knownRevision)))
-    }
-  }
-
   // MARK: - Ending
 
   /// A refused start also returns an unserved voice source to the iPad.
@@ -328,7 +312,6 @@ import PrompterCore
     wantsRunning = false
     micPaused = false
     resumeAfterMic = false
-    pendingFollow = nil
     bag.removeAll()
     session?.pause()
     session = nil
