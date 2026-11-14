@@ -190,6 +190,8 @@ struct PresenterView: View {
               if let referencePicture { Image(nsImage: referencePicture).resizable().scaledToFit() }
               else { CameraPreview(model: camera, presenter: true, hidesExposureAids: shell.reading && !editing) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
+              // Mirror turns the text for the glass but not the picture: through the glass the presenter sees themself as in a mirror. Flip still turns both, so the picture is never upside down.
+              .scaleEffect(x: !editing && store.settings.horizontalMirror ? -1 : 1)
               // Focus keeps the picture running (a take may be on) but out of sight: no zebras, false colour or guides behind the words.
               .opacity(focusActive ? 0 : 1)
               .task { if startsCamera { camera.start() } }
