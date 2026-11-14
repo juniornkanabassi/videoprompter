@@ -147,6 +147,28 @@ import XCTest
     XCTAssertFalse(LibraryAX.named("Camera", in: host).isEmpty, "Leaving Clean brings the bar back")
   }
 
+  func testCountdownPauseAndReadingNoticeReset() async throws {
+    let f = try await fixture()
+    f.0.settings.mode = "Manual"
+    f.0.session.updateSettings(f.0.settings)
+    f.0.session.startDelay = 3
+    let shell = PresenterShell()
+    let (window, host) = await LibraryAX.host(view(f, shell: shell), size: .init(width: 1180, height: 820))
+    defer { f.0.session.pause(); LibraryAX.close(window) }
+    f.0.session.startReading()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertTrue(f.0.session.isCountingDown)
+    let pause = try XCTUnwrap(LibraryAX.named("Pause, cancel countdown", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(pause, "accessibilityPerformPress"))
+    XCTAssertFalse(f.0.session.isCountingDown)
+    f.0.session.play(captureAudio: false)
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertTrue(shell.reading)
+    f.0.session.pause()
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertFalse(shell.reading)
+  }
+
   func testReadingBarIsOneRowOfStatusTransportAndQuietOptions() async throws {
     let f = try await fixture()
     let (window, host) = await LibraryAX.host(view(f, shell: PresenterShell(reading: true)), size: .init(width: 1600, height: 1000))
@@ -324,7 +346,7 @@ extension AppearanceSnapshotTests {
     store.session.meter.show(peakDBFS: -9, isClipping: false)
 
     func present(_ name: String, size: CGSize, reading: Bool = false, editing: Bool = false, preview: Bool = false, noCamera: Bool = false,
-                 zoom: Double = 1, focus: Bool = false, autoHide: Bool = false, adjust: AdjustTab? = nil, script: ScriptRecord? = nil,
+                 zoom: Double = 1, focus: Bool = false, adjust: AdjustTab? = nil, script: ScriptRecord? = nil,
                  level: Float = -9, clipping: Bool = false, latched: Bool = false, fallsTo: Float = -14) async throws {
       let script = script ?? record
       store.uiZoom = zoom
@@ -336,7 +358,6 @@ extension AppearanceSnapshotTests {
       if latched { Task { @MainActor in try? await Task.sleep(for: .milliseconds(50)); for meter in [recorder.inputMeter, store.session.meter] { meter.show(peakDBFS: fallsTo, isClipping: false) } } }
       camera.cleanLook = .scriptOnly
       camera.cleanView = focus
-      defaults.set(autoHide, forKey: "presenterAutoHideBar")
       if reading { store.session.play(captureAudio: false) } else { store.session.pause() }
       let draft = PresenterDraft(record: script)
       if editing { draft.begin(session: store.session) }
@@ -394,7 +415,6 @@ extension AppearanceSnapshotTests {
     try await present("r10-reading-200-chipstart", size: wide, reading: true, zoom: 2)
     try await present("r10-reading-200-clipearlier", size: wide, reading: true, zoom: 2, level: -14, latched: true, fallsTo: -14)
     try await present("r10-reading-long-1280", size: laptop, reading: true, script: longRecord)
-    try await present("r10-reading-autohide-1600", size: wide, reading: true, autoHide: true)
     // Focus: only the text, the audio meter and the reading line, with a short "Esc to exit".
     for (label, size) in [("1600", wide), ("1280", laptop), ("4k", uhd)] {
       try await present("r10-reading-focus-\(label)", size: size, reading: true, focus: true)

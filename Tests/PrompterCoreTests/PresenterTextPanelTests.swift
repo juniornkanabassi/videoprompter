@@ -23,6 +23,23 @@ import XCTest
     }
   }
 
+  func testRemoteCleanAlwaysExposesExitAndTransport() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("CleanConsole")
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
+    let link = IPadCameraSender(defaults: defaults)
+    for cameraOnly in [false, true] {
+      let state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Manual", speed: 120,
+        word: 0, words: 0, look: .init(cleanLook: .pictureOnly), cleanScreen: true, cameraOnly: cameraOnly)
+      let (window, host) = await LibraryAX.host(IPadRemoteView(link: link, store: store, stateOverride: state, startsLink: false), size: .init(width: 1180, height: 820))
+      defer { LibraryAX.close(window) }
+      for title in ["Exit Clean · Esc", "Clean", "Start reading"] {
+        XCTAssertFalse(LibraryAX.named(title, in: host).isEmpty, title)
+      }
+    }
+  }
+
   func testBothMacHostsExposeAllTextControls() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -42,6 +59,12 @@ import XCTest
 }
 
 extension AppearanceSnapshotTests {
+  func testCleanMenuOpen() async throws {
+    guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
+    let menu = PresenterCleanMenu(selected: .pictureAndScript, active: true, keepMicMeter: .constant(true), choose: { _ in }, leave: {})
+    try await snapshot(menu.choices, name: "clean-menu-open", size: .init(width: 360, height: 340), scheme: .dark, destination: URL(fileURLWithPath: output))
+  }
+
   func testPresenterTextPanels() async throws {
     guard let output = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOTS"] else { throw XCTSkip("Opt-in snapshots") }
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

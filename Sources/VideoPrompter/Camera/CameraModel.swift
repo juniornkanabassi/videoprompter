@@ -163,8 +163,14 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     if exposureBypassed { value.zebras = false; value.falseColour = false }
     return value
   }
-  @Published var cleanLook: PadRemote.CleanLook = .pictureOnly
-  @Published var keepCleanMicMeter = true
+  @Published var cleanLook: PadRemote.CleanLook = .pictureOnly { didSet { defaults.set(cleanLook.rawValue, forKey: "presenterCleanLook") } }
+  @Published var keepCleanMicMeter = true { didSet { defaults.set(keepCleanMicMeter, forKey: "presenterKeepMicMeter") } }
+
+  func chooseCleanLook(_ look: PadRemote.CleanLook) {
+    let leaving = cleanView && cleanLook == look
+    cleanLook = look
+    cleanView = !leaving
+  }
   var previewGuides: CameraGuides {
     var value = monitorGuides
     if cleanView && !cleanLook.showsGuides { value.zebras = false; value.falseColour = false }
@@ -272,6 +278,8 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
 
   init(defaults: UserDefaults = .standard) {
     self.defaults = defaults
+    cleanLook = defaults.string(forKey: "presenterCleanLook").flatMap(PadRemote.CleanLook.init(rawValue:)) ?? .pictureOnly
+    keepCleanMicMeter = defaults.object(forKey: "presenterKeepMicMeter") as? Bool ?? true
     nicknames = defaults.dictionary(forKey: "cameraNicknames") as? [String: String] ?? [:]
     guideStore = CameraGuideStore(defaults: defaults)
     let uid = defaults.string(forKey: "cameraDeviceUID")

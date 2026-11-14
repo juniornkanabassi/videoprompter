@@ -104,6 +104,7 @@ final class PadPresenterLayoutTests: XCTestCase {
     XCTAssertEqual(insets(834), [152, 152])
     XCTAssertEqual(insets(clean: true, setup: true, lost: true), [0, 0])
     XCTAssertEqual(insets(setup: true), [144, 144])
+    XCTAssertEqual(insets(setup: true, lost: true), [228, 228])
     XCTAssertEqual(insets(834, setup: true), [200, 200])
     XCTAssertEqual(insets(setup: true, note: true), [200, 200])
     // The Mac-lost notice has its own band; the card takes a row of its own only on narrower screens.

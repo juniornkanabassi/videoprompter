@@ -523,18 +523,29 @@ struct PresenterCleanMenu: View {
     .accessibilityLabel("Clean")
     .accessibilityValue(active ? selected.title : "Off")
     .popover(isPresented: $isOpen) {
+      choices
+    }
+  }
+
+  var choices: some View {
       VStack(alignment: .leading, spacing: Space.sm) {
         ForEach(PadRemote.CleanLook.allCases, id: \.self) { look in
           Button { choose(look); isOpen = false } label: {
-            Label(look.title, systemImage: active && selected == look ? "checkmark" : "rectangle")
-              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            HStack {
+              VStack(alignment: .leading, spacing: Space.xs) {
+                Text(look.title)
+                Text(look.description).font(.caption).foregroundStyle(.secondary)
+              }
+              Spacer()
+              if active && selected == look { Image(systemName: "checkmark").accessibilityHidden(true) }
+            }.frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
           }.buttonStyle(.plain)
+            .accessibilityAddTraits(active && selected == look ? .isSelected : [])
         }
         Divider()
         Toggle("Keep mic meter", isOn: $keepMicMeter).frame(minHeight: 44)
         if active { Button("Show controls") { leave(); isOpen = false }.frame(minHeight: 44) }
         if let fullScreen { Button("Full screen") { fullScreen(); isOpen = false }.frame(minHeight: 44) }
-      }.padding(Space.md).frame(minWidth: 240).preferredColorScheme(.dark)
-    }
+      }.padding(Space.md).frame(width: 340).preferredColorScheme(.dark)
   }
 }

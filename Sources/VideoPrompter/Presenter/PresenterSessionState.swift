@@ -11,6 +11,7 @@ final class PresenterSessionState: ObservableObject {
     subscription = Publishers.MergeMany(
       Self.changes(session.$document.dropFirst()),
       Self.changes(session.$state.removeDuplicates().dropFirst()),
+      Self.changes(session.$countdownRemaining.removeDuplicates().dropFirst()),
       Self.changes(session.$settings.removeDuplicates().dropFirst()),
       Self.changes(session.$anchorNotice.removeDuplicates().dropFirst())
     ).sink { [weak self] in self?.objectWillChange.send() }

@@ -287,7 +287,7 @@ struct PresenterView: View {
     .onReceive(session.$isPreparingVoice.removeDuplicates().dropFirst()) { _ in presentation.objectWillChange.send() }
     .onReceive(session.$hasLiveRecognition.removeDuplicates().dropFirst()) { _ in presentation.objectWillChange.send() }
     .onReceive(session.$manualCompleted.removeDuplicates().dropFirst()) { _ in presentation.objectWillChange.send() }
-    .onChange(of: session.isActivelyRunning) { _, active in if active && !camera.cleanView { shell.reading = true } }
+    .onChange(of: session.isActivelyRunning) { _, active in shell.reading = active }
     .onReceive(NotificationCenter.default.publisher(for: .init("VideoPrompter.presenterInteraction"))) { _ in revealControls() }
     .onDisappear { quietTask?.cancel() }
     .onChange(of: camera.cleanView) { _, clean in
@@ -457,9 +457,9 @@ struct PresenterView: View {
 
   /// Every transport button has its word; Back to start and Open script may take their short forms.
   @ViewBuilder private func setupTransport(short: Bool, shortOpen: Bool = false, snug: Bool = false) -> some View {
-    Button { shell.reading = true; session.toggle() } label: { BarLabel(title: session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", symbol: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", snug: snug).frame(minWidth: 144) }
-      .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel(session.isActivelyRunning ? "Pause" : "Start reading")
-      .help("Start reading (Space)").disabled(!hasScript || draft.isEditing)
+    Button { session.toggle() } label: { BarLabel(title: session.isActivelyRunning || session.isCountingDown ? "Pause" : "Start reading", symbol: session.isActivelyRunning || session.isCountingDown ? "pause.fill" : "play.fill", snug: snug).frame(minWidth: 144) }
+      .buttonStyle(BarButtonStyle(role: .prominent)).accessibilityLabel(session.isCountingDown ? "Pause, cancel countdown" : session.isActivelyRunning ? "Pause" : "Start reading")
+      .help(session.isCountingDown ? "Pause and cancel countdown (Space)" : session.isActivelyRunning ? "Pause (Space)" : "Start reading (Space)").disabled(!hasScript || draft.isEditing)
     Button { session.restart() } label: { BarLabel(title: short ? "Back" : "Back to start", symbol: "arrow.counterclockwise", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
@@ -486,6 +486,10 @@ struct PresenterView: View {
       BarToggle(title: "Script", symbol: "text.alignleft", isOn: shell.scriptPreview, showsTitle: true, snug: snug,
         help: shell.scriptPreview ? "Hide the script" : "Show the script over the picture") { shell.scriptPreview.toggle() }
         .disabled(!hasScript)
+        .contextMenu { scriptButton() }
+      Menu { scriptButton() } label: { Image(systemName: "chevron.down") }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Script options")
+      editButton()
     }
   }
 
@@ -595,8 +599,7 @@ struct PresenterView: View {
         .disabled(!camera.exposureIsConfigured).opacity(hasPicture ? 1 : 0.45)
       PresenterCleanMenu(selected: camera.cleanLook, active: camera.cleanView,
         keepMicMeter: $camera.keepCleanMicMeter, choose: { look in
-          let leaving = camera.cleanView && camera.cleanLook == look
-          camera.cleanLook = look; camera.cleanView = !leaving
+          camera.chooseCleanLook(look)
         }, leave: { camera.cleanView = false }, fullScreen: { controller.toggleFullScreen() })
     }
   }

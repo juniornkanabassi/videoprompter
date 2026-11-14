@@ -82,7 +82,7 @@ struct PresenterScreen: View {
           ZStack {
             background
             if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
-            if !store.cleanScreen && !focusActive {
+            if !store.cleanScreen && !focusActive && !lostPaused {
               cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale)
             }
           }
@@ -266,7 +266,7 @@ struct PresenterScreen: View {
     .contentShape(Rectangle())
     .onTapGesture { if store.cleanScreen { store.setCleanScreen(false) } }
     .overlay(alignment: .trailing) {
-      if macConnected || referencePicture != nil {
+      if (macConnected || referencePicture != nil) && (!store.cleanScreen || store.keepMicMeter) {
         PresenterMeter(meter: store.micMeter, name: microphoneName, isListening: store.micOn)
           .frame(width: MicMeterView.stripWidth(typeScale: 1))
           .padding(.top, 96).padding(.bottom, 120).padding(.trailing, 8)
@@ -387,7 +387,8 @@ struct PresenterScreen: View {
 
   private var statusText: String {
     let words = session.document.spokenTokens.count
-    return "\(session.isActivelyRunning ? "Reading" : "Paused") · word \(words > 0 ? session.tokenIndex + 1 : 0) of \(words)"
+    let phase = counting ? "Starting in \(session.countdownRemaining)" : session.isActivelyRunning ? "Reading" : "Paused"
+    return "\(phase) · \(isVoice ? "Voice follow" : "Automatic")\(store.micOn ? "" : " · Mic off") · word \(words > 0 ? session.tokenIndex + 1 : 0) of \(words)"
   }
 
   /// The warning when the Mac goes: reading stopped where it was, the way back is the reader's choice.
@@ -396,6 +397,7 @@ struct PresenterScreen: View {
       Circle().fill(PresenterTheme.warn).frame(width: 12, height: 12)
       Text("Lost the Mac. Paused where you were.").fixedSize(horizontal: false, vertical: true)
       PadButton("iPad mic", kind: .plain, height: 44) {
+        store.setVoiceSource("iPad")
         store.setMicOn(true)
         startReading()
       }
@@ -441,6 +443,7 @@ struct PresenterScreen: View {
   private func setupBar(width: CGFloat) -> some View {
     VStack(spacing: Space.sm) {
       Spacer()
+      if lostPaused { lostCard.padding(.horizontal, Space.md) }
       if showsOffNote { offNote }
       PresenterSetupBar(scale: hudScale) {
         transport
@@ -924,7 +927,7 @@ struct PadPresenterTextSettings: View {
         }))
         .padding(Space.lg)
     }
-    .frame(width: 440, height: 800)
+    .frame(idealWidth: 440, maxWidth: 440, idealHeight: 680, maxHeight: 680)
     .background(Surfaces.presenterPanel)
   }
 }
