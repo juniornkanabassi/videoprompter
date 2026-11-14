@@ -1,5 +1,8 @@
 # Voice-follow latency investigation
 
+Further responsiveness work from base `0f37099` is recorded in
+[Voice follow responsiveness](voice-follow-responsiveness.md).
+
 Updated 14 November 2026. Base `8ae0abc`; resumed from `732dfdc`.
 
 ## Review follow-up: braking at the lead limit

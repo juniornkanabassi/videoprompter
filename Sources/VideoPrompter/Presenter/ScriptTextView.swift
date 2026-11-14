@@ -122,11 +122,12 @@ struct ScriptTextView: View {
         paragraphSpacing: paragraphSpacing,
         alignment: alignment, showCues: showCues, highlightActiveWord: highlightActiveWord, overVideo: overVideo)
     }
+    // Colour follows recognition immediately; only scrolling waits for layout.
+    coordinator.updateReadState()
     coordinator.updateGeneration &+= 1
     let generation = coordinator.updateGeneration
     DispatchQueue.main.async {
       guard coordinator.updateGeneration == generation else { return }
-      coordinator.updateReadState()
       if coordinator.manualPosition != nil {
         coordinator.alignManual(in: scroll)
       } else {
