@@ -1,6 +1,6 @@
-# Voice-follow latency: resumed implementation
+# Voice-follow latency: source fix and validation complete
 
-Branch `t3/fix-voice-follow-latency`, resumed from `732dfdc` on 14 November 2026.
+Branch `t3/fix-voice-follow-latency`, resumed from `732dfdc` on 14 November 2026. Implementation commit: `2b886e6`.
 
 ## Confirmed cause and current change
 
@@ -23,21 +23,20 @@ This is a demonstrated software contributor, not proof that every part of the ha
 ## Checks / evidence
 
 - Original full main suite before this implementation: 1110 tests, 92 skips, zero failures; light snapshots passed, dark interrupted by the earlier user pause.
-- Final full run now active: `VIDEOPROMPTER_TEST_SCRATCH=/private/tmp/vp-voice-final-732dfdc ./test.sh > /private/tmp/vp-voice-full-final.log 2>&1`. Check its actual completion; both appearance passes and grid check are required.
+- Final full run PASS: 1,113 tests, 92 conditional skips, zero failures; both appearance passes each passed 61 tests with one skip; final grid check passed. Command: `VIDEOPROMPTER_TEST_SCRATCH=/private/tmp/vp-voice-final-732dfdc ./test.sh > /private/tmp/vp-voice-full-final.log 2>&1`. Completed at 03:48:59 UTC on 14 November 2026.
 - Focused recorded glide test with final acceleration limit passed. Faster constants without that limit failed smoothness and were discarded.
 - Generic iPad build: `/private/tmp/vp-voice-ipad-final.log`, succeeded without booting a Simulator.
 - Full 25-word audio-to-offscreen-paint replay: `/private/tmp/vp-rendered-isolated4.log`, passed; 25/25 words, zero drops; conversion and matching p90 ~1 ms; publication-to-paint p90 32 ms; word-end-to-paint p90 838 ms. This was run before final acceleration calibration; it does not measure real display scanout.
-- Final repeat of that replay: `/private/tmp/vp-rendered-verified.log` (check completion).
+- Final repeat of that replay: `/private/tmp/vp-rendered-verified.log`, PASS. All 25 words, zero drops; conversion p90 5 ms; matching p90 2 ms; paint-work p90 26 ms; publication-to-paint p90 98 ms during full-suite load.
 - Focused final short tests: `/private/tmp/vp-voice-verified-short.log`, passed (5 tests).
 - Current response/motion evidence: `/private/tmp/vp-limited-glide.log` and `/private/tmp/vp-voice-verified-short.log`.
 - Existing independent audio fixture: `/private/tmp/vp-voice-latency-20261114/timed/reading.wav`, `script.md`, `words.json`.
 
-## Exact next steps
+## Next step / handback
 
-1. Check running jobs and the final full test log. Do not launch another full run unnecessarily. If it fails, address actual findings and rerun the affected check, then finish full validation.
-2. Check final audio replay and the optional exposure contention test results. Update the report from actual final logs, not earlier failed test prototypes.
-3. Commit all final changes on this branch. No push, release, install or version bump.
-4. Report the confirmed post-recognition cause, bounded before/after results, checks and remaining hardware work. No real microphone/camera capture or Simulator boot has been used; no simulator needs shutdown.
+The source fix and required headless checks are complete. No push, release, app installation or version bump was performed. No Simulator was booted.
+
+Review the implementation and, when authorised, validate the affected real Mac/iPad build using `VIDEOPROMPTER_AUDIO_LATENCY=1`. The optional logs report input-node voice processing, actual buffer duration/queue wait, conversion and matching. Do not claim live hardware confirmation from these offscreen replays.
 
 ## Remaining hardware limits
 
