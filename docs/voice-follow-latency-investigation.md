@@ -1,53 +1,70 @@
-# Voice-follow latency investigation, 14 November 2026
+# Voice-follow latency investigation
 
-Base: `8ae0abc`. No production behaviour change is justified by these replays. The reported severe lag has not yet been reproduced. AEC is not enabled by the Mac capture implementation; iPad capture requests `.record` / `.measurement`. This is a source audit, not a live-device AEC measurement.
+Updated 14 November 2026. Base `8ae0abc`; resumed from `732dfdc`.
 
-## Measurements
+## Confirmed software delay and fix
 
-All playback was file-to-recogniser, without audio output, live capture, app launching or a Simulator. XCTest links TestOffscreen. Runtime app launches were not needed.
+Recognition was only part of the delay. The production presenter adds `VoiceGlide` after SessionStore publishes the recognised word. Its position catch-up (0.5 s) and velocity filter (0.15 s) compounded the lag, especially when speech resumed or results arrived in a burst. The iPad adds its existing 0.08 s offset filter afterwards.
 
-- Mac tap request: 256 frames (5.33 ms at 48 kHz); iPad: 1024 (21.33 ms). These requests do not prove actual callback sizes. Replay used 4800-frame / 100 ms input chunks.
-- Read-only CoreAudio query of the built-in MacBook Pro microphone: 48 kHz, 512 buffer frames, 50 safety frames, 1439 stream-latency frames, zero device-latency frames. Those reported components total about 41.7 ms; this is nominal device configuration, not a live capture measurement.
-- 48-to-16 kHz conversion: 10 seconds of synthetic input retained 2.625 ms, with no accumulating backlog; 100 conversions took 125.64 ms total in a debug test.
-- Matcher: growing partial hypotheses of 50 / 100 / 200 / 400 words took roughly 2 / 2 / 3 / 5 ms. Partial results advanced immediately; no final-result gate or debounce.
-- Short continuous synthesised reading: current dictation delivered result ranges about 55 ms after their audio end, p90 97 ms. This is NOT per-word recognition latency: a result range can end after the last recognised word.
-- Independently timed, individually synthesised words: waveform endpoints (last sample exceeding 80/32768 amplitude), median word-end-to-published-highlight 458 ms, p90 813 ms, maximum 1372 ms. All 25 words reached, zero dropped input buffers. Published highlight state is measured; actual display painting and live hardware input are not.
-- Adding `.frequentFinalization` to long dictation did not materially change the short continuous replay (result-range p90 97 -> 94 ms). The experiment was reverted.
-- Existing fast/volatile SpeechTranscriber replay: median per-word 632 ms, p90 889 ms. It did not justify replacing production dictation.
-- VoiceGlide deliberately smooths scrolling after the highlight updates; existing recorded-replay tests separately bound its added delay. Highlight colouring itself does not wait for the glide.
-- Six-minute natural Short 173 replay: PASS, all 714 script words accepted, zero dropped buffers. Word-to-published-highlight p50 400 ms, p90 724 ms, maximum 11.552 seconds on garbled/re-read speech. The longest no-progress interval (12.518 seconds) includes a garbled phrase and the speaker repeating the sentence. This run used the original replay pacing, so it can be up to one 100 ms chunk optimistic. It ran alongside other tests and is not an isolated hardware benchmark.
-- On that natural replay, candidate callback to synchronous highlight-state publication: p50 4.49 ms, p90 13.36 ms, maximum 26.90 ms. This covers matching and SessionStore publication, not the UI run loop or actual paint.
-- Mac-mic relay performs recognition in the same SessionStore, then sends confirmed positions to the iPad; it does not send PCM through a second recogniser. Follow messages coalesce over one MainActor turn, without a timed debounce. Network and iPad rendering latency remain hardware measurements.
+The fix reduces those two shared time constants to 0.15 s and 0.08 s. A 90 words/s² limit on increases in velocity prevents sudden acceleration. Braking, explicit seeks, jump handling, the one-word lead limit, recognition and all matching decisions remain unchanged. Faster constants without this acceleration limit failed the existing smoothness tests and were rejected.
 
-## Measurement correction
+This fixes a measured post-recognition delay. It does not prove that every part of the user's hardware symptom is resolved.
 
-The current OS's final DictationTranscriber word ranges for a 20.785-second synthetic recording ended at 10.32 seconds, although the result range ended at 20.785. Trusting those word ranges yielded a spurious 9.56-second p90. Do not use that number as evidence of app lag.
+## Before and after
 
-The replay also now waits until a whole audio chunk has elapsed before delivering it. Previously each chunk was submitted up to 100 ms early in these measurements.
+The recorded tests feed identical recogniser candidates into the unchanged matcher, then advance the production glide at 120 Hz. These numbers are **additional scroll delay after word acceptance**, not recogniser latency.
 
-The existing production replay now accepts `VIDEOPROMPTER_SPEECH_REPLAY_WORDS`, a JSON array of `{text,start,end}` objects in recording seconds. It aligns this independent word track instead of the recogniser's own timestamps, checks coverage, and retains the existing `VIDEOPROMPTER_MAX_WORD_LATENCY_P90` gate.
+| Recorded reading | Median before | Median after | p90 before | p90 after |
+| --- | ---: | ---: | ---: | ---: |
+| Canonical | 170 ms | 60 ms | 410 ms | 230 ms |
+| Short 173 | 160 ms | 50 ms | 390 ms | 200 ms |
+| Short 172 | 120 ms | 30 ms | 340 ms | 210 ms |
 
-The opt-in rendered replay was attempted and skipped because this machine has no Prompter XL display. No display or Simulator was opened as a workaround.
+The new native AppKit regression drives a partial candidate through SessionStore and the real scroll coordinator after silence. For a 12-word burst at 60 Hz, reaching 90% of the destination improved from **717 to 517 ms on Mac**. Composing the production iPad offset filter improved **783 to 600 ms**. A three-word burst now takes **317 ms on Mac / 400 ms in the iPad model**. The tests also cover 30 and 120 Hz and verify the existing lead bound.
 
-## Reproduction
+All three recorded motion tests retain their original limits: no more than 30 stops per minute and p99 acceleration <=100 words/s². After the fix they measured 7–20 stops/minute and p99 acceleration 90 words/s². Matching and no-ahead-word assertions are unchanged.
 
-Use `./test.sh -XCTest PrompterCoreTests.SpeechSessionIntegrationTests/testActualWAVThroughProductionProviderAndSession` with:
+## Other stages
+
+These stages were not changed to obtain the scroll improvement.
+
+- **Input/AEC:** Mac capture never enables AVAudioEngine voice processing. iPad requests `.record` / `.measurement`, not `.voiceChat`. Actual node state and OS/hardware latency require real input capture; no live microphone was opened. The optional diagnostic log now reports node voice-processing state, actual tap frame count/duration and processing-queue wait. On iPad it also reports the session category, mode, I/O duration and input latency.
+- **Buffering:** requested tap sizes remain 256 frames on Mac and 1024 on iPad. Requests are not proof of actual callbacks. The Mac's count-based 16-buffer limit could cover more time when delivered buffers are larger; no persistent backlog was observed in replay, and its live behaviour remains unverified.
+- **Conversion:** 48-to-16 kHz conversion retains 2.625 ms after ten seconds, without accumulating lag. The audio replay now uses production `AudioCapture.process`, not a separately implemented converter. Its conversion p90 was about 1 ms per 100 ms chunk.
+- **Recognition:** production remains on DictationTranscriber with volatile partial results. SpeechTranscriber's existing preset already enables fast and volatile results. Adding frequentFinalization to dictation and switching recognisers did not justify a change in the earlier A/B runs; both experiments were reverted.
+- **Matching:** partial candidates advance immediately. There is no final-result gate or timed debounce. Confidence/evidence safeguards for skips and re-reads remain. The independently timed 25-word replay measured match/publication p90 about 1 ms; the longer natural replay previously measured callback-to-publication p90 13.36 ms.
+- **UI and main thread:** the full production PresenterView now runs in a transparent TestOffscreen panel with isolated preferences and capture disabled. It does not require a physical Prompter XL. The replay explicitly completes a bitmap paint because invisible windows do not receive ordinary compositor refreshes. One 25-word run measured publication-to-offscreen-paint median 21 ms / p90 32 ms, paint-work p90 10 ms, and word-end-to-painted-highlight median 476 ms / p90 838 ms. This includes recognition, and is NOT photon/display-scanout latency.
+- **Contention:** a separate hosted production-text test verifies the actual highlighted word while the production 1080p exposure processor and meter publisher run alongside it. It uses bounded synthetic frames, not camera capture. Physical camera/GPU/thermal contention remains a hardware check.
+- **Relay:** the Mac-mic relay recognises once on Mac and sends confirmed positions. Follow messages coalesce for one main-actor turn, not a timed debounce. iPad state (200 ms) and remote-meter (100 ms) throttles do not gate follow commands. Network and real iPad rendering latency remain unmeasured.
+
+## Measurement fixes retained
+
+The original replay delivered each chunk up to 100 ms early and relied on recogniser-provided word times. Dictation's word times in one 20.785 s synthetic recording ended at 10.32 s and produced a false 9.56 s p90. The replay now waits for a complete chunk and supports independent `{text,start,end}` JSON through `VIDEOPROMPTER_SPEECH_REPLAY_WORDS`.
+
+The rendered replay now selects the script's TrackingTextView, explicitly paints hidden content, and uses a local PresenterView/camera/preferences setup. It no longer mistakes an unrelated scroll view or a not-yet-visible script for a renderer delay. It still cannot measure a real display's presentation time.
+
+## Reproduction and diagnostics
+
+`./test.sh -XCTest PrompterCoreTests.VoiceScrollResponseTests,PrompterCoreTests.VoiceRenderLatencyTests,PrompterCoreTests.SpeechLogReplayTests,PrompterCoreTests.VoiceGlideTests`
+
+For the opt-in audio-to-offscreen-paint test, set:
 
 - `VIDEOPROMPTER_RUN_ACTUAL_SPEECH_REPLAY=1`
+- `VIDEOPROMPTER_RENDERED_REPLAY=1`
 - `VIDEOPROMPTER_SPEECH_REPLAY_ENGINE=dictation`
 - `VIDEOPROMPTER_SPEECH_REPLAY_LOCALES=en-GB`
 - `VIDEOPROMPTER_SPEECH_REPLAY_WAV=<audio.wav>`
 - `VIDEOPROMPTER_SPEECH_REPLAY_SCRIPT=<script.md>`
-- `VIDEOPROMPTER_SPEECH_REPLAY_WORDS=<independent-words.json>`
-- `VIDEOPROMPTER_SPEECH_REPLAY_LOG_PATH=<new-log.jsonl>`
-- `VIDEOPROMPTER_REPLAY_CHUNK_FRAMES=4800` for 48 kHz source audio
+- `VIDEOPROMPTER_SPEECH_REPLAY_WORDS=<independently timed words.json>`
+- `VIDEOPROMPTER_SPEECH_REPLAY_LOG_PATH=<new path.jsonl>`
+- `VIDEOPROMPTER_REPLAY_CHUNK_FRAMES=4800` for a 48 kHz file
 
-Do not enable `VIDEOPROMPTER_RENDERED_REPLAY` for this headless investigation. No microphone or camera access is needed. Evidence from this run is under `/private/tmp/vp-voice-latency-20261114/` (temporary, not committed).
+Then run `./test.sh -XCTest PrompterCoreTests.SpeechSessionIntegrationTests/testActualWAVThroughProductionProviderAndSession`.
 
-## Validation
+`VIDEOPROMPTER_AUDIO_LATENCY=1` enables the optional production input/conversion/matching/meter diagnostics. Logs contain timing and token indices, not transcript text. Real-device capture was not performed under this task's restrictions.
 
-Focused suite: PASS, 20 tests, one expected opt-in skip. The corrected, independently timed production replay: PASS, 25/25 words, zero drops, p90 below the 1.2-second gate. Six-minute natural-reading replay: PASS. Full main XCTest suite: PASS, 1,110 tests, 92 expected/conditional skips, zero failures. The runner also performs separate offscreen appearance snapshots and the source grid check.
+## Validation status
 
-## Remaining diagnosis
+Focused response, jump/hold and recorded smoothness checks have passed. iPad generic Simulator-target build passed without booting a Simulator. The final full `./test.sh` run is in progress at `/private/tmp/vp-voice-full-final.log`; do not mark it complete until both appearance passes and the grid check finish.
 
-The reported persistent slow following has not been reproduced, and no production fix is claimed. A live-device capture/callback/paint trace on the affected Mac and iPad is needed to separate actual capture buffering, OS microphone processing, recogniser arrival, main-thread scheduling and display latency. No live-device capture or permission prompts were attempted. The tests do not prove the latency of the Mac-mic network relay.
+Earlier and current temporary evidence is under `/private/tmp/vp-voice-latency-20261114/` and `/private/tmp/vp-*.log`. The earlier six-minute natural replay accepted all 714 script words with no drops (recognition/publication median 400 ms, p90 724 ms), but retained isolated garbled/re-read stalls. None of those ASR/matcher stalls is claimed fixed by scroll damping.

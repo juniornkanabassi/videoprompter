@@ -42,6 +42,7 @@ public final class AudioCapture: @unchecked Sendable {
   private var running = false
   private var pendingBuffers = 0
   private var observer: NSObjectProtocol?
+  private let logsLatency = ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1"
   private var converter: AVAudioConverter?
   private var bufferHandler: ((AVAudioPCMBuffer, AVAudioTime, Float, Float, Bool) -> Void)?
   private var stopHandler: ((AudioCaptureError?) -> Void)?
@@ -174,6 +175,9 @@ public final class AudioCapture: @unchecked Sendable {
       guard native.channelCount >= 2 else { throw AudioCaptureError.engineFailure(channel.separateChannelsMessage) }
     case .cannotIsolate: throw AudioCaptureError.engineFailure(channel.separateChannelsMessage)
     }
+    if logsLatency {
+      NSLog("Voice input: rate=%.0f Hz requestedFrames=256 voiceProcessing=%d", native.sampleRate, node.isVoiceProcessingEnabled ? 1 : 0)
+    }
     try prepareConverter(sampleRate: native.sampleRate)
     bufferHandler = onBuffer
     stopHandler = onStop
@@ -241,8 +245,14 @@ public final class AudioCapture: @unchecked Sendable {
       if accepted { stateLock.withLock { pendingBuffers -= 1 } }
       return
     }
+    let arrived = logsLatency ? ProcessInfo.processInfo.systemUptime : 0
     processingQueue.async { [weak self] in
       defer { self?.stateLock.withLock { self?.pendingBuffers -= 1 } }
+      if self?.logsLatency == true {
+        NSLog("Voice capture: frames=%d duration=%.3f ms queue=%.3f ms", copy.frameLength,
+          Double(copy.frameLength) / copy.format.sampleRate * 1000,
+          (ProcessInfo.processInfo.systemUptime - arrived) * 1000)
+      }
       self?.convertAndDeliver(copy, time: time)
     }
   }
@@ -265,7 +275,12 @@ public final class AudioCapture: @unchecked Sendable {
   }
 
   private func convertAndDeliver(_ input: AVAudioPCMBuffer, time: AVAudioTime) {
+    let started = logsLatency ? ProcessInfo.processInfo.systemUptime : 0
     guard stateLock.withLock({ running }), let result = process(input) else { return }
+    if logsLatency {
+      NSLog("Voice conversion: frames=%d rate=%.0f Hz work=%.3f ms", result.buffer.frameLength,
+        outputFormat.sampleRate, (ProcessInfo.processInfo.systemUptime - started) * 1000)
+    }
     bufferHandler?(result.buffer, time, result.rms, result.peak, result.peak >= 0.98)
   }
 
