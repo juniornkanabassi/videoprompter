@@ -22,14 +22,9 @@ enum PadPresenterLayout {
     CGAffineTransform(scaleX: mirror ? -1 : 1, y: flip ? -1 : 1)
   }
 
-  /// How far the scroll has moved from one line's resting place towards the next line's, 0...1.
-  /// The reading rule rests just under the line holding the current word for every word on it, the
-  /// last included; only in the second half of the last word does the text glide up to the next line,
-  /// so continuous reading stays smooth and a paused or seeked word always has the rule beneath its line.
-  static func lineTransition(position: Double, lastToken: Double, nextFirstToken: Double) -> Double {
-    let start = lastToken + 0.5
-    let t = min(max((position - start) / max(nextFirstToken - start, 0.001), 0), 1)
-    return t * t * (3 - 2 * t)
+  /// Match the Mac: travel continuously from this line's first word to the next line's first word.
+  static func lineTransition(position: Double, firstToken: Double, nextFirstToken: Double) -> Double {
+    min(max((position - firstToken) / max(nextFirstToken - firstToken, 0.001), 0), 1)
   }
 
   /// Room the operator controls take, so the script scrolls inside what is left and never under them.

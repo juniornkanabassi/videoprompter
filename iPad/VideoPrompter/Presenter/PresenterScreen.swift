@@ -198,8 +198,8 @@ struct PresenterScreen: View {
     return ZStack(alignment: .topLeading) {
       if showsLine {
         PresenterReadingLine(settings: settings)
-          .frame(width: min(scriptWidth, scriptWidth - 2 * ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) + 64))
-          .offset(x: side + max(0, ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) - 32))
+          .frame(width: min(scriptWidth, scriptWidth - 2 * ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) + 2 * Space.xxl))
+          .offset(x: side + max(0, ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) - Space.xxl))
           .offset(y: lineY - PresenterReadingLine.bandHeight(fontSize: settings.fontSize))
           .allowsHitTesting(false)
       }

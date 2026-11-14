@@ -52,6 +52,11 @@ import XCTest
     meter.show(peakDBFS: -9, isClipping: false)
     let (window, host) = await LibraryAX.host(MicMeterView(meter: meter, micName: "ATEM ISO").frame(width: 96, height: 320), size: .init(width: 120, height: 340))
     defer { LibraryAX.close(window) }
+    // Hosting can outlast the meter's 1.5-second freshness window; feed the fixture after setup.
+    meter.reset()
+    meter.show(peakDBFS: -9, isClipping: false)
+    host.layoutSubtreeIfNeeded()
+    try await Task.sleep(for: .milliseconds(50))
     let labels = LibraryAX.elements(host).map { LibraryAX.value($0, "accessibilityLabel") }
     XCTAssertTrue(labels.contains("Microphone level, ATEM ISO, −9 dBFS"), "\(labels)")
     let (offWindow, offHost) = await LibraryAX.host(MicMeterView(meter: meter, micName: "ATEM ISO", isListening: false).frame(width: 96, height: 320), size: .init(width: 120, height: 340))

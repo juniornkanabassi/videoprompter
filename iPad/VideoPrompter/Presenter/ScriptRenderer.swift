@@ -50,7 +50,7 @@ enum ScriptRenderer {
   private static let quoteRegex = try! NSRegularExpression(pattern: #"^[ \t]*>[ \t]?"#)
 
   private static let registeredFonts: Void = {
-    for file in ["LexendDeca-Variable", "Lexend-Variable"] {
+    for file in ["LexendDeca-Variable", "Lexend-Variable", "Poppins-Regular", "Poppins-Bold"] {
       if let url = Bundle.main.url(forResource: file, withExtension: "ttf") {
         CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
       }

@@ -48,6 +48,8 @@
 	<array>
 		<string>LexendDeca-Variable.ttf</string>
 		<string>Lexend-Variable.ttf</string>
+		<string>Poppins-Regular.ttf</string>
+		<string>Poppins-Bold.ttf</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
