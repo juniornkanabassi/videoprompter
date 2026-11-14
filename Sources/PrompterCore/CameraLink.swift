@@ -307,11 +307,15 @@ public enum PadRemote {
     public var paragraphSpacing: Double?
     public var alignment: String?
     public var showCues: Bool?
+    public var scriptVisible: Bool?
+    public var presenterSetup: Bool?
+    public var focusMode: Bool?
     public init(
       horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
       textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil,
       fontName: String? = nil, fontWeight: String? = nil, textColorHex: String? = nil,
-      textOpacity: Double? = nil, paragraphSpacing: Double? = nil, alignment: String? = nil, showCues: Bool? = nil
+      textOpacity: Double? = nil, paragraphSpacing: Double? = nil, alignment: String? = nil, showCues: Bool? = nil,
+      scriptVisible: Bool? = nil, presenterSetup: Bool? = nil, focusMode: Bool? = nil
     ) {
       self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
       self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
@@ -319,6 +323,7 @@ public enum PadRemote {
       self.fontName = fontName; self.fontWeight = fontWeight; self.textColorHex = textColorHex
       self.textOpacity = textOpacity; self.paragraphSpacing = paragraphSpacing
       self.alignment = alignment; self.showCues = showCues
+      self.scriptVisible = scriptVisible; self.presenterSetup = presenterSetup; self.focusMode = focusMode
     }
   }
 

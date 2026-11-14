@@ -32,6 +32,7 @@ extension AppearanceSnapshotTests {
       var fixture = state
       fixture.macStatus = .init(cameras: [.init(id: "fx3", name: "Sony FX3")], selectedCamera: "fx3", cameraOn: true,
         microphones: [.init(id: "mac-mic", name: "MacBook Pro microphone")], selectedMicrophone: "mac-mic")
+      fixture.look?.presenterSetup = variant != "connected-reading"
       fixture.cameraUsesMac = true
       fixture.localCameras = [.init(id: "front", name: "iPad front camera")]
       fixture.localMicrophones = [.init(id: "pad-mic", name: "iPad microphone")]

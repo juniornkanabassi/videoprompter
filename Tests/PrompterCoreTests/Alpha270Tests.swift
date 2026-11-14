@@ -133,7 +133,7 @@ extension Alpha270Tests {
         let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera, startsCamera: false, recorder: CameraRecorder(defaults: defaults)).defaultAppStorage(defaults)
         let (window, host) = await LibraryAX.host(view, size: .init(width: width, height: 1200))
         defer { LibraryAX.close(window) }
-        let frames = try ["Start reading", "Back to start", "Open script"].map { label -> NSRect in
+        let frames = try ["Start reading", "Back to start", "Text"].map { label -> NSRect in
           let button = try XCTUnwrap(LibraryAX.named(label, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" }, label)
           let frame = try XCTUnwrap(button.value(forKey: "accessibilityFrame") as? NSValue).rectValue
           XCTAssertGreaterThanOrEqual(frame.height, 44)

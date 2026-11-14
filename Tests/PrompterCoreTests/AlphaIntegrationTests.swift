@@ -164,8 +164,9 @@ import XCTest
       let shell = PresenterShell()
       let view = PresenterView(store: store, session: store.session, draft: PresenterDraft(record: record), camera: camera(), startsCamera: false, recorder: CameraRecorder(defaults: defaults), shell: shell)
       let (window, host) = await LibraryAX.host(view, size: .init(width: 1000, height: 700))
-      let opener = try XCTUnwrap(LibraryAX.named("Adjust", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
+      let opener = try XCTUnwrap(LibraryAX.named("Zebras", in: host).first { $0.responds(to: NSSelectorFromString("accessibilityPerformPress")) })
       XCTAssertTrue(LibraryAX.bool(opener, "accessibilityPerformPress"))
+      shell.adjustTab = .zebras
       try await Task.sleep(for: .milliseconds(200))
       let close = try XCTUnwrap(LibraryAX.named("Close Adjust", in: host).first)
       XCTAssertTrue(LibraryAX.bool(close, "accessibilityPerformPress"))

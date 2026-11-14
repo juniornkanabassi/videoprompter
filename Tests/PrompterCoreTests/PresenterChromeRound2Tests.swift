@@ -114,7 +114,7 @@ import XCTest
       let tool = try XCTUnwrap(LibraryAX.named(title, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" }, title)
       XCTAssertEqual(LibraryAX.value(tool, "accessibilityValue"), "Off", "\(title) is not shown as on with no camera picture")
     }
-    XCTAssertFalse(LibraryAX.named("Adjust", in: host).isEmpty, "Adjust stays reachable")
+    XCTAssertFalse(LibraryAX.named("Choose camera", in: host).isEmpty, "Camera settings stay reachable from the picker")
   }
 
   func testScriptToggleShowsAndHidesTheScriptInSetup() async throws {
@@ -219,20 +219,7 @@ import XCTest
     XCTAssertEqual(wide.loud, 720 * (MeterZones.micPosition(-6) + 1) / 2, accuracy: 0.001, "centred on the red band")
   }
 
-  func testSetupBarWordsFollowOneRuleRichestFirst() {
-    let variants = PresenterView.setupWordVariants
-    XCTAssertEqual(variants.first, PresenterView.SetupWords(), "the richest variant has every word")
-    // Each step only takes words away or adds the second row, never gives one back, so the bar at any size is the richest that fits.
-    for pair in zip(variants, variants.dropFirst()) {
-      XCTAssertNotEqual(pair.0, pair.1)
-      XCTAssertTrue(!pair.0.twoRows || pair.1.twoRows, "once on two rows the bar stays on two")
-      XCTAssertTrue(pair.0.viewTitles || !pair.1.viewTitles || (!pair.0.twoRows && pair.1.twoRows))
-      XCTAssertTrue(pair.0.shortTransport || !pair.1.shortTransport || (!pair.0.twoRows && pair.1.twoRows) || pair.0.twoRows == pair.1.twoRows)
-    }
-    // Words beat a single row: the picture tools, Back and Open never become icons (the type has no such state), Key and Clean are the last to.
-    XCTAssertTrue(variants.contains { $0.twoRows && $0.viewTitles && !$0.shortTransport }, "two rows bring the full words back before any short form")
-    XCTAssertTrue(variants.contains { !$0.twoRows && $0.shortToolTitles && !$0.shortTransport }, "Colour is short before Back and Open are")
-    XCTAssertTrue(variants.filter { !$0.viewTitles }.allSatisfy { $0.shortToolTitles && $0.shortTransport }, "Key and Clean give up their words last")
+  func testCompactReadingControlsKeepMinimumTargets() {
     XCTAssertEqual(PresenterView.compactControlHeight(zoom: 1), PresenterBar.height, "a 100% bar keeps the 44 pt target")
     XCTAssertLessThan(PresenterView.compactControlHeight(zoom: 2), PresenterBar.height)
     XCTAssertGreaterThanOrEqual(PresenterView.compactControlHeight(zoom: 1.5) * 1.5, PresenterBar.height, "on screen never below 44 pt")

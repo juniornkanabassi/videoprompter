@@ -103,6 +103,9 @@ struct ExposureReferencePicture: UIViewRepresentable {
     private let feed = PadExposure()
     private var imageSize = CGSize(width: 16, height: 9)
     private var rotation = CameraRotation.none
+    private var guides = CameraGuides()
+    private let guideLayer = CAShapeLayer()
+    private let shadeLayer = CAShapeLayer()
     override init(frame: CGRect) {
       super.init(frame: frame)
       picture.cornerRadius = AlphaStyle.cardCorner
@@ -110,12 +113,18 @@ struct ExposureReferencePicture: UIViewRepresentable {
       exposure.cornerRadius = AlphaStyle.cardCorner
       layer.addSublayer(picture)
       layer.addSublayer(exposure)
+      guideLayer.fillColor = nil
+      guideLayer.lineWidth = 1.5
+      shadeLayer.fillRule = .evenOdd
+      layer.addSublayer(shadeLayer)
+      layer.addSublayer(guideLayer)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     func update(_ image: UIImage, guides: CameraGuides) {
       picture.contents = image.cgImage
       imageSize = image.size
       rotation = guides.rotation
+      self.guides = guides
       exposure.bind(feed, settings: guides.exposure)
       feed.update(guides.exposure)
       if let cg = image.cgImage {
@@ -135,6 +144,12 @@ struct ExposureReferencePicture: UIViewRepresentable {
         target.position = CGPoint(x: rect.midX, y: rect.midY)
         target.setAffineTransform(rotation.displayTransform(mirrored: false))
       }
+      guideLayer.frame = bounds
+      shadeLayer.frame = bounds
+      guideLayer.path = CameraOverlay.guidePath(picture: rect, guides: guides)
+      guideLayer.strokeColor = guides.strokeColor
+      shadeLayer.path = guides.marker == nil ? nil : CameraOverlay.shadePath(picture: rect, guides: guides)
+      shadeLayer.fillColor = guides.shadeColor
       CATransaction.commit()
     }
   }

@@ -16,8 +16,7 @@ struct IPadRemoteView: View {
   @State private var newName = ""
   @State private var selectedMac: UUID?
   @State private var dragging: Double?
-  @State private var moreOpen = false
-  @State private var textPage = false
+  @State private var textOpen = false
   @State private var pendingSend: (UUID, String)?
   @State private var message: String?
   private let yellow = AlphaStyle.accent
@@ -28,10 +27,10 @@ struct IPadRemoteView: View {
       if let state = currentState {
         status(state)
         ZStack(alignment: .bottomTrailing) {
-          if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly {
+          if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly || state.look?.scriptVisible == false {
             liveCamera
           } else {
-            if state.pictureMode == .behindScript { liveCamera.opacity(0.55) }
+            if state.pictureMode == .behindScript && state.look?.focusMode != true { liveCamera.opacity(0.55) }
             VStack(spacing: 0) {
               IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
               HStack(spacing: Space.md) {
@@ -42,16 +41,16 @@ struct IPadRemoteView: View {
                   .disabled(state.words < 2 || state.editing == true)
               }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
             }
-            if state.pictureMode != .behindScript {
+            if state.pictureMode != .behindScript && state.look?.focusMode != true {
               liveCamera.frame(width: 192, height: 108).padding(Space.md) // grid: ok 16:9 camera thumbnail
             }
           }
         }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
 
-        transport(state)
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
         RelayNotice(relay: link.relay)
-        setupBar(state)
+        if (state.look?.presenterSetup ?? !state.running) || state.cameraOnly == true { setupBar(state) }
+        else { readingControls(state) }
       } else {
         IPadConnectPanel(link: link).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -61,6 +60,8 @@ struct IPadRemoteView: View {
         HStack {
           Button("Previous passage") { link.send(.previousPassage) }.keyboardShortcut(.leftArrow, modifiers: [])
           Button("Next passage") { link.send(.nextPassage) }.keyboardShortcut(.rightArrow, modifiers: [])
+          Button("Previous paragraph") { link.send(.previousPassage) }.keyboardShortcut(.upArrow, modifiers: [])
+          Button("Next paragraph") { link.send(.nextPassage) }.keyboardShortcut(.downArrow, modifiers: [])
         }.hidden().disabled(state.editing == true).accessibilityHidden(true)
       }
     }
@@ -98,22 +99,70 @@ struct IPadRemoteView: View {
   }
 
   private func setupBar(_ state: PadRemote.State) -> some View {
-        HStack(spacing: Space.md) {
-          BarGroup(label: "Camera and microphone") {
-            BarDeviceControl(offIsWarning: false, title: "Camera", onSymbol: "video.fill", offSymbol: "video.slash.fill", isOn: state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn,
-              showsTitle: true, toggleHelp: "Turn camera on or off", menuLabel: "Choose camera", menuValue: link.selectedCamera ?? "Default",
-              toggle: { link.send(.cameraOn(!(state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn))) }) {
-              cameraMenu(state)
-            }
-            BarDivider()
-            BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: state.micOn ?? true,
-              showsTitle: true, toggleHelp: "Turn microphone on or off", menuLabel: "Choose microphone", menuValue: link.selectedMicrophone ?? "Default",
-              toggle: { link.setMicOn(!link.micOn) }) { voiceMenu(state) }
+    PresenterSetupBar(scale: store.uiZoom) {
+      deviceMenu(state)
+      Button {
+        link.send(.look(.init(presenterSetup: false)))
+        link.send(.play)
+      } label: { BarLabel(title: "Start reading", symbol: "play.fill") }
+        .buttonStyle(BarButtonStyle(role: .prominent)).keyboardShortcut(.space, modifiers: [])
+        .disabled(state.presenting == nil || state.cameraOnly == true || state.editing == true)
+      Button { link.send(.backToStart) } label: { BarLabel(title: "Back", symbol: "arrow.counterclockwise") }
+        .buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.home, modifiers: [])
+    } devices: {
+      BarGroup(label: "Camera, microphone and script") {
+        BarDeviceControl(offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill",
+          isOn: state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn,
+          toggleHelp: "Turn camera on or off", menuLabel: "Choose camera", menuValue: state.localCameraID ?? state.macStatus?.selectedCamera ?? "Default",
+          toggle: { link.send(.cameraOn(!(state.cameraUsesMac == false ? state.localCameraOn ?? false : state.macStatus?.cameraOn ?? link.cameraOn))) }) { cameraMenu(state) }
+        BarDivider()
+        micControl(state)
+        PresenterLinkedLevel(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter)
+        BarDivider()
+        BarToggle(title: "Script", symbol: "text.alignleft", isOn: state.look?.scriptVisible ?? true) {
+          link.send(.look(.init(scriptVisible: !(state.look?.scriptVisible ?? true))))
+        }.disabled(state.cameraOnly == true)
+      }
+    } tools: {
+      BarGroup(label: "Picture tools", raised: false) {
+        BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: state.guides?.zebras ?? false) {
+          link.send(.cameraGuides(.init(zebras: !(state.guides?.zebras ?? false))))
+        }
+        BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: state.guides?.falseColour ?? false) {
+          link.send(.cameraGuides(.init(falseColour: !(state.guides?.falseColour ?? false))))
+        }
+        BarToggle(title: "Guides", symbol: "squareshape.split.3x3", isOn: state.guides?.thirds == true || state.guides?.centre == true) {
+          let on = state.guides?.thirds != true && state.guides?.centre != true
+          link.send(.cameraGuides(.init(thirds: on, centre: false)))
+        }.contextMenu {
+          Toggle("Thirds", isOn: Binding(get: { state.guides?.thirds ?? false }, set: { link.send(.cameraGuides(.init(thirds: $0))) }))
+          Toggle("Centre", isOn: Binding(get: { state.guides?.centre ?? false }, set: { link.send(.cameraGuides(.init(centre: $0))) }))
+          Picker("Frame marker", selection: Binding(get: { state.guides?.marker ?? "Off" }, set: { link.send(.cameraGuides(.init(marker: $0))) })) {
+            Text("Off").tag("Off")
+            ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
           }
-          CompactRemoteMeter(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter)
-          Spacer(minLength: 0)
-          deviceMenu(state)
-        }.padding(Space.sm).background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: Space.md))
+        }
+      }
+    } options: {
+      PresenterTurnControls(mirror: Binding(get: { state.look?.horizontalMirror ?? false }, set: link.setMirror),
+        flip: Binding(get: { state.look?.verticalMirror ?? false }, set: link.setFlip))
+      textButton(state)
+      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: state.guides?.exposureKey ?? true) {
+        link.send(.cameraGuides(.init(exposureKey: !(state.guides?.exposureKey ?? true))))
+      }
+      BarToggle(title: "Clean", symbol: "rectangle", isOn: state.cleanScreen ?? false) { link.setCleanScreen(!(state.cleanScreen ?? false)) }
+    }
+    .padding(.horizontal, Space.md).background(PresenterBar.background)
+  }
+  private func micControl(_ state: PadRemote.State) -> some View {
+    BarDeviceControl(title: "Mic", onSymbol: "mic.fill", offSymbol: "mic.slash.fill", isOn: state.micOn ?? true,
+      toggleHelp: "Turn microphone on or off", menuLabel: "Choose microphone", menuValue: state.selectedMicrophone ?? "Default",
+      toggle: { link.setMicOn(!(state.micOn ?? true)) }) { voiceMenu(state) }
+  }
+  private func textButton(_ state: PadRemote.State) -> some View {
+    Button { textOpen.toggle() } label: { BarLabel(title: "Text", symbol: "textformat.size") }
+      .buttonStyle(BarButtonStyle())
+      .popover(isPresented: $textOpen) { ScrollView { adjustControls(state).padding(Space.lg) }.frame(width: 460, height: 560).uiZoom(store.uiZoom) }
   }
   private var liveCamera: some View {
     Group {
@@ -182,6 +231,15 @@ struct IPadRemoteView: View {
       }
       Divider()
       CameraRotationMenu(angle: state.guides?.rotation ?? 0) { link.send(.cameraGuides(.init(rotation: $0))) }
+      Picker("Picture", selection: Binding(get: { state.pictureMode ?? .off }, set: link.setPictureMode)) {
+        Text("Off").tag(PadRemote.PictureMode.off)
+        Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
+        Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
+      }
+      Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
+        Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
+        Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
+      }
     }
   }
   private func voiceMenu(_ state: PadRemote.State) -> some View {
@@ -221,88 +279,51 @@ struct IPadRemoteView: View {
     } label: { Label(title ?? state.scripts.first(where: { $0.id == state.presenting })?.title ?? "No script", systemImage: "doc.text") }
       .disabled(state.editing == true).fixedSize()
   }
-  private func transport(_ state: PadRemote.State) -> some View {
-    ViewThatFits(in: .horizontal) {
-      HStack(spacing: Space.sm) { readingControls(state); moreButton(state) }
-      VStack(spacing: Space.sm) { readingControls(state); moreButton(state) }
-    }
-  }
-  @ViewBuilder private func readingControls(_ state: PadRemote.State) -> some View {
-    if state.presenting != nil && state.cameraOnly != true {
-      HStack(spacing: Space.sm) {
-        Button(state.running ? "Pause" : "Start reading", systemImage: state.running ? "pause.fill" : "play.fill") { link.send(state.running ? .pause : .play) }
-          .keyboardShortcut(.space, modifiers: []).buttonStyle(.borderedProminent)
-          .tint(state.running ? Color.gray : yellow)
-        Button("Back to start") { link.send(.backToStart) }.keyboardShortcut(.home, modifiers: [])
-        Button("Previous", systemImage: "arrow.up") { link.send(.previousPassage) }.keyboardShortcut(.upArrow, modifiers: [])
-        Button("Next", systemImage: "arrow.down") { link.send(.nextPassage) }.keyboardShortcut(.downArrow, modifiers: [])
-      }.disabled(state.editing == true)
-      Spacer(minLength: 0)
-      Menu(state.mode == "Voice" ? "Voice follow" : "Automatic scroll") {
-        Button("Voice follow") { setVoice(state.voiceSource == "Mac" ? "mac" : "ipad", state) }
-        Button("Automatic scroll") { setVoice("off", state) }
-      }.fixedSize()
-      if state.mode != "Voice" {
-        Stepper("\(state.speed) wpm", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10).fixedSize()
+  private func readingControls(_ state: PadRemote.State) -> some View {
+    WrapLayout(spacing: Space.sm, distributeAfter: 2, leading: true) {
+      deviceMenu(state)
+      BarStatusPill(text: (state.mode == "Voice" ? "Voice" : "Automatic") + (state.running ? " · Reading" : " · Paused"), isActive: state.running)
+      Button { link.send(.backToStart) } label: { BarLabel(title: "Restart", symbol: "arrow.counterclockwise") }
+        .buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.home, modifiers: [])
+      Button { link.send(state.running ? .pause : .play) } label: {
+        BarLabel(title: state.running ? "Pause" : "Start reading", symbol: state.running ? "pause.fill" : "play.fill")
+      }.buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.space, modifiers: [])
+      Button { link.send(.pause); link.send(.look(.init(presenterSetup: true))) } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder") }
+        .buttonStyle(BarButtonStyle(role: .secondary))
+      BarGroup(label: "Reading options") {
+        micControl(state)
+        PresenterLinkedLevel(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter)
+        BarDivider()
+        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: state.look?.focusMode ?? false) {
+          link.send(.look(.init(focusMode: !(state.look?.focusMode ?? false))))
+        }
+        textButton(state)
       }
-    } else {
-      scriptMenu(state, title: "Open a script")
-      Spacer(minLength: 0)
-    }
-  }
-  private func moreButton(_ state: PadRemote.State) -> some View {
-    Button("More", systemImage: "slider.horizontal.3") { moreOpen.toggle() }.fixedSize()
-      .popover(isPresented: $moreOpen) {
-        ScrollView { adjustControls(state).padding(Space.lg) }
-          .frame(width: 460, height: textPage ? 340 : 560).uiZoom(store.uiZoom)
-      }
+    }.padding(Space.sm).background(PresenterBar.background).disabled(state.editing == true)
   }
   func adjustControls(_ state: PadRemote.State) -> some View {
-        VStack(alignment: .leading, spacing: Space.md) {
-          if textPage || panelOverride == "text" {
-            Button("Back", systemImage: "chevron.left") { textPage = false }
-            Picker("Font", selection: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) })) {
-              ForEach(Array(Set(AvailableFonts.presenter + [state.look?.fontName ?? "Lexend Deca"])).sorted(), id: \.self) { Text($0).tag($0) }
-            }
-            lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
-            lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
-            lookSlider("Text width", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
-            lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
-            lookSlider("Reading line", value: state.look?.guideFraction ?? 0.35, range: InputValidation.guideFraction.range) { link.send(.look(.init(guideFraction: $0))) }
-            if let presets = state.presets, !presets.isEmpty {
-              Menu("Reading presets") { ForEach(presets, id: \.self) { name in Button(name) { link.send(.preset(name)) } } }
-            }
-          } else {
-            Text("Picture on the iPad").font(.headline)
-            Picker("Picture", selection: Binding(get: { state.pictureMode ?? .off }, set: link.setPictureMode)) {
-              Text("Off").tag(PadRemote.PictureMode.off)
-              Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
-              Text("Monitor only").tag(PadRemote.PictureMode.monitorOnly)
-            }.pickerStyle(.segmented).labelsHidden()
-            Picker("Quality", selection: Binding(get: { state.picturePriority ?? .realTime720p }, set: link.setPicturePriority)) {
-              Text("Real time 720p").tag(PadRemote.PicturePriority.realTime720p)
-              Text("Sharper 1080p").tag(PadRemote.PicturePriority.sharper1080p)
-            }
-            Divider()
-            Toggle("Zebras", isOn: Binding(get: { state.guides?.zebras ?? false }, set: { link.send(.cameraGuides(.init(zebras: $0))) }))
-            Toggle("False colour", isOn: Binding(get: { state.guides?.falseColour ?? false }, set: { link.send(.cameraGuides(.init(falseColour: $0))) }))
-            Toggle("Thirds", isOn: Binding(get: { state.guides?.thirds ?? false }, set: { link.send(.cameraGuides(.init(thirds: $0))) }))
-            Toggle("Centre", isOn: Binding(get: { state.guides?.centre ?? false }, set: { link.send(.cameraGuides(.init(centre: $0))) }))
-            Picker("Frame marker", selection: Binding(get: { state.guides?.marker ?? "Off" }, set: { link.send(.cameraGuides(.init(marker: $0))) })) {
-              Text("Off").tag("Off")
-              ForEach(CameraAspect.presets) { Text($0.label).tag($0.label) }
-            }
-            Toggle("Show key", isOn: Binding(get: { state.guides?.exposureKey ?? true }, set: { link.send(.cameraGuides(.init(exposureKey: $0))) }))
-            Divider()
-            Toggle("Mirror left to right", isOn: Binding(get: { state.look?.horizontalMirror ?? false }, set: link.setMirror))
-            Toggle("Flip upside down", isOn: Binding(get: { state.look?.verticalMirror ?? false }, set: link.setFlip))
-            Toggle("Clean screen", isOn: Binding(get: { state.cleanScreen ?? false }, set: link.setCleanScreen))
-            Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
-              Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
-            }
-            Button("Text size, width, spacing and presets", systemImage: "chevron.right") { textPage = true }
-          }
-        }
+    VStack(alignment: .leading, spacing: Space.md) {
+      Picker("Reading mode", selection: Binding(get: { state.mode }, set: { setVoice($0 == "Voice" ? (state.voiceSource == "Mac" ? "mac" : "ipad") : "off", state) })) {
+        Text("Voice follow").tag("Voice"); Text("Automatic scroll").tag("Manual")
+      }
+      if state.mode != "Voice" {
+        Stepper("\(state.speed) wpm", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
+      }
+      Picker("Font", selection: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) })) {
+        ForEach(Array(Set(AvailableFonts.presenter + [state.look?.fontName ?? "Lexend Deca"])).sorted(), id: \.self) { Text($0).tag($0) }
+      }
+      lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
+      lookSlider("Margins", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
+      lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
+      lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
+      lookSlider("Reading line", value: state.look?.guideFraction ?? 0.35, range: InputValidation.guideFraction.range) { link.send(.look(.init(guideFraction: $0))) }
+      Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
+        Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
+      }
+      if let presets = state.presets, !presets.isEmpty {
+        Menu("Reading presets") { ForEach(presets, id: \.self) { name in Button(name) { link.send(.preset(name)) } } }
+      }
+    }
   }
   private func sendSelected() {
     guard let record = store.scripts.first(where: { $0.id == selectedMac }), record.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes, record.metadata.title.count <= PadRemote.Transfer.maximumTitleLength else { return }
@@ -333,13 +354,6 @@ private struct RelayNotice: View {
   @ObservedObject var relay: PadVoiceRelay
   var body: some View {
     if !relay.isRelaying, !["Off", "Stopped"].contains(relay.status) { Text(relay.status).foregroundStyle(.orange) }
-  }
-}
-private struct CompactRemoteMeter: View {
-  @ObservedObject var meter: RemoteMicMeter
-  var body: some View {
-    DBMeter(levelDB: meter.levelDB, axis: .horizontal, showsScale: false)
-      .frame(width: 96).accessibilityLabel("Microphone level")
   }
 }
 

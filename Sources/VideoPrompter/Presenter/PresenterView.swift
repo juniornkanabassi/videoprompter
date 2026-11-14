@@ -105,32 +105,6 @@ struct PresenterView: View {
   static func cardColumnWidth(width: CGFloat, zoom: Double) -> CGFloat {
     min(300, max(188, width / zoom * 0.12)) * zoom + Space.md * 2
   }
-  /// The words the setup bar shows. Every control keeps a word at every size: only the allowed short forms
-  /// ("Colour", "Back", "Open") and, last, Key and Clean as icons (they have help text) give way. The bar takes the
-  /// richest variant that fits, on one row; when no one-row variant fits, on two compact rows.
-  struct SetupWords: Equatable {
-    /// Once any word is short, every label gives up a little of its side room too.
-    var snug: Bool { shortToolTitles || shortOpen || shortTransport }
-    var viewTitles = true
-    /// "False colour" is "Colour", as in the Adjust tab.
-    var shortToolTitles = false
-    /// "Open script" is "Open", with "Back to start" still in full.
-    var shortOpen = false
-    /// "Back to start" is "Back" and "Open script" is "Open".
-    var shortTransport = false
-    /// Two rows: the transport and the video-call group above, the picture tools and view options below.
-    var twoRows = false
-  }
-  static let setupWordVariants: [SetupWords] = [
-    SetupWords(),
-    SetupWords(shortToolTitles: true),
-    SetupWords(shortToolTitles: true, shortOpen: true),
-    SetupWords(shortToolTitles: true, shortTransport: true),
-    SetupWords(viewTitles: false, shortToolTitles: true, shortTransport: true),
-    SetupWords(shortToolTitles: true, twoRows: true),
-    SetupWords(shortToolTitles: true, shortTransport: true, twoRows: true),
-    SetupWords(viewTitles: false, shortToolTitles: true, shortTransport: true, twoRows: true)
-  ]
   /// A two-row bar at a large interface size (150% and up) uses a 36 pt control (54 pt or more on screen) and a tight row gap, so it
   /// stays a small share of the window at 200%. At 100% it keeps the 44 pt target.
   static func compactControlHeight(zoom: Double) -> CGFloat { zoom >= 1.5 ? 36 : PresenterBar.height } // grid: ok
@@ -559,49 +533,20 @@ struct PresenterView: View {
 
   // MARK: Setup bar
 
-  /// One row: transport on the left, then the video-call group, then the picture tools. The words follow
-  /// one rule (`setupWordVariants`, richest first): the first variant that fits shows; two compact rows when
-  /// no single row fits; a wrapping layout only in a window too narrow even for that.
+  /// Setup uses the same ordered rows as the iPad and linked-iPad console.
   private var setupBar: some View {
-    ViewThatFits(in: .horizontal) {
-      ForEach(Array(Self.setupWordVariants.enumerated()), id: \.offset) { index, words in
-        if words.twoRows { setupRows(words) } else { setupRow(words, spacious: index == 0).padding(.vertical, Space.md) }
-      }
-      WrapLayout(spacing: Space.sm, leading: true) {
-        setupTransport(short: true, snug: true)
-        IPadButton()
-        callGroup(snug: true)
-        toolsGroup(words: Self.setupWordVariants[Self.setupWordVariants.count - 1])
-        viewGroup(titles: false)
-      }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, Space.md)
+    PresenterSetupBar(scale: controlZoom) {
+      setupTransport(short: true)
+    } devices: {
+      callGroup()
+    } tools: {
+      toolsGroup()
+    } options: {
+      PresenterTurnControls(mirror: $store.settings.horizontalMirror, flip: $store.settings.verticalMirror)
+      Button { settingsTab = .reading; showsSettings = true } label: { BarLabel(title: "Text", symbol: "textformat.size") }
+        .buttonStyle(BarButtonStyle())
+      viewGroup(titles: true)
     }
-  }
-  private func setupRow(_ words: SetupWords, spacious: Bool) -> some View {
-    HStack(spacing: spacious ? PresenterBar.groupGap : words.snug ? Space.sm : Space.md) {
-      HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
-      Spacer(minLength: 0)
-      IPadButton()
-      callGroup(snug: words.snug)
-      toolsGroup(words: words)
-      viewGroup(titles: words.viewTitles)
-    }
-  }
-  /// The second tier for large interface sizes: nothing loses its word, the bar gets taller but stays compact.
-  private func setupRows(_ words: SetupWords) -> some View {
-    VStack(spacing: Self.compactRowGap) {
-      HStack(spacing: Space.md) {
-        HStack(spacing: Space.sm) { setupTransport(short: words.shortTransport, shortOpen: words.shortOpen, snug: words.snug) }
-        Spacer(minLength: Space.sm)
-        IPadButton()
-        callGroup(snug: words.snug)
-      }
-      // Right-aligned under the groups above, so the one gap sits where the first row's does (under the transport).
-      HStack(spacing: Space.md) {
-        Spacer(minLength: Space.sm)
-        toolsGroup(words: words)
-        viewGroup(titles: words.viewTitles)
-      }
-    }.environment(\.barControlHeight, Self.compactControlHeight(zoom: controlZoom)).padding(.vertical, Space.xs)
   }
 
   /// Opens the script in the library. Plain among the quiet options, so it never looks switched on.
@@ -625,7 +570,6 @@ struct PresenterView: View {
     Button { session.restart() } label: { BarLabel(title: short ? "Back" : "Back to start", symbol: "arrow.counterclockwise", snug: snug) }
       .buttonStyle(BarButtonStyle(role: .secondary)).accessibilityLabel("Back to start")
       .help("Back to the first word (Home)").disabled(!hasScript)
-    scriptButton(short: short || shortOpen, role: .secondary, snug: snug)
   }
 
   // MARK: Video-call group: camera, microphone, script
@@ -642,6 +586,7 @@ struct PresenterView: View {
         menuLabel: "Choose camera", menuValue: cameraValue, toggle: toggleCamera) { cameraMenu }
       BarDivider()
       micControl(titles: true, snug: snug)
+      PresenterInputLevel(meter: recorder.inputMeter)
       BarDivider()
       BarToggle(title: "Script", symbol: "text.alignleft", isOn: shell.scriptPreview, showsTitle: true, snug: snug,
         help: shell.scriptPreview ? "Hide the script" : "Show the script over the picture") { shell.scriptPreview.toggle() }
@@ -728,31 +673,27 @@ struct PresenterView: View {
   /// guide tools have nothing to act on, so they are dimmed (still reachable) and never show as on.
   private var hasPicture: Bool { referencePicture != nil || camera.pictureSize != nil }
 
-  private func toolsGroup(words: SetupWords) -> some View {
+  private func toolsGroup() -> some View {
     let live = hasPicture
-    let snug = words.shortToolTitles
+    let snug = false
     return BarGroup(label: "Picture tools", raised: false) {
       tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, snug: snug,
            help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
         .opacity(live ? 1 : 0.45)
-      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, shortTitle: "Colour", snug: snug,
+      tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, snug: snug,
            help: live ? "False colour exposure (⌥⌘X). Press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
         .opacity(live ? 1 : 0.45)
       tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, snug: snug,
            help: "Framing guides. Press and hold to adjust.") { camera.toggleFramingGuides() }
         .opacity(live ? 1 : 0.45)
-      BarDivider()
-      tool("Adjust", "slider.horizontal.3", tab: .camera, on: shell.adjustTab != nil, snug: snug, adjustable: false,
-           help: "Open the adjust panel", traits: [], value: shell.adjustTab == nil ? "Collapsed" : "Expanded") {
-        shell.adjustTab = shell.adjustTab == nil ? .camera : nil
-      }
+
     }
   }
 
   private func viewGroup(titles: Bool) -> some View {
-    BarGroup(label: "View options", raised: false) {
+    HStack(spacing: 0) {
       // Like the picture tools, the key has nothing to explain without a picture: dimmed, never shown as on.
-      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled && hasPicture, showsTitle: titles, displayTitle: "Show key",
+      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: exposureKeyEnabled && hasPicture, showsTitle: titles, displayTitle: "Key",
         help: exposureKeyEnabled ? "Hide the exposure key: what the zebras and colours mean" : "Show the exposure key: what the zebras and colours mean") { exposureKeyEnabled.toggle() }
         .disabled(!camera.exposureIsConfigured).opacity(hasPicture ? 1 : 0.45)
       BarToggle(title: "Clean", symbol: "rectangle", isOn: false, showsTitle: titles, displayTitle: nil,
@@ -1049,48 +990,6 @@ extension NSColor {
 extension NSTextAlignment {
   /// The settings' "Left", "Center" or "Right".
   init(setting: String) { self = setting == "Right" ? .right : setting == "Center" ? .center : .left }
-}
-
-/// An HStack that wraps onto further centred rows when its content is wider than it is offered.
-struct WrapLayout: Layout {
-  var spacing: CGFloat = 8
-  var distributeAfter: Int? = nil
-  var leading = false
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let rows = rows(for: proposal.width ?? .infinity, subviews: subviews)
-    let width = rows.map(\.width).max() ?? 0
-    let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
-    return CGSize(width: distributeAfter != nil && rows.count == 1 ? proposal.width ?? width : width, height: height)
-  }
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    var y = bounds.minY
-    let rows = rows(for: bounds.width, subviews: subviews)
-    for row in rows {
-      let distribute = rows.count == 1 && distributeAfter != nil
-      var x = (distribute || leading) ? bounds.minX : bounds.midX - row.width / 2
-      for index in row.indices {
-        if distribute, index == distributeAfter { x += max(0, bounds.width - row.width) }
-        let size = subviews[index].sizeThatFits(.unspecified)
-        subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
-        x += size.width + spacing
-      }
-      y += row.height + spacing
-    }
-  }
-  private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
-  private func rows(for maxWidth: CGFloat, subviews: Subviews) -> [Row] {
-    var rows: [Row] = [Row()]
-    for (index, subview) in subviews.enumerated() {
-      let size = subview.sizeThatFits(.unspecified)
-      let extra = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
-      if rows[rows.count - 1].width + extra > maxWidth, !rows[rows.count - 1].indices.isEmpty { rows.append(Row()) }
-      let extraNow = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
-      rows[rows.count - 1].indices.append(index)
-      rows[rows.count - 1].width += extraNow
-      rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
-    }
-    return rows
-  }
 }
 
 /// Reserve room above the image instead of covering the composition with the pinned passage.

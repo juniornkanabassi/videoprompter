@@ -35,6 +35,16 @@ final class DevicePickerProtocolTests: XCTestCase {
     }
   }
 
+  func testRemotePresenterLookFieldsAreOptionalAndRoundTrip() throws {
+    let decoder = JSONDecoder()
+    let old = try decoder.decode(PadRemote.Look.self, from: Data("{}".utf8))
+    XCTAssertNil(old.scriptVisible)
+    XCTAssertNil(old.presenterSetup)
+    XCTAssertNil(old.focusMode)
+    let look = PadRemote.Look(scriptVisible: false, presenterSetup: false, focusMode: true)
+    XCTAssertEqual(try decoder.decode(PadRemote.Look.self, from: JSONEncoder().encode(look)), look)
+  }
+
   func testLocalDeviceStateIsOptionalForOlderPeers() throws {
     var state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Manual", speed: 120, word: 0, words: 0)
     let legacy = try JSONEncoder().encode(state)

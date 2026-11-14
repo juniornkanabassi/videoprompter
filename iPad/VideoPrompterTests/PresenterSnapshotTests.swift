@@ -64,6 +64,19 @@ import XCTest
     }
   }
 
+  func testRemotePresenterBarControls() {
+    let store = PadStore(defaults: UserDefaults(suiteName: "presenter-controls-\(UUID().uuidString)")!)
+    store.perform(.look(.init(scriptVisible: false, presenterSetup: false, focusMode: true)))
+    XCTAssertFalse(store.scriptVisible)
+    XCTAssertFalse(store.presenterSetup)
+    XCTAssertTrue(store.focusMode)
+    XCTAssertEqual(store.remoteState.look?.scriptVisible, false)
+    XCTAssertEqual(store.remoteState.look?.focusMode, true)
+    store.perform(.look(.init(presenterSetup: true)))
+    XCTAssertTrue(store.presenterSetup)
+    XCTAssertFalse(store.session.isActivelyRunning)
+  }
+
   func testRotationFollowsSourceAndKeepsExposureAligned() throws {
     guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { throw XCTSkip("Snapshot capture guard required") }
     let store = PadStore(defaults: UserDefaults(suiteName: "rotation-\(UUID().uuidString)")!)

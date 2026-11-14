@@ -33,8 +33,15 @@ struct PresenterScreen: View {
   private let snapshotPicker: Bool?
   @ScaledMetric(relativeTo: .body) private var preferredHUDScale = 1.0
   private var hudScale: Double { max(1, preferredHUDScale) }
-  @State private var setup: Bool
-  @State private var showScript = true
+  private let startsReading: Bool
+  private var setup: Bool {
+    get { store.presenterSetup }
+    nonmutating set { store.presenterSetup = newValue }
+  }
+  private var showScript: Bool {
+    get { store.scriptVisible }
+    nonmutating set { store.scriptVisible = newValue }
+  }
   @State private var showingLook = false
   @State private var keyExpanded = true
   @State private var showsExposureNote = false
@@ -52,7 +59,7 @@ struct PresenterScreen: View {
     _hadMac = State(initialValue: previouslyConnected)
     self.session = session
     self.camera = camera
-    _setup = State(initialValue: !startsReading)
+    self.startsReading = startsReading
   }
 
   private var settings: PrompterSettings { store.settings }
@@ -75,7 +82,7 @@ struct PresenterScreen: View {
           ZStack {
             background
             if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
-            if !store.cleanScreen && (setup || store.cameraOnly) {
+            if !store.cleanScreen && !store.focusMode && (setup || store.cameraOnly) {
               cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale)
             }
           }
@@ -115,6 +122,7 @@ struct PresenterScreen: View {
     .focusEffectDisabled()
     .onKeyPress(phases: .down) { press in handle(press) }
     .onAppear {
+      setup = !startsReading
       focused = true
       hadMac = hadMac || macConnected
       if referencePicture == nil { useOwnCameraWithoutMac() }
@@ -158,7 +166,7 @@ struct PresenterScreen: View {
 
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
-    if let referencePicture, store.pictureMode == .behindScript, !store.cameraOnly {
+    if let referencePicture, store.pictureMode == .behindScript, !store.focusMode, !store.cameraOnly {
       ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
     } else if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
       Group {
@@ -384,25 +392,30 @@ struct PresenterScreen: View {
   // MARK: Reading controls
 
   private var readingControls: some View {
-    GeometryReader { geometry in
-      // Narrow screens give the recovery card a row of its own above the transport.
-      let stacked = lostPaused && PadPresenterLayout.lostCardStacks(width: geometry.size.width)
-      VStack(alignment: .leading, spacing: 8) {
-        Spacer()
-        if stacked { lostCard }
-        if !lostPaused, PadPresenterLayout.statusStacks(width: geometry.size.width) { statusPill }
-        HStack(spacing: 8) {
-          if lostPaused { if !stacked { lostCard } } else if !PadPresenterLayout.statusStacks(width: geometry.size.width) { statusPill }
-          Spacer(minLength: 12)
-          turnGroup
-          PadButton("Back to start", icon: "arrow.counterclockwise", kind: .card, showsTitle: false) { session.restart() }
-          PadButton(primaryTitle, icon: session.isActivelyRunning ? "pause.fill" : "play.fill", kind: .primary, minWidth: 128, action: primaryAction)
-          PadButton("Show controls", icon: "ellipsis", kind: .card, showsTitle: false) { setup = true }
-        }
-        .padding(.trailing, 136)
-      }
-      .padding(.leading, 24)
-      .padding(.bottom, 24)
+    VStack {
+      Spacer()
+      ViewThatFits(in: .horizontal) {
+        HStack(spacing: Space.sm) { readingStatus; Spacer(minLength: Space.sm); readingActions }
+        VStack(alignment: .leading, spacing: Space.sm) { readingStatus; HStack { Spacer(); readingActions } }
+      }.padding(Space.md).background(PresenterBar.background)
+    }
+  }
+  @ViewBuilder private var readingStatus: some View {
+    if lostPaused { lostCard } else { statusPill }
+  }
+  @ViewBuilder private var readingActions: some View {
+    Button { session.restart() } label: { BarLabel(title: "Restart", symbol: "arrow.counterclockwise") }
+      .buttonStyle(BarButtonStyle(role: .secondary))
+    Button(action: primaryAction) { BarLabel(title: primaryTitle, symbol: session.isActivelyRunning ? "pause.fill" : "play.fill") }
+      .buttonStyle(BarButtonStyle(role: .secondary))
+    Button { session.pause(); setup = true } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder") }
+      .buttonStyle(BarButtonStyle(role: .secondary))
+    BarGroup(label: "Reading options") {
+      micButton(compact: false)
+      BarDivider()
+      BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: store.focusMode) { store.focusMode.toggle() }
+      Button { showingLook = true } label: { BarLabel(title: "Text", symbol: "textformat.size") }
+        .buttonStyle(BarButtonStyle()).popover(isPresented: $showingLook) { lookPopover }
     }
   }
 
@@ -468,60 +481,29 @@ struct PresenterScreen: View {
 
   /// Mirror and Flip: two independent glass buttons, lit when on, always on screen while presenting.
   private var turnGroup: some View {
-    HStack(spacing: 4) {
-      TurnButton(
-        title: "Mirror left to right",
-        symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: store.mirror
-      ) { store.setMirror(!store.mirror) }
-      TurnButton(
-        title: "Flip upside down",
-        symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down", isOn: store.flip
-      ) { store.setFlip(!store.flip) }
-    }
-    .padding(4)
-    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
-    .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).strokeBorder(PresenterTheme.line))
+    PresenterTurnControls(mirror: Binding(get: { store.mirror }, set: store.setMirror),
+      flip: Binding(get: { store.flip }, set: store.setFlip))
   }
 
   // MARK: Setting up
 
   private func setupBar(width: CGFloat) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
+    VStack(spacing: Space.sm) {
       Spacer()
-      if showsOffNote { offNote.padding(.horizontal, 24) }
-      Group {
-        if width < 900 {
-          VStack(spacing: 8) {
-            HStack(spacing: 8) { transport; Spacer(minLength: 0); turnGroup }
-            HStack { devices; Spacer(minLength: 0) }
-            HStack(spacing: 8) { pictureTools; Spacer(minLength: 0); compactViewTools }
-          }
-        } else {
-        ViewThatFits(in: .horizontal) {
-        setupRow()
-        ScrollView(.horizontal, showsIndicators: true) {
-          VStack(spacing: 8) {
-            HStack(spacing: 8) { transport; Spacer(minLength: 0); devices }
-            HStack(spacing: 8) { pictureTools; Spacer(minLength: 0); viewTools }
-          }.frame(minWidth: max(0, width - 48))
-        }.fixedSize(horizontal: false, vertical: true)
-        }
-        }
+      if showsOffNote { offNote }
+      PresenterSetupBar(scale: hudScale) {
+        transport
+      } devices: {
+        devices
+      } tools: {
+        pictureTools
+      } options: {
+        turnGroup
+        compactViewTools
       }
-      .padding(.horizontal, 24).padding(.vertical, 16)
+      .padding(.horizontal, Space.md)
       .background(PresenterBar.background)
-      .overlay(alignment: .top) { Rectangle().fill(.white.opacity(0.14)).frame(height: 1) }
     }
-  }
-
-  private func setupRow() -> some View {
-    HStack(spacing: 16) {
-      transport
-      Spacer(minLength: 0)
-      devices
-      pictureTools
-      viewTools
-    }.fixedSize(horizontal: true, vertical: false)
   }
 
   @ViewBuilder private var transport: some View {
@@ -538,6 +520,7 @@ struct PresenterScreen: View {
       cameraButton(compact: false)
       BarDivider()
       micButton(compact: false)
+      PresenterLinkedLevel(meter: store.micMeter)
       if !store.cameraOnly {
         BarDivider()
         BarToggle(title: "Script", symbol: "text.alignleft", isOn: showScript) { showScript.toggle() }
@@ -556,7 +539,7 @@ struct PresenterScreen: View {
           .buttonStyle(BarButtonStyle())
           .popover(isPresented: $showingLook) { lookPopover }
       }
-      BarToggle(title: "Show key", symbol: "list.bullet.rectangle", isOn: showKey) { showKey.toggle() }
+      BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: showKey) { showKey.toggle() }
       Button { store.setCleanScreen(true) } label: { BarLabel(title: "Clean", symbol: "rectangle") }
         .buttonStyle(BarButtonStyle())
     }
@@ -667,13 +650,19 @@ struct PresenterScreen: View {
     BarGroup(label: "Picture tools", raised: false) {
       BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras.wrappedValue) { zebras.wrappedValue.toggle() }
       BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour) { camera.guides.changeExposure { $0.falseColour.toggle() } }
-      BarToggle(title: "Guides", symbol: "grid", isOn: guides.wrappedValue) { guides.wrappedValue.toggle() }
+      BarToggle(title: "Guides", symbol: "squareshape.split.3x3", isOn: guides.wrappedValue) { guides.wrappedValue.toggle() }
     }
   }
 
   private var lookPopover: some View {
     VStack(alignment: .leading, spacing: 4) {
-      Text("LOOK").font(.system(size: 13)).tracking(0.8).foregroundStyle(PresenterTheme.muted)
+      Picker("Font", selection: $store.settings.fontName) {
+        ForEach(ScriptRenderer.presenterFonts, id: \.self) { Text($0).tag($0) }
+      }
+      Picker("Reading mode", selection: $store.settings.mode) {
+        Text("Voice follow").tag("Voice"); Text("Automatic scroll").tag("Manual")
+      }
+      if !isVoice { Stepper("\(Int(settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10) }
       HStack {
         Text("Text size")
         Spacer(minLength: 24)

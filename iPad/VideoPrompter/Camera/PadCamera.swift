@@ -328,7 +328,7 @@ struct CameraPreview: UIViewRepresentable {
           let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
           self.coordinator = coordinator
           observation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in self?.applyConnection() }
+            Task { @MainActor in self?.applyConnection(); self?.setNeedsLayout() }
           }
         }
       }

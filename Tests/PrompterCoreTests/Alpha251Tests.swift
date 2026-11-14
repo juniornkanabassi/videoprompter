@@ -22,7 +22,7 @@ import XCTest
                     camera: camera, startsCamera: false, recorder: recorder, shell: shell).defaultAppStorage(defaults)
     }
     let (window, host) = await LibraryAX.host(view(), size: .init(width: 1600, height: 1000))
-    XCTAssertFalse(LibraryAX.named("Open script", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("Script", in: host).isEmpty)
     // The Mic button turns listening on and off; its caret names the input actually chosen.
     let micOn = try XCTUnwrap(LibraryAX.named("Mic", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
     XCTAssertEqual(LibraryAX.value(micOn, "accessibilityValue"), "On")

@@ -67,17 +67,16 @@ import XCTest
     for zoom in [1.0, 1.25, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(PresenterView(store: store, session: store.session, draft: draft, camera: camera, startsCamera: false, recorder: recorder), size: .init(width: 1600, height: 1200))
-      for title in ["Start reading", "Back to start", "Open script", "Camera", "Zebras", "False colour", "Adjust", "Clean"] {
+      for title in ["Start reading", "Back to start", "Script", "Camera", "Zebras", "False colour", "Guides", "Mirror", "Flip", "Text", "Key", "Clean"] {
         let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { ["AXButton", "AXCheckBox"].contains(LibraryAX.value($0, "accessibilityRole")) }, title)
         let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
         XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "\(title) at \(zoom): \(frame)")
         XCTAssertGreaterThanOrEqual(frame.height, 44)
       }
-      // Camera is a real on/off toggle, like a video call; Adjust only opens a panel.
+      // The approved bar keeps direct controls; detailed adjustment stays on the picture tools.
       let camera = try XCTUnwrap(LibraryAX.named("Camera", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXCheckBox" })
       XCTAssertEqual(LibraryAX.value(camera, "accessibilityValue"), "On")
-      let adjust = try XCTUnwrap(LibraryAX.named("Adjust", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
-      XCTAssertFalse(["On", "Off"].contains(LibraryAX.value(adjust, "accessibilityValue")))
+      XCTAssertTrue(LibraryAX.named("Adjust", in: host).isEmpty)
       for title in ["Mic", "Script", "Choose camera", "Choose microphone"] {
         XCTAssertFalse(LibraryAX.named(title, in: host).isEmpty, title)
       }
@@ -98,11 +97,11 @@ import XCTest
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertFalse(camera.exposureBypassed)
     XCTAssertTrue(camera.guides.zebras)
-    let adjust = try XCTUnwrap(LibraryAX.named("Adjust", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
-    XCTAssertTrue(LibraryAX.bool(adjust, "accessibilityPerformPress"))
+    // Long-press/context-menu adjustment routes through the selected tool's shared panel.
+    shell.adjustTab = .zebras
     try await Task.sleep(for: .milliseconds(100))
     XCTAssertNotNil(shell.adjustTab)
-    XCTAssertTrue(LibraryAX.named("Adjust", in: host).contains { LibraryAX.value($0, "accessibilityValue") == "Expanded" })
+    XCTAssertFalse(LibraryAX.named("Close Adjust", in: host).isEmpty)
   }
 
   func testReadingShowsOnlyReadingTransport() async throws {

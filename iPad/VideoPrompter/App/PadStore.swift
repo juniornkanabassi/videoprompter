@@ -29,6 +29,9 @@ import AVFoundation
   private var startedLocalCamera = false
   @Published private(set) var picturePriority: PadRemote.PicturePriority = .realTime720p
   @Published private(set) var cleanScreen = false
+  @Published var scriptVisible = true
+  @Published var presenterSetup = true
+  @Published var focusMode = false
   @Published private(set) var micOn = true
   @Published private(set) var macStatus = PadRemote.MacStatus()
   let micMeter = RemoteMicMeter()
@@ -620,7 +623,8 @@ extension PadStore {
         fontSize: settings.fontSize, textWidth: settings.textWidth, lineSpacing: settings.lineSpacing,
         guideFraction: settings.guideFraction, fontName: settings.fontName, fontWeight: settings.fontWeight,
         textColorHex: settings.textColorHex, textOpacity: settings.textOpacity,
-        paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues),
+        paragraphSpacing: settings.paragraphSpacing, alignment: settings.alignment, showCues: settings.showCues,
+        scriptVisible: scriptVisible, presenterSetup: presenterSetup, focusMode: focusMode),
       presets: presets.map(\.name), startDelay: session.startDelay,
       voiceSource: usesMacMic ? "Mac" : "iPad",
       seekRevision: open ? session.seekRevision : nil,
@@ -763,6 +767,9 @@ extension PadStore {
         objectWillChange.send()
       } catch { errorMessage = error.localizedDescription }
     case .look(let look):
+      if let value = look.scriptVisible { scriptVisible = value }
+      if let value = look.presenterSetup { presenterSetup = value; if value { session.pause() } }
+      if let value = look.focusMode { focusMode = value }
       var next = settings
       if let value = look.horizontalMirror { next.horizontalMirror = value }
       if let value = look.verticalMirror { next.verticalMirror = value }

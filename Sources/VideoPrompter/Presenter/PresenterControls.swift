@@ -1,4 +1,5 @@
 import SwiftUI
+import PrompterCore
 
 /// Shared look of the presenter bar: one control height, one corner, one selected state.
 enum PresenterBar {
@@ -50,7 +51,7 @@ struct BarLabel: View {
       if showsTitle {
         Text(title).font(.system(size: 15, weight: weight)).lineLimit(1).fixedSize()
       }
-    }.padding(.horizontal, showsTitle ? (snug ? Space.sm : Space.md) : PresenterBar.iconPadding)
+    }.padding(.horizontal, showsTitle ? (snug || controlHeight < PresenterBar.height ? Space.sm : Space.md) : PresenterBar.iconPadding)
       .frame(minWidth: showsTitle ? 0 : PresenterBar.iconWidth, minHeight: controlHeight)
   }
 }
@@ -424,5 +425,111 @@ struct CameraRotationMenu: View {
       }
     } label: { Label("Rotate", systemImage: "rotate.right") }
       .accessibilityValue("\(angle) degrees")
+  }
+}
+
+/// The same setup rows on Mac, iPad and the linked-iPad console.
+struct PresenterSetupBar<Transport: View, Devices: View, Tools: View, Options: View>: View {
+  var scale = 1.0
+  @ViewBuilder var transport: () -> Transport
+  @ViewBuilder var devices: () -> Devices
+  @ViewBuilder var tools: () -> Tools
+  @ViewBuilder var options: () -> Options
+  var body: some View {
+    ViewThatFits(in: .horizontal) {
+      HStack(spacing: Space.md) {
+        transport(); Spacer(minLength: Space.md); devices(); tools(); options()
+      }.fixedSize(horizontal: true, vertical: false)
+      rows
+    }.frame(maxWidth: .infinity, alignment: .leading)
+      .environment(\.barControlHeight, scale >= 1.5 ? 36 : PresenterBar.height) // grid: ok UI scale threshold; targets remain at least 54 pt on screen.
+      .padding(.vertical, scale >= 1.5 ? Space.xs : Space.sm) // grid: ok UI scale threshold, not a spacing dimension.
+  }
+  private var rowGap: CGFloat { scale >= 1.5 ? Space.xs : Space.sm }
+  private var rows: some View {
+    VStack(spacing: rowGap) {
+      WrapLayout(spacing: rowGap, distributeAfter: 1, leading: true) {
+        HStack(spacing: Space.sm) { transport() }
+        devices()
+      }
+      WrapLayout(spacing: rowGap, distributeAfter: 1, leading: true) {
+        tools()
+        options()
+      }
+    }.fixedSize(horizontal: false, vertical: true)
+  }
+}
+
+struct PresenterTurnControls: View {
+  @Binding var mirror: Bool
+  @Binding var flip: Bool
+  var body: some View {
+    BarGroup(label: "Mirror and flip", raised: false) {
+      BarToggle(title: "Mirror", symbol: "arrow.left.and.right.righttriangle.left.righttriangle.right", isOn: mirror) { mirror.toggle() }
+      BarToggle(title: "Flip", symbol: "arrow.up.and.down.righttriangle.up.righttriangle.down", isOn: flip) { flip.toggle() }
+    }
+  }
+}
+
+struct PresenterLevel: View {
+  let level: Double
+  var body: some View {
+    DBMeter(levelDB: level, axis: .horizontal, showsScale: false)
+      .frame(width: 48, height: 24).padding(.horizontal, Space.xs)
+      .accessibilityLabel("Microphone level")
+  }
+}
+
+struct PresenterLinkedLevel: View {
+  @ObservedObject var meter: RemoteMicMeter
+  var body: some View { PresenterLevel(level: meter.levelDB) }
+}
+
+#if canImport(AppKit)
+struct PresenterInputLevel: View {
+  @ObservedObject var meter: InputMeter
+  var body: some View { PresenterLevel(level: Double(meter.peakDBFS)) }
+}
+#endif
+
+/// An HStack that wraps onto further centred rows when its content is wider than it is offered.
+struct WrapLayout: Layout {
+  var spacing: CGFloat = 8
+  var distributeAfter: Int? = nil
+  var leading = false
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let rows = rows(for: proposal.width ?? .infinity, subviews: subviews)
+    let width = rows.map(\.width).max() ?? 0
+    let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+    return CGSize(width: distributeAfter != nil && rows.count == 1 ? proposal.width ?? width : width, height: height)
+  }
+  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    var y = bounds.minY
+    let rows = rows(for: bounds.width, subviews: subviews)
+    for row in rows {
+      let distribute = rows.count == 1 && distributeAfter != nil
+      var x = (distribute || leading) ? bounds.minX : bounds.midX - row.width / 2
+      for index in row.indices {
+        if distribute, index == distributeAfter { x += max(0, bounds.width - row.width) }
+        let size = subviews[index].sizeThatFits(.unspecified)
+        subviews[index].place(at: CGPoint(x: x, y: y + (row.height - size.height) / 2), proposal: .unspecified)
+        x += size.width + spacing
+      }
+      y += row.height + spacing
+    }
+  }
+  private struct Row { var indices: [Int] = []; var width: CGFloat = 0; var height: CGFloat = 0 }
+  private func rows(for maxWidth: CGFloat, subviews: Subviews) -> [Row] {
+    var rows: [Row] = [Row()]
+    for (index, subview) in subviews.enumerated() {
+      let size = subview.sizeThatFits(.unspecified)
+      let extra = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
+      if rows[rows.count - 1].width + extra > maxWidth, !rows[rows.count - 1].indices.isEmpty { rows.append(Row()) }
+      let extraNow = rows[rows.count - 1].indices.isEmpty ? size.width : size.width + spacing
+      rows[rows.count - 1].indices.append(index)
+      rows[rows.count - 1].width += extraNow
+      rows[rows.count - 1].height = max(rows[rows.count - 1].height, size.height)
+    }
+    return rows
   }
 }

@@ -202,6 +202,18 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     send(.present(script.id))
     let over = try state("a script joins Camera Only") { $0.presenting == script.id && $0.cameraOnly == false }
     XCTAssertEqual(over.pictureMode, .behindScript)
+    send(.selectCamera("rotation-fixture"))
+    send(.macStatus(.init(cameraRotation: 90)))
+    _ = try state("Mac rotation reaches the iPad") { $0.guides?.rotation == 90 && $0.cameraUsesMac == true }
+    send(.cameraGuides(.init(rotation: 270)))
+    for _ in 0..<50 where !commands.withLock({ $0.contains(.cameraGuides(.init(rotation: 270))) }) { Thread.sleep(forTimeInterval: 0.1) }
+    XCTAssertTrue(commands.withLock { $0.contains(.cameraGuides(.init(rotation: 270))) }, "Rotating the Mac source on iPad must ask the Mac")
+    send(.macStatus(.init(cameraRotation: 270)))
+    _ = try state("Mac confirms the requested rotation") { $0.guides?.rotation == 270 }
+    send(.look(.init(scriptVisible: false, presenterSetup: true, focusMode: true)))
+    _ = try state("presenter controls reach iPad") { $0.look?.scriptVisible == false && $0.look?.presenterSetup == true && $0.look?.focusMode == true }
+    send(.look(.init(scriptVisible: true, focusMode: false)))
+
     send(.close)
     _ = try state("closed after Camera Only") { $0.presenting == nil && $0.cameraOnly == false }
     for _ in 0..<50 where !commands.withLock({ $0.contains(.cameraOn(false)) }) { Thread.sleep(forTimeInterval: 0.1) }
