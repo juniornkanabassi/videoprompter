@@ -602,7 +602,8 @@ final class CameraLinkTests: XCTestCase {
     relay.iPadStateChanged(state)
     relay.start(script: record, settings: PrompterSettings())
     XCTAssertFalse(relay.isRelaying)
-    XCTAssertTrue(link.sent.isEmpty)
+    // A refused start only hands the voice back to the iPad's own microphone, so it never waits for Mac words.
+    XCTAssertTrue(link.sent.allSatisfy { $0 == .voiceSource("iPad") }, "\(link.sent)")
     state.editing = false
     relay.iPadStateChanged(state)
     relay.start(script: record, settings: PrompterSettings())

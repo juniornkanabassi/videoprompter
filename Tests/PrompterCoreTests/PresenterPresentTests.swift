@@ -187,7 +187,7 @@ final class PresenterPresentTests: XCTestCase {
     OffscreenPanels.setFullScreen(shown, false)
     controller.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: shown))
     XCTAssertFalse(shown.isVisible)
-    XCTAssertEqual(shown.level, .normal)
+    XCTAssertEqual(shown.level, .floating)
     controller.present(store: store)
     XCTAssertTrue(showsPresenter)
   }
