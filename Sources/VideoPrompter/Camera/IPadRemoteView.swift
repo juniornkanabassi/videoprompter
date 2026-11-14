@@ -7,6 +7,9 @@ struct IPadRemoteView: View {
   @ObservedObject var store: AppStore = .shared
   var stateOverride: PadRemote.State?
   private var currentState: PadRemote.State? { stateOverride ?? link.iPadState }
+  private var focusActive: Bool {
+    currentState?.look?.focusMode == true && currentState?.look?.presenterSetup != true && currentState?.cameraOnly != true
+  }
   var startsLink = true
   var previewOverride: CGImage?
   var panelOverride: String?
@@ -30,7 +33,7 @@ struct IPadRemoteView: View {
           if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly || state.look?.scriptVisible == false {
             liveCamera
           } else {
-            if state.pictureMode == .behindScript && state.look?.focusMode != true { liveCamera.opacity(0.55) }
+            if state.pictureMode == .behindScript && !focusActive { liveCamera.opacity(0.55) }
             VStack(spacing: 0) {
               IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
               HStack(spacing: Space.md) {
@@ -41,7 +44,7 @@ struct IPadRemoteView: View {
                   .disabled(state.words < 2 || state.editing == true)
               }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
             }
-            if state.pictureMode != .behindScript && state.look?.focusMode != true {
+            if state.pictureMode != .behindScript && !focusActive {
               liveCamera.frame(width: 192, height: 108).padding(Space.md) // grid: ok 16:9 camera thumbnail
             }
           }
@@ -230,7 +233,9 @@ struct IPadRemoteView: View {
         if state.localCameras == nil { Text("Update the iPad app to list its cameras") }
       }
       Divider()
-      CameraRotationMenu(angle: state.guides?.rotation ?? 0) { link.send(.cameraGuides(.init(rotation: $0))) }
+      CameraRotationMenu(angle: state.cameraUsesMac != false ? link.macStatus.cameraRotation ?? CameraModel.shared.guides.rotation.rawValue : state.guides?.rotation ?? 0) {
+        link.setCameraRotation($0)
+      }
       Picker("Picture", selection: Binding(get: { state.pictureMode ?? .off }, set: link.setPictureMode)) {
         Text("Off").tag(PadRemote.PictureMode.off)
         Text("Behind the script").tag(PadRemote.PictureMode.behindScript)
@@ -253,14 +258,14 @@ struct IPadRemoteView: View {
       }
       Divider()
       Section("On " + (state.deviceName ?? "iPad")) {
-        if let microphones = state.localMicrophones {
+        if let microphones = state.localMicrophones, !microphones.isEmpty {
           ForEach(microphones) { source in
             Button { link.chooseMicrophone(source.id, onIPad: true) } label: {
               DeviceChoiceLabel(name: source.name, selected: state.voiceSource == "iPad" && state.selectedMicrophone == source.id)
             }
           }
         } else {
-          Button { setVoice("ipad", state) } label: {
+          Button { link.chooseMicrophone("", onIPad: true) } label: {
             DeviceChoiceLabel(name: "iPad microphone", selected: state.voiceSource == "iPad")
           }
         }

@@ -78,13 +78,28 @@ import VideoToolbox
   /// Use the same relay path as a selection made on the iPad itself.
   func chooseMicrophone(_ id: String, onIPad: Bool) {
     if onIPad {
-      guard iPadState?.localMicrophones?.contains(where: { $0.id == id }) == true else { return }
+      guard id.isEmpty || iPadState?.localMicrophones?.contains(where: { $0.id == id }) == true else { return }
+      pendingMacMicrophone = false
       relay.stop()
-      send(.selectMicrophone(id, onIPad: true))
+      if iPadState?.localMicrophones == nil {
+        send(.voiceSource("iPad"))
+        send(.mode("Voice"))
+      } else {
+        send(.selectMicrophone(id, onIPad: true))
+      }
     } else {
       send(.micOn(true))
       receive(.macMicrophone(id))
     }
+  }
+
+  func setCameraRotation(_ value: Int) {
+    guard let rotation = CameraRotation(rawValue: value) else { return }
+    if iPadState?.cameraUsesMac != false {
+      CameraModel.shared.setRotation(rotation)
+      publishMacStatus()
+    }
+    send(.cameraGuides(.init(rotation: value)))
   }
 
   func chooseCamera(_ id: String, onIPad: Bool) {
@@ -218,13 +233,12 @@ import VideoToolbox
       receivingCameraRequest = false
       publishMacStatus()
     case .macMicrophone(let id):
-      guard let id else { relay.stop(); send(.voiceSource("iPad")); return }
+      guard let id else { pendingMacMicrophone = false; relay.stop(); send(.voiceSource("iPad")); return }
       guard id.isEmpty || AudioCapture.inputDevices().contains(where: { $0.uid == id }) else { return }
       selectMacMicrophone(id)
       macMicOn = true
-      if iPadState?.presenting == nil {
-        send(.voiceSource("Mac"))
-      } else if !relay.isRelaying {
+      pendingMacMicrophone = iPadState?.presenting == nil
+      if !pendingMacMicrophone, !relay.isRelaying {
         relay.startFromIPad(settings: AppStore.shared.settings)
       }
       publishMacStatus()
@@ -257,19 +271,25 @@ import VideoToolbox
     didSet {
       guard controlsIPad != oldValue else { return }
       // Closing the iPad window ends the relay even if the camera keeps the link open.
-      if !controlsIPad { relay.stop() }
+      if !controlsIPad { pendingMacMicrophone = false; relay.stop() }
       updateLink()
     }
   }
   /// What the iPad's presenter shows, while an iPad that reports it is connected.
   @Published private(set) var iPadState: PadRemote.State? {
     didSet {
+      if iPadState == nil { pendingMacMicrophone = false }
       relay.iPadStateChanged(iPadState)
+      if pendingMacMicrophone, iPadState?.presenting != nil {
+        pendingMacMicrophone = false
+        relay.startFromIPad(settings: AppStore.shared.settings)
+      }
       if oldValue?.picturePriority != iPadState?.picturePriority, isOn, let pipe { attachCamera(pipe) }
     }
   }
   /// The Mac's microphone driving the iPad's reading, fed by every state the iPad sends.
   lazy var relay = PadVoiceRelay(link: self)
+  private var pendingMacMicrophone = false
   private var relayActive = false
   /// What the menu shows under the toggles.
   @Published private(set) var status = "Off"

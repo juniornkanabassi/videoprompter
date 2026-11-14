@@ -544,6 +544,19 @@ final class PadVoiceRelayTests: XCTestCase {
     sender.pipe = nil
   }
 
+  func testConsoleRotatesMacCameraWithoutIPadAcknowledgement() {
+    let camera = CameraModel.shared
+    let original = camera.guides
+    defer { camera.guides = original }
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    for rotation in CameraRotation.allCases {
+      sender.setCameraRotation(rotation.rawValue)
+      XCTAssertEqual(camera.guides.rotation, rotation)
+    }
+    sender.setCameraRotation(45)
+    XCTAssertEqual(camera.guides.rotation, CameraRotation.allCases.last)
+  }
+
   func testTheEncoderDropsAFrameOnlyAboveTheLimit() throws {
     func queuedBytesAfterAFrame(limit: Int) throws -> Int {
       let pipe = StalledPipe(name: "encoder")

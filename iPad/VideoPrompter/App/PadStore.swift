@@ -58,7 +58,9 @@ import AVFoundation
     return localMicrophones
   }
   var selectedMicrophone: String? {
-    usesMacMic ? macStatus.selectedMicrophone : settings.audioDeviceUID
+    if usesMacMic { return macStatus.selectedMicrophone }
+    if let id = settings.audioDeviceUID { return localMicrophones.first { $0.id == id }?.id }
+    return localMicrophones.first { $0.connection == "Built-in" }?.id ?? localMicrophones.first?.id
   }
   func showPickerMeter(_ show: Bool) {
     if macStatus.supportsMicSelection == true { camera.link.send(.microphoneMeter(show && usesMacMic)) }
@@ -67,13 +69,21 @@ import AVFoundation
       ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] == nil else { return }
     session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
   }
-  var localMicrophones: [PadRemote.Source] {
-    AudioCapture.inputDevices().map { device in
-      let port = AVAudioSession.sharedInstance().availableInputs?.first { $0.uid == device.uid }
-      return .init(id: device.uid, name: port?.portType == .builtInMic ? "iPad microphone" : device.name,
-        connection: port?.portType == .builtInMic ? "Built-in" : port?.portType.rawValue,
-        channels: port?.channels?.count)
+  @Published private(set) var localMicrophones: [PadRemote.Source] = []
+  private let discoverMicrophones: () -> [PadRemote.Source]
+
+  private static func discoverLocalMicrophones() -> [PadRemote.Source] {
+    AudioCapture.configureSession()
+    return (AVAudioSession.sharedInstance().availableInputs ?? []).map { port in
+      .init(id: port.uid, name: port.portType == .builtInMic ? "iPad microphone" : port.portName,
+        connection: port.portType == .builtInMic ? "Built-in" : port.portType.rawValue,
+        channels: port.channels?.count)
     }
+  }
+
+  private func refreshMicrophones() {
+    let next = discoverMicrophones()
+    if next != localMicrophones { localMicrophones = next }
   }
   func chooseMicrophone(_ id: String, onMac: Bool) {
     if onMac {
@@ -170,8 +180,9 @@ import AVFoundation
   private static let presetsKey = "padPresets"
   private static let knownIDsKey = "padKnownScriptsByFolder"
 
-  init(defaults: UserDefaults = .standard) {
+  init(defaults: UserDefaults = .standard, discoverMicrophones: (() -> [PadRemote.Source])? = nil) {
     self.defaults = defaults
+    self.discoverMicrophones = discoverMicrophones ?? Self.discoverLocalMicrophones
     pictureMode = Self.savedPictureMode(defaults)
     picturePriority = defaults.string(forKey: "padPicturePriority").flatMap(PadRemote.PicturePriority.init(rawValue:)) ?? .realTime720p
     cleanScreen = defaults.bool(forKey: "padCleanScreen")
@@ -186,6 +197,10 @@ import AVFoundation
     if let data = defaults.data(forKey: Self.presetsKey),
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
+    refreshMicrophones()
+    NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+      .receive(on: DispatchQueue.main)
+      .sink { [weak self] _ in self?.refreshMicrophones() }.store(in: &bag)
     folder.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     session.meter.$peakDBFS.sink { [weak self] level in
       guard let self, !session.followsRemote else { return }
@@ -334,6 +349,9 @@ import AVFoundation
   /// asked for its picture exactly as the Camera button asks; with no Mac, the view uses this iPad's camera.
   func presentCamera() {
     guard !isPresenting else { return }
+    scriptVisible = true
+    focusMode = false
+    presenterSetup = true
     session.pause()
     cameraOnly = true
     UIApplication.shared.isIdleTimerDisabled = true
@@ -360,6 +378,9 @@ import AVFoundation
 
   func closePresenter() {
     session.pause()
+    scriptVisible = true
+    focusMode = false
+    presenterSetup = true
     presentingID = nil
     cameraOnly = false
     if startedMacCamera {
@@ -631,7 +652,7 @@ extension PadStore {
       fingerprint: open ? session.activeRecord?.metadata.contentFingerprint : nil,
       editing: editing, rejectionReason: rejectionReason, pictureMode: cameraOnly ? .monitorOnly : pictureMode,
       picturePriority: picturePriority, cleanScreen: cleanScreen, micOn: micOn, macStatus: macStatus,
-      microphoneSources: microphoneSources, selectedMicrophone: usesMacMic ? selectedMicrophone : AudioCapture.resolvedInput(settings.audioDeviceUID)?.uid, selectedID: selectedID,
+      microphoneSources: microphoneSources, selectedMicrophone: selectedMicrophone, selectedID: selectedID,
       deviceName: camera.link.deviceName,
       appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
       scriptPreview: open ? session.document.spokenTokens.dropFirst(max(0, session.tokenIndex)).prefix(30).map(\.text).joined(separator: " ") : nil,
@@ -793,6 +814,7 @@ extension PadStore {
     case .voiceSource(let source):
       switch source {
       case "Mac":
+        guard presentingID != nil else { return }
         micMeter.show(macMicLevelDB)
         // Before the mode change, so switching to Voice cannot start this iPad's microphone.
         session.followsRemote = true

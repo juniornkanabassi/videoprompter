@@ -46,6 +46,7 @@ struct PresenterScreen: View {
   @State private var keyExpanded = true
   @State private var showsExposureNote = false
   private var falseColour: Bool { camera.guides.falseColour }
+  private var focusActive: Bool { store.focusMode && !setup && !store.cameraOnly }
   @AppStorage("presenterExposureKey") private var showKey = true
   @State private var showingCamera = false
   @State private var hadMac = false
@@ -82,7 +83,7 @@ struct PresenterScreen: View {
           ZStack {
             background
             if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
-            if !store.cleanScreen && !store.focusMode && (setup || store.cameraOnly) {
+            if !store.cleanScreen && !focusActive && (setup || store.cameraOnly) {
               cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale)
             }
           }
@@ -166,9 +167,9 @@ struct PresenterScreen: View {
 
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
-    if let referencePicture, store.pictureMode == .behindScript, !store.focusMode, !store.cameraOnly {
+    if let referencePicture, store.pictureMode == .behindScript, !focusActive, !store.cameraOnly {
       ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
-    } else if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
+    } else if store.pictureMode == .behindScript, camera.isOn, !focusActive, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
           LinkPreview(camera: camera, link: camera.link)
