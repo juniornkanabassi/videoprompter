@@ -77,6 +77,84 @@ import XCTest
     XCTAssertFalse(store.session.isActivelyRunning)
   }
 
+  func testPresenterCloseAndCameraOnlyResetTransientControls() throws {
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { throw XCTSkip("Snapshot capture guard required") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "presenter-reset-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    store.perform(.voiceSource("Mac"))
+    XCTAssertFalse(store.session.followsRemote)
+    XCTAssertEqual(store.settings.mode, "Manual")
+    store.scriptVisible = false
+    store.focusMode = true
+    store.presenterSetup = false
+    store.closePresenter()
+    XCTAssertTrue(store.scriptVisible)
+    XCTAssertFalse(store.focusMode)
+    XCTAssertTrue(store.presenterSetup)
+    let script = try store.folder.create(title: "Reset \(UUID().uuidString)", markdown: Self.script)
+    store.present(script)
+    XCTAssertTrue(store.scriptVisible, "The next script must not inherit a hidden script")
+    store.closePresenter()
+    store.scriptVisible = false
+    store.focusMode = true
+    store.presenterSetup = false
+    store.presentCamera()
+    XCTAssertTrue(store.scriptVisible)
+    XCTAssertFalse(store.focusMode)
+    XCTAssertTrue(store.presenterSetup)
+    store.closePresenter()
+  }
+
+  func testMicrophoneListIsCachedUntilTheAudioRouteChanges() async {
+    var reads = 0
+    var sources = [PadRemote.Source(id: "built-in", name: "iPad microphone", connection: "Built-in")]
+    let store = PadStore(defaults: UserDefaults(suiteName: "microphone-cache-\(UUID().uuidString)")!, discoverMicrophones: {
+      reads += 1
+      return sources
+    })
+    XCTAssertEqual(reads, 1)
+    for _ in 0..<10 {
+      XCTAssertEqual(store.remoteState.localMicrophones, sources)
+      XCTAssertEqual(store.remoteState.selectedMicrophone, "built-in")
+    }
+    XCTAssertEqual(reads, 1, "State broadcasts must not enumerate audio inputs")
+    sources = [.init(id: "usb", name: "USB microphone")]
+    NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: nil)
+    try? await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(reads, 2)
+    XCTAssertEqual(store.remoteState.localMicrophones, sources)
+    XCTAssertEqual(store.remoteState.selectedMicrophone, "usb")
+    XCTAssertEqual(reads, 2)
+  }
+
+  func testFocusRemovesLiveCameraPreviewsAndSetupRestoresThem() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "live-focus-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    store.settings.horizontalMirror = false
+    store.setPictureMode(.behindScript)
+    let script = try store.folder.create(title: "Focus \(UUID().uuidString)", markdown: Self.script)
+    store.present(script)
+    func previews(_ view: UIView) -> [UIView] {
+      let current = view is CameraPreview.PreviewView || view is LinkPreview.LinkView ? [view] : []
+      return current + view.subviews.flatMap(previews)
+    }
+    for source in ["local", "mac"] {
+      store.camera.selectedID = source == "mac" ? PadCamera.macLinkID : "capture"
+      store.camera.isOn = true
+      for state in ["reading", "focus", "setup"] {
+        store.focusMode = state != "reading"
+        _ = try await render(PresenterScreen(session: store.session, camera: store.camera, startsReading: state != "setup")
+          .environmentObject(store), size: CGSize(width: 1180, height: 820),
+          name: "ipad-live-\(source)-\(state)", directory: directory, inspect: { root in
+            XCTAssertEqual(previews(root).count, state == "focus" ? 0 : 1, "\(source) \(state)")
+          }, beforeDraw: {})
+      }
+    }
+    store.camera.isOn = false
+    store.closePresenter()
+  }
+
   func testRotationFollowsSourceAndKeepsExposureAligned() throws {
     guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { throw XCTSkip("Snapshot capture guard required") }
     let store = PadStore(defaults: UserDefaults(suiteName: "rotation-\(UUID().uuidString)")!)
@@ -398,7 +476,8 @@ import XCTest
   }
 
   /// A window the size of the iPad (or a Stage Manager window), drawn into a PNG once SwiftUI has laid out.
-  private func render<V: View>(_ view: V, size: CGSize, name: String, directory: String, beforeDraw: () -> Void) async throws -> UIImage {
+  private func render<V: View>(_ view: V, size: CGSize, name: String, directory: String,
+    inspect: ((UIView) -> Void)? = nil, beforeDraw: () -> Void) async throws -> UIImage {
     let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
     let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: .zero)
     window.frame = CGRect(origin: .zero, size: size)
@@ -412,6 +491,7 @@ import XCTest
     host.view.setNeedsLayout()
     host.view.layoutIfNeeded()
     try await Task.sleep(for: .seconds(1))
+    inspect?(host.view)
     let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
       window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
     }

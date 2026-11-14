@@ -126,7 +126,7 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     // A simulator normally has no microphone. Invalid local IDs must not stop the active relay.
     sender.chooseMicrophone("not-a-device", onIPad: true)
     XCTAssertTrue(sender.relay.isRelaying)
-    sender.send(.selectMicrophone("", onIPad: true))
+    sender.chooseMicrophone("", onIPad: true)
     for _ in 0..<100 where sender.relay.isRelaying || sender.iPadState?.voiceSource != "iPad" { try await Task.sleep(for: .milliseconds(50)) }
     XCTAssertFalse(sender.relay.isRelaying)
     XCTAssertEqual(sender.iPadState?.voiceSource, "iPad")
@@ -134,6 +134,48 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     for _ in 0..<100 where sender.iPadState?.presenting != nil { try await Task.sleep(for: .milliseconds(50)) }
     sender.disconnect()
     try await Task.sleep(for: .milliseconds(300))
+  }
+
+  @MainActor func testCMacMicrophoneChosenBeforeScriptStartsWhenScriptOpens() async throws {
+    try XCTSkipUnless(ProcessInfo.processInfo.environment["VP_IPAD_E2E"] == "1")
+    let env = ProcessInfo.processInfo.environment
+    let port = try XCTUnwrap(env["VP_IPAD_E2E_PORT"].flatMap(UInt16.init))
+    let sender = IPadCameraSender(defaults: freshDefaults())
+    sender.searchesForIPad = false
+    sender.capturesCamera = false
+    sender.relay.captureAudio = false
+    sender.relay.presenterIsCapturing = { false }
+    defer { sender.disconnect() }
+    sender.use(SocketPipe(socket: try XCTUnwrap(Self.connect(port: port)), name: "USB-C"))
+    for _ in 0..<100 where sender.iPadState?.scripts.isEmpty != false { try await Task.sleep(for: .milliseconds(50)) }
+    let script = try XCTUnwrap(sender.iPadState?.scripts.first)
+    let trigger = URL(fileURLWithPath: try XCTUnwrap(env["VP_IPAD_E2E_CONTAINER"]))
+      .appendingPathComponent("Documents/vp-picker-request.txt")
+    for fromIPad in [false, true] {
+      sender.send(.close)
+      sender.send(.mode("Manual"))
+      for _ in 0..<100 where sender.iPadState?.presenting != nil || sender.iPadState?.mode != "Manual" {
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      if fromIPad { try "Mac".write(to: trigger, atomically: true, encoding: .utf8) }
+      else { sender.chooseMicrophone("", onIPad: false) }
+      try await Task.sleep(for: .milliseconds(300))
+      XCTAssertNil(sender.relay.session)
+      XCTAssertEqual(sender.iPadState?.mode, "Manual", "Choosing a mic cannot enter Voice before a relay exists")
+      sender.send(.present(script.id))
+      for _ in 0..<100 where sender.relay.session == nil { try await Task.sleep(for: .milliseconds(50)) }
+      XCTAssertNotNil(sender.relay.session, sender.relay.status)
+      XCTAssertEqual(sender.iPadState?.voiceSource, "Mac")
+      sender.send(.play)
+      for _ in 0..<100 where sender.relay.session?.isActivelyRunning != true { try await Task.sleep(for: .milliseconds(50)) }
+      XCTAssertTrue(sender.relay.session?.isActivelyRunning == true, sender.relay.status)
+      sender.chooseMicrophone("", onIPad: true)
+      for _ in 0..<100 where sender.relay.isRelaying { try await Task.sleep(for: .milliseconds(50)) }
+      XCTAssertFalse(sender.relay.isRelaying)
+      sender.send(.close)
+      for _ in 0..<100 where sender.iPadState?.presenting != nil { try await Task.sleep(for: .milliseconds(50)) }
+      try await Task.sleep(for: .seconds(1))
+    }
   }
 
   func testTheMacDrivesTheIPadAndSendsItsCamera() throws {
@@ -492,8 +534,9 @@ final class IPadSimulatorEndToEndTests: XCTestCase {
     func startRelay(_ mac: Mac) throws {
       let first = try mac.state("connected") { $0.scripts.contains { $0.title == expectedTitle } }
       let script = try XCTUnwrap(first.scripts.first { $0.title == expectedTitle })
-      mac.send(.voiceSource("Mac"))
       mac.send(.present(script.id))
+      _ = try mac.state("presenting before the relay starts") { $0.presenting == script.id }
+      mac.send(.voiceSource("Mac"))
       _ = try mac.state("following") { $0.voiceSource == "Mac" && $0.presenting == script.id }
       mac.send(.play)
       _ = try mac.state("running on the Mac's voice") { $0.running && $0.voiceSource == "Mac" }

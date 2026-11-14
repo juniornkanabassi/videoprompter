@@ -1,3 +1,63 @@
+# Independent-review fixes complete
+
+Branch: `t3/presenter-ui-parity`. Review-fix base: `2c1e08d`.
+
+All reported items (1, 2, 3, 5, 6) are implemented:
+- Mac-mic requests made before a script opens wait on the sender, then start the
+  relay from the first presented state. No premature Voice-mode message; the iPad
+  also rejects a Mac-voice command before a script exists. Pending requests clear
+  when choosing an iPad mic, closing the console or disconnecting.
+- Focus hides both live-camera views while reading and is inactive in setup.
+  Closing and Camera Only reset script visibility, Focus and setup state.
+- Empty microphone lists offer a working system-default iPad choice. Older peers
+  retain their original fallback commands.
+- Console rotation updates the Mac source directly and sends the link command.
+- iPad microphone discovery is cached and refreshed on audio-route changes.
+  State broadcasts and system-default input reporting use the cache.
+
+## Final verification
+
+| Check | Result | Log |
+|---|---|---|
+| Full `./test.sh` | PASS, exit 0; 1117 executed, 93 skipped, zero failures | `/private/tmp/vp-parity-review-full-verified.log` |
+| Light/dark snapshot passes | PASS; each 61 executed, 1 skipped, zero failures | Same full log |
+| Grid | PASS, 117 Swift source files | Same full log |
+| Generic iOS Simulator build | PASS | `/private/tmp/vp-parity-review-ios-build.log` |
+| iPad harness | PASS, 15 tests including live Focus, resets, input cache and scrolling | `/private/tmp/vp-parity-review-ipad.log` |
+| Link e2e | PASS, 6 tests, including mic-before-script from both pickers | `/private/tmp/vp-parity-review-e2e-final.log` |
+| Focused Mac relay | PASS, 39 tests | `/private/tmp/vp-parity-review-focused.log` |
+| Isolated console snapshot/AX check | PASS, 1 test; image inspected | `/private/tmp/vp-parity-review-console-final-v4.log` |
+
+The disconnect e2e fixture now uses the real relay handshake: present, acknowledge,
+then select Mac voice. The console fixture renders before enabling AppKit AX
+inspection. Some full-batch PNGs still inherit the runner's cached-layer artefacts;
+use the isolated captures below as visual evidence. Earlier diagnostic runs were
+superseded by the final green runs above.
+
+## Uncommitted PNG evidence
+
+All new PNGs stay outside git at `/private/tmp/vp-parity-review-evidence`.
+`VERIFIED-SNAPSHOTS.txt` lists the isolated iPad, console and final e2e images.
+`SNAPSHOTS.txt` inventories all raw output, including diagnostic/batch captures.
+
+Key paths:
+- `/private/tmp/vp-parity-review-evidence/ipad/ipad-live-local-focus.png`
+- `/private/tmp/vp-parity-review-evidence/ipad/ipad-live-mac-focus.png`
+- `/private/tmp/vp-parity-review-evidence/ipad/ipad-live-local-setup.png`
+- `/private/tmp/vp-parity-review-evidence/ipad/ipad-live-mac-setup.png`
+- `/private/tmp/vp-parity-review-evidence/console-final/ipad-microphone-empty-100.png`
+- `/private/tmp/vp-parity-review-evidence/e2e-final/ipad-link-e2e.png`
+
+Owned simulators were shut down/deleted before e2e and after each harness. No
+visible window, Simulator window, permission prompt or sound was used. No new
+PNGs were committed. No push, release or version change. Speech/SpeechProvider.swift
+and the audio-capture implementation remain untouched. Physical capture hardware
+has not been tested.
+
+Prior implementation checkpoint follows.
+
+---
+
 # Presenter parity: implementation and verification complete
 
 Branch: `t3/presenter-ui-parity`. Base: `8ae0abc`.
