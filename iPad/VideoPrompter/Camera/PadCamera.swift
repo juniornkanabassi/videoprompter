@@ -104,11 +104,13 @@ import UIKit
   /// A Mac that starts sending takes over the picture, as plugging in a camera does; when it
   /// stops, the picture falls back to whatever camera is left. A Mac connected only to control
   /// the presenter sends no picture and changes nothing here.
+  var acceptsMacPicture = true
+
   private func linkChanged() {
     let hadMac = devices.contains(where: \.isMac)
     refreshDevices()
     // Taken over when the picture first arrives, even when the Mac is already the only choice.
-    if link.pictureSize != nil, !hadMac {
+    if acceptsMacPicture, link.pictureSize != nil, !hadMac {
       selectedID = Self.macLinkID
       if !isOn { isOn = true }
     }

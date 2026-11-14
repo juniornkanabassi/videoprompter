@@ -7,15 +7,43 @@ final class PadRemoteReadinessTests: XCTestCase {
     return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
   }
 
-  func testCommandsAndIncomingPictureWorkOutsidePresenter() throws {
+  func testOnlyExplicitCommandsLeaveLibrary() throws {
     let store = try source("iPad/VideoPrompter/App/PadStore.swift")
     XCTAssertTrue(store.contains("link.onCommand = { [weak self] in self?.perform($0) }"))
-    XCTAssertTrue(store.contains("link.$pictureSize.receive(on: DispatchQueue.main)"))
-    XCTAssertTrue(store.contains("guard let self, size != nil, !isPresenting else { return }\n      presentCamera()"))
+    XCTAssertFalse(store.contains("link.$pictureSize.receive"))
+    XCTAssertTrue(store.contains("case .present, .sendScript, .play, .selectCamera, .cameraOn(true):"))
     XCTAssertTrue(store.contains("if presentingID == nil, !cameraOnly, let script = selected { present(script) }"))
     XCTAssertTrue(store.contains("case .play: startReading()"))
     let app = try source("iPad/VideoPrompter/App/VideoPrompterPadApp.swift")
     XCTAssertTrue(app.contains("get: { store.isPresenting }"))
+  }
+
+  func testLocalCameraNeverRequestsOrAcceptsMacPicture() throws {
+    let store = try source("iPad/VideoPrompter/App/PadStore.swift")
+    let start = try XCTUnwrap(store.range(of: "case .selectCamera(let id, let onIPad):"))
+    let end = try XCTUnwrap(store.range(of: "case .selectMicrophone", range: start.upperBound..<store.endIndex))
+    let cameraCommands = String(store[start.lowerBound..<end.lowerBound])
+    XCTAssertTrue(cameraCommands.contains("camera.acceptsMacPicture = false"))
+    XCTAssertTrue(cameraCommands.contains("presentCamera(requestMacPicture: false)"))
+    XCTAssertFalse(cameraCommands.contains("presentCamera()"))
+    XCTAssertTrue(cameraCommands.contains("presentCamera(requestMacPicture: camera.isShowingMac)"))
+    XCTAssertTrue(store.contains("guard camera.acceptsMacPicture else { return }"))
+    let camera = try source("iPad/VideoPrompter/Camera/PadCamera.swift")
+    XCTAssertTrue(camera.contains("if acceptsMacPicture, link.pictureSize != nil, !hadMac"))
+  }
+
+  func testChannelChangeRestartsTestAndFailuresWaitForUserAction() throws {
+    let store = try source("iPad/VideoPrompter/App/PadStore.swift")
+    let start = try XCTUnwrap(store.range(of: "func chooseChannel"))
+    let end = try XCTUnwrap(store.range(of: "func setVoiceSource", range: start.upperBound..<store.endIndex))
+    let channel = String(store[start.lowerBound..<end.lowerBound])
+    XCTAssertTrue(channel.contains("session.stopMicrophoneTest()"))
+    XCTAssertTrue(channel.contains("setupMeterAttempted = false"))
+    XCTAssertTrue(channel.contains("updateSetupMeter()"))
+    XCTAssertTrue(store.contains("else if !session.isTestingMicrophone, !setupMeterAttempted"))
+    XCTAssertTrue(store.contains("if show != pickerMeter { setupMeterAttempted = false }"))
+    let sender = try source("Sources/VideoPrompter/Camera/IPadCameraSender.swift")
+    XCTAssertFalse(sender.contains("if pendingMacMicrophone { send(.voiceSource(\"Mac\")) }"))
   }
 
   func testPresentAndStartRevealScriptForBothLocalAndRemoteActions() throws {
@@ -35,8 +63,9 @@ final class PadRemoteReadinessTests: XCTestCase {
       "(pickerMeter || consoleMeterRequested && camera.link.macName != nil) && !usesMacMic && micOn",
       "(!session.isActivelyRunning || session.isManual)",
       "AVCaptureDevice.authorizationStatus(for: .audio) == .authorized",
-      "if !needed { session.stopMicrophoneTest() }",
-      "else if !session.isTestingMicrophone",
+      "session.stopMicrophoneTest()",
+      "else if !session.isTestingMicrophone, !setupMeterAttempted",
+      "setupMeterAttempted = true",
       "self?.updateSetupMeter()", "link.send(.microphoneLevel(micOn ? micMeter.levelDB : -60))"] {
       XCTAssertTrue(store.contains(wiring), wiring)
     }

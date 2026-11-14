@@ -564,10 +564,10 @@ class PresenterPanel: NSWindow {
   /// Internal so a test can stand in for AppKit's transition.
   func performFullScreenTransition(_ sender: Any?) { super.toggleFullScreen(sender) }
 
-  /// Keep the presenter at the standard window level after a full-screen transition.
+  /// Float across Spaces while windowed; native full screen owns its own Space.
   func settle() {
-    collectionBehavior = [.fullScreenPrimary]
-    level = .normal
+    collectionBehavior = isInFullScreen ? [.fullScreenPrimary] : [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary]
+    level = isInFullScreen ? .normal : .floating
     redirectZoomButton()
   }
 

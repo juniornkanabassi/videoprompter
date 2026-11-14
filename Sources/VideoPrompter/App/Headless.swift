@@ -37,6 +37,7 @@ import SwiftUI
 
   func registerLibraryWindow(_ window: NSWindow) {
     guard !libraryWindows.contains(window) else { return }
+    window.identifier = NSUserInterfaceItemIdentifier("VideoPrompter.library")
     libraryWindows.add(window)
     if windowCloseObserver == nil {
       windowCloseObserver = NotificationCenter.default.addObserver(

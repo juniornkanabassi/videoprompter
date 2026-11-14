@@ -262,11 +262,32 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertNil(relay.meter)
   }
 
-  func testAStopPausesTheIPadAndLeavesTheVoiceSource() async throws {
+  func testStopBeforeVoiceAcknowledgementReturnsTheQueuedSwitchToIPad() async throws {
+    let link = FakeLink()
+    let relay = makeRelay(link, initial: state(voice: "iPad"))
+    relay.start(script: record, settings: PrompterSettings())
+    try await until("requested Mac voice") { link.sent.contains(.voiceSource("Mac")) }
+    relay.stop()
+    XCTAssertEqual(link.sent.suffix(2), [.voiceSource("Mac"), .voiceSource("iPad")])
+    XCTAssertFalse(relay.isRelaying)
+  }
+
+  func testIdleStopAndRefusedStartReturnAnUnservedMacVoiceToIPad() {
+    for refuse in [false, true] {
+      let link = FakeLink()
+      let relay = makeRelay(link, initial: state(open: false))
+      if refuse { relay.startFromIPad(settings: PrompterSettings()) }
+      else { relay.stop() }
+      XCTAssertEqual(link.sent, [.voiceSource("iPad")])
+      XCTAssertFalse(relay.isRelaying)
+    }
+  }
+
+  func testAStopPausesTheIPadAndRestoresItsMicrophone() async throws {
     let (relay, link) = try await started()
     relay.stop()
     XCTAssertEqual(link.sent.last, .pause)
-    XCTAssertFalse(link.sent.contains(.voiceSource("iPad")))
+    XCTAssertTrue(link.sent.contains(.voiceSource("iPad")))
     XCTAssertFalse(relay.isRelaying)
     XCTAssertNil(relay.session)
     XCTAssertEqual(link.active, [true, false])
@@ -321,7 +342,7 @@ final class PadVoiceRelayTests: XCTestCase {
     relay.start(script: record, settings: PrompterSettings())
     XCTAssertFalse(relay.isRelaying)
     XCTAssertTrue(relay.status.contains("presenter"), relay.status)
-    XCTAssertTrue(link.sent.isEmpty)
+    XCTAssertEqual(link.sent, [.voiceSource("iPad")])
   }
 
   func testNoIPadMeansNoRelay() {
@@ -518,7 +539,7 @@ final class PadVoiceRelayTests: XCTestCase {
     try await until("first run waits for the voice") { link.sent == [.voiceSource("Mac")] }
     relay.stop()
     relay.start(script: record, settings: PrompterSettings())
-    try await until("second run asks too") { link.sent.count == 2 }
+    try await until("second run asks too") { link.sent.filter { $0 == .voiceSource("Mac") }.count == 2 }
     // The iPad confirms once; the old run's wait must not complete a second session.
     relay.iPadStateChanged(state(voice: "Mac"))
     try await until("live") { relay.session != nil }

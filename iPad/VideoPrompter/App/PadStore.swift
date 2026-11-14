@@ -64,8 +64,10 @@ import AVFoundation
   }
   private var pickerMeter = false
   private var consoleMeterRequested = false
+  private var setupMeterAttempted = false
 
   func showPickerMeter(_ show: Bool) {
+    if show != pickerMeter { setupMeterAttempted = false }
     pickerMeter = show
     if macStatus.supportsMicSelection == true { camera.link.send(.microphoneMeter(show && usesMacMic)) }
     updateSetupMeter()
@@ -78,8 +80,11 @@ import AVFoundation
       && ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] == nil
       && ProcessInfo.processInfo.environment["VP_IPAD_E2E_PORT"] == nil
       && (pickerMeter || AVCaptureDevice.authorizationStatus(for: .audio) == .authorized)
-    if !needed { session.stopMicrophoneTest() }
-    else if !session.isTestingMicrophone {
+    if !needed {
+      session.stopMicrophoneTest()
+      setupMeterAttempted = false
+    } else if !session.isTestingMicrophone, !setupMeterAttempted {
+      setupMeterAttempted = true
       session.startMicrophoneTest(deviceUID: settings.audioDeviceUID, gain: settings.inputGain)
     }
   }
@@ -123,9 +128,12 @@ import AVFoundation
     if onMac { camera.link.send(.microphoneChannel(value)) }
     else {
       channel.save(AudioCapture.resolvedInput(settings.audioDeviceUID)?.uid ?? "")
+      session.stopMicrophoneTest()
+      setupMeterAttempted = false
       let running = session.isActivelyRunning
       session.pause()
       if running { session.play() }
+      updateSetupMeter()
     }
   }
   func setVoiceSource(_ value: String) { perform(.voiceSource(value)) }
@@ -172,6 +180,7 @@ import AVFoundation
       persist()
       if settings.audioDeviceUID != oldValue.audioDeviceUID || settings.inputGain != oldValue.inputGain {
         session.stopMicrophoneTest()
+        setupMeterAttempted = false
       }
       if session.activeRecord != nil { session.updateSettings(settings) }
     }
@@ -378,7 +387,7 @@ import AVFoundation
 
   /// The camera on its own, to set up framing, sound and recording before any script. The Mac is
   /// asked for its picture exactly as the Camera button asks; with no Mac, the view uses this iPad's camera.
-  func presentCamera() {
+  func presentCamera(requestMacPicture: Bool = true) {
     guard !isPresenting else { return }
     scriptVisible = true
     focusMode = false
@@ -387,13 +396,14 @@ import AVFoundation
     cameraOnly = true
     UIApplication.shared.isIdleTimerDisabled = true
     micMeter.show(macMicLevelDB)
-    askMacForPicture()
+    if requestMacPicture { askMacForPicture() }
   }
 
   /// A Mac that is linked sends nothing until asked. Whether its feed was already on decides who
   /// owns it, so this waits for the Mac's first camera status (it follows a connection at once).
   /// A feed that was off is switched on and is the iPad's to switch off again on close.
   private func askMacForPicture() {
+    guard camera.acceptsMacPicture else { return }
     guard isPresenting, cameraOnly || pictureMode != .off,
       camera.link.macName != nil, macStatus.cameraOn == false, !startedMacCamera else { return }
     startedMacCamera = true
@@ -542,10 +552,6 @@ extension PadStore {
     let link = camera.link
     link.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }.store(in: &bag)
     link.onCommand = { [weak self] in self?.perform($0) }
-    link.$pictureSize.receive(on: DispatchQueue.main).sink { [weak self] size in
-      guard let self, size != nil, !isPresenting else { return }
-      presentCamera()
-    }.store(in: &bag)
     Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
       .sink { [weak self] _ in self?.updateSetupMeter() }.store(in: &bag)
     micMeter.$levelDB.dropFirst().throttle(for: .milliseconds(100), scheduler: DispatchQueue.main, latest: true)
@@ -707,7 +713,7 @@ extension PadStore {
 
   func perform(_ command: PadRemote.Command) {
     switch command {
-    case .present, .sendScript:
+    case .present, .sendScript, .play, .selectCamera, .cameraOn(true):
       // Another version is about to be received or shown: settle the typed draft first, so it
       // is saved or kept as a copy and never lands on top of the Mac's text.
       if !draftFlusher.resolve() {
@@ -761,19 +767,22 @@ extension PadStore {
     case .microphoneMeter(let value): consoleMeterRequested = value; updateSetupMeter()
     case .micOn(let value): setMicOn(value)
     case .selectCamera(let id, let onIPad):
-      if !isPresenting { presentCamera() }
       if onIPad == true {
         guard camera.devices.contains(where: { $0.id == id && !$0.isMac }) else { return }
+        camera.acceptsMacPicture = false
         camera.selectedID = id
+        if !isPresenting { presentCamera(requestMacPicture: false) }
         camera.isOn = true
       } else {
+        camera.acceptsMacPicture = true
         camera.selectedID = PadCamera.macLinkID
+        if !isPresenting { presentCamera(requestMacPicture: false) }
         selectCamera(id)
         setCameraOn(true)
         camera.isOn = true
       }
     case .cameraOn(let value):
-      if value, !isPresenting { presentCamera() }
+      if value, !isPresenting { presentCamera(requestMacPicture: camera.isShowingMac) }
       if camera.isShowingMac { setCameraOn(value) } else { camera.isOn = value }
     case .selectMicrophone(let id, let onIPad):
       if onIPad == true { chooseMicrophone(id, onMac: false) }

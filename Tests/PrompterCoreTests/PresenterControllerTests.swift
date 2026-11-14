@@ -1147,14 +1147,17 @@ final class PresenterControllerTests: XCTestCase {
     controller.panel = panel
     func note(_ name: Notification.Name) -> Notification { Notification(name: name, object: panel) }
     func assertResting(_ message: String, line: UInt = #line) {
-      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
-      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
-      XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
-      XCTAssertEqual(panel.level, .normal, message, line: line)
+      XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
+      XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
+      XCTAssertTrue(panel.collectionBehavior.contains(.canJoinAllApplications), message, line: line)
+      XCTAssertEqual(panel.level, .floating, message, line: line)
     }
     func assertPrimary(_ message: String, line: UInt = #line) {
       XCTAssertTrue(panel.collectionBehavior.contains(.fullScreenPrimary), message, line: line)
       XCTAssertFalse(panel.collectionBehavior.contains(.fullScreenAuxiliary), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllSpaces), message, line: line)
+      XCTAssertFalse(panel.collectionBehavior.contains(.canJoinAllApplications), message, line: line)
     }
     XCTAssertTrue(panel.styleMask.contains(.resizable))
     XCTAssertFalse(panel.styleMask.contains(.nonactivatingPanel))

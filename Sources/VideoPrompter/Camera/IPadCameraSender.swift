@@ -243,7 +243,7 @@ import VideoToolbox
       selectMacMicrophone(id)
       macMicOn = true
       pendingMacMicrophone = iPadState?.presenting == nil
-      if pendingMacMicrophone { send(.voiceSource("Mac")) }
+      // Keep the local mic until a presented script can actually start the relay.
       if !pendingMacMicrophone, !relay.isRelaying {
         relay.startFromIPad(settings: AppStore.shared.settings)
       }

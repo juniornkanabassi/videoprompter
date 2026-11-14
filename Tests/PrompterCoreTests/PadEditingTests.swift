@@ -162,7 +162,7 @@ final class PadEditingTests: XCTestCase {
     }
     // A Mac Send or Open settles the typed draft first, and is refused if the draft cannot be written.
     let store = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/App/PadStore.swift"), encoding: .utf8)
-    XCTAssertTrue(store.contains("case .present, .sendScript:\n      // Another version is about to be received or shown"))
+    XCTAssertTrue(store.contains("case .present, .sendScript, .play, .selectCamera, .cameraOn(true):\n      // Another version is about to be received or shown"))
     XCTAssertTrue(store.contains("if !draftFlusher.resolve() {"))
     XCTAssertFalse(library.contains(".onTheFly"), "The library must never take the on-the-fly lock")
   }
