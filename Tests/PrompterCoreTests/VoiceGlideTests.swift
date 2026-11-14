@@ -37,3 +37,42 @@ final class VoiceGlideTests: XCTestCase {
     XCTAssertEqual(glide.step(toward: 14, at: 100), position, "the first step after a hold has no time")
   }
 }
+
+extension VoiceGlideTests {
+  /// Worst frames matter here: a percentile can miss the single frame that hits the lead cap.
+  func testBurstsBrakeBeforeTheLeadLimitAtBothRefreshRates() {
+    for rate in [60, 120] {
+      let dt = 1.0 / Double(rate)
+      for words in [1, 3, 8, 12] {
+        var glide = VoiceGlide(at: 0)
+        var time = 0.0
+        _ = glide.step(toward: 0, at: time)
+        for _ in 0..<(4 * rate) {
+          time += dt
+          _ = glide.step(toward: 0, at: time)
+        }
+        let start = time
+        var previous = glide.position, previousSpeed = 0.0
+        var largestDeceleration = 0.0, clampHits = 0
+        var response: Double?
+        let limit = Double(words) + VoiceGlide.lead
+        for _ in 0..<(8 * rate) {
+          time += dt
+          let position = glide.step(toward: words, at: time)
+          let speed = (position - previous) / dt
+          largestDeceleration = max(largestDeceleration, (previousSpeed - speed) / dt)
+          if position == limit, previous < limit { clampHits += 1 }
+          if response == nil, position >= Double(words) * 0.9 { response = time - start }
+          XCTAssertGreaterThanOrEqual(speed, 0)
+          XCTAssertLessThanOrEqual(position, limit)
+          previous = position
+          previousSpeed = speed
+        }
+        print("BURST \(words) words @ \(rate) Hz: response90=\(response ?? -1)s maxDeceleration=\(largestDeceleration) words/s² clampHits=\(clampHits)")
+        XCTAssertNotNil(response)
+        XCTAssertLessThanOrEqual(largestDeceleration, 100, "\(words) words @ \(rate) Hz")
+        XCTAssertEqual(clampHits, 0, "\(words) words @ \(rate) Hz must ease into the lead limit")
+      }
+    }
+  }
+}

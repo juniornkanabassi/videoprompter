@@ -15,6 +15,7 @@ public struct VoiceGlide: Sendable {
   /// a partial burst take over 0.7 s to reach the guide. Replay tests also bound acceleration.
   static let catchUpSeconds = 0.15
   static let velocitySeconds = 0.08
+  static let brakingAcceleration = 60.0
   static let paceWindow = 3.0
   public static let lead = 1.0
   /// Further than this behind, or back past the lead, is a jump (a skipped passage, a re-read):
@@ -71,6 +72,9 @@ public struct VoiceGlide: Sendable {
     let change = (wanted - velocity) * (1 - exp(-dt / Self.velocitySeconds))
     let limit = 90 * dt
     velocity += min(change, limit)
+    // Brake before reaching the lead limit, then approach it asymptotically instead of clipping.
+    let remaining = max(0, goal + Self.lead - position)
+    velocity = min(velocity, min(sqrt(2 * Self.brakingAcceleration * remaining), remaining / (Self.velocitySeconds + dt)))
     position = min(position + velocity * dt, goal + Self.lead)
     return position
   }

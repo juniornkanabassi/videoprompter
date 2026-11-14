@@ -2,6 +2,25 @@
 
 Updated 14 November 2026. Base `8ae0abc`; resumed from `732dfdc`.
 
+## Review follow-up: braking at the lead limit
+
+The independent review correctly identified a gap in the earlier smoothness checks: p99 acceleration could pass while an individual frame stopped abruptly at `goal + lead`.
+
+The follow-up retains the acceleration cap and adds a stopping-distance velocity envelope (60 words/s² braking), followed by a distance-proportional approach near the lead limit. The latter includes the frame duration so a delayed frame still cannot consume all remaining distance. The hard position bound remains defensive; the tested bursts no longer reach it abruptly.
+
+The new regression measures **the largest per-frame deceleration**, not a percentile, and counts entries into the lead clamp for 1-, 3-, 8- and 12-word bursts at both 60 and 120 Hz. It also checks nonnegative motion and the existing lead bound. It failed on the previous code and passes on the follow-up.
+
+| Rate | Burst | 90% response before / after | Largest deceleration before / after | Clamp entries before / after |
+| --- | ---: | ---: | ---: | ---: |
+| 60 Hz | 3 words | 317 / 317 ms | 53 / 53 words/s² | 0 / 0 |
+| 60 Hz | 8 words | 433 / 450 ms | 113 / 84 words/s² | 1 / 0 |
+| 60 Hz | 12 words | 517 / 567 ms | 249 / 79 words/s² | 1 / 0 |
+| 120 Hz | 3 words | 308 / 308 ms | 53 / 53 words/s² | 0 / 0 |
+| 120 Hz | 8 words | 433 / 458 ms | 113 / 82 words/s² | 1 / 0 |
+| 120 Hz | 12 words | 517 / 575 ms | 456 / 77 words/s² | 1 / 0 |
+
+These before/after numbers compare the reviewed `7392e4b` implementation with this follow-up, not the original slow implementation. The one-word coasting allowance is unchanged. Evidence: `/private/tmp/vp-braking-before.log` and `/private/tmp/vp-braking-final-bursts.log`. Full validation is running at `/private/tmp/vp-braking-full.log`; the generic iPad build passed at `/private/tmp/vp-braking-ipad.log`, with no Simulator boot.
+
 ## Confirmed software delay and fix
 
 Recognition was only part of the delay. The production presenter adds `VoiceGlide` after SessionStore publishes the recognised word. Its position catch-up (0.5 s) and velocity filter (0.15 s) compounded the lag, especially when speech resumed or results arrived in a burst. The iPad adds its existing 0.08 s offset filter afterwards.

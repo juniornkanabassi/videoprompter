@@ -1,3 +1,20 @@
+# Current review follow-up: smooth braking
+
+The prior implementation below passed percentile-based smoothness checks but an independent review found hard stops at the lead clamp. The follow-up adds a stopping-distance speed limit and a gradual final approach. It leaves acceleration, recognition and the coasting allowance unchanged.
+
+- Regression added in `VoiceGlideTests`: largest per-frame deceleration <=100 words/s², zero clamp entries, no negative motion, no lead-bound violation. Tests cover 1/3/8/12-word bursts at 60/120 Hz.
+- Previous code failed this regression: max deceleration 249 / 456 words/s² at 60 / 120 Hz; the 8- and 12-word cases each hit the clamp.
+- New code passes: overall worst deceleration 84 / 82 words/s²; zero clamp hits. Three-word response unchanged. Twelve-word 90% response 517 -> 567 ms (60 Hz), 517 -> 575 ms (120 Hz).
+- Final burst test: `/private/tmp/vp-braking-final-bursts.log`, PASS.
+- Generic iPad build: `/private/tmp/vp-braking-ipad.log`, PASS; no Simulator boot.
+- Full `./test.sh` now running with `VIDEOPROMPTER_TEST_SCRATCH=/private/tmp/vp-voice-final-732dfdc`, log `/private/tmp/vp-braking-full.log`. Check actual completion, including both appearance passes and grid.
+- Earlier broader focused check: `/private/tmp/vp-braking-after.log`; use the full run for final authority.
+- Next: complete validation, update this checkpoint/report, commit. Do not push, release or install. No live capture or visible app/Simulator use is authorised.
+
+---
+
+## Previous implementation checkpoint
+
 # Voice-follow latency: source fix and validation complete
 
 Branch `t3/fix-voice-follow-latency`, resumed from `732dfdc` on 14 November 2026. Implementation commit: `2b886e6`.
