@@ -221,7 +221,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       let suiteName = "VideoPrompter.rendered-replay.\(UUID().uuidString)"
       let defaults = TestDefaults.suite(named: suiteName)!
       TestDefaults.remove(suiteName)
-      let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
+      let store = AppStore(arguments: ["tests", "--agent-screen", "--data-directory", directory.path], defaults: defaults)
       addTeardownBlock { @MainActor in
         await store.flushSettings()
         TestDefaults.remove(suiteName)
@@ -447,8 +447,11 @@ final class SpeechSessionIntegrationTests: XCTestCase {
           used = true; status.pointee = .haveData; return source
         }
         if let conversionError { throw conversionError }
-        let delivery = ProcessInfo.processInfo.systemUptime
-        if ledger.firstAudioWall == nil { ledger.firstAudioWall = delivery }
+        if ledger.firstAudioWall == nil { ledger.firstAudioWall = ProcessInfo.processInfo.systemUptime }
+        // A captured buffer only arrives once all its samples have been recorded.
+        let elapsedAudio = Double(outputFrame + Int64(output.frameLength)) / format.sampleRate
+        let remaining = ledger.firstAudioWall! + elapsedAudio - ProcessInfo.processInfo.systemUptime
+        if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
         ledger.submittedBuffers += 1
         if case .dropped = stream.continuation.yield(.init(
           buffer: output,
@@ -458,10 +461,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         }
         outputFrame += Int64(output.frameLength)
         session.noteSubmittedAudioEnd(through: Double(outputFrame) / format.sampleRate)
-        let elapsedAudio = Double(outputFrame) / format.sampleRate
-        let target = ledger.firstAudioWall! + elapsedAudio
-        let remaining = target - ProcessInfo.processInfo.systemUptime
-        if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
       }
     }
     defer { producer.cancel() }
@@ -579,7 +578,21 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         return (.init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: event.words ?? [],
           tail: PrompterDocument(markdown: text).spokenTokens.suffix(3).map(\.normalised)), event.wallSecondsSinceFirstAudio)
       }
-      let alignment = WordLatency.align(revisions.map(\.0), arrivals: revisions.map(\.1), script: tokens)
+      // An external word track keeps the measurement independent of the recogniser under test.
+      let alignment: WordLatency.Alignment
+      if let path = environment["VIDEOPROMPTER_SPEECH_REPLAY_WORDS"] {
+        let words = try JSONDecoder().decode([TimedWord].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let heard: WordLatency.Heard = words.flatMap { word in
+          PrompterDocument(markdown: word.text).spokenTokens.map {
+            ($0.normalised, WordLatency.Spoken(start: word.start, end: word.end, runStart: word.start))
+          }
+        }
+        alignment = WordLatency.align([heard], script: tokens)
+        XCTAssertGreaterThanOrEqual(alignment.spoken.compactMap { $0 }.count, tokens.count * 4 / 5,
+          "The independent word track must cover the script.")
+      } else {
+        alignment = WordLatency.align(revisions.map(\.0), arrivals: revisions.map(\.1), script: tokens)
+      }
       let spoken = alignment.spoken
       let shown = rendersPresenter ? ledger.painted : ledger.published
       for token in tokens.indices {
