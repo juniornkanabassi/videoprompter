@@ -13,6 +13,9 @@ extension AppearanceSnapshotTests {
     let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults))
     let link = IPadCameraSender(defaults: defaults)
     link.searchesForIPad = false
+    link.capturesCamera = false
+    link.isOn = true
+    defer { link.disconnect() }
     link.micMeter.show(-18)
     link.iPadMicMeter.show(-18)
     link.acceptedPairing(id: "personal", code: "0123456789ABCDEF")
