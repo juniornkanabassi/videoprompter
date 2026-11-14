@@ -17,7 +17,7 @@ struct IPadReplicaView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if state.cleanScreen != true {
+      if state.activeCleanLook == nil {
       HStack {
         Text("iPad presenter").bold()
         Text(state.running ? "Reading" : "Paused").foregroundStyle(.secondary)
@@ -51,12 +51,12 @@ struct IPadReplicaView: View {
           }
         }.clipped()
       }
-      if state.cleanScreen != true {
+      if state.activeCleanLook == nil {
       Text(state.editing == true ? "Editing on iPad. Reading controls are paused." : "Click a word or scroll to move the iPad’s reading position")
         .font(.caption).foregroundStyle(.secondary).padding(8)
       }
     }
-    .background(state.pictureMode == .behindScript ? Color.clear : Color.black)
+    .background(state.pictureMode == .behindScript || state.activeCleanLook == .pictureAndScript ? Color.clear : Color.black)
     .onChange(of: state.markdown) { _, markdown in
       script.document = PrompterDocument(markdown: markdown ?? "")
     }
@@ -81,10 +81,8 @@ extension IPadRemoteView {
     guides.zebras = state.guides?.zebras ?? false
     guides.falseColour = state.guides?.falseColour ?? false
     if let value = state.guides?.rotation, let rotation = CameraRotation(rawValue: value) { guides.rotation = rotation }
-    // The iPad hides exposure aids while reading, but keeps composition guides.
-    if state.look?.presenterSetup == false && state.cameraOnly != true && state.pictureMode != .monitorOnly {
-      guides.zebras = false
-      guides.falseColour = false
+    if state.activeCleanLook != nil && state.activeCleanLook != .pictureAndScript {
+      guides = CameraGuides()
     }
     return guides
   }

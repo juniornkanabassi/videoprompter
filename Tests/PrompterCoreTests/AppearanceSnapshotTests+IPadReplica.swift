@@ -25,7 +25,10 @@ extension AppearanceSnapshotTests {
       ("centre-large-3", 56.0, -3.0, .init(centre: true)),
       ("marker-large-clip", 56.0, 0.0, .init(marker: "9:16")),
       ("focus", 32.0, -12.0, .init(thirds: true)),
-      ("clean", 32.0, -12.0, .init()),
+      ("pictureOnly", 32.0, -12.0, .init()),
+      ("pictureAndScript", 32.0, -12.0, .init(thirds: true)),
+      ("scriptOnly", 32.0, -12.0, .init()),
+      ("reading", 32.0, -12.0, .init(zebras: true)),
       ("picture-off", 32.0, -12.0, .init()),
       ("mac-mic", 32.0, -12.0, .init())
     ] {
@@ -39,7 +42,8 @@ extension AppearanceSnapshotTests {
       fixture.pictureMode = .behindScript
       fixture.scripts = [.init(id: fixture.presenting!, title: "Match day")]
       if name == "focus" { fixture.look?.presenterSetup = false; fixture.look?.focusMode = true }
-      if name == "clean" { fixture.cleanScreen = true; fixture.look?.presenterSetup = false }
+      if let look = PadRemote.CleanLook(rawValue: name) { fixture.cleanScreen = true; fixture.look?.cleanLook = look }
+      if name == "reading" { fixture.running = true; fixture.look?.presenterSetup = false }
       if name == "picture-off" { fixture.pictureMode = .off }
       if name == "mac-mic" {
         fixture.voiceSource = "Mac"; fixture.selectedMicrophone = "mac"

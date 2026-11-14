@@ -23,7 +23,7 @@ import UIKit
   @Published var linkedMirrored = false
   var previewGuides: CameraGuides {
     var value = guides
-    if hidesExposureAids { value.zebras = false; value.falseColour = false }
+    if hidesExposureAids { value.zebras = false; value.falseColour = false; value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
     return value
   }
   private func updateExposure() { link.exposure.update(previewGuides.exposure) }

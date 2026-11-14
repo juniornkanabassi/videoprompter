@@ -94,6 +94,25 @@ import XCTest
     XCTAssertFalse(chosen.session.followsRemote)
   }
 
+  func testCleanLooksPreserveReadingAndRoundTrip() throws {
+    let store = PadStore(defaults: UserDefaults(suiteName: "clean-looks-\(UUID())")!, discoverMicrophones: { [] })
+    let script = try store.folder.create(title: "Clean looks", markdown: Self.script)
+    store.present(script)
+    store.settings.mode = "Manual"
+    store.session.play(captureAudio: false)
+    defer { store.session.pause() }
+    for look in PadRemote.CleanLook.allCases {
+      store.perform(.look(.init(cleanLook: look, keepMicMeter: false)))
+      store.perform(.cleanScreen(true))
+      XCTAssertTrue(store.session.isActivelyRunning)
+      XCTAssertEqual(store.remoteState.look?.cleanLook, look)
+      XCTAssertEqual(store.remoteState.look?.keepMicMeter, false)
+      store.chooseCleanLook(look)
+      XCTAssertFalse(store.cleanScreen)
+      XCTAssertTrue(store.session.isActivelyRunning)
+    }
+  }
+
   func testBandGeometryAndLookSettings() throws {
     let store = PadStore(defaults: UserDefaults(suiteName: "band-settings-\(UUID().uuidString)")!)
     store.perform(.look(.init(readingBandOpacity: 0.3, videoDimming: 0.9)))
@@ -262,7 +281,8 @@ import XCTest
       store.camera.selectedID = source == "mac" ? PadCamera.macLinkID : "capture"
       store.camera.isOn = true
       for state in ["reading", "focus", "setup"] {
-        store.focusMode = state != "reading"
+        store.setCleanScreen(false)
+        if state == "focus" { store.chooseCleanLook(.scriptOnly) }
         _ = try await render(PresenterScreen(session: store.session, camera: store.camera, startsReading: state != "setup")
           .environmentObject(store), size: CGSize(width: 1180, height: 820),
           name: "ipad-live-\(source)-\(state)", directory: directory, inspect: { root in
@@ -538,13 +558,15 @@ import XCTest
       context.fill(CGRect(x: 720, y: 380, width: 240, height: 160))
       ("TOP LEFT →" as NSString).draw(at: CGPoint(x: 32, y: 32), withAttributes: [.font: UIFont.boldSystemFont(ofSize: 36), .foregroundColor: UIColor.white])
     }
-    for state in ["setup", "camera-only", "reading-camera", "mirrored", "flipped", "mirrored-flipped", "camera-only-mirrored", "camera-only-flipped", "camera-only-mirrored-flipped", "monitor", "monitor-mirrored", "monitor-flipped", "monitor-mirrored-flipped", "mac-lost"] {
+    for state in ["pictureOnly", "pictureAndScript", "scriptOnly", "setup", "camera-only", "reading-camera", "mirrored", "flipped", "mirrored-flipped", "camera-only-mirrored", "camera-only-flipped", "camera-only-mirrored-flipped", "monitor", "monitor-mirrored", "monitor-flipped", "monitor-mirrored-flipped", "mac-lost"] {
       store.closePresenter()
       session.pause()
       store.setMirror(state.contains("mirrored"))
       store.setFlip(state.contains("flipped"))
       if state.hasPrefix("camera-only") { store.presentCamera() } else { store.present(script) }
       store.setPictureMode(state.hasPrefix("monitor") ? .monitorOnly : .behindScript)
+      store.setCleanScreen(false)
+      if let look = PadRemote.CleanLook(rawValue: state) { store.chooseCleanLook(look) }
       session.seek(to: 24)
       if state == "reading-camera" || state.contains("mirrored") || state == "flipped" { session.play(captureAudio: false) }
       for (name, size) in Self.sizes {
@@ -555,16 +577,20 @@ import XCTest
           store.micMeter.show(-9)
         }
         if name == "1180x820", ["reading-camera", "mirrored", "flipped", "mirrored-flipped"].contains(state) {
-          // The red upper-left corner must travel with the text's presenter transform.
-          let scale = CGFloat(try XCTUnwrap(image.cgImage).width) / size.width
-          let point = CGPoint(x: (store.mirror ? 1120 : 60) * scale, y: (store.flip ? 720 : 100) * scale)
-          let crop = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(origin: point, size: CGSize(width: 1, height: 1))))
-          var rgba = [UInt8](repeating: 0, count: 4)
-          let context = try XCTUnwrap(CGContext(data: &rgba, width: 1, height: 1, bitsPerComponent: 8,
-            bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
-          context.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
-          XCTAssertGreaterThan(rgba[0], 200, state)
-          XCTAssertLessThan(rgba[2], 40, state)
+          // The persistent camera card covers red; find the blue marker in its expected quadrant.
+          let cg = try XCTUnwrap(image.cgImage)
+          var rgba = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+          let context = try XCTUnwrap(CGContext(data: &rgba, width: cg.width, height: cg.height,
+            bitsPerComponent: 8, bytesPerRow: cg.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+          context.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+          let xs = store.mirror ? 0..<cg.width / 2 : cg.width / 2..<cg.width
+          let ys = store.flip ? 0..<cg.height / 2 : cg.height / 2..<cg.height
+          let hasMarker = ys.contains { y in xs.contains { x in
+            let offset = (y * cg.width + x) * 4
+            return rgba[offset] < 40 && rgba[offset + 1] < 40 && rgba[offset + 2] > 200
+          } }
+          XCTAssertTrue(hasMarker, state)
         }
       }
     }

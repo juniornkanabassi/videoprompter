@@ -44,9 +44,8 @@ struct PresenterScreen: View {
   }
   @State private var showingLook = false
   @State private var keyExpanded = true
-  @State private var showsExposureNote = false
   private var falseColour: Bool { camera.guides.falseColour }
-  private var focusActive: Bool { store.focusMode && !setup && !store.cameraOnly }
+  private var focusActive: Bool { store.cleanScreen && store.cleanLook == .scriptOnly }
   @AppStorage("presenterExposureKey") private var showKey = true
   @State private var showingCamera = false
   @State private var hadMac = false
@@ -83,7 +82,7 @@ struct PresenterScreen: View {
           ZStack {
             background
             if store.cameraOnly { cameraOnlyLayer(size) } else { scriptLayer(size) }
-            if !store.cleanScreen && !focusActive && (setup || store.cameraOnly) {
+            if !store.cleanScreen && !focusActive {
               cameraCard(size: CGSize(width: size.width / hudScale, height: size.height / hudScale)).uiZoom(hudScale)
             }
           }
@@ -91,17 +90,10 @@ struct PresenterScreen: View {
           if !store.cleanScreen {
             chrome.uiZoom(hudScale)
             if !counting {
-              if setup || store.cameraOnly { setupBar(width: size.width / hudScale).disabled(store.editing).uiZoom(hudScale) } else { readingControls.disabled(store.editing).uiZoom(hudScale) }
+              setupBar(width: size.width / hudScale).disabled(store.editing).uiZoom(hudScale)
             }
             if !store.cameraOnly { status }
-            if showsExposureNote && !store.cameraOnly && !lostPaused {
-              VStack {
-                Text(falseColour ? "False colour off while reading" : "Zebras off while reading")
-                  .font(.system(size: 15, weight: .semibold))
-                  .padding(16).background(.black.opacity(0.8), in: Capsule())
-                Spacer()
-              }.padding(.top, 80).allowsHitTesting(false)
-            }
+
           } else {
             cleanHandle
           }
@@ -133,17 +125,13 @@ struct PresenterScreen: View {
       useOwnCameraWithoutMac()
     }
     .onChange(of: store.cameraOnly) { _, _ in useOwnCameraWithoutMac() }
+    .onChange(of: store.cleanLook) { _, _ in updateExposureVisibility() }
+    .onChange(of: store.cleanScreen) { _, _ in updateExposureVisibility() }
     .onChange(of: setup, initial: true) { _, _ in updateExposureVisibility() }
     .onChange(of: store.editing) { _, _ in updateExposureVisibility() }
     .onChange(of: store.cameraOnly) { _, _ in updateExposureVisibility() }
     .onChange(of: store.pictureMode) { _, _ in updateExposureVisibility() }
     .onDisappear { camera.setExposureHidden(false) }
-    .task(id: setup) {
-      showsExposureNote = !setup && (camera.guides.zebras || camera.guides.falseColour)
-      guard showsExposureNote else { return }
-      try? await Task.sleep(for: .seconds(3))
-      if !Task.isCancelled { showsExposureNote = false }
-    }
     .onChange(of: session.isActivelyRunning) { _, running in if running { setup = false } }
     // A linked Mac supplies the picture, so this iPad's own camera is the fallback only without one.
     .onChange(of: store.pictureMode) { _, mode in if mode == .behindScript, !macConnected || camera.isShowingMac { camera.isOn = true } }
@@ -160,17 +148,17 @@ struct PresenterScreen: View {
   }
 
   private func updateExposureVisibility() {
-    camera.setExposureHidden(!setup && !store.editing && !store.cameraOnly && store.pictureMode != .monitorOnly)
+    camera.setExposureHidden(store.cleanScreen && !store.cleanLook.showsGuides)
   }
 
   // MARK: Behind and on the script
 
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
-    if let referencePicture, store.pictureMode == .behindScript, !focusActive, !store.cameraOnly {
+    if let referencePicture, (store.pictureMode == .behindScript || store.cleanScreen), !focusActive, !store.cameraOnly {
       ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
-      Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.videoDimming).ignoresSafeArea()
-    } else if store.pictureMode == .behindScript, camera.isOn, !focusActive, !store.cameraOnly {
+      Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(store.cleanScreen && store.cleanLook == .pictureOnly ? 0 : settings.videoDimming).ignoresSafeArea()
+    } else if (store.pictureMode == .behindScript || store.cleanScreen), camera.isOn, !focusActive, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
           LinkPreview(camera: camera, link: camera.link)
@@ -179,7 +167,7 @@ struct PresenterScreen: View {
         }
       }
       .ignoresSafeArea()
-      Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.videoDimming).ignoresSafeArea()
+      Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(store.cleanScreen && store.cleanLook == .pictureOnly ? 0 : settings.videoDimming).ignoresSafeArea()
     } else {
       Color.black.ignoresSafeArea()
       Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.backgroundOpacity).ignoresSafeArea()
@@ -195,17 +183,17 @@ struct PresenterScreen: View {
   /// upright layer and turned once with the picture, so their relative positions stay unchanged.
   private func scriptLayer(_ size: CGSize) -> some View {
     let insets = PadPresenterLayout.scriptInsets(
-      width: size.width / hudScale, cleanScreen: store.cleanScreen, setup: setup, lostPaused: lostPaused, offNote: showsOffNote)
+      width: size.width / hudScale, cleanScreen: store.cleanScreen, setup: true, lostPaused: lostPaused, offNote: showsOffNote)
     let top = insets.top * hudScale
     let bottom = insets.bottom * hudScale
     let height = max(size.height - top - bottom, 1)
-    let side = setup && !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
+    let side = !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
     let scriptWidth = max(1, size.width - side * 2)
     let lineY = min(max(size.height * settings.guideFraction, top + 54), top + height - 40)
-    let showsMeter = true
+    let showsMeter = !store.cleanScreen || store.keepMicMeter
     let fade = min(height, min(160, max(48, settings.fontSize * 1.6))) / height
     return ZStack(alignment: .topLeading) {
-      if showScript {
+      if store.cleanScreen ? store.cleanLook.showsScript : showScript {
         ScriptCanvas(
           document: session.document, tokenIndex: session.tokenIndex,
           lastConfirmedTokenIndex: session.lastConfirmedTokenIndex,
@@ -385,34 +373,6 @@ struct PresenterScreen: View {
 
   // MARK: Reading controls
 
-  private var readingControls: some View {
-    VStack {
-      Spacer()
-      ViewThatFits(in: .horizontal) {
-        HStack(spacing: Space.sm) { readingStatus; Spacer(minLength: Space.sm); readingActions }
-        VStack(alignment: .leading, spacing: Space.sm) { readingStatus; HStack { Spacer(); readingActions } }
-      }.padding(Space.md).background(PresenterBar.background)
-    }
-  }
-  @ViewBuilder private var readingStatus: some View {
-    if lostPaused { lostCard } else { statusPill }
-  }
-  @ViewBuilder private var readingActions: some View {
-    Button { session.restart() } label: { BarLabel(title: "Restart", symbol: "arrow.counterclockwise") }
-      .buttonStyle(BarButtonStyle(role: .secondary))
-    Button(action: primaryAction) { BarLabel(title: primaryTitle, symbol: session.isActivelyRunning ? "pause.fill" : "play.fill") }
-      .buttonStyle(BarButtonStyle(role: .secondary))
-    Button { session.pause(); setup = true } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder") }
-      .buttonStyle(BarButtonStyle(role: .secondary))
-    BarGroup(label: "Reading options") {
-      micButton(compact: false)
-      BarDivider()
-      BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: store.focusMode) { store.focusMode.toggle() }
-      Button { showingLook = true } label: { BarLabel(title: "Text", symbol: "textformat.size") }
-        .buttonStyle(BarButtonStyle()).popover(isPresented: $showingLook) { lookPopover }
-    }
-  }
-
   private var statusPill: some View {
     HStack(spacing: 8) {
       Circle().fill(session.isActivelyRunning ? Color.green : .white.opacity(0.4)).frame(width: 8, height: 8)
@@ -427,10 +387,7 @@ struct PresenterScreen: View {
 
   private var statusText: String {
     let words = session.document.spokenTokens.count
-    return PadPresenterLayout.statusText(
-      countdown: session.countdownRemaining, running: session.isActivelyRunning, manual: session.isManual,
-      speed: Int(settings.speed.rounded()), micOn: store.micOn, macMic: session.followsRemote,
-      word: words > 0 ? session.tokenIndex + 1 : 0, words: words)
+    return "\(session.isActivelyRunning ? "Reading" : "Paused") · word \(words > 0 ? session.tokenIndex + 1 : 0) of \(words)"
   }
 
   /// The warning when the Mac goes: reading stopped where it was, the way back is the reader's choice.
@@ -502,10 +459,11 @@ struct PresenterScreen: View {
 
   @ViewBuilder private var transport: some View {
     if !store.cameraOnly {
-      Button(action: primaryAction) { BarLabel(title: primaryTitle, symbol: "play.fill") }
+      Button(action: primaryAction) { BarLabel(title: primaryTitle, symbol: session.isActivelyRunning || counting ? "pause.fill" : "play.fill").frame(minWidth: 144) }
         .buttonStyle(BarButtonStyle(role: .prominent))
       Button { session.restart() } label: { BarLabel(title: "Back", symbol: "arrow.counterclockwise") }
         .buttonStyle(BarButtonStyle(role: .secondary))
+      Text(statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
   }
 
@@ -534,8 +492,9 @@ struct PresenterScreen: View {
           .popover(isPresented: $showingLook) { lookPopover }
       }
       BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: showKey) { showKey.toggle() }
-      Button { store.setCleanScreen(true) } label: { BarLabel(title: "Clean", symbol: "rectangle") }
-        .buttonStyle(BarButtonStyle())
+      PresenterCleanMenu(selected: store.cleanLook, active: store.cleanScreen,
+        keepMicMeter: $store.keepMicMeter, choose: store.chooseCleanLook,
+        leave: { store.setCleanScreen(false) })
     }
   }
 
@@ -729,7 +688,7 @@ struct PresenterScreen: View {
     if store.cameraOnly {
       // Only Escape, Mirror and Flip mean anything with no script; the reading keys are left alone.
       switch (press.key, press.characters) {
-      case (.escape, _): store.closePresenter()
+      case (.escape, _): if store.cleanScreen { store.setCleanScreen(false) } else { store.closePresenter() }
       case (_, "m"): store.setMirror(!store.mirror)
       case (_, "f"): store.setFlip(!store.flip)
       default: return .ignored
@@ -748,7 +707,7 @@ struct PresenterScreen: View {
     case .home:
       session.restart()
     case .escape:
-      store.closePresenter()
+      if store.cleanScreen { store.setCleanScreen(false) } else { store.closePresenter() }
     default:
       switch press.characters {
       case "+", "=": stepFont(4)

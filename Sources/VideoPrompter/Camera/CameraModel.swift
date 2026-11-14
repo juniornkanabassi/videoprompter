@@ -1,4 +1,5 @@
 @preconcurrency import AVFoundation
+import PrompterCore
 import AppKit
 import SwiftUI
 
@@ -162,10 +163,12 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
     if exposureBypassed { value.zebras = false; value.falseColour = false }
     return value
   }
+  @Published var cleanLook: PadRemote.CleanLook = .pictureOnly
+  @Published var keepCleanMicMeter = true
   var previewGuides: CameraGuides {
     var value = monitorGuides
-    if cleanView { value.zebras = false; value.falseColour = false }
-    if cleanView || framingGuidesBypassed { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
+    if cleanView && !cleanLook.showsGuides { value.zebras = false; value.falseColour = false }
+    if (cleanView && !cleanLook.showsGuides) || framingGuidesBypassed { value.thirds = false; value.axes = false; value.bullseye = false; value.marker = nil }
     return value
   }
   var exposureCheckState: String {

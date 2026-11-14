@@ -7,9 +7,8 @@ struct IPadRemoteView: View {
   @ObservedObject var store: AppStore = .shared
   var stateOverride: PadRemote.State?
   private var currentState: PadRemote.State? { stateOverride ?? link.iPadState }
-  private var focusActive: Bool {
-    currentState?.look?.focusMode == true && currentState?.look?.presenterSetup != true && currentState?.cameraOnly != true
-  }
+  private var focusActive: Bool { currentState?.activeCleanLook == .scriptOnly }
+  private var cleanLook: PadRemote.CleanLook { currentState?.activeCleanLook ?? currentState?.look?.cleanLook ?? .pictureOnly }
   var startsLink = true
   var previewOverride: CGImage?
   var panelOverride: String?
@@ -28,15 +27,15 @@ struct IPadRemoteView: View {
     GeometryReader { geometry in
     VStack(spacing: Space.md) {
       if let state = currentState {
-        status(state)
+        if state.activeCleanLook == nil { status(state) }
         ZStack(alignment: .bottomTrailing) {
-          if state.cameraOnly == true || state.presenting == nil || state.pictureMode == .monitorOnly || state.look?.scriptVisible == false {
+          if state.activeCleanLook != nil && cleanLook == .pictureOnly || state.cameraOnly == true || state.presenting == nil || (state.activeCleanLook == nil && (state.pictureMode == .monitorOnly || state.look?.scriptVisible == false)) {
             liveCamera
           } else {
-            if state.pictureMode == .behindScript && !focusActive { liveCamera.opacity(1 - InputValidation.videoDimming.repair(state.look?.videoDimming ?? 0.5)) }
+            if (state.pictureMode == .behindScript || state.activeCleanLook != nil) && !focusActive { liveCamera.opacity(state.activeCleanLook != nil && cleanLook == .pictureOnly ? 1 : 1 - InputValidation.videoDimming.repair(state.look?.videoDimming ?? 0.5)) }
             VStack(spacing: 0) {
               IPadReplicaView(state: state) { link.send(.seek(word: $0 + 1)) }
-              if state.cleanScreen != true {
+              if state.activeCleanLook == nil {
               HStack(spacing: Space.md) {
                 Text("Reading position").font(.caption).foregroundStyle(.secondary)
                 Slider(value: Binding(get: { dragging ?? Double(state.word) }, set: { dragging = $0 }), in: 1...Double(max(2, state.words))) { editing in
@@ -46,23 +45,24 @@ struct IPadRemoteView: View {
               }.padding(.horizontal, Space.md).padding(.bottom, Space.sm)
               }
             }
-            if state.pictureMode != .behindScript && state.pictureMode != .off && !focusActive {
+            if state.activeCleanLook == nil && state.pictureMode != .behindScript && state.pictureMode != .off && !focusActive {
               liveCamera.frame(width: 192, height: 108).padding(Space.md) // grid: ok 16:9 camera thumbnail
             }
           }
         }
         .overlay(alignment: .trailing) {
+          if state.activeCleanLook == nil || state.look?.keepMicMeter != false {
           IPadReplicaMeter(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter,
             name: Self.microphoneName(state), isListening: state.micOn ?? true)
             .frame(width: MicMeterView.stripWidth(typeScale: 1))
             .padding(.top, 48).padding(.bottom, 48).padding(.trailing, Space.sm)
             .allowsHitTesting(false)
+          }
         }.background(.black).clipShape(RoundedRectangle(cornerRadius: Space.md))
 
         if let reason = state.rejectionReason ?? message { Text(reason).foregroundStyle(.orange) }
         RelayNotice(relay: link.relay)
-        if (state.look?.presenterSetup ?? !state.running) || state.cameraOnly == true { setupBar(state) }
-        else { readingControls(state) }
+        if state.activeCleanLook == nil { setupBar(state) }
       } else {
         IPadConnectPanel(link: link).frame(maxWidth: .infinity, maxHeight: .infinity)
       }
@@ -70,6 +70,7 @@ struct IPadRemoteView: View {
     .background {
       if let state = currentState, state.presenting != nil, state.cameraOnly != true {
         HStack {
+          Button("Show controls") { leaveClean() }.keyboardShortcut(.escape, modifiers: [])
           Button("Previous passage") { link.send(.previousPassage) }.keyboardShortcut(.leftArrow, modifiers: [])
           Button("Next passage") { link.send(.nextPassage) }.keyboardShortcut(.rightArrow, modifiers: [])
           Button("Previous paragraph") { link.send(.previousPassage) }.keyboardShortcut(.upArrow, modifiers: [])
@@ -90,7 +91,7 @@ struct IPadRemoteView: View {
           .shadow(radius: Space.md).padding(Space.lg)
       }
     }
-    .padding(Space.md)
+    .padding(currentState?.activeCleanLook != nil ? 0 : Space.md)
     .background(Color(red: 30/255, green: 30/255, blue: 31/255))
     .tint(yellow).preferredColorScheme(.dark)
     .frame(minWidth: 760, idealWidth: 960, maxWidth: .infinity, minHeight: 500, idealHeight: 720, maxHeight: .infinity)
@@ -110,17 +111,23 @@ struct IPadRemoteView: View {
     }
   }
 
+  private func leaveClean() {
+    link.send(.look(.init(focusMode: false)))
+    link.setCleanScreen(false)
+  }
+
   private func setupBar(_ state: PadRemote.State) -> some View {
     PresenterSetupBar(scale: store.uiZoom) {
       deviceMenu(state)
       Button {
         link.send(.look(.init(presenterSetup: false)))
-        link.send(.play)
-      } label: { BarLabel(title: "Start reading", symbol: "play.fill") }
+        link.send(state.running ? .pause : .play)
+      } label: { BarLabel(title: state.running ? "Pause" : "Start reading", symbol: state.running ? "pause.fill" : "play.fill").frame(minWidth: 144) }
         .buttonStyle(BarButtonStyle(role: .prominent)).keyboardShortcut(.space, modifiers: [])
         .disabled(state.presenting == nil || state.cameraOnly == true || state.editing == true)
       Button { link.send(.backToStart) } label: { BarLabel(title: "Back", symbol: "arrow.counterclockwise") }
         .buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.home, modifiers: [])
+      Text("\(state.running ? "Reading" : "Paused") · word \(state.word) of \(state.words)").font(.caption).foregroundStyle(.secondary).lineLimit(1)
     } devices: {
       BarGroup(label: "Camera, microphone and script") {
         BarDeviceControl(offIsWarning: false, title: "Camera", offTitle: "Camera off", onSymbol: "video.fill", offSymbol: "video.slash.fill",
@@ -162,7 +169,12 @@ struct IPadRemoteView: View {
       BarToggle(title: "Key", symbol: "list.bullet.rectangle", isOn: state.guides?.exposureKey ?? true) {
         link.send(.cameraGuides(.init(exposureKey: !(state.guides?.exposureKey ?? true))))
       }
-      BarToggle(title: "Clean", symbol: "rectangle", isOn: state.cleanScreen ?? false) { link.setCleanScreen(!(state.cleanScreen ?? false)) }
+      PresenterCleanMenu(selected: cleanLook, active: state.activeCleanLook != nil,
+        keepMicMeter: Binding(get: { state.look?.keepMicMeter ?? true }, set: { link.send(.look(.init(keepMicMeter: $0))) }),
+        choose: { look in
+          link.send(.look(.init(focusMode: look == .scriptOnly, cleanLook: look)))
+          link.setCleanScreen(!(state.activeCleanLook != nil && cleanLook == look))
+        }, leave: { leaveClean() })
     }
     .padding(.horizontal, Space.md).background(PresenterBar.background)
   }
@@ -306,28 +318,7 @@ struct IPadRemoteView: View {
     } label: { Label(title ?? state.scripts.first(where: { $0.id == state.presenting })?.title ?? "No script", systemImage: "doc.text") }
       .disabled(state.editing == true).fixedSize()
   }
-  private func readingControls(_ state: PadRemote.State) -> some View {
-    WrapLayout(spacing: Space.sm, distributeAfter: 2, leading: true) {
-      deviceMenu(state)
-      BarStatusPill(text: (state.mode == "Voice" ? "Voice" : "Automatic") + (state.running ? " · Reading" : " · Paused"), isActive: state.running)
-      Button { link.send(.backToStart) } label: { BarLabel(title: "Restart", symbol: "arrow.counterclockwise") }
-        .buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.home, modifiers: [])
-      Button { link.send(state.running ? .pause : .play) } label: {
-        BarLabel(title: state.running ? "Pause" : "Start reading", symbol: state.running ? "pause.fill" : "play.fill")
-      }.buttonStyle(BarButtonStyle(role: .secondary)).keyboardShortcut(.space, modifiers: [])
-      Button { link.send(.pause); link.send(.look(.init(presenterSetup: true))) } label: { BarLabel(title: "Set up", symbol: "camera.viewfinder") }
-        .buttonStyle(BarButtonStyle(role: .secondary))
-      BarGroup(label: "Reading options") {
-        micControl(state)
-        PresenterLinkedLevel(meter: state.voiceSource == "iPad" ? link.iPadMicMeter : link.micMeter)
-        BarDivider()
-        BarToggle(title: "Focus", symbol: "rectangle.expand.vertical", isOn: state.look?.focusMode ?? false) {
-          link.send(.look(.init(focusMode: !(state.look?.focusMode ?? false))))
-        }
-        textButton(state)
-      }
-    }.padding(Space.sm).background(PresenterBar.background).disabled(state.editing == true)
-  }
+
   func adjustControls(_ state: PadRemote.State) -> some View {
     VStack(alignment: .leading, spacing: Space.md) {
       Picker("Reading mode", selection: Binding(get: { state.mode }, set: { setVoice($0 == "Voice" ? (state.voiceSource == "Mac" ? "mac" : "ipad") : "off", state) })) {

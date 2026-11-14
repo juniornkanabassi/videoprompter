@@ -263,7 +263,7 @@ import SwiftUI
     store.session.present(record: script, settings: store.settings)
     activeSession = store.session
     panel.onPassageKey = { [weak self] direction in
-      guard let self, !self.isEditing, !self.camera.cleanView, self.camera.displayMode != .videoOnly else { return false }
+      guard let self, !self.isEditing, self.camera.displayMode != .videoOnly else { return false }
       self.moveReading { session in
         switch direction {
         case 49: session.toggle()
