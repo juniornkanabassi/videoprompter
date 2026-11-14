@@ -241,7 +241,8 @@ import VideoToolbox
     case .macMicrophone(let id):
       guard let id else { pendingMacMicrophone = false; relay.stop(); send(.voiceSource("iPad")); return }
       guard id.isEmpty || AudioCapture.inputDevices().contains(where: { $0.uid == id }) else { return }
-      selectMacMicrophone(id)
+      // Re-sending the mic already in use (the iPad's automatic request) keeps the saved choice as it is.
+      if id.isEmpty || id != AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid { selectMacMicrophone(id) }
       macMicOn = true
       pendingMacMicrophone = iPadState?.presenting == nil
       // Keep the local mic until a presented script can actually start the relay.

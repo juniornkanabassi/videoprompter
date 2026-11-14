@@ -66,7 +66,7 @@ final class PadRemoteReadinessTests: XCTestCase {
       "session.stopMicrophoneTest()",
       "else if !session.isTestingMicrophone, !setupMeterAttempted",
       "setupMeterAttempted = true",
-      "self?.updateSetupMeter()", "link.send(.microphoneLevel(micOn ? micMeter.levelDB : -60))"] {
+      "self?.updateSetupMeter()", "link.send(.microphoneLevel(micOn ? level : -60))"] {
       XCTAssertTrue(store.contains(wiring), wiring)
     }
   }

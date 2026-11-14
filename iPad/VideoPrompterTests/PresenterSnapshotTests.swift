@@ -458,7 +458,8 @@ import XCTest
     let document = PrompterDocument(markdown: String(repeating: "Reading this sentence keeps the scrolling continuously in motion. ", count: 120))
     let canvas = ScriptCanvas(document: document, tokenIndex: 0, isActivelyRunning: true,
       layoutGuideFraction: 0.35, style: ScriptStyle(), textWidth: 0.75,
-      manualPosition: { floor((CACurrentMediaTime() - start) * 8) }, onSeek: { _ in })
+      // Continuous, as SessionStore's Manual clock and VoiceGlide both are: the canvas adds no smoothing of its own.
+      manualPosition: { (CACurrentMediaTime() - start) * 8 }, onSeek: { _ in })
     let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
     let window = UIWindow(windowScene: scene)
     window.frame = CGRect(x: 0, y: 0, width: 1180, height: 820)

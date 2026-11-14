@@ -109,11 +109,12 @@ import AVFoundation
 
   /// Attempt once per link; a failed relay returns to the local mic without a retry loop.
   @discardableResult func requestDefaultMacMicrophone() -> Bool {
-    guard !microphoneChosen, !requestedDefaultMicrophone, camera.isShowingMac,
-      macStatus.supportsMicSelection == true else { return false }
+    // Only for Voice reading, never unmuting a Mac mic the user muted, and keeping the Mac's own mic choice.
+    guard !microphoneChosen, !requestedDefaultMicrophone, camera.isShowingMac, settings.mode == "Voice",
+      macStatus.supportsMicSelection == true, macStatus.micOn != false else { return false }
     requestedDefaultMicrophone = true
     camera.link.send(remoteState)
-    camera.link.send(.macMicrophone(""))
+    camera.link.send(.macMicrophone(macStatus.selectedMicrophone ?? ""))
     return true
   }
 

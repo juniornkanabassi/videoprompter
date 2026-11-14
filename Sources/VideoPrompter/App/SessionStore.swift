@@ -847,7 +847,8 @@ final class SessionStore: ObservableObject {
           device: device, outputFormat: format, gain: Float(self.settings.inputGain), channel: AudioChannel.load(device.uid, defaults: self.defaults))
         self.audioCapture = capture
         let meterDelivery = self.meterDelivery(generation: generation)
-        let pair = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(20))
+        // About 430 ms of 256-frame buffers, so a short stall never drops spoken words.
+        let pair = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(80))
         self.analyzerContinuation = pair.continuation
         let counter = AudioFrameCounter(sampleRate: format.sampleRate)
         try capture.start(
