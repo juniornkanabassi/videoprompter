@@ -31,6 +31,13 @@ import XCTest
     Finally, the one result nobody saw coming. We will take it apart, minute by minute, and ask what it means for the run in.
     """
 
+  func testTextPanel() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "text-panel-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    _ = try await render(PadPresenterTextSettings(store: store, session: store.session),
+      size: CGSize(width: 440, height: 800), name: "ipad-presenter-text", directory: directory, beforeDraw: {})
+  }
+
   func testLinkedSensorFrameMatchesMacPreview() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let url = URL(fileURLWithPath: directory)

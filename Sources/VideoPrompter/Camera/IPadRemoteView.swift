@@ -321,26 +321,22 @@ struct IPadRemoteView: View {
 
   func adjustControls(_ state: PadRemote.State) -> some View {
     VStack(alignment: .leading, spacing: Space.md) {
-      Picker("Reading mode", selection: Binding(get: { state.mode }, set: { setVoice($0 == "Voice" ? (state.voiceSource == "Mac" ? "mac" : "ipad") : "off", state) })) {
-        Text("Voice follow").tag("Voice"); Text("Automatic scroll").tag("Manual")
-      }
-      if state.mode != "Voice" {
-        Stepper("\(state.speed) wpm", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
-      }
-      Picker("Font", selection: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) })) {
-        ForEach(Array(Set(AvailableFonts.presenter + [state.look?.fontName ?? "Lexend Deca"])).sorted(), id: \.self) { Text($0).tag($0) }
-      }
-      lookSlider("Text size", value: state.look?.fontSize ?? 44, range: InputValidation.fontSize.range) { link.send(.look(.init(fontSize: $0))) }
-      lookSlider("Margins", value: state.look?.textWidth ?? 1, range: InputValidation.textWidth.range) { link.send(.look(.init(textWidth: $0))) }
-      lookSlider("Line spacing", value: state.look?.lineSpacing ?? 0.16, range: InputValidation.lineSpacing.range) { link.send(.look(.init(lineSpacing: $0))) }
-      lookSlider("Paragraph spacing", value: state.look?.paragraphSpacing ?? 0.34, range: InputValidation.paragraphSpacing.range) { link.send(.look(.init(paragraphSpacing: $0))) }
-      DisclosureGroup("Advanced") {
-        lookSlider("Reading band (0 = off)", value: state.look?.readingBandOpacity ?? 0.12, range: 0...1) { link.send(.look(.init(readingBandOpacity: $0))) }
-      }
-      lookSlider("Reading line", value: state.look?.guideFraction ?? 0.35, range: InputValidation.guideFraction.range) { link.send(.look(.init(guideFraction: $0))) }
-      Picker("Countdown", selection: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) })) {
-        Text("Off").tag(0); Text("3 seconds").tag(3); Text("5 seconds").tag(5)
-      }
+      PresenterTextPanel(
+        mode: Binding(get: { state.mode }, set: { setVoice($0 == "Voice" ? (state.voiceSource == "Mac" ? "mac" : "ipad") : "off", state) }),
+        countdown: Binding(get: { state.startDelay ?? 3 }, set: { link.send(.startDelay($0)) }),
+        fontName: Binding(get: { state.look?.fontName ?? "Lexend Deca" }, set: { link.send(.look(.init(fontName: $0))) }),
+        fontSize: Binding(get: { state.look?.fontSize ?? 44 }, set: { link.send(.look(.init(fontSize: $0))) }),
+        textWidth: Binding(get: { state.look?.textWidth ?? 1 }, set: { link.send(.look(.init(textWidth: $0))) }),
+        lineSpacing: Binding(get: { state.look?.lineSpacing ?? 0.16 }, set: { link.send(.look(.init(lineSpacing: $0))) }),
+        paragraphSpacing: Binding(get: { state.look?.paragraphSpacing ?? 0.34 }, set: { link.send(.look(.init(paragraphSpacing: $0))) }),
+        guideFraction: Binding(get: { state.look?.guideFraction ?? 0.35 }, set: { link.send(.look(.init(guideFraction: $0))) }),
+        bandOpacity: Binding(get: { state.look?.readingBandOpacity ?? 0.12 }, set: { link.send(.look(.init(readingBandOpacity: $0))) }),
+        fonts: AvailableFonts.presenter,
+        readingExtras: AnyView(Group {
+          if state.mode != "Voice" {
+            Stepper("\(state.speed) wpm", value: Binding(get: { state.speed }, set: { link.send(.speed($0)) }), in: 20...300, step: 10)
+          }
+        }))
       if let presets = state.presets, !presets.isEmpty {
         Menu("Reading presets") { ForEach(presets, id: \.self) { name in Button(name) { link.send(.preset(name)) } } }
       }

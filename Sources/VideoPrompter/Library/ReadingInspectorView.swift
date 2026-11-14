@@ -192,7 +192,7 @@ struct ScriptLanguageRow: View {
   }
 }
 
-private struct SpeechEngineRow: View {
+struct SpeechEngineRow: View {
   @ObservedObject var store: AppStore
   @ObservedObject var session: SessionStore
   var body: some View {
@@ -208,5 +208,21 @@ private struct SpeechEngineRow: View {
         if session.isPreparingVoice { ProgressView().controlSize(.small) }
       }
     }
+  }
+}
+
+/// Presenter-only Text panel; the full Settings page retains its additional appearance tools.
+struct PresenterTextSettings: View {
+  @ObservedObject var store: AppStore
+  var body: some View {
+    PresenterTextPanel(mode: $store.settings.mode, countdown: Binding(get: { store.session.startDelay }, set: { store.session.startDelay = $0 }),
+      fontName: $store.settings.fontName, fontSize: $store.settings.fontSize,
+      textWidth: $store.settings.textWidth, lineSpacing: $store.settings.lineSpacing,
+      paragraphSpacing: $store.settings.paragraphSpacing, guideFraction: $store.settings.guideFraction,
+      bandOpacity: $store.settings.readingBandOpacity, fonts: AvailableFonts.presenter,
+      readingExtras: AnyView(Group {
+        if store.settings.mode == "Voice" { SpeechEngineRow(store: store, session: store.session) }
+        else { Stepper("\(Int(store.settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10) }
+      }))
   }
 }
