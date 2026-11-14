@@ -113,6 +113,12 @@ import AVFoundation
   func setPicturePriority(_ value: PadRemote.PicturePriority) { picturePriority = value; defaults.set(value.rawValue, forKey: "padPicturePriority") }
   func setCleanScreen(_ value: Bool) { cleanScreen = value; defaults.set(value, forKey: "padCleanScreen") }
   func selectCamera(_ id: String) { camera.link.send(.selectCamera(id)) }
+  func setCameraRotation(_ value: Int) {
+    guard let rotation = CameraRotation(rawValue: value) else { return }
+    if camera.isShowingMac { camera.link.send(.cameraGuides(.init(rotation: value))) }
+    else { camera.guides.rotation = rotation; camera.guides.automaticRotation = false }
+  }
+
   func setCameraOn(_ value: Bool) { camera.link.send(.cameraOn(value)) }
   func selectMicrophone(_ id: String) {
     if usesMacMic { camera.link.send(.selectMicrophone(id)) }
@@ -628,7 +634,8 @@ extension PadStore {
       cameraOnly: cameraOnly, linkHeartbeat: true, markdown: open ? session.activeRecord?.markdown : nil,
       guides: .init(zebras: camera.guides.zebras, falseColour: camera.guides.falseColour,
         thirds: camera.guides.thirds, centre: camera.guides.axes, marker: camera.guides.marker?.label ?? "Off",
-        exposureKey: defaults.object(forKey: "presenterExposureKey") as? Bool ?? true),
+        exposureKey: defaults.object(forKey: "presenterExposureKey") as? Bool ?? true,
+        rotation: camera.guides.rotation.rawValue),
       micLevelDB: micOn ? micMeter.levelDB : -60,
       localCameras: localCameras, localMicrophones: localMicrophones,
       localCameraID: camera.isShowingMac ? nil : camera.selectedID, localCameraOn: camera.isOn, cameraUsesMac: camera.isShowingMac)
@@ -667,6 +674,7 @@ extension PadStore {
     switch command {
     case .rename(let name): camera.link.deviceName = PadIdentity.cleanName(name)
     case .cameraGuides(let update):
+      if let rotation = update.rotation { setCameraRotation(rotation) }
       var guides = camera.guides
       if let value = update.zebras { guides.changeExposure { $0.zebras = value } }
       if let value = update.falseColour { guides.changeExposure { $0.falseColour = value } }
@@ -718,6 +726,10 @@ extension PadStore {
       var next = macStatus
       if let supported = value.supportsMicSelection { next.supportsMicSelection = supported }
       if let channel = value.microphoneChannel { next.microphoneChannel = channel }
+      if let value = value.cameraRotation, let rotation = CameraRotation(rawValue: value) {
+        next.cameraRotation = value
+        if camera.isShowingMac, camera.guides.rotation != rotation { camera.guides.rotation = rotation }
+      }
       if let cameras = value.cameras { next.cameras = cameras }
       if let microphones = value.microphones { next.microphones = microphones }
       // List-only updates preserve selections; a complete list that removes one clears it.

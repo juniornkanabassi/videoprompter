@@ -172,7 +172,8 @@ import VideoToolbox
       selectedMicrophone: AudioCapture.resolvedInput(relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID)?.uid,
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
       displayName: macName, connectionKind: pipe?.name, framesSkipped: encoder.framesSkipped, supportsMicSelection: true,
-      microphoneChannel: AudioChannel.load(AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid ?? "", defaults: AppStore.preferences()).rawValue)
+      microphoneChannel: AudioChannel.load(AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid ?? "", defaults: AppStore.preferences()).rawValue,
+      cameraRotation: camera.guides.rotation.rawValue)
     if next != macStatus { macStatus = next }
     var update = next
     update.micLevelDB = micMeter.levelDB
@@ -204,6 +205,11 @@ import VideoToolbox
 
   private func receive(_ command: PadRemote.Command) {
     switch command {
+    case .cameraGuides(let update):
+      if let value = update.rotation, let rotation = CameraRotation(rawValue: value) {
+        CameraModel.shared.setRotation(rotation)
+        publishMacStatus()
+      }
     case .selectCamera(let id, _): selectCamera(id)
     case .cameraOn(let value):
       if !value || !isOn { cameraOwnedByIPad = value }
@@ -568,6 +574,7 @@ import VideoToolbox
     shared.reconfigure { session in
       session.beginConfiguration()
       if !session.outputs.contains(output), session.canAddOutput(output) { session.addOutput(output) }
+      CameraRotation.keepSensorOrientation(output.connection(with: .video))
       session.commitConfiguration()
     }
     if let pipe { attachCamera(pipe) }

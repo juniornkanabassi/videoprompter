@@ -340,7 +340,7 @@ struct CameraPreview: UIViewRepresentable {
 
     private func applyConnection() {
       guard let connection = previewLayer.connection else { return }
-      let angle = coordinator?.videoRotationAngleForHorizonLevelPreview ?? CGFloat(guides.rotation.rawValue)
+      let angle = ((coordinator?.videoRotationAngleForHorizonLevelPreview ?? 0) + CGFloat(guides.rotation.rawValue)).truncatingRemainder(dividingBy: 360)
       if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
       if connection.isVideoMirroringSupported {
         connection.automaticallyAdjustsVideoMirroring = false
@@ -356,12 +356,12 @@ struct CameraPreview: UIViewRepresentable {
       let rect = picture.isEmpty || picture.isInfinite ? bounds : picture
       pictureMask.path = UIBezierPath(roundedRect: rect, cornerRadius: AlphaStyle.cardCorner).cgPath
       exposure.transform = CATransform3DIdentity
-      let angle = coordinator?.videoRotationAngleForHorizonLevelPreview ?? CGFloat(guides.rotation.rawValue)
+      let angle = ((coordinator?.videoRotationAngleForHorizonLevelPreview ?? 0) + CGFloat(guides.rotation.rawValue)).truncatingRemainder(dividingBy: 360)
       let swaps = Int(angle.rounded()) % 180 != 0
       exposure.bounds = CGRect(origin: .zero, size: swaps ? CGSize(width: rect.height, height: rect.width) : rect.size)
       exposure.position = CGPoint(x: rect.midX, y: rect.midY)
-      exposure.transform = CATransform3DConcat(CATransform3DMakeScale(mirrored ? -1 : 1, 1, 1),
-        CATransform3DMakeRotation(angle * .pi / 180, 0, 0, 1))
+      exposure.setAffineTransform(CGAffineTransform(rotationAngle: angle * .pi / 180)
+        .concatenating(CGAffineTransform(scaleX: mirrored ? -1 : 1, y: 1)))
       guideLayer.path = CameraOverlay.guidePath(picture: rect, guides: guides)
       guideLayer.strokeColor = guides.strokeColor
       shadeLayer.path = guides.marker == nil ? nil : CameraOverlay.shadePath(picture: rect, guides: guides)

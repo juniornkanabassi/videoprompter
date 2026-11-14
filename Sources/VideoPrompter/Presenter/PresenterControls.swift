@@ -410,3 +410,19 @@ struct DeviceChoiceLabel: View {
     }.accessibilityAddTraits(selected ? .isSelected : [])
   }
 }
+
+/// One rotation menu for the local presenter, remote console and iPad camera picker.
+struct CameraRotationMenu: View {
+  let angle: Int
+  let choose: (Int) -> Void
+  var body: some View {
+    Menu {
+      ForEach(CameraRotation.allCases) { rotation in
+        Button { choose(rotation.rawValue) } label: {
+          DeviceChoiceLabel(name: rotation.label, selected: angle == rotation.rawValue)
+        }
+      }
+    } label: { Label("Rotate", systemImage: "rotate.right") }
+      .accessibilityValue("\(angle) degrees")
+  }
+}

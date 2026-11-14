@@ -102,6 +102,7 @@ struct ExposureReferencePicture: UIViewRepresentable {
     private let exposure = PadExposureLayer()
     private let feed = PadExposure()
     private var imageSize = CGSize(width: 16, height: 9)
+    private var rotation = CameraRotation.none
     override init(frame: CGRect) {
       super.init(frame: frame)
       picture.cornerRadius = AlphaStyle.cardCorner
@@ -114,6 +115,7 @@ struct ExposureReferencePicture: UIViewRepresentable {
     func update(_ image: UIImage, guides: CameraGuides) {
       picture.contents = image.cgImage
       imageSize = image.size
+      rotation = guides.rotation
       exposure.bind(feed, settings: guides.exposure)
       feed.update(guides.exposure)
       if let cg = image.cgImage {
@@ -124,11 +126,15 @@ struct ExposureReferencePicture: UIViewRepresentable {
     }
     override func layoutSubviews() {
       super.layoutSubviews()
-      let rect = CameraRotation.none.fittedRect(aspect: imageSize, in: bounds)
+      let rect = rotation.fittedRect(aspect: imageSize, in: bounds)
       CATransaction.begin()
       CATransaction.setDisableActions(true)
-      picture.frame = rect
-      exposure.frame = rect
+      for target in [picture, exposure] {
+        target.setAffineTransform(.identity)
+        target.bounds = CGRect(origin: .zero, size: rotation.swapsAxes ? CGSize(width: rect.height, height: rect.width) : rect.size)
+        target.position = CGPoint(x: rect.midX, y: rect.midY)
+        target.setAffineTransform(rotation.displayTransform(mirrored: false))
+      }
       CATransaction.commit()
     }
   }

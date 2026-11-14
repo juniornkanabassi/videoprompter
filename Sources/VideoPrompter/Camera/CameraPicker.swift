@@ -127,6 +127,7 @@ struct CameraPickerList: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       if showsRecovery && (devices.isEmpty || model.authorization != .authorized) { emptyState }
       ForEach(devices, id: \.uid) { device in row(device).id(device.uid) }
+      CameraRotationMenu(angle: model.guides.rotation.rawValue) { if let rotation = CameraRotation(rawValue: $0) { model.setRotation(rotation) } }
     }
   }
 

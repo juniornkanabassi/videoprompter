@@ -683,6 +683,7 @@ struct PresenterView: View {
       })).disabled(recorderBusy)
     }
     Divider()
+    CameraRotationMenu(angle: camera.guides.rotation.rawValue) { if let rotation = CameraRotation(rawValue: $0) { camera.setRotation(rotation) } }
     Button("Refresh cameras") { camera.refresh() }
     Button("Camera settings…") { adjustOpener = "Camera"; shell.adjustTab = .camera }
   }

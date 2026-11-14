@@ -65,7 +65,7 @@ struct ConfidenceMonitorView: View {
           GeometryReader { area in
             let size = fitSize(in: area.size, fill: fill)
             Group {
-              if let referencePicture { Image(uiImage: referencePicture).resizable().scaledToFit() }
+              if let referencePicture { ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides) }
               else { LinkPreview(fill: fill, camera: camera, link: camera.link) }
             }
               .frame(width: size.width, height: size.height)
@@ -101,7 +101,8 @@ struct ConfidenceMonitorView: View {
   }
 
   private func fitSize(in area: CGSize, fill: Bool) -> CGSize {
-    let ratio: CGFloat = 16 / 9
+    let sensor = camera.link.pictureSize ?? CGSize(width: 16, height: 9)
+    let ratio = camera.guides.rotation.swapsAxes ? sensor.height / sensor.width : sensor.width / sensor.height
     let width = fill ? max(area.width, area.height * ratio) : min(area.width, area.height * ratio)
     return CGSize(width: width, height: width / ratio)
   }

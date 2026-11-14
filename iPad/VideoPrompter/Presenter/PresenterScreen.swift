@@ -928,6 +928,7 @@ struct DevicePickerCards: View {
               connection: device.isExternal ? "USB-C capture" : "Built-in · faces away under the glass",
               width: device.width, height: device.height, fps: device.fps), mac: false)
           }
+          CameraRotationMenu(angle: store.camera.guides.rotation.rawValue, choose: store.setCameraRotation)
           Text("Picture").font(.headline)
           HStack(spacing: 4) {
             picture("Off", .off); picture("Behind the script", .behindScript); picture("Monitor only", .monitorOnly)

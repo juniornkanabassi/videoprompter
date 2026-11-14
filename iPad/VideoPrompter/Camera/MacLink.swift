@@ -774,13 +774,12 @@ struct LinkPreview: UIViewRepresentable {
       displayLayer.transform = CATransform3DIdentity
       displayLayer.bounds = CGRect(origin: .zero, size: unturned)
       displayLayer.position = CGPoint(x: picture.midX, y: picture.midY)
-      var transform = CATransform3DMakeRotation(guides.rotation.radians, 0, 0, 1)
-      if mirrored { transform = CATransform3DConcat(CATransform3DMakeScale(-1, 1, 1), transform) }
-      displayLayer.transform = transform
+      let transform = guides.rotation.displayTransform(mirrored: mirrored)
+      displayLayer.setAffineTransform(transform)
       exposure.transform = CATransform3DIdentity
       exposure.bounds = displayLayer.bounds
       exposure.position = displayLayer.position
-      exposure.transform = transform
+      exposure.setAffineTransform(transform)
       shadeLayer.frame = bounds
       guideLayer.frame = bounds
       guideLayer.path = CameraOverlay.guidePath(picture: picture, guides: guides)

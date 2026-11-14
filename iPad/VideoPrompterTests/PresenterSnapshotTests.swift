@@ -1,3 +1,4 @@
+import AVFoundation
 import PrompterCore
 import Combine
 import CryptoKit
@@ -60,6 +61,67 @@ import XCTest
     XCTAssertEqual(ScriptCanvas.sideInset(width: 1366, textWidth: 1, fontSize: 24), (1366 - 720) / 2)
     for width: CGFloat in [1180, 1366] {
       XCTAssertEqual(ScriptCanvas.sideInset(width: width, textWidth: 0.8), max(42, width * 0.1), accuracy: 0.001)
+    }
+  }
+
+  func testRotationFollowsSourceAndKeepsExposureAligned() throws {
+    guard ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] != nil else { throw XCTSkip("Snapshot capture guard required") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "rotation-\(UUID().uuidString)")!)
+    store.camera.pickerSnapshotDevices()
+    store.perform(.selectCamera("capture", onIPad: true))
+    store.perform(.cameraGuides(.init(rotation: 270)))
+    XCTAssertEqual(store.camera.guides.rotation, .threeQuarters)
+    XCTAssertEqual(store.remoteState.guides?.rotation, 270)
+    store.perform(.cameraGuides(.init(rotation: 45)))
+    XCTAssertEqual(store.camera.guides.rotation, .threeQuarters)
+    store.perform(.macStatus(.init(cameraRotation: 90)))
+    XCTAssertEqual(store.camera.guides.rotation, .threeQuarters, "A Mac update must not rotate the local camera")
+    store.perform(.selectCamera("fx3"))
+    store.perform(.macStatus(.init(cameraRotation: 90)))
+    XCTAssertEqual(store.camera.guides.rotation, .quarter)
+
+    let layer = AVSampleBufferDisplayLayer()
+    let view = LinkPreview.LinkView(displayLayer: layer)
+    view.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
+    for rotation in CameraRotation.allCases {
+      for mirror in [false, true] {
+        var guides = CameraGuides()
+        guides.rotation = rotation
+        guides.zebras = true
+        guides.falseColour = true
+        guides.thirds = true
+        view.update(size: CGSize(width: 1920, height: 1080), mirrored: mirror, guides: guides)
+        view.layoutIfNeeded()
+        let exposure = try XCTUnwrap(view.layer.sublayers?.compactMap { $0 as? PadExposureLayer }.first)
+        XCTAssertEqual(layer.affineTransform(), rotation.displayTransform(mirrored: mirror))
+        XCTAssertEqual(exposure.affineTransform(), layer.affineTransform())
+        XCTAssertEqual(exposure.bounds, layer.bounds)
+        XCTAssertEqual(exposure.position, layer.position)
+        let fitted = rotation.fittedRect(aspect: CGSize(width: 1920, height: 1080), in: view.bounds)
+        XCTAssertEqual(layer.position, CGPoint(x: fitted.midX, y: fitted.midY))
+      }
+    }
+  }
+
+  func testRotationShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "rotation-shots-\(UUID().uuidString)")!)
+    store.settings.horizontalMirror = false
+    store.presentCamera()
+    let picture = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
+      UIColor(white: 0.45, alpha: 1).setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
+      UIColor.red.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 240, height: 180))
+    }
+    for rotation in CameraRotation.allCases {
+      store.camera.guides.rotation = rotation
+      store.camera.guides.zebras = true
+      store.camera.guides.thirds = true
+      store.setMirror(rotation == .quarter)
+      store.setFlip(rotation == .threeQuarters)
+      _ = try await render(PresenterScreen(session: store.session, camera: store.camera, referencePicture: picture).environmentObject(store),
+        size: CGSize(width: 1180, height: 820), name: "ipad-rotation-\(rotation.rawValue)", directory: directory, beforeDraw: {})
     }
   }
 

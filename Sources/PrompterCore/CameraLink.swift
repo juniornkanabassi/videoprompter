@@ -200,10 +200,11 @@ public enum PadRemote {
     public var centre: Bool?
     public var marker: String?
     public var exposureKey: Bool?
+    public var rotation: Int?
     public init(zebras: Bool? = nil, falseColour: Bool? = nil, thirds: Bool? = nil,
-      centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil) {
+      centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil, rotation: Int? = nil) {
       self.zebras = zebras; self.falseColour = falseColour; self.thirds = thirds
-      self.centre = centre; self.marker = marker; self.exposureKey = exposureKey
+      self.centre = centre; self.marker = marker; self.exposureKey = exposureKey; self.rotation = rotation
     }
   }
 
@@ -248,6 +249,7 @@ public enum PadRemote {
     public var cameras: [Source]?
     /// Nil leaves selection unchanged; a supplied list that omits it clears it.
     public var selectedCamera: String?
+    public var cameraRotation: Int?
     public var cameraOn: Bool?
     public var microphones: [Source]?
     /// Nil leaves selection unchanged; a supplied list that omits it clears it.
@@ -264,7 +266,8 @@ public enum PadRemote {
     public init(cameras: [Source]? = nil, selectedCamera: String? = nil, cameraOn: Bool? = nil,
       microphones: [Source]? = nil, selectedMicrophone: String? = nil, micOn: Bool? = nil,
       recording: RecordingState? = nil, displayName: String? = nil, connectionKind: String? = nil,
-      micLevelDB: Double? = nil, framesSkipped: Int? = nil, supportsMicSelection: Bool? = nil, microphoneChannel: String? = nil) {
+      micLevelDB: Double? = nil, framesSkipped: Int? = nil, supportsMicSelection: Bool? = nil, microphoneChannel: String? = nil, cameraRotation: Int? = nil) {
+      self.cameraRotation = cameraRotation
       self.supportsMicSelection = supportsMicSelection; self.microphoneChannel = microphoneChannel
       self.cameras = cameras; self.selectedCamera = selectedCamera; self.cameraOn = cameraOn
       self.microphones = microphones; self.selectedMicrophone = selectedMicrophone; self.micOn = micOn

@@ -180,6 +180,8 @@ struct IPadRemoteView: View {
         }
         if state.localCameras == nil { Text("Update the iPad app to list its cameras") }
       }
+      Divider()
+      CameraRotationMenu(angle: state.guides?.rotation ?? 0) { link.send(.cameraGuides(.init(rotation: $0))) }
     }
   }
   private func voiceMenu(_ state: PadRemote.State) -> some View {

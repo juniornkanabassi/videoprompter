@@ -54,6 +54,26 @@ final class PadPresenterLayoutTests: XCTestCase {
     XCTAssertEqual(CGPoint(x: 10, y: 20).applying(both), CGPoint(x: -10, y: -20))
   }
 
+  func testEveryCameraRotationComposesWithPresenterMirrorAndFlip() {
+    let point = CGPoint(x: 7, y: 3)
+    let rotated = [CGPoint(x: 7, y: 3), CGPoint(x: -3, y: 7), CGPoint(x: -7, y: -3), CGPoint(x: 3, y: -7)]
+    for (index, rotation) in CameraRotation.allCases.enumerated() {
+      for mirror in [false, true] {
+        for flip in [false, true] {
+          let transform = rotation.displayTransform(mirrored: false)
+            .concatenating(PadPresenterLayout.turn(mirror: mirror, flip: flip))
+          let actual = point.applying(transform)
+          XCTAssertEqual(actual.x, rotated[index].x * (mirror ? -1 : 1), accuracy: 0.0001)
+          XCTAssertEqual(actual.y, rotated[index].y * (flip ? -1 : 1), accuracy: 0.0001)
+          // Camera mirroring is also in displayed coordinates, after the turn.
+          let cameraMirror = point.applying(rotation.displayTransform(mirrored: mirror))
+          XCTAssertEqual(cameraMirror.x, rotated[index].x * (mirror ? -1 : 1), accuracy: 0.0001)
+          XCTAssertEqual(cameraMirror.y, rotated[index].y, accuracy: 0.0001)
+        }
+      }
+    }
+  }
+
   func testStatusPillWording() {
     func text(running: Bool = true, manual: Bool = false, micOn: Bool = true, macMic: Bool = true, countdown: Int = 0) -> String {
       PadPresenterLayout.statusText(

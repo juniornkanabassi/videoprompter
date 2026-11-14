@@ -1,0 +1,470 @@
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-first-launch-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-settings-App-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-settings-Camera and monitor-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-settings-Microphone-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-settings-Reading-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/alpha-zebra-range-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-custom-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-custom-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-deep-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-deep-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-grey-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-false-grey-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-setup-key-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-setup-key-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-zebra-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f3-zebra-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-guides-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-guides-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-App-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-App-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Camera and monitor-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Camera and monitor-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Microphone-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Microphone-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Reading-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/f4-settings-Reading-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Advanced-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Advanced-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Camera-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Camera-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Exposure key-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Exposure key-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-False colour-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-False colour-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Guides-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Guides-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-My skin reference-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-My skin reference-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Shot-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Shot-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Zebras-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/g4-detail-Zebras-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/camera-only-rounded-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/camera-only-rounded-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/false-colour-ramp-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/false-colour-ramp-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/false-colour-ramp-flip-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/false-colour-ramp-flip-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-camera-only-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mac-lost-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mac-lost-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mac-lost-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-monitor-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3A-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3A-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3B-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3B-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3C-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-picker-3C-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-reading-camera-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-reading-camera-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-reading-camera-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-setup-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-setup-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-setup-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-text-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/ipad-text-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/meter-black-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/meter-black-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/meter-white-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/meter-white-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/qr-ipad-allow.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/qr-ipad-connect.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/qr-ipad-expired.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/qr-ipad-scanner.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/zebra-45ire-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/zebra-45ire-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/zebra-45ire-flip-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad/zebra-45ire-flip-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-adjust-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-adjust-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-camera-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-camera-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-camera-only-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-camera-only-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-connected-reading-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-connected-reading-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-devices-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-devices-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-full-screen-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-full-screen-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-link-e2e.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-microphone-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-microphone-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-not-connected-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-not-connected-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-paused-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-paused-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-text-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/ipad-text-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Advanced-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Advanced-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Advanced-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Advanced-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Camera-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Camera-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Camera-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Camera-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Exposure key-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Exposure key-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Exposure key-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Exposure key-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-False colour-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-False colour-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-False colour-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-False colour-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Guides-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Guides-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Guides-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Guides-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-My skin reference-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-My skin reference-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-My skin reference-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-My skin reference-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Shot-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Shot-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Shot-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Shot-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Zebras-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Zebras-100-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Zebras-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-detail-Zebras-200-top-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-App-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-App-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Camera and monitor-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Camera and monitor-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Microphone-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Microphone-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Reading-100-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-settings-Reading-200-lower-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-shot-advanced-100-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/after/r3-shot-advanced-200-light.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-251-adjust-mic.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-251-bold-zebras.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-251-key-collapsed.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-251-key-shown.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-adjust-mic.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-1600-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-1600-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-1600-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-900-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-900-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-bar-900-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-270-welcome-library.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-clip.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-default.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-narrow.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-nosignal.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-standard.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-cards-mic-wide.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-first-launch-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-settings-App-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-settings-Camera and monitor-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-settings-Microphone-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-settings-Reading-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-zebra-limit-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/alpha-zebra-range-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/bama-contrast-tokens-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/bama-library-tip-hidden-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/camera-picker-recording-locked-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/camera-recovery-0-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/camera-recovery-2-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/camera-recovery-3-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/exposure-guidance-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Camera-100-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Camera-100-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Camera-200-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Camera-200-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-False-colour-100-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-False-colour-100-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-False-colour-200-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-False-colour-200-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Guides-100-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Guides-100-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Guides-200-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Guides-200-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Mic-100-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Mic-100-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Mic-200-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Mic-200-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Zebras-100-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Zebras-100-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Zebras-200-1000.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f2-Zebras-200-1600.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-custom-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-custom-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-deep-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-deep-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-grey-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-false-grey-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-setup-key-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-setup-key-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-zebra-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f3-zebra-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-guides-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-guides-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-App-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-App-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Camera and monitor-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Camera and monitor-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Microphone-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Microphone-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Reading-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/f4-settings-Reading-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Advanced-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Advanced-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Camera-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Camera-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Exposure key-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Exposure key-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-False colour-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-False colour-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Guides-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Guides-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-My skin reference-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-My skin reference-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Shot-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Shot-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Zebras-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/g4-detail-Zebras-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/camera-only-rounded-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/camera-only-rounded-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/false-colour-ramp-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/false-colour-ramp-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/false-colour-ramp-flip-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/false-colour-ramp-flip-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-camera-only-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mac-lost-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mac-lost-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mac-lost-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-monitor-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3A-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3A-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3B-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3B-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3C-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-picker-3C-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-reading-camera-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-reading-camera-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-reading-camera-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-setup-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-setup-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-setup-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-text-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/ipad-text-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/meter-black-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/meter-black-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/meter-white-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/meter-white-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/qr-ipad-allow.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/qr-ipad-connect.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/qr-ipad-expired.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/qr-ipad-scanner.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/zebra-45ire-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/zebra-45ire-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/zebra-45ire-flip-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad/zebra-45ire-flip-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-adjust-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-adjust-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-camera-only-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-camera-only-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-connected-reading-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-connected-reading-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-devices-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-devices-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-not-connected-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-not-connected-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-paused-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-paused-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-text-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/ipad-text-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-folders-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-folders-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-folders-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/library-text-size-popover-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-camera-only-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-camera-only-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-camera-only-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-mirrored-flipped-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-mirrored-flipped-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-mirrored-flipped-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-reading-camera-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-reading-camera-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-reading-camera-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-setup-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-setup-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-setup-834x1194.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-text-1180x820.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/mac-text-1366x1024.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/practice-reading-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/presenter-script-over-video-halo-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-0-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-0-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-0-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-2-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-2-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-camera-access-2-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-reading-tip-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-reading-tip-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r11-reading-tip-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-exposure-settings-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-exposure-settings-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-exposure-settings-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-inline-tip-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-inline-tip-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-inline-tip-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-key-help-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-key-help-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-key-help-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-start-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-start-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-strip-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-strip-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-strip-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-tools-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r14-tools-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-exposure-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-exposure-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-exposure-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-labelled-strip-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-labelled-strip-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-labelled-strip-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-mirrored-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-mirrored-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-mirrored-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-normal-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-normal-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-normal-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-spaced-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-spaced-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r15-preview-spaced-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Camera-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Camera-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Camera-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-False colour-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-False colour-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-False colour-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Guides-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Guides-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Guides-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Mic-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Mic-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Mic-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Zebras-100.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Zebras-150.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r2-adjust-Zebras-200.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Advanced-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Advanced-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Advanced-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Advanced-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Camera-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Camera-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Camera-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Camera-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Exposure key-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Exposure key-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Exposure key-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Exposure key-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-False colour-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-False colour-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-False colour-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-False colour-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Guides-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Guides-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Guides-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Guides-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-My skin reference-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-My skin reference-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-My skin reference-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-My skin reference-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Shot-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Shot-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Shot-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Shot-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Zebras-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Zebras-100-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Zebras-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-detail-Zebras-200-top-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-App-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-App-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Camera and monitor-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Camera and monitor-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Microphone-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Microphone-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Reading-100-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-settings-Reading-200-lower-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-shot-advanced-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r3-shot-advanced-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r8-exposure-key-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r8-exposure-key-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/r8-exposure-key-200-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/reading-contrast-warning-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/reading-settings-page-100-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/reading-settings-page-150-dark.png
+/Users/junior.nkanabassi/.t3/worktrees/Source/t3-11f42791-fb766f81474004ba/artifacts/presenter-parity/before/reading-settings-page-200-dark.png

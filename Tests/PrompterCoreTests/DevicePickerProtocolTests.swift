@@ -23,6 +23,18 @@ final class DevicePickerProtocolTests: XCTestCase {
     }
   }
 
+  func testOptionalRotationFieldsRoundTripAndOldPayloadsStillDecode() throws {
+    let decoder = JSONDecoder()
+    XCTAssertNil(try decoder.decode(PadRemote.Guides.self, from: Data("{}".utf8)).rotation)
+    XCTAssertNil(try decoder.decode(PadRemote.MacStatus.self, from: Data("{}".utf8)).cameraRotation)
+    for angle in [0, 90, 180, 270] {
+      let command = PadRemote.Command.cameraGuides(.init(rotation: angle))
+      XCTAssertEqual(try decoder.decode(PadRemote.Command.self, from: JSONEncoder().encode(command)), command)
+      let status = PadRemote.MacStatus(cameraRotation: angle)
+      XCTAssertEqual(try decoder.decode(PadRemote.MacStatus.self, from: JSONEncoder().encode(status)), status)
+    }
+  }
+
   func testLocalDeviceStateIsOptionalForOlderPeers() throws {
     var state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Manual", speed: 120, word: 0, words: 0)
     let legacy = try JSONEncoder().encode(state)

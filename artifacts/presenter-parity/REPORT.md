@@ -93,3 +93,10 @@ Device names and readings are deterministic fixtures, not hardware evidence.
 These representative images are committed. The complete local harness output is
 retained in the ignored `before/` and `after/` directories, with an inventory in
 `SNAPSHOTS.txt`. Baseline iPad images were rendered from an archived 8ae0abc tree.
+
+## Paused WIP update
+
+F (rotation) was subsequently authorised and is partially implemented. The user
+then paused work to close the laptop. See the root `PROGRESS.md` for precise status,
+validation results and next commands. Do not treat the rotation changes or final
+full-suite verification as complete. D remains held for the approved mockup.
