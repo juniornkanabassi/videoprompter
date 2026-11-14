@@ -11,9 +11,10 @@ import Foundation
 /// Pure and clock-driven: the Mac and iPad presenters paint it on every display frame through the
 /// same path as Manual, and the replay tests run it on recorded readings without a screen.
 public struct VoiceGlide: Sendable {
-  /// Tuned on the committed readings; `SpeechLogReplayTests` holds the measured bounds.
-  static let catchUpSeconds = 0.5
-  static let velocitySeconds = 0.15
+  /// Keep post-recognition catch-up short; stacking slow position and velocity filters made
+  /// a partial burst take over 0.7 s to reach the guide. Replay tests also bound acceleration.
+  static let catchUpSeconds = 0.15
+  static let velocitySeconds = 0.08
   static let paceWindow = 3.0
   public static let lead = 1.0
   /// Further than this behind, or back past the lead, is a jump (a skipped passage, a re-read):
@@ -66,7 +67,10 @@ public struct VoiceGlide: Sendable {
     // Full pace until the coasting room runs out over the last word, plus a catch-up on the gap.
     let room = min(max(goal + Self.lead - position, 0), 1)
     let wanted = pace * room + max(0, behind) / Self.catchUpSeconds
-    velocity += (wanted - velocity) * (1 - exp(-dt / Self.velocitySeconds))
+    // Limit acceleration directly, rather than delaying every word to hide a sudden speed change.
+    let change = (wanted - velocity) * (1 - exp(-dt / Self.velocitySeconds))
+    let limit = 90 * dt
+    velocity += min(change, limit)
     position = min(position + velocity * dt, goal + Self.lead)
     return position
   }

@@ -617,6 +617,15 @@ final class SessionStore: ObservableObject {
   }
 
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
+    let logsLatency = ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1"
+    let started = logsLatency ? ProcessInfo.processInfo.systemUptime : 0
+    defer {
+      if logsLatency {
+        NSLog("Voice match: audioBacklog=%.3f ms work=%.3f ms token=%d final=%d",
+          (latestAudioEnd - candidate.range.end.seconds) * 1000,
+          (ProcessInfo.processInfo.systemUptime - started) * 1000, tokenIndex, candidate.isFinal ? 1 : 0)
+      }
+    }
     guard isActivelyRunning, settings.mode == "Voice",
       candidate.generation >= minimumSpeechGeneration
     else { return }

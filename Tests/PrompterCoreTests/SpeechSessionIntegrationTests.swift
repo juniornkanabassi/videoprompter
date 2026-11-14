@@ -3,6 +3,7 @@ import AppKit
 import CoreText
 import Foundation
 import Speech
+import SwiftUI
 import XCTest
 
 @testable import VideoPrompter
@@ -41,10 +42,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     var submittedBuffers = 0
     var droppedBuffers = 0
     var acceptanceLatencies: [Double] = []
+    var conversionTimes: [Double] = []
+    var matchTimes: [Double] = []
+    var paintTimes: [Double] = []
     /// First wall instant each token was published as confirmed, and first instant it was painted dim.
     var published: [Double?] = []
     var painted: [Double?] = []
-    var dimObserver: NSObjectProtocol?
     var tokenEnds: [Int] = []
   }
 
@@ -78,7 +81,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
 
   private func scrollView(in view: NSView?) -> NSScrollView? {
     guard let view else { return nil }
-    if let scrollView = view as? NSScrollView { return scrollView }
+    if let scrollView = view as? NSScrollView, scrollView.documentView is TrackingTextView { return scrollView }
     return view.subviews.lazy.compactMap { self.scrollView(in: $0) }.first
   }
 
@@ -213,15 +216,12 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         CTFontManagerRegisterFontsForURL(fontRoot.appendingPathComponent(file) as CFURL, .process, nil)
       }
       XCTAssertNotNil(NSFont(name: "Lexend Deca", size: 18), "Rendered acceptance must not silently use a system fallback.")
-      guard let screen = NSScreen.screens.first(where: { $0.localizedName == "Prompter XL" }) else {
-        throw XCTSkip("Rendered replay requires the Prompter XL display.")
-      }
       let directory = URL(fileURLWithPath: NSTemporaryDirectory())
         .appendingPathComponent("videoprompter-rendered-replay-\(UUID().uuidString)", isDirectory: true)
       let suiteName = "VideoPrompter.rendered-replay.\(UUID().uuidString)"
       let defaults = TestDefaults.suite(named: suiteName)!
       TestDefaults.remove(suiteName)
-      let store = AppStore(arguments: ["tests", "--data-directory", directory.path], defaults: defaults)
+      let store = AppStore(arguments: ["tests", "--agent-screen", "--data-directory", directory.path], defaults: defaults)
       addTeardownBlock { @MainActor in
         await store.flushSettings()
         TestDefaults.remove(suiteName)
@@ -234,10 +234,20 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       await store.reload()
       store.selectedID = record.id
       store.settings.mode = "Voice"
-      PresenterController.shared.present(store: store, on: screen)
-      guard let panel = NSApp.windows.first(where: { $0.title == "Rendered replay" }) as? NSPanel else {
-        return XCTFail("Rendered replay presenter panel was not created.")
-      }
+      store.session.present(record: record, settings: store.settings)
+      let camera = CameraModel(defaults: defaults)
+      camera.displayMode = .prompterOnly
+      let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 1000, height: 700),
+        styleMask: [.borderless], backing: .buffered, defer: false)
+      panel.isReleasedWhenClosed = false
+      let host = NSHostingView(rootView: PresenterView(store: store, session: store.session,
+        draft: PresenterDraft(record: record), camera: camera, startsCamera: false,
+        recorder: CameraRecorder(defaults: defaults), shell: PresenterShell(reading: true)).environment(\.colorScheme, .dark))
+      host.sizingOptions = []
+      panel.contentView = host
+      panel.orderFront(nil)
+      XCTAssertEqual(panel.alphaValue, 0, "Rendered replay must remain invisible")
+      XCTAssertTrue(panel.ignoresMouseEvents)
       panel.sharingType = .readOnly
       renderedPanel = panel
       renderedStore = store
@@ -251,7 +261,7 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     defer {
       session.pause()
       renderedPanel?.contentView = nil
-      PresenterController.shared.closeNow()
+      renderedPanel?.close()
       renderedStore = nil
     }
     session.play(captureAudio: false)
@@ -271,7 +281,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     }
     defer {
       confirmedSink.cancel()
-      if let observer = ledger.dimObserver { NotificationCenter.default.removeObserver(observer) }
     }
     let textOpacity = renderedStore?.settings.textOpacity ?? 1
     defer {
@@ -309,36 +318,40 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       var previousRenderedOffset: Double?
       while !Task.isCancelled {
         let elapsed = ledger.firstAudioWall.map { ProcessInfo.processInfo.systemUptime - $0 }
-        if let renderedPanel, let scrollView = scrollView(in: renderedPanel.contentView) {
+        if let renderedPanel, let content = renderedPanel.contentView {
           presenterStayedVisible = presenterStayedVisible && renderedPanel.isVisible
-          if ledger.dimObserver == nil, let storage = (scrollView.documentView as? NSTextView)?.textStorage {
-            // Posted synchronously from the presenter's own attribute write, so this is the dim instant.
-            nonisolated(unsafe) let storage = storage
-            ledger.dimObserver = NotificationCenter.default.addObserver(
-              forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
-            ) { _ in
-              MainActor.assumeIsolated {
-                guard let first = ledger.firstAudioWall else { return }
+          // Hidden windows have no compositor refresh. Explicitly finish an offscreen paint.
+          let paintStarted = ProcessInfo.processInfo.systemUptime
+          content.layoutSubtreeIfNeeded()
+          if let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds) {
+            content.cacheDisplay(in: content.bounds, to: bitmap)
+            if ledger.firstAudioWall != nil {
+              ledger.paintTimes.append(ProcessInfo.processInfo.systemUptime - paintStarted)
+            }
+            if let scrollView = scrollView(in: content) {
+              if let storage = (scrollView.documentView as? NSTextView)?.textStorage,
+                let first = ledger.firstAudioWall {
                 let now = ProcessInfo.processInfo.systemUptime - first
                 let through = Self.paintedThrough(storage, document: document, opacity: textOpacity, ends: &ledger.tokenEnds)
-                guard through >= 0 else { return }
-                for token in 0...through where ledger.painted[token] == nil { ledger.painted[token] = now }
+                if through >= 0 {
+                  for token in 0...through where ledger.painted[token] == nil { ledger.painted[token] = now }
+                }
+              }
+              let presentationOffset = scrollView.contentView.layer?.presentation()?.bounds.origin.y
+              let offset = Double(presentationOffset ?? scrollView.contentView.bounds.origin.y)
+              if previousRenderedOffset != offset {
+                ledger.events.append(.init(
+                  type: "rendered_scroll_offset", generation: nil, replacementID: nil,
+                  wallSecondsSinceFirstAudio: elapsed,
+                  audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
+                  tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
+                  droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
+                  text: "Offscreen presenter scroll movement; not physical display latency.",
+                  renderedOffsetY: offset,
+                  renderedOffsetSource: presentationOffset == nil ? "model_clip_bounds" : "presentation_layer_bounds"))
+                previousRenderedOffset = offset
               }
             }
-          }
-          let presentationOffset = scrollView.contentView.layer?.presentation()?.bounds.origin.y
-          let offset = Double(presentationOffset ?? scrollView.contentView.bounds.origin.y)
-          if previousRenderedOffset != offset {
-            ledger.events.append(.init(
-              type: "rendered_scroll_offset", generation: nil, replacementID: nil,
-              wallSecondsSinceFirstAudio: elapsed,
-              audioStart: nil, audioEnd: nil, recognitionDeliveryLag: nil,
-              tokenIndex: session.tokenIndex, acceptedWords: session.acceptedWords,
-              droppedBuffers: nil, submittedBuffers: nil, isFinal: nil, locale: nil,
-              text: "Observed presenter scroll movement; this is UI cadence evidence, not ASR-to-render latency.",
-              renderedOffsetY: offset,
-              renderedOffsetSource: presentationOffset == nil ? "model_clip_bounds" : "presentation_layer_bounds"))
-            previousRenderedOffset = offset
           }
         }
         if replayScrollBack, !scrollBackTriggered, elapsed ?? 0 >= 35,
@@ -418,7 +431,8 @@ final class SpeechSessionIntegrationTests: XCTestCase {
     let chunk = AVAudioFrameCount(environment["VIDEOPROMPTER_REPLAY_CHUNK_FRAMES"] ?? "") ?? 1_600
     let producer = Task { @MainActor in
       defer { stream.continuation.finish() }
-      let converter = try XCTUnwrap(AVAudioConverter(from: audio.processingFormat, to: format))
+      let capture = AudioCapture(device: .init(id: 0, uid: "replay", name: "Replay"), outputFormat: format)
+      try capture.prepareConverter(sampleRate: audio.processingFormat.sampleRate)
       var outputFrame: Int64 = 0
       while audio.framePosition < audio.length {
         if replayReread, let frame = sourceRewindFrame, !sourceRewindApplied {
@@ -438,17 +452,14 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         let source = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: chunk)!
         try audio.read(into: source, frameCount: chunk)
         guard source.frameLength > 0 else { break }
-        let capacity = AVAudioFrameCount(
-          ceil(Double(source.frameLength) * format.sampleRate / audio.processingFormat.sampleRate)) + 1
-        let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity)!
-        var used = false; var conversionError: NSError?
-        converter.convert(to: output, error: &conversionError) { _, status in
-          if used { status.pointee = .noDataNow; return nil }
-          used = true; status.pointee = .haveData; return source
-        }
-        if let conversionError { throw conversionError }
-        let delivery = ProcessInfo.processInfo.systemUptime
-        if ledger.firstAudioWall == nil { ledger.firstAudioWall = delivery }
+        let conversionStarted = ProcessInfo.processInfo.systemUptime
+        guard let output = capture.process(source)?.buffer else { continue }
+        ledger.conversionTimes.append(ProcessInfo.processInfo.systemUptime - conversionStarted)
+        if ledger.firstAudioWall == nil { ledger.firstAudioWall = ProcessInfo.processInfo.systemUptime }
+        // A captured buffer only arrives once all its samples have been recorded.
+        let elapsedAudio = Double(outputFrame + Int64(output.frameLength)) / format.sampleRate
+        let remaining = ledger.firstAudioWall! + elapsedAudio - ProcessInfo.processInfo.systemUptime
+        if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
         ledger.submittedBuffers += 1
         if case .dropped = stream.continuation.yield(.init(
           buffer: output,
@@ -458,10 +469,6 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         }
         outputFrame += Int64(output.frameLength)
         session.noteSubmittedAudioEnd(through: Double(outputFrame) / format.sampleRate)
-        let elapsedAudio = Double(outputFrame) / format.sampleRate
-        let target = ledger.firstAudioWall! + elapsedAudio
-        let remaining = target - ProcessInfo.processInfo.systemUptime
-        if remaining > 0 { try await Task.sleep(for: .seconds(remaining)) }
       }
     }
     defer { producer.cancel() }
@@ -487,7 +494,9 @@ final class SpeechSessionIntegrationTests: XCTestCase {
                 TimedWord(text: String(candidate.transcript[run.range].characters), start: $0.start.seconds, end: $0.end.seconds)
               }
             }))
+          let matchingStarted = ProcessInfo.processInfo.systemUptime
           session.acceptSpeechCandidate(candidate)
+          ledger.matchTimes.append(ProcessInfo.processInfo.systemUptime - matchingStarted)
         }
       }
     }
@@ -562,6 +571,9 @@ final class SpeechSessionIntegrationTests: XCTestCase {
       submittedBuffers: ledger.submittedBuffers, isFinal: nil, locale: nil,
       text: "\(engine == .dictation ? "DictationTranscriber contextual" : "SpeechTranscriber") replay. \(rendersPresenter ? "Rendered scroll offsets record UI cadence only, not ASR-to-render latency." : "Recognition delivery lag and session token progress are measured separately; rendered UI latency is not measured by this test.")",
       progressEvents: progress.count, largestProgressHoldSeconds: largestHold))
+    print("Production conversion: \(WordLatency.describe(ledger.conversionTimes))")
+    print("Production match/publication: \(WordLatency.describe(ledger.matchTimes))")
+    if rendersPresenter { print("Production offscreen paint: \(WordLatency.describe(ledger.paintTimes))") }
     let latencies = ledger.acceptanceLatencies.sorted()
     if !latencies.isEmpty {
       let median = latencies[latencies.count / 2]
@@ -579,7 +591,21 @@ final class SpeechSessionIntegrationTests: XCTestCase {
         return (.init(locale: locale, replacementID: id, audioStart: start, audioEnd: end, words: event.words ?? [],
           tail: PrompterDocument(markdown: text).spokenTokens.suffix(3).map(\.normalised)), event.wallSecondsSinceFirstAudio)
       }
-      let alignment = WordLatency.align(revisions.map(\.0), arrivals: revisions.map(\.1), script: tokens)
+      // An external word track keeps the measurement independent of the recogniser under test.
+      let alignment: WordLatency.Alignment
+      if let path = environment["VIDEOPROMPTER_SPEECH_REPLAY_WORDS"] {
+        let words = try JSONDecoder().decode([TimedWord].self, from: Data(contentsOf: URL(fileURLWithPath: path)))
+        let heard: WordLatency.Heard = words.flatMap { word in
+          PrompterDocument(markdown: word.text).spokenTokens.map {
+            ($0.normalised, WordLatency.Spoken(start: word.start, end: word.end, runStart: word.start))
+          }
+        }
+        alignment = WordLatency.align([heard], script: tokens)
+        XCTAssertGreaterThanOrEqual(alignment.spoken.compactMap { $0 }.count, tokens.count * 4 / 5,
+          "The independent word track must cover the script.")
+      } else {
+        alignment = WordLatency.align(revisions.map(\.0), arrivals: revisions.map(\.1), script: tokens)
+      }
       let spoken = alignment.spoken
       let shown = rendersPresenter ? ledger.painted : ledger.published
       for token in tokens.indices {
