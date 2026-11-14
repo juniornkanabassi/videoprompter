@@ -38,7 +38,7 @@ extension AppearanceSnapshotTests {
       let view = ZStack(alignment: .top) {
         Color.black
         PresenterReadingLine(settings: store.settings)
-          .frame(width: size.width - 2 * ScriptTextView.sideInset(width: size.width, textWidth: store.settings.textWidth) + 64)
+          .frame(width: size.width - 2 * ScriptTextView.sideInset(width: size.width, textWidth: store.settings.textWidth) + 2 * Space.xxl)
           .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
         ScriptTextView(document: store.session.document, tokenIndex: 24, lastConfirmedTokenIndex: 23,
           guideFraction: 0.35, fontName: store.settings.fontName, fontSize: 48, textOpacity: 1,

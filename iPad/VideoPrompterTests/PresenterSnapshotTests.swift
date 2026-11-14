@@ -126,7 +126,7 @@ import XCTest
       _ = try await render(ZStack(alignment: .top) {
         Color.black
         PresenterReadingLine(settings: settings)
-          .frame(width: size.width - 2 * ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth) + 64)
+          .frame(width: size.width - 2 * ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth) + 2 * Space.xxl)
           .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
         canvas.mask(VStack(spacing: 0) {
           Color.black
