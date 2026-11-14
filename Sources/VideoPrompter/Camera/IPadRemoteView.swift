@@ -216,22 +216,20 @@ struct IPadRemoteView: View {
   }
   private func cameraMenu(_ state: PadRemote.State) -> some View {
     Group {
-      Section("On this Mac") {
+      Section {
         ForEach(state.macStatus?.cameras ?? link.cameraSources) { source in
-          Button { link.chooseCamera(source.id, onIPad: false) } label: {
-            DeviceChoiceLabel(name: source.name, selected: state.cameraUsesMac != false && state.macStatus?.selectedCamera == source.id)
+          deviceChoice(source.name, onIPad: false, selected: state.cameraUsesMac != false && state.macStatus?.selectedCamera == source.id) {
+            link.chooseCamera(source.id, onIPad: false)
           }
         }
-      }
+      } header: { Label("On this Mac", systemImage: "laptopcomputer") }
       Divider()
-      Section("On " + (state.deviceName ?? "iPad")) {
+      Section {
         ForEach(state.localCameras ?? []) { source in
-          Button { link.chooseCamera(source.id, onIPad: true) } label: {
-            DeviceChoiceLabel(name: source.name, selected: state.localCameraID == source.id)
-          }
+          deviceChoice(source.name, onIPad: true, selected: state.localCameraID == source.id) { link.chooseCamera(source.id, onIPad: true) }
         }
         if state.localCameras == nil { Text("Update the iPad app to list its cameras") }
-      }
+      } header: { Label("On " + (state.deviceName ?? "iPad"), systemImage: "ipad") }
       Divider()
       CameraRotationMenu(angle: state.cameraUsesMac != false ? link.macStatus.cameraRotation ?? CameraModel.shared.guides.rotation.rawValue : state.guides?.rotation ?? 0) {
         link.setCameraRotation($0)
@@ -247,29 +245,33 @@ struct IPadRemoteView: View {
       }
     }
   }
+  /// A menu row with the device's Mac or iPad icon and the native tick on the one that is live.
+  private func deviceChoice(_ name: String, onIPad: Bool, selected: Bool, choose: @escaping () -> Void) -> some View {
+    Toggle(isOn: Binding(get: { selected }, set: { if $0 { choose() } })) {
+      Label(name, systemImage: onIPad ? "ipad" : "laptopcomputer")
+    }
+  }
   private func voiceMenu(_ state: PadRemote.State) -> some View {
     Group {
-      Section("On this Mac") {
+      Section {
         ForEach(state.macStatus?.microphones ?? link.macStatus.microphones ?? []) { source in
-          Button { link.chooseMicrophone(source.id, onIPad: false) } label: {
-            DeviceChoiceLabel(name: source.name, selected: state.voiceSource == "Mac" && state.selectedMicrophone == source.id)
+          deviceChoice(source.name, onIPad: false, selected: state.voiceSource == "Mac" && state.selectedMicrophone == source.id) {
+            link.chooseMicrophone(source.id, onIPad: false)
           }
         }
-      }
+      } header: { Label("On this Mac", systemImage: "laptopcomputer") }
       Divider()
-      Section("On " + (state.deviceName ?? "iPad")) {
+      Section {
         if let microphones = state.localMicrophones, !microphones.isEmpty {
           ForEach(microphones) { source in
-            Button { link.chooseMicrophone(source.id, onIPad: true) } label: {
-              DeviceChoiceLabel(name: source.name, selected: state.voiceSource == "iPad" && state.selectedMicrophone == source.id)
+            deviceChoice(source.name, onIPad: true, selected: state.voiceSource == "iPad" && state.selectedMicrophone == source.id) {
+              link.chooseMicrophone(source.id, onIPad: true)
             }
           }
         } else {
-          Button { link.chooseMicrophone("", onIPad: true) } label: {
-            DeviceChoiceLabel(name: "iPad microphone", selected: state.voiceSource == "iPad")
-          }
+          deviceChoice("iPad microphone", onIPad: true, selected: state.voiceSource == "iPad") { link.chooseMicrophone("", onIPad: true) }
         }
-      }
+      } header: { Label("On " + (state.deviceName ?? "iPad"), systemImage: "ipad") }
     }
   }
   private func scriptMenu(_ state: PadRemote.State, title: String? = nil) -> some View {

@@ -412,19 +412,23 @@ struct DeviceChoiceLabel: View {
   }
 }
 
-/// One rotation menu for the local presenter, remote console and iPad camera picker.
+/// One rotation control for the local presenter, remote console and iPad camera picker: every
+/// angle is visible at once (inline in a Mac menu, a segmented row on the iPad), not in a submenu.
 struct CameraRotationMenu: View {
   let angle: Int
   let choose: (Int) -> Void
   var body: some View {
-    Menu {
-      ForEach(CameraRotation.allCases) { rotation in
-        Button { choose(rotation.rawValue) } label: {
-          DeviceChoiceLabel(name: rotation.label, selected: angle == rotation.rawValue)
-        }
-      }
+    let picker = Picker(selection: Binding(get: { angle }, set: choose)) {
+      ForEach(CameraRotation.allCases) { rotation in Text(rotation.label).tag(rotation.rawValue) }
     } label: { Label("Rotate", systemImage: "rotate.right") }
-      .accessibilityValue("\(angle) degrees")
+    #if os(iOS)
+    VStack(alignment: .leading, spacing: 8) {
+      Label("Rotate", systemImage: "rotate.right").font(.headline)
+      picker.pickerStyle(.segmented).labelsHidden().frame(minHeight: 44)
+    }
+    #else
+    picker.pickerStyle(.inline)
+    #endif
   }
 }
 

@@ -163,4 +163,25 @@ extension AppearanceSnapshotTests {
       try await snapshot(IPadConnectPanel(link: link), name: "qr-mac-\(state)", size: .init(width: 960, height: 640), scheme: .dark, destination: URL(fileURLWithPath: path))
     }
   }
+
+  /// A typed key must replace a stale one for the chosen iPad and switch the link back on, even after Disconnect.
+  @MainActor func testTypedKeyReplacesAStaleKeyForTheChosenIPad() {
+    let sender = IPadCameraSender(defaults: freshDefaults(), credentialStore: .ephemeral())
+    sender.searchesForIPad = false
+    sender.acceptedPairing(id: "PAD", code: "QR:old")
+    sender.selectedWiFiID = "PAD"
+    sender.disconnect()
+    sender.pair(key: "k7qf 2mzx p9rt w3hd")
+    XCTAssertEqual(sender.pairingCode(id: "PAD", name: "iPad Pro"), "K7QF-2MZX-P9RT-W3HD")
+    XCTAssertNil(sender.pairingFailure)
+    XCTAssertTrue(sender.controlsIPad)
+    XCTAssertTrue(sender.usesWiFi)
+  }
+
+  @MainActor func testTypedKeyWithNoIPadSaysWhy() {
+    let sender = IPadCameraSender(defaults: freshDefaults(), credentialStore: .ephemeral())
+    sender.searchesForIPad = false
+    sender.pair(key: "K7QF-2MZX-P9RT-W3HD")
+    XCTAssertNotNil(sender.pairingFailure)
+  }
 }

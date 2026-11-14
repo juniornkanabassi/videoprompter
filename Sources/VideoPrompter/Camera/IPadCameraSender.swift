@@ -384,8 +384,7 @@ import VideoToolbox
           try self.pairingRedemption.redeem(received, expected: current)
           self.acceptedPairing(id: request.id, code: PairingExchange.credential(shared))
           try await PairingExchange.send(PairingExchange.seal(.init(id: offer.macID.uuidString, name: offer.name, code: "accepted"), key: shared), on: connection)
-          self.usesWiFi = true
-          self.selectedWiFiID = request.id
+          self.linkPaired(request.id)
           self.refreshPairingOffer()
         } catch {
           if validExchange { self.pairingFailure = "That code has expired or could not be verified. Choose New code and scan again." }
@@ -451,8 +450,7 @@ import VideoToolbox
         guard reply.id == device.id, reply.code.hasPrefix("QR:") else { throw PairingOffer.Failure.foreign }
         try await waitForPairingConfirmation(on: connection)
         acceptedPairing(id: device.id, code: reply.code)
-        selectedWiFiID = device.id
-        connectIfNeeded()
+        linkPaired(device.id)
       } catch { if requestConnection === connection { pairingFailure = "Could not connect. Check the iPad and try again, or type its key." } }
     }
   }
@@ -466,14 +464,29 @@ import VideoToolbox
   }
 
   func pair(key: String) {
-    guard let id = unpairedDeviceID else { return }
     guard let code = CameraLinkSecurity.normalised(key) else {
       pairingFailure = "Enter the full pairing key shown on the iPad."
       return
     }
+    // The key replaces any stale one for the iPad being paired, or the one already chosen.
+    guard let id = unpairedDeviceID ?? selectedWiFiID ?? (wifiDevices.count == 1 ? wifiDevices[0].id : nil) else {
+      pairingFailure = wifiDevices.isEmpty
+        ? "No iPad found on this network yet. Open Video Prompter on the iPad, then try again."
+        : "Choose the iPad under Nearby iPads first, then type its key."
+      return
+    }
     acceptedPairing(id: id, code: code)
+    linkPaired(id)
+  }
+
+  /// After any pairing: forget the old failure, switch the link on (even after Disconnect) and try at once.
+  private func linkPaired(_ id: String) {
     pairingFailure = nil
+    usesWiFi = true
     selectedWiFiID = id
+    controlsIPad = true
+    retry?.cancel()
+    retryDelay = 2
     connectIfNeeded()
   }
 
@@ -483,9 +496,9 @@ import VideoToolbox
   }
   private var codes: [String: String] {
     didSet {
+      // Kept in memory even if saving fails, so this session still connects.
       if !credentialStore.save(codes, key: "sendCameraPairingCodes") {
-        codes = oldValue
-        pairingFailure = "Could not update saved pairing keys. Try again after unlocking this Mac."
+        pairingFailure = "Connected keys could not be saved on this Mac, so you may need to pair again after restarting it."
       }
     }
   }

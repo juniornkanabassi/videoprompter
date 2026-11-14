@@ -894,7 +894,7 @@ struct DevicePickerCards: View {
           if microphone { Toggle("Show meter", isOn: $showMeter).tint(.yellow).fixedSize() }
         }
         if !microphone { Text("Pick the camera, then make the picture upright.").foregroundStyle(.secondary) }
-        heading("On " + (store.macDisplayName ?? "Mac"), badge: connected ? "Mac" : "Not connected", active: connected)
+        heading("On " + (store.macDisplayName ?? "Mac"), symbol: "laptopcomputer", badge: connected ? "Mac" : "Not connected", active: connected)
         if connected {
           if microphone {
             card(.init(id: "", name: "System default", connection: "Use the Mac’s selected input"), mac: true)
@@ -908,7 +908,7 @@ struct DevicePickerCards: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(.gray.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5])))
         }
         Divider().overlay(.white.opacity(0.25))
-        heading("On " + store.camera.link.deviceName, badge: "iPad", active: !store.usesMacMic)
+        heading("On " + store.camera.link.deviceName, symbol: "ipad", badge: "iPad", active: !store.usesMacMic)
         if microphone {
           if store.localMicrophones.isEmpty { card(.init(id: "", name: "iPad microphone", connection: "Built-in"), mac: false) }
           ForEach(store.localMicrophones) { card($0, mac: false) }
@@ -938,8 +938,8 @@ struct DevicePickerCards: View {
       .onChange(of: store.usesMacMic) { _, _ in if microphone { store.showPickerMeter(showMeter) } }
       .sheet(isPresented: $connect) { MacControlScreen(link: store.camera.link).environmentObject(store) }
   }
-  private func heading(_ name: String, badge: String, active: Bool) -> some View {
-    HStack { Text(name).font(.headline); Text(badge).font(.caption.bold())
+  private func heading(_ name: String, symbol: String, badge: String, active: Bool) -> some View {
+    HStack { Label(name, systemImage: symbol).font(.headline); Text(badge).font(.caption.bold())
       .padding(.horizontal, 8).padding(.vertical, 4)
       .background(active ? Color.yellow.opacity(0.2) : Color.gray.opacity(0.2), in: Capsule())
       .foregroundStyle(active ? .yellow : .secondary) }.padding(.top, 4)

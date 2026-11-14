@@ -197,6 +197,7 @@ struct LibraryScreen: View {
         Text(listHeader).font(.subheadline).foregroundStyle(LibraryTheme.muted)
         Spacer(minLength: 0)
         // Reachable with no script chosen and with an empty library.
+        MacConnectButton(showsTitle: false)
         CameraOnlyButton(showsTitle: false)
       }
       .padding(.horizontal, 20)
@@ -476,18 +477,7 @@ private struct ScriptDetail: View {
       }
       Text(script.title).font(.title2.weight(.semibold)).lineLimit(1)
       Spacer(minLength: 12)
-      if let connection = store.macConnection {
-        HStack(spacing: 8) {
-          Circle().fill(LibraryTheme.good).frame(width: 8, height: 8)
-          Text(connection.kind.map { "Mac · \($0)" } ?? "Mac").font(.subheadline)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
-        .background(LibraryTheme.card, in: Capsule())
-        .overlay(Capsule().stroke(LibraryTheme.line))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Connected to \(connection.name)")
-      }
+      MacConnectButton(showsTitle: true)
       CameraOnlyButton(showsTitle: back == nil)
       Button {
         // Present what is on screen: an unsaved draft is written first, and a failed save stops here.
@@ -566,6 +556,36 @@ extension ScriptDetail {
     case .updated: updateNote = "Updated from Google Docs"
     case .unchanged: updateNote = "Already up to date"
     case nil: break
+    }
+  }
+}
+
+/// One tap from the library to the Mac connection page (QR scan, typed key, USB-C), showing whether a Mac is linked.
+struct MacConnectButton: View {
+  @EnvironmentObject private var store: PadStore
+  let showsTitle: Bool
+  @State private var open = false
+  var body: some View {
+    let connection = store.macConnection
+    Button { open = true } label: {
+      HStack(spacing: 8) {
+        Image(systemName: "laptopcomputer")
+        if connection != nil { Circle().fill(LibraryTheme.good).frame(width: 8, height: 8) }
+        if showsTitle {
+          Text(connection.map { $0.kind.map { "Mac · \($0)" } ?? "Mac" } ?? "Connect to Mac").font(.subheadline).lineLimit(1)
+        }
+      }
+      .padding(.horizontal, showsTitle ? 16 : 0)
+      .frame(minWidth: 44, minHeight: 44)
+      .background(LibraryTheme.card2, in: Capsule())
+      .contentShape(Capsule())
+    }
+    .buttonStyle(.plain)
+    .accessibilityLabel(connection.map { "Connected to \($0.name)" } ?? "Connect to a Mac")
+    .sheet(isPresented: $open) {
+      NavigationStack {
+        MacControlScreen(link: store.camera.link, failure: store.camera.link.pairingFailure)
+      }.environmentObject(store)
     }
   }
 }
