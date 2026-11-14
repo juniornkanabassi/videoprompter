@@ -14,7 +14,12 @@ import UIKit
     guideStore.set(guides, for: selectedID)
     updateExposure()
   } }
-  @Published var hidesExposureAids = false { didSet { updateExposure() } }
+  @Published private(set) var hidesExposureAids = false
+  func setExposureHidden(_ hidden: Bool) {
+    guard hidden != hidesExposureAids else { return }
+    hidesExposureAids = hidden
+    updateExposure()
+  }
   var previewGuides: CameraGuides {
     var value = guides
     if hidesExposureAids { value.zebras = false; value.falseColour = false }

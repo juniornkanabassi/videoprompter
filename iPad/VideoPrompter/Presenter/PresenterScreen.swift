@@ -128,7 +128,7 @@ struct PresenterScreen: View {
     .onChange(of: store.editing) { _, _ in updateExposureVisibility() }
     .onChange(of: store.cameraOnly) { _, _ in updateExposureVisibility() }
     .onChange(of: store.pictureMode) { _, _ in updateExposureVisibility() }
-    .onDisappear { camera.hidesExposureAids = false }
+    .onDisappear { camera.setExposureHidden(false) }
     .task(id: setup) {
       showsExposureNote = !setup && (camera.guides.zebras || camera.guides.falseColour)
       guard showsExposureNote else { return }
@@ -151,7 +151,7 @@ struct PresenterScreen: View {
   }
 
   private func updateExposureVisibility() {
-    camera.hidesExposureAids = !setup && !store.editing && !store.cameraOnly && store.pictureMode != .monitorOnly
+    camera.setExposureHidden(!setup && !store.editing && !store.cameraOnly && store.pictureMode != .monitorOnly)
   }
 
   // MARK: Behind and on the script

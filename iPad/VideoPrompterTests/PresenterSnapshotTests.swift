@@ -1,4 +1,5 @@
 import PrompterCore
+import Combine
 import CryptoKit
 import Network
 import SwiftUI
@@ -92,6 +93,15 @@ import XCTest
     store.settings.horizontalMirror = false
     store.presentCamera()
     store.setPictureMode(.behindScript)
+    var visibilityUpdates = 0
+    let visibility = store.camera.objectWillChange.sink { visibilityUpdates += 1 }
+    store.camera.setExposureHidden(false)
+    store.camera.setExposureHidden(false)
+    XCTAssertEqual(visibilityUpdates, 0, "An unchanged visibility must not invalidate the presenter again")
+    store.camera.setExposureHidden(true)
+    XCTAssertEqual(visibilityUpdates, 1)
+    visibility.cancel()
+    store.camera.setExposureHidden(false)
     let states = ["zebra-45ire", "false-colour-ramp", "zebra-45ire-flip", "false-colour-ramp-flip", "meter-white", "meter-black", "camera-only-rounded"]
     for state in states {
       store.setFlip(state.hasSuffix("-flip"))
