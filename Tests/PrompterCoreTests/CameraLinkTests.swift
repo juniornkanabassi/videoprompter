@@ -133,6 +133,20 @@ final class CameraLinkTests: XCTestCase {
   }
 
   @MainActor
+  func testTypedKeyReplacesSelectedIPadsStaleCredentialAfterRediscovery() {
+    let sender = IPadCameraSender(defaults: freshDefaults(), credentialStore: .ephemeral())
+    sender.searchesForIPad = false
+    let id = UUID().uuidString
+    sender.acceptedPairing(id: id, code: "QR:stale")
+    sender.selectedWiFiID = id
+    let endpoint = NWEndpoint.service(name: "Studio [\(id)]", type: CameraLink.bonjourType, domain: "local.", interface: nil)
+    sender.refusedPairing(id: id, name: "Studio")
+    sender.wifiChanged([endpoint])
+    sender.pair(key: "0123456789ABCDEF")
+    XCTAssertEqual(sender.pairingCode(id: id, name: "Studio"), "0123-4567-89AB-CDEF")
+  }
+
+  @MainActor
   func testInlinePairingValidatesAndStoresTheDiscoveredIPadKey() {
     let defaults = freshDefaults()
     let sender = IPadCameraSender(defaults: defaults)

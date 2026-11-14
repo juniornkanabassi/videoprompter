@@ -32,7 +32,7 @@ struct IPadConnectPanel: View {
                 Button("New code") { link.refreshPairingOffer() }
               }
             }
-            Button("Type a key instead") { typing = true }
+            Button("Type a key instead") { typing = true; link.usesWiFi = true }
           }
         }.frame(maxWidth: .infinity)
         VStack(alignment: .leading, spacing: 16) {
@@ -81,7 +81,7 @@ struct IPadConnectPanel: View {
     }
     .padding(32)
     .background(PairingPrivateWindow())
-    .onAppear { link.refreshPairingOffer() }
+    .onAppear { link.usesWiFi = true; link.refreshPairingOffer() }
     .onDisappear { link.stopPairingOffer() }
     .task {
       while !Task.isCancelled {
