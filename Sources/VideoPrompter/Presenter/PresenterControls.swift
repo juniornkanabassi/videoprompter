@@ -196,49 +196,9 @@ struct BarToggle: View {
   }
 }
 
-/// The reading line: a full-width line at the reading position, as the first versions drew it.
-struct GuideLine: View {
-  let settings: PrompterSettings
-  var body: some View {
-    Rectangle().fill(.cyan.opacity(settings.guideOpacity)).frame(height: 2)
-      .allowsHitTesting(false).accessibilityHidden(true)
-  }
-}
-
-/// A calm column behind the text, the full height of the picture, so the picture and the zebras stop
-/// showing through the words. It is a touch lighter than the dimmed picture around it, so the column
-/// reads as a step and not as a hole. No edge lines (they read as a frame): the sides just soften.
-struct ReadingBacking: View {
-  let opacity: Double
-  static let feather = Space.md
-  /// How far the column reaches past the current-line band on each side.
-  static let margin = Space.lg
-  var body: some View {
-    Rectangle().fill(Color(white: 0.1).opacity(opacity))
-      .mask {
-        HStack(spacing: 0) {
-          LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing).frame(width: Self.feather)
-          Color.black
-          LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: Self.feather)
-        }
-      }
-      .allowsHitTesting(false).accessibilityHidden(true)
-  }
-}
-
-/// The Mac presenter's reading line: a soft band that lifts the current line about 11% above the
-/// backing, and under it a clear full-width line, in the gap between lines so it never crosses a letter.
-struct PresenterReadingLine: View {
-  let settings: PrompterSettings
-  /// A line box and the gap under it: the line sits on the band's lower edge.
-  static func bandHeight(fontSize: Double) -> CGFloat { fontSize * 1.3 } // grid: ok follows the line height
-  var body: some View {
-    ZStack(alignment: .bottom) {
-      Rectangle().fill(.white.opacity(0.11))
-      Rectangle().fill(Color.cyan.opacity(max(0.7, settings.guideOpacity))).frame(height: 2)
-    }.frame(height: Self.bandHeight(fontSize: settings.fontSize))
-      .allowsHitTesting(false).accessibilityHidden(true)
-  }
+/// Height allowance used when keeping the reading area clear of the controls.
+enum PresenterReadingLine {
+  static func bandHeight(fontSize: Double) -> CGFloat { fontSize * 1.3 }
 }
 
 /// A small status capsule: a dot for the state, then the words.

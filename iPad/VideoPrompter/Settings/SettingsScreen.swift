@@ -98,8 +98,10 @@ struct SettingsScreen: View {
       LabeledContent("Reading line") {
         Slider(value: $store.settings.guideFraction, in: 0.15...0.85)
       }
-      LabeledContent("Line marker") {
-        Slider(value: $store.settings.guideOpacity, in: 0...1)
+      DisclosureGroup("Advanced") {
+        LabeledContent("Reading band (0 = off)") {
+          Slider(value: $store.settings.readingBandOpacity, in: 0...1)
+        }
       }
     }
   }

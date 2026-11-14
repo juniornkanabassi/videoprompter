@@ -309,14 +309,18 @@ public enum PadRemote {
     public var showCues: Bool?
     public var scriptVisible: Bool?
     public var presenterSetup: Bool?
+    public var readingBandOpacity: Double?
+    public var videoDimming: Double?
     public var focusMode: Bool?
     public init(
       horizontalMirror: Bool? = nil, verticalMirror: Bool? = nil, fontSize: Double? = nil,
       textWidth: Double? = nil, lineSpacing: Double? = nil, guideFraction: Double? = nil,
       fontName: String? = nil, fontWeight: String? = nil, textColorHex: String? = nil,
       textOpacity: Double? = nil, paragraphSpacing: Double? = nil, alignment: String? = nil, showCues: Bool? = nil,
-      scriptVisible: Bool? = nil, presenterSetup: Bool? = nil, focusMode: Bool? = nil
+      scriptVisible: Bool? = nil, presenterSetup: Bool? = nil, focusMode: Bool? = nil,
+      readingBandOpacity: Double? = nil, videoDimming: Double? = nil
     ) {
+      self.readingBandOpacity = readingBandOpacity; self.videoDimming = videoDimming
       self.horizontalMirror = horizontalMirror; self.verticalMirror = verticalMirror
       self.fontSize = fontSize; self.textWidth = textWidth; self.lineSpacing = lineSpacing
       self.guideFraction = guideFraction

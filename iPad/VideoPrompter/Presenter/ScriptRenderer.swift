@@ -13,6 +13,7 @@ struct ScriptStyle: Equatable {
   var paragraphSpacing = 0.34
   var alignment = "Left"
   var showCues = false
+  var readingBandOpacity = 0.12
   var highlightActiveWord = false
   /// Over the camera picture the words get the Mac's soft dark halo.
   var overVideo = false
@@ -28,6 +29,7 @@ struct ScriptStyle: Equatable {
     paragraphSpacing = settings.paragraphSpacing
     alignment = settings.alignment
     showCues = settings.showCues
+    readingBandOpacity = settings.readingBandOpacity
     highlightActiveWord = settings.highlightActiveWord
   }
   init() {}

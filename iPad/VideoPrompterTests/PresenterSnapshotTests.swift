@@ -31,6 +31,62 @@ import XCTest
     Finally, the one result nobody saw coming. We will take it apart, minute by minute, and ask what it means for the run in.
     """
 
+  func testBandGeometryAndLookSettings() throws {
+    let store = PadStore(defaults: UserDefaults(suiteName: "band-settings-\(UUID().uuidString)")!)
+    store.perform(.look(.init(readingBandOpacity: 0.3, videoDimming: 0.9)))
+    XCTAssertEqual(store.settings.readingBandOpacity, 0.3)
+    XCTAssertEqual(store.settings.videoDimming, 0.9)
+    XCTAssertEqual(store.remoteState.look?.readingBandOpacity, 0.3)
+    XCTAssertEqual(store.remoteState.look?.videoDimming, 0.9)
+    store.perform(.look(.init(readingBandOpacity: -1, videoDimming: 2)))
+    XCTAssertEqual(store.settings.readingBandOpacity, 0)
+    XCTAssertEqual(store.settings.videoDimming, 1)
+    let manager = ReadingBandLayoutManager()
+    let storage = NSTextStorage()
+    let container = NSTextContainer(size: CGSize(width: 600, height: 1000))
+    storage.addLayoutManager(manager)
+    manager.addTextContainer(container)
+    let text = CanvasTextView(frame: CGRect(x: 0, y: 0, width: 600, height: 1000), textContainer: container)
+    text.attributedText = NSAttributedString(string: "First line\nSecond line", attributes: [.font: UIFont.systemFont(ofSize: 48)])
+    text.readingBandRange = NSRange(location: 0, length: 5)
+    text.updateReadingBand()
+    let first = try XCTUnwrap(text.readingBandRect)
+    let line = text.layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+    XCTAssertEqual(first.minY, line.minY + text.textContainerInset.top)
+    XCTAssertEqual(first.height, line.height)
+    text.readingBandRange = NSRange(location: 6, length: 4)
+    text.updateReadingBand()
+    XCTAssertEqual(text.readingBandRect, first)
+    text.readingBandRange = NSRange(location: 11, length: 6)
+    text.updateReadingBand()
+    XCTAssertGreaterThan(try XCTUnwrap(text.readingBandRect).minY, first.minY)
+  }
+
+  func testBandDimmingShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "band-shots-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    store.settings.fontSize = 48
+    let script = try store.folder.create(title: "Band shots", markdown: Self.script)
+    store.present(script)
+    store.setMirror(false)
+    store.setFlip(false)
+    store.session.seek(to: 24)
+    store.setPictureMode(.behindScript)
+    let picture = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
+      UIColor(white: 0.6, alpha: 1).setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
+      UIColor.systemBlue.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 400, height: 540))
+    }
+    for dimming in [0.0, 0.5, 0.9] {
+      store.settings.videoDimming = dimming
+      _ = try await render(PresenterScreen(session: store.session, camera: store.camera,
+        startsReading: true, referencePicture: picture).environmentObject(store),
+        size: CGSize(width: 1180, height: 820), name: "ipad-band-dim-\(Int(dimming * 100))", directory: directory, beforeDraw: {})
+    }
+  }
+
   func testBundledFontsAndSpacing() throws {
     XCTAssertEqual(ScriptRenderer.presenterFonts, ["SF Pro", "Helvetica Neue", "Georgia", "Avenir Next", "Poppins", "Lexend", "Lexend Deca"])
     for family in ["Lexend Deca", "Lexend", "Poppins"] {
@@ -294,9 +350,6 @@ import XCTest
         layoutGuideFraction: 0.35, style: ScriptStyle(settings), textWidth: settings.textWidth, onSeek: { _ in })
       _ = try await render(ZStack(alignment: .top) {
         Color.black
-        PresenterReadingLine(settings: settings)
-          .frame(width: size.width - 2 * ScriptCanvas.sideInset(width: size.width, textWidth: settings.textWidth) + 2 * Space.xxl)
-          .offset(y: size.height * 0.35 - PresenterReadingLine.bandHeight(fontSize: 48))
         canvas.mask(VStack(spacing: 0) {
           Color.black
           LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
@@ -314,6 +367,7 @@ import XCTest
     store.settings.horizontalMirror = false
     store.settings.mode = "Manual"
     store.settings.fontSize = 48
+    store.settings.videoDimming = 0 // Keep orientation colour probes independent of dimming.
     let script = try store.folder.create(title: "Shots \(UUID().uuidString.prefix(6))", markdown: Self.script)
     // The script stays in the throwaway simulator's folder; deleting it here waits on the folder watcher.
     store.present(script)

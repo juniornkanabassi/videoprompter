@@ -8,10 +8,47 @@ import UIKit
 /// Tells the coordinator whenever UIKit has really resized it: SwiftUI can update the representable
 /// before the new bounds arrive, and the reading rule must be re-measured against the final size.
 final class CanvasTextView: UITextView {
+  var readingBandRange: NSRange?
+  var readingBandOpacity = 0.0
+  var readingBandRect: CGRect? {
+    (layoutManager as? ReadingBandLayoutManager)?.bandRect(at:
+      CGPoint(x: textContainerInset.left, y: textContainerInset.top))
+  }
+  func updateReadingBand() {
+    guard let manager = layoutManager as? ReadingBandLayoutManager else { return }
+    guard manager.bandRange != readingBandRange || manager.bandOpacity != readingBandOpacity else { return }
+    manager.bandRange = readingBandRange
+    manager.bandOpacity = readingBandOpacity
+    manager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage.length))
+  }
   var onLayout: (() -> Void)?
   override func layoutSubviews() {
     super.layoutSubviews()
     onLayout?()
+    updateReadingBand()
+  }
+}
+
+/// Paint with the glyphs so UIKit's internal text views cannot cover the band.
+final class ReadingBandLayoutManager: NSLayoutManager {
+  var bandRange: NSRange?
+  var bandOpacity = 0.0
+  func bandRect(at origin: CGPoint) -> CGRect? {
+    guard let range = bandRange, let storage = textStorage, range.location < storage.length,
+      let container = textContainers.first else { return nil }
+    ensureLayout(for: container)
+    let glyph = glyphIndexForCharacter(at: range.location)
+    let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+    return CGRect(x: origin.x - 24, y: origin.y + line.minY,
+      width: container.size.width + 48, height: line.height)
+  }
+  override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+    if bandOpacity > 0, let rect = bandRect(at: origin), let range = bandRange,
+      NSLocationInRange(glyphIndexForCharacter(at: range.location), glyphsToShow) {
+      UIColor.systemYellow.withAlphaComponent(bandOpacity).setFill()
+      UIRectFill(rect)
+    }
+    super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
   }
 }
 
@@ -46,7 +83,13 @@ struct ScriptCanvas: UIViewRepresentable {
   func makeCoordinator() -> Coordinator { Coordinator() }
 
   func makeUIView(context: Context) -> UITextView {
-    let view = CanvasTextView(usingTextLayoutManager: false)
+    let storage = NSTextStorage()
+    let manager = ReadingBandLayoutManager()
+    let container = NSTextContainer(size: .zero)
+    container.widthTracksTextView = true
+    storage.addLayoutManager(manager)
+    manager.addTextContainer(container)
+    let view = CanvasTextView(frame: .zero, textContainer: container)
     view.onLayout = { [weak c = context.coordinator] in c?.relayout() }
     view.isEditable = false
     view.isSelectable = false
@@ -144,6 +187,7 @@ struct ScriptCanvas: UIViewRepresentable {
       colouredThrough = (parent.tokenIndex, parent.lastConfirmedTokenIndex)
       lastAligned = nil
       snapNext = true
+      updateReadColours()
     }
 
     /// Read words dim; the current word turns yellow when that is on.
@@ -158,6 +202,11 @@ struct ScriptCanvas: UIViewRepresentable {
     /// Only the words between the old and new positions change colour.
     func updateReadColours() {
       guard let textView, let parent else { return }
+      if let canvas = textView as? CanvasTextView {
+        canvas.readingBandRange = mappings.first { $0.token == parent.tokenIndex }?.range
+        canvas.readingBandOpacity = parent.style.readingBandOpacity
+        canvas.updateReadingBand()
+      }
       let now = (token: parent.tokenIndex, confirmed: parent.lastConfirmedTokenIndex)
       guard now.token != colouredThrough.token || now.confirmed != colouredThrough.confirmed else { return }
       let values = [colouredThrough.token, now.token, colouredThrough.confirmed ?? -1, now.confirmed ?? -1]

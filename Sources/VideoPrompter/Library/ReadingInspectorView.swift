@@ -50,7 +50,9 @@ struct ReadingSettingsPage: View {
       }
       Section("Reading guide") {
         percent("Guide position", $store.settings.guideFraction, 0.1...0.85)
-        percent("Guide visibility", $store.settings.guideOpacity, 0...1)
+        DisclosureGroup("Advanced") {
+          percent("Reading band (0 = off)", $store.settings.readingBandOpacity, 0...1)
+        }
         Toggle("Highlight active word", isOn: $store.settings.highlightActiveWord)
       }
       Section("Colours") {

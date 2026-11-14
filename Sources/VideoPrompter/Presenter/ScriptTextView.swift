@@ -22,6 +22,7 @@ struct ScriptTextView: View {
   var alignment = "Left"
   var overVideo = false
   var showCues = true
+  var readingBandOpacity = 0.0
   var highlightActiveWord = false
   /// The session's fractional token position, painted on a display link while running: Manual's
   /// timeline, or Voice's glide after the recogniser. Nil keeps the eased, word-at-a-time alignment.
@@ -63,6 +64,13 @@ struct ScriptTextView: View {
     scroll.hasVerticalScroller = true
     scroll.autohidesScrollers = true
     let text = TrackingTextView()
+    if let old = text.layoutManager, let storage = text.textStorage, let container = text.textContainer {
+      old.removeTextContainer(at: 0)
+      storage.removeLayoutManager(old)
+      let manager = MacReadingBandLayoutManager()
+      storage.addLayoutManager(manager)
+      manager.addTextContainer(container)
+    }
     text.setAccessibilityLabel("Presenter script")
     text.setAccessibilityHelp("Select a word with the keyboard, then press Option-Command-Return to read from it.")
     text.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: "Read from Selection", target: text, selector: #selector(TrackingTextView.accessibilityReadFromSelection))])
@@ -92,6 +100,9 @@ struct ScriptTextView: View {
     coordinator.onSeek = onSeek
     coordinator.onUserScroll = onUserScroll
     coordinator.setManualSource(manualPosition)
+    if let text = coordinator.textView as? TrackingTextView {
+      text.readingBandOpacity = readingBandOpacity
+    }
     coordinator.tokenIndex = tokenIndex
     coordinator.lastConfirmedTokenIndex = lastConfirmedTokenIndex
     coordinator.guideFraction = guideFraction
@@ -420,6 +431,8 @@ struct ScriptTextView: View {
     }
     func updateReadState() {
       guard let textView else { return }
+      let bandSlot = mappingLowerBound(tokenIndex)
+      (textView as? TrackingTextView)?.readingBandRange = bandSlot < mappings.count ? mappings[bandSlot].0 : nil
       let values = [lastReadTokenIndex, tokenIndex, lastReadConfirmedTokenIndex, lastConfirmedTokenIndex]
         .compactMap { $0 }
       guard let lower = values.min(), let last = values.max(),
@@ -698,7 +711,45 @@ struct ScriptTextView: View {
     }
   }
 }
+/// The band is part of text drawing, so scrolling and partial redraws keep it with its line.
+final class MacReadingBandLayoutManager: NSLayoutManager {
+  var bandRange: NSRange?
+  var bandOpacity = 0.0
+  override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+    if bandOpacity > 0, let range = bandRange, let storage = textStorage,
+      range.location < storage.length, let container = textContainers.first {
+      let glyph = glyphIndexForCharacter(at: range.location)
+      if NSLocationInRange(glyph, glyphsToShow) {
+        let line = lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        NSColor.systemYellow.withAlphaComponent(bandOpacity).setFill()
+        NSRect(x: origin.x - 24, y: origin.y + line.minY,
+          width: container.size.width + 48, height: line.height).fill()
+      }
+    }
+    super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+  }
+}
+
 final class TrackingTextView: NSTextView {
+  var readingBandOpacity = 0.0 { didSet { updateReadingBand() } }
+  var readingBandRange: NSRange? { didSet { updateReadingBand() } }
+  private func updateReadingBand() {
+    guard let manager = layoutManager as? MacReadingBandLayoutManager,
+      manager.bandRange != readingBandRange || manager.bandOpacity != readingBandOpacity else { return }
+    manager.bandRange = readingBandRange
+    manager.bandOpacity = readingBandOpacity
+    manager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: (string as NSString).length))
+  }
+  var readingBandRect: CGRect? {
+    guard let range = readingBandRange, range.location < (string as NSString).length,
+      let manager = layoutManager, let container = textContainer else { return nil }
+    manager.ensureLayout(for: container)
+    let glyph = manager.glyphIndexForCharacter(at: range.location)
+    let line = manager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+    return CGRect(x: textContainerOrigin.x - 24, y: line.minY + textContainerOrigin.y,
+      width: container.size.width + 48, height: line.height)
+  }
+
   var onCharacterClick: ((Int) -> Void)?
   var onLayout: (() -> Void)?
   @objc func accessibilityReadFromSelection() -> Bool {

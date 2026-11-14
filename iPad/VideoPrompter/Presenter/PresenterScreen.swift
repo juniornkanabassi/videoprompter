@@ -169,6 +169,7 @@ struct PresenterScreen: View {
     // Camera Only draws its own picture; one picture layer is never in two views.
     if let referencePicture, store.pictureMode == .behindScript, !focusActive, !store.cameraOnly {
       ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides).scaleEffect(x: store.mirror ? -1 : 1)
+      Color(uiColor: ScriptRenderer.colour(settings.backgroundColorHex)).opacity(settings.videoDimming).ignoresSafeArea()
     } else if store.pictureMode == .behindScript, camera.isOn, !focusActive, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
@@ -203,17 +204,9 @@ struct PresenterScreen: View {
     let side = setup && !store.cleanScreen ? min(256, size.width / 4 + 16) : 0
     let scriptWidth = max(1, size.width - side * 2)
     let lineY = min(max(size.height * settings.guideFraction, top + 54), top + height - 40)
-    let showsLine = !setup && showScript
     let showsMeter = true
     let fade = min(height, min(160, max(48, settings.fontSize * 1.6))) / height
     return ZStack(alignment: .topLeading) {
-      if showsLine {
-        PresenterReadingLine(settings: settings)
-          .frame(width: min(scriptWidth, scriptWidth - 2 * ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) + 2 * Space.xxl))
-          .offset(x: side + max(0, ScriptCanvas.sideInset(width: scriptWidth, textWidth: settings.textWidth, fontSize: settings.fontSize) - Space.xxl))
-          .offset(y: lineY - PresenterReadingLine.bandHeight(fontSize: settings.fontSize))
-          .allowsHitTesting(false)
-      }
       if showScript {
         ScriptCanvas(
           document: session.document, tokenIndex: session.tokenIndex,
@@ -922,6 +915,8 @@ struct DevicePickerCards: View {
               width: device.width, height: device.height, fps: device.fps), mac: false)
           }
           CameraRotationMenu(angle: store.camera.guides.rotation.rawValue, choose: store.setCameraRotation)
+          Text("Dim picture · \(Int(store.settings.videoDimming * 100))%").font(.headline)
+          Slider(value: $store.settings.videoDimming, in: 0...1).accessibilityLabel("Dim picture")
           Text("Picture").font(.headline)
           HStack(spacing: 4) {
             picture("Off", .off); picture("Behind the script", .behindScript); picture("Monitor only", .monitorOnly)
