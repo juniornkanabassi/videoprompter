@@ -124,6 +124,11 @@ struct PresenterScreen: View {
       useOwnCameraWithoutMac()
     }
     .onChange(of: store.cameraOnly) { _, _ in useOwnCameraWithoutMac() }
+    .onChange(of: setup, initial: true) { _, _ in updateExposureVisibility() }
+    .onChange(of: store.editing) { _, _ in updateExposureVisibility() }
+    .onChange(of: store.cameraOnly) { _, _ in updateExposureVisibility() }
+    .onChange(of: store.pictureMode) { _, _ in updateExposureVisibility() }
+    .onDisappear { camera.hidesExposureAids = false }
     .task(id: setup) {
       showsExposureNote = !setup && (camera.guides.zebras || camera.guides.falseColour)
       guard showsExposureNote else { return }
@@ -145,12 +150,16 @@ struct PresenterScreen: View {
     }
   }
 
+  private func updateExposureVisibility() {
+    camera.hidesExposureAids = !setup && !store.editing && !store.cameraOnly && store.pictureMode != .monitorOnly
+  }
+
   // MARK: Behind and on the script
 
   @ViewBuilder private var background: some View {
     // Camera Only draws its own picture; one picture layer is never in two views.
     if let referencePicture, store.pictureMode == .behindScript, !store.cameraOnly {
-      Image(uiImage: referencePicture).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
     } else if store.pictureMode == .behindScript, camera.isOn, !store.cameraOnly {
       Group {
         if camera.isShowingMac {
@@ -251,7 +260,7 @@ struct PresenterScreen: View {
       Color.black
       Group {
       if let referencePicture {
-        Image(uiImage: referencePicture).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+        ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
       } else if macConnected {
         if store.cameraOn { LinkPreview(camera: camera, link: camera.link) }
       } else if camera.isOn {
@@ -559,7 +568,7 @@ struct PresenterScreen: View {
   private func cameraCard(size: CGSize) -> some View {
     VStack(alignment: .leading, spacing: 16) {
       if showKey && (cameraIsOn || referencePicture != nil) {
-        PresenterExposureKey(guides: camera.guides, expanded: $keyExpanded)
+        PresenterExposureKey(guides: camera.previewGuides, expanded: $keyExpanded)
       }
       Button { showingCamera = true } label: {
         VStack(alignment: .leading, spacing: 4) {
@@ -642,8 +651,8 @@ struct PresenterScreen: View {
     }
   }
 
-  // Zebras and Guides keep their state on the camera's guides; False colour is kept here.
-  private var zebras: Binding<Bool> { Binding(get: { camera.guides.zebras }, set: { camera.guides.zebras = $0 }) }
+  // All picture tools share CameraGuides with the remote controls.
+  private var zebras: Binding<Bool> { $camera.guides.manualExposure(\.zebras) }
   private var guides: Binding<Bool> {
     Binding(
       get: { camera.guides.thirds || camera.guides.axes || camera.guides.bullseye },
@@ -653,11 +662,10 @@ struct PresenterScreen: View {
       })
   }
 
-  // shortcut: the iPad preview draws framing guides only; attach CameraExposure when porting its image renderer.
   private var pictureTools: some View {
     BarGroup(label: "Picture tools", raised: false) {
       BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras.wrappedValue) { zebras.wrappedValue.toggle() }
-      BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour) { camera.guides.falseColour.toggle() }
+      BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour) { camera.guides.changeExposure { $0.falseColour.toggle() } }
       BarToggle(title: "Guides", symbol: "grid", isOn: guides.wrappedValue) { guides.wrappedValue.toggle() }
     }
   }
@@ -782,7 +790,7 @@ private struct PresenterMeter: View {
   @State private var input = InputMeter()
   var body: some View {
     MicMeterView(meter: input, micName: name, showsHeading: showsHeading, isListening: isListening)
-      .background(Surfaces.scrim, in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
+      .background { RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).fill(Surfaces.scrim).padding(.vertical, -Space.md) }
       .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
         input.show(peakDBFS: Float(meter.levelDB), isClipping: meter.levelDB >= -0.1)
       }

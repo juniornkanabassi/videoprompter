@@ -4,6 +4,7 @@ import CryptoKit
 import PrompterCore
 import SwiftUI
 import UIKit
+import VideoToolbox
 
 /// Receives the camera a Mac sends with File › Send Camera to iPad, and the commands of its
 /// File › Control iPad. Over USB-C the Mac reaches
@@ -223,6 +224,7 @@ import UIKit
   var onChange: (() -> Void)?
 
   /// Where the frames go. One layer for the app: the presenter's preview hosts it.
+  let exposure = PadExposure()
   let displayLayer = AVSampleBufferDisplayLayer()
   private let receiver: LinkReceiver
   private var usb: NWListener?
@@ -231,7 +233,7 @@ import UIKit
   init() {
     displayLayer.videoGravity = .resize
     displayLayer.backgroundColor = UIColor.black.cgColor
-    receiver = LinkReceiver(renderer: displayLayer.sampleBufferRenderer)
+    receiver = LinkReceiver(renderer: displayLayer.sampleBufferRenderer, exposure: exposure)
     receiver.onEvent = { [weak self] event in
       Task { @MainActor in self?.handle(event) }
     }
@@ -408,6 +410,8 @@ final class LinkReceiver: @unchecked Sendable {
   let queue = DispatchQueue(label: "VideoPrompter.maclink", qos: .userInteractive)
   var onEvent: (@Sendable (Event) -> Void)?
   private let renderer: AVSampleBufferVideoRenderer
+  private let exposure: PadExposure
+  private var decoder: VTDecompressionSession?
   private var connection: NWConnection?
   private var connectionIsWiFi = false
   /// The connected Mac's protocol version, from its hello.
@@ -419,9 +423,12 @@ final class LinkReceiver: @unchecked Sendable {
   private var framesSkipped = 0
   private var senderFramesSkipped = 0
 
-  init(renderer: AVSampleBufferVideoRenderer) {
+  init(renderer: AVSampleBufferVideoRenderer, exposure: PadExposure) {
+    self.exposure = exposure
     self.renderer = renderer
   }
+
+  deinit { if let decoder { VTDecompressionSessionInvalidate(decoder) } }
 
   /// Connections still in their handshake, and whether each came over Wi-Fi.
   private var pending: [(connection: NWConnection, wifi: Bool)] = []
@@ -484,6 +491,8 @@ final class LinkReceiver: @unchecked Sendable {
     connectionIsWiFi = overWiFi
     peerVersion = 0
     reader = CameraLink.Reader()
+    if let decoder { VTDecompressionSessionInvalidate(decoder) }
+    decoder = nil
     format = nil
     needsKeyFrame = true
     renderer.flush(removingDisplayedImage: true, completionHandler: nil)
@@ -539,6 +548,8 @@ final class LinkReceiver: @unchecked Sendable {
   private func closed(_ old: NWConnection) {
     guard old === connection else { return }
     connection = nil
+    if let decoder { VTDecompressionSessionInvalidate(decoder) }
+    decoder = nil
     format = nil
     renderer.flush(removingDisplayedImage: true, completionHandler: nil)
     onEvent?(.disconnected)
@@ -552,7 +563,16 @@ final class LinkReceiver: @unchecked Sendable {
     case .format(let width, let height, let sets):
       senderFramesSkipped = 0
       if sets.isEmpty { framesSkipped = 0 }
+      if let decoder { VTDecompressionSessionInvalidate(decoder) }
+      decoder = nil
       format = Self.formatDescription(sets)
+      if let format {
+        VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format,
+          decoderSpecification: nil, imageBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            kCVPixelBufferMetalCompatibilityKey: true
+          ] as CFDictionary, outputCallback: nil, decompressionSessionOut: &decoder)
+      }
       needsKeyFrame = true
       if sets.isEmpty { renderer.flush(removingDisplayedImage: true, completionHandler: nil) }
       onEvent?(.format(sets.isEmpty ? nil : CGSize(width: width, height: height)))
@@ -590,8 +610,31 @@ final class LinkReceiver: @unchecked Sendable {
       needsKeyFrame = true
       return false
     }
-    renderer.enqueue(sample)
-    return true
+    guard let decoder else { needsKeyFrame = true; return false }
+    let status = VTDecompressionSessionDecodeFrame(decoder, sampleBuffer: sample, flags: [],
+      infoFlagsOut: nil) { [renderer, exposure] status, _, pixels, _, _ in
+        guard status == noErr, let pixels else { return }
+        exposure.receive(pixels)
+        var description: CMVideoFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+          imageBuffer: pixels, formatDescriptionOut: &description)
+        guard let description else { return }
+        var timing = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+        var decoded: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixels,
+          formatDescription: description, sampleTiming: &timing, sampleBufferOut: &decoded)
+        if let decoded {
+          if let attachments = CMSampleBufferGetSampleAttachmentsArray(decoded, createIfNecessary: true),
+            CFArrayGetCount(attachments) > 0 {
+            let first = unsafeBitCast(CFArrayGetValueAtIndex(attachments, 0), to: CFMutableDictionary.self)
+            CFDictionarySetValue(first, Unmanaged.passUnretained(kCMSampleAttachmentKey_DisplayImmediately).toOpaque(),
+              Unmanaged.passUnretained(kCFBooleanTrue).toOpaque())
+          }
+          renderer.enqueue(decoded)
+        }
+      }
+    if status != noErr { needsKeyFrame = true }
+    return status == noErr
   }
 
   private static func formatDescription(_ sets: [Data]) -> CMVideoFormatDescription? {
@@ -658,17 +701,22 @@ extension Array where Element == Data {
 /// The Mac's picture behind the script, fitted, turned and mirrored like a USB camera's, with
 /// the same framing guides.
 struct LinkPreview: UIViewRepresentable {
+  var fill = false
   @ObservedObject var camera: PadCamera
   @ObservedObject var link: MacLink
 
   func makeUIView(context: Context) -> LinkView { LinkView(displayLayer: link.displayLayer) }
 
   func updateUIView(_ view: LinkView, context: Context) {
-    view.update(size: link.pictureSize, mirrored: camera.mirrored, guides: camera.guides)
+    view.fill = fill
+    view.exposure.bind(link.exposure, settings: camera.previewGuides.exposure)
+    view.update(size: link.pictureSize, mirrored: camera.mirrored, guides: camera.previewGuides)
   }
 
   final class LinkView: UIView {
     private let displayLayer: AVSampleBufferDisplayLayer
+    var fill = false
+    let exposure = PadExposureLayer()
     private let guideLayer = CAShapeLayer()
     private let shadeLayer = CAShapeLayer()
     private var size: CGSize?
@@ -679,13 +727,16 @@ struct LinkPreview: UIViewRepresentable {
       self.displayLayer = displayLayer
       super.init(frame: .zero)
       backgroundColor = .black
+      clipsToBounds = true
       shadeLayer.fillRule = .evenOdd
       guideLayer.fillColor = nil
       guideLayer.lineWidth = 1.5
       displayLayer.cornerRadius = AlphaStyle.cardCorner
       displayLayer.masksToBounds = true
+      exposure.cornerRadius = AlphaStyle.cardCorner
       displayLayer.removeFromSuperlayer()
       layer.addSublayer(displayLayer)
+      layer.addSublayer(exposure)
       layer.addSublayer(shadeLayer)
       layer.addSublayer(guideLayer)
     }
@@ -703,7 +754,12 @@ struct LinkPreview: UIViewRepresentable {
       CATransaction.begin()
       CATransaction.setDisableActions(true)
       let aspect = size ?? CGSize(width: 16, height: 9)
-      let picture = guides.rotation.fittedRect(aspect: aspect, in: bounds)
+      var picture = guides.rotation.fittedRect(aspect: aspect, in: bounds)
+      if fill, picture.width > 0, picture.height > 0 {
+        let factor = max(bounds.width / picture.width, bounds.height / picture.height)
+        picture = CGRect(x: bounds.midX - picture.width * factor / 2, y: bounds.midY - picture.height * factor / 2,
+          width: picture.width * factor, height: picture.height * factor)
+      }
       // The layer is laid out unturned at the picture's own shape, then turned and flipped about
       // its centre to land on `picture`.
       let unturned = guides.rotation.swapsAxes
@@ -714,6 +770,10 @@ struct LinkPreview: UIViewRepresentable {
       var transform = CATransform3DMakeRotation(guides.rotation.radians, 0, 0, 1)
       if mirrored { transform = CATransform3DConcat(CATransform3DMakeScale(-1, 1, 1), transform) }
       displayLayer.transform = transform
+      exposure.transform = CATransform3DIdentity
+      exposure.bounds = displayLayer.bounds
+      exposure.position = displayLayer.position
+      exposure.transform = transform
       shadeLayer.frame = bounds
       guideLayer.frame = bounds
       guideLayer.path = CameraOverlay.guidePath(picture: picture, guides: guides)

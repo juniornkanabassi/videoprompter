@@ -10,7 +10,17 @@ import UIKit
   @Published private(set) var devices: [Device] = []
   @Published var selectedID: String? { didSet { if isOn, selectedID != oldValue { start() } } }
   @Published var mirrored = false { didSet { UserDefaults.standard.set(mirrored, forKey: "cameraMirrored") } }
-  @Published var guides = CameraGuides() { didSet { guideStore.set(guides, for: selectedID) } }
+  @Published var guides = CameraGuides() { didSet {
+    guideStore.set(guides, for: selectedID)
+    updateExposure()
+  } }
+  @Published var hidesExposureAids = false { didSet { updateExposure() } }
+  var previewGuides: CameraGuides {
+    var value = guides
+    if hidesExposureAids { value.zebras = false; value.falseColour = false }
+    return value
+  }
+  private func updateExposure() { link.exposure.update(previewGuides.exposure) }
   @Published private(set) var notice: String?
   /// The mode the camera is running in, such as "1920 × 1080, 50 fps", shown in Settings.
   @Published private(set) var mode: String?
@@ -49,6 +59,8 @@ import UIKit
         Task { @MainActor in self?.devicesChanged() }
       })
     }
+    capture.setExposure(link.exposure)
+    updateExposure()
     link.onChange = { [weak self] in self?.linkChanged() }
     link.start()
   }
@@ -151,6 +163,18 @@ final class CaptureBox: @unchecked Sendable {
   let session = AVCaptureSession()
   private let queue = DispatchQueue(label: "VideoPrompter.camera")
 
+  func setExposure(_ exposure: PadExposure) {
+    queue.async { [session] in
+      let output = AVCaptureVideoDataOutput()
+      output.alwaysDiscardsLateVideoFrames = true
+      output.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+      output.setSampleBufferDelegate(exposure, queue: DispatchQueue(label: "VideoPrompter.padCaptureExposure"))
+      session.beginConfiguration()
+      if session.canAddOutput(output) { session.addOutput(output) }
+      session.commitConfiguration()
+    }
+  }
+
   func use(
     _ device: AVCaptureDevice,
     onError: @escaping @Sendable (String) -> Void,
@@ -180,6 +204,7 @@ final class CaptureBox: @unchecked Sendable {
       } catch {
         onError("Could not open \(device.localizedName): \(error.localizedDescription)")
       }
+      session.outputs.forEach { CameraRotation.keepSensorOrientation($0.connection(with: .video)) }
       session.commitConfiguration()
       if !session.isRunning { session.startRunning() }
       onMode(mode ?? Self.label(for: device))
@@ -255,12 +280,14 @@ struct CameraPreview: UIViewRepresentable {
   }
 
   func updateUIView(_ view: PreviewView, context: Context) {
-    view.apply(deviceID: camera.selectedID, mirrored: camera.mirrored, guides: camera.guides)
+    view.exposure.bind(camera.link.exposure, settings: camera.previewGuides.exposure)
+    view.apply(deviceID: camera.selectedID, mirrored: camera.mirrored, guides: camera.previewGuides)
   }
 
   final class PreviewView: UIView {
     override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
     var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
+    let exposure = PadExposureLayer()
     private let guideLayer = CAShapeLayer()
     private let shadeLayer = CAShapeLayer()
     private let pictureMask = CAShapeLayer()
@@ -277,6 +304,7 @@ struct CameraPreview: UIViewRepresentable {
       guideLayer.fillColor = nil
       guideLayer.lineWidth = 1.5
       layer.mask = pictureMask
+      layer.addSublayer(exposure)
       layer.addSublayer(shadeLayer)
       layer.addSublayer(guideLayer)
     }
@@ -322,6 +350,13 @@ struct CameraPreview: UIViewRepresentable {
       let picture = previewLayer.layerRectConverted(fromMetadataOutputRect: CGRect(x: 0, y: 0, width: 1, height: 1))
       let rect = picture.isEmpty || picture.isInfinite ? bounds : picture
       pictureMask.path = UIBezierPath(roundedRect: rect, cornerRadius: AlphaStyle.cardCorner).cgPath
+      exposure.transform = CATransform3DIdentity
+      let angle = coordinator?.videoRotationAngleForHorizonLevelPreview ?? CGFloat(guides.rotation.rawValue)
+      let swaps = Int(angle.rounded()) % 180 != 0
+      exposure.bounds = CGRect(origin: .zero, size: swaps ? CGSize(width: rect.height, height: rect.width) : rect.size)
+      exposure.position = CGPoint(x: rect.midX, y: rect.midY)
+      exposure.transform = CATransform3DConcat(CATransform3DMakeScale(mirrored ? -1 : 1, 1, 1),
+        CATransform3DMakeRotation(angle * .pi / 180, 0, 0, 1))
       guideLayer.path = CameraOverlay.guidePath(picture: rect, guides: guides)
       guideLayer.strokeColor = guides.strokeColor
       shadeLayer.path = guides.marker == nil ? nil : CameraOverlay.shadePath(picture: rect, guides: guides)

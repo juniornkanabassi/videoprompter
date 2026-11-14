@@ -85,6 +85,42 @@ import XCTest
     session.pause()
   }
 
+  func testExposureShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "exposure-shots-\(UUID().uuidString)")!)
+    store.settings.mode = "Manual"
+    store.settings.horizontalMirror = false
+    store.presentCamera()
+    store.setPictureMode(.behindScript)
+    let states = ["zebra-45ire", "false-colour-ramp", "zebra-45ire-flip", "false-colour-ramp-flip", "meter-white", "meter-black", "camera-only-rounded"]
+    for state in states {
+      store.setFlip(state.hasSuffix("-flip"))
+      store.camera.guides.zebras = state.hasPrefix("zebra")
+      store.camera.guides.useZebraPreset(.faceReference)
+      store.camera.guides.falseColour = state.hasPrefix("false")
+      let picture = UIGraphicsImageRenderer(size: CGSize(width: 960, height: 540)).image { context in
+        if state.hasPrefix("false") {
+          for y in 0..<540 {
+            UIColor(white: CGFloat(y) / 539, alpha: 1).setFill()
+            context.fill(CGRect(x: 0, y: y, width: 960, height: 1))
+          }
+        } else {
+          UIColor(white: state == "meter-white" ? 1 : state == "meter-black" ? 0 : 115.0 / 255, alpha: 1).setFill()
+          context.fill(CGRect(x: 0, y: 0, width: 960, height: 540))
+          if state.hasPrefix("zebra") {
+            UIColor.black.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 240, height: 180))
+          }
+        }
+      }
+      for (name, size) in Self.sizes.prefix(2) {
+        _ = try await render(PresenterScreen(session: store.session, camera: store.camera,
+          referencePicture: picture).environmentObject(store), size: size,
+          name: "\(state)-\(name)", directory: directory) { store.micMeter.show(-9) }
+      }
+    }
+  }
+
   func testPickerShots() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "picker-shots-\(UUID().uuidString)")!)

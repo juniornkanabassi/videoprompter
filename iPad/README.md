@@ -7,7 +7,7 @@ The iPad app is for teleprompters that cannot take a computer: the iPad sits und
 The Xcode project in this folder builds an iPadOS 26 app from:
 
 - `PrompterCore` (the Swift package at the repository root): the script model, Markdown parsing and the voice tracker.
-- These Mac files, compiled unchanged: `SessionStore.swift`, `PrompterSettings.swift`, `SpeechProvider.swift`, `DocumentImporter.swift`, `CameraGuides.swift` and `CameraOrientation.swift`.
+- These Mac files, compiled unchanged: `SessionStore.swift`, `PrompterSettings.swift`, `SpeechProvider.swift`, `DocumentImporter.swift`, `CameraGuides.swift`, `CameraExposure.swift` and `CameraOrientation.swift`.
 - Its own files in `VideoPrompter/`: the library, presenter, settings and camera screens, and an iPad version of `AudioCapture` with the Mac's API.
 
 A change to the voice tracking or the reading session therefore reaches both apps. Check the iPad still builds after changing any of the shared files above.
@@ -38,6 +38,8 @@ Alternatively, choose the iPad under Nearby iPads on the Mac. Compare the six-di
 Pairing and the camera stream use separate listeners. Pairing listeners never accept remote-control commands. The QR endpoint uses a random temporary TLS PSK; the nearby-device handshake uses ephemeral Curve25519 keys and authenticated encryption, with the matching number binding the local Allow decision to the requesting Mac. The camera link retains its existing TLS transport.
 
 Rotation, mirroring and the framing guides apply to either source and are remembered per camera.
+
+Zebras and false colour use the Mac's exposure tables and stripe geometry on both local capture and decoded Mac frames. The presenter hides the aids while reading without changing the saved camera settings; Camera Only and Monitor only keep them visible. Analysis runs off the main thread with at most one outstanding frame, so a slow analysis pass cannot queue up stale pictures. Full-range camera luma is sampled directly; other formats are normalised through Core Image. The GPU applies the shared Mac LUT without blending adjacent exposure bands.
 
 ## Controlling the iPad from the Mac
 
