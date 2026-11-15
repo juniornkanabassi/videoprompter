@@ -120,7 +120,7 @@ public enum ControlProtocol {
       .init("stageDirections", "choice", choices: onOff, help: "Show bracketed stage directions"),
       .init("highlightWord", "choice", choices: onOff, help: "Highlight the active word"),
       .init("followRepeats", "choice", choices: onOff, help: "Voice follows you back when you repeat earlier words"),
-      .init("speechEngine", "choice", choices: ["apple", "parakeet", "both", "unified", "both-unified"], help: "Mac Voice recogniser (Parakeet/Both are English only; Both follows forward)"),
+      .init("speechEngine", "choice", choices: ["parakeet", "apple"], help: "Mac Voice recogniser (Parakeet pair with automatic Apple backup)"),
       .init("language", help: "Script language: Automatic, English, Spanish, French, German, Italian, Dutch or Portuguese"),
       .init("microphone", help: "Voice microphone id from microphone list, or none"),
       .init("microphoneVolume", "integer", range: InputValidation.inputGain.percentRange, help: "Voice microphone gain percentage")]),

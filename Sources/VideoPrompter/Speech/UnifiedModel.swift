@@ -1,9 +1,15 @@
 #if os(macOS)
 /// Exact 320 ms [70,2,2] export; no model weights are bundled.
 enum UnifiedModel {
+  // Select the runtime configuration and its matching pinned export together.
+  static let tier = (chunkFrames: 2, rightFrames: 2, folder: "parakeet-unified-320ms", files: files320)
+  static var chunkFrames: Int { tier.chunkFrames }
+  static var rightFrames: Int { tier.rightFrames }
+  static var folder: String { tier.folder }
+  static var files: [ParakeetModel.File] { tier.files }
   static let revision = "d32e972dd4315f1dc3f6be28fb2aab0ab3e80358"
   static let baseURL = "https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml/resolve/\(revision)/"
-  static let files: [ParakeetModel.File] = [
+  private static let files320: [ParakeetModel.File] = [
     .init(path: "parakeet_unified_decoder.mlmodelc/analytics/coremldata.bin", size: 243, sha256: "9ae70f6559989f88b856b326e59315798f9f0d08207a19fcc2dd3287a30088a5"),
     .init(path: "parakeet_unified_decoder.mlmodelc/coremldata.bin", size: 560, sha256: "ce99c4488840fc463d59f8d4d6d2a9e8ceae8138ead51e3c265dde4d2ba4a0e9"),
     .init(path: "parakeet_unified_decoder.mlmodelc/model.mil", size: 13102, sha256: "6e60965b89c93943aa2be2d991c2461108145851fde05e1d048223a32d4cb20d"),

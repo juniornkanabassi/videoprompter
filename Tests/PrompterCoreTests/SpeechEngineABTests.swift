@@ -11,31 +11,69 @@ import PrompterCore
 @MainActor final class SpeechEngineABTests: XCTestCase {
   func testSettingDefaultRoundTripAndRouting() throws {
     var settings = try JSONDecoder().decode(PrompterSettings.self, from: Data("{}".utf8))
-    XCTAssertEqual(settings.speechEngine, "apple")
+    XCTAssertEqual(settings.speechEngine, "parakeet")
     let name = "SpeechEngineAB.\(UUID())"
     let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
     defer { TestDefaults.remove(name) }
     let session = SessionStore(defaults: defaults)
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .dictation)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "parakeet"
     settings = try JSONDecoder().decode(PrompterSettings.self, from: JSONEncoder().encode(settings))
     session.updateSettings(settings)
     XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "both"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .both)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "unified"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .unified)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "both-unified"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .bothUnified)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "bad"
     settings.sanitise()
     XCTAssertEqual(settings.speechEngine, "apple")
     let command = try XCTUnwrap(ControlProtocol.command(action: "settings_set"))
     XCTAssertTrue(command.params.contains { $0.name == "speechEngine" && $0.accepts("parakeet") && !$0.accepts("bad") })
+  }
+
+  func testLegacyEngineMigration() throws {
+    for legacy in ["both", "unified", "both-unified"] {
+      let value = try JSONDecoder().decode(PrompterSettings.self,
+        from: Data("{\"speechEngine\":\"\(legacy)\"}".utf8))
+      XCTAssertEqual(value.speechEngine, "parakeet")
+    }
+    let command = try XCTUnwrap(ControlProtocol.command(action: "settings_set"))
+    let parameter = try XCTUnwrap(command.params.first { $0.name == "speechEngine" })
+    XCTAssertTrue(parameter.accepts("apple"))
+    XCTAssertFalse(parameter.accepts("both"))
+  }
+
+  func testAutomaticBackupSelection() {
+    XCTAssertFalse(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: false, eouReady: true, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: false, unifiedReady: false))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: false))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: false, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: true, streamFailed: true))
+  }
+
+  func testPrefetchGuardsAndAppleCancellation() {
+    XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [], environment: [:], underTest: true))
+    for argument in ["--agent-screen", "--list-camera-ids"] {
+      XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [argument], environment: [:], underTest: false))
+    }
+    XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [], environment: ["VIDEOPROMPTER_SNAPSHOTS": "1"], underTest: false))
+    XCTAssertTrue(SpeechModelPrefetch.allowed(arguments: [], environment: [:], underTest: false))
+    XCTAssertFalse(SpeechModelPrefetch.shouldDownload(engine: "parakeet", constrained: true))
+    XCTAssertFalse(SpeechModelPrefetch.shouldDownload(engine: "apple", constrained: false))
+    XCTAssertTrue(SpeechModelPrefetch.shouldDownload(engine: "parakeet", constrained: false))
+    let prefetch = SpeechModelPrefetch()
+    prefetch.select("parakeet")
+    XCTAssertFalse(prefetch.isDownloading, "Tests must never touch real model storage")
+    prefetch.select("apple")
+    XCTAssertFalse(prefetch.isDownloading)
   }
 
   func testCumulativeCandidateSharesMatcherAndRejectsDuplicate() throws {
@@ -90,7 +128,7 @@ import PrompterCore
         range: .init(start: .zero, end: CMTime(seconds: end, preferredTimescale: 16000)),
         isFinal: false, source: source))
     }
-    send("Liverpool won the football", "parakeet")
+    send("Liverpool won the football", "unified")
     let first = session.tokenIndex
     send("Liverpool won the football", "apple")
     XCTAssertEqual(session.tokenIndex, first, "Second engine must not double-credit repeated text")

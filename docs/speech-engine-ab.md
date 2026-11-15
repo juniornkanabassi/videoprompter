@@ -1,3 +1,15 @@
+# Default Mac speech engine (14 November 2026)
+
+The Mac now defaults to **Parakeet (recommended)**: EOU 160 ms and Unified 320 ms run on the same mono 16 kHz input using CPU + Neural Engine. Each retains its own matcher history; the first matching forward position wins. Apple (no download) is the only alternative. Legacy `both`, `unified` and `both-unified` settings migrate to `parakeet`. iPad continues using Apple.
+
+Apple stays warm as a silent backup. It contributes results for non-English scripts, while either verified model is missing or fails to load, and after either stream errors or overflows its bounded input queue. A short status explains backup use. Model failures do not pause the script. Completed downloads take effect on the next Start reading.
+
+Background preparation starts shortly after launch, runs one model at a time at background priority and reuses individually SHA-256 verified files. Cancel and choosing Apple stop the download. Low Data Mode blocks automatic downloads and offers Download now. Tests, snapshots, agent-screen and camera-list child processes never prefetch. All files remain under the app data root in Models/parakeet-eou-160ms and Models/parakeet-unified-320ms.
+
+Unified's chunk setting and pinned export are kept together in `UnifiedModel.swift`. A different tier requires the corresponding verified encoder manifest; changing runtime chunk size alone is not safe. Existing measurements below are historical single-engine/Apple-pair experiments, not measurements of the new default pair.
+
+---
+
 # Speech engine A/B experiment
 
 14 November 2026. Base `9910919`. Apple stays the default. This is an opt-in Mac experiment, not a claim that a new recogniser is more accurate for Junior.
@@ -161,3 +173,12 @@ Machine-readable full results: `speech-engine-dual-results.json`. Experiment mod
 Shipping-adapter confirmation: Unified 320 measured 444 / 809 ms, 18.15% WER, zero early, 288/288; Apple + Unified measured 397 / 753 ms, one early, 288/288. These replace the benchmark-only adapter rows above. Original adapter numbers are retained here for comparison (440 / 826 and 398 / 757 ms). Final standalone Unified CPU 38.8%, paired 41.6%, peak RSS ~715/717 MB. Full per-candidate traces remain in `/tmp/vp-dual-results`, not Git.
 
 Final EOU paired shipping-adapter repeat: 171 / 645 ms, one early flag, 288/288; previous full run was 171 / 647 ms. Both independent transcripts retain 5.82% / 21.23% reference WER.
+
+## Paired-default validation (15 November 2026)
+
+- Full isolated Mac XCTest run: 1,176 executed, 98 skipped, zero failures (`/tmp/vp-pair-complete.log`). Focused engine checks: 12 executed, one opt-in replay skipped, zero failures.
+- Generic iPad simulator build: succeeded, signing disabled, `/tmp/vp-pair-ipad`; no simulator was booted.
+- Grid: 121 Swift source files passed. TestOffscreen and capture-permission guards remain unchanged.
+- Light/dark snapshot verification was stopped during the first appearance at the lead's request to clear CPU for serial speech benchmarks. Resume this stage before final acceptance.
+- Pair CPU/memory and real microphone recovery were not measured. The benchmark agent owns timed replay. Backup-selection tests cover policy and existing matcher tests cover independent sources; injected real-stream failure and a full downloader/network integration test remain unverified.
+- Downloads resume at verified-file boundaries; an interrupted individual file restarts. Apple is kept warm, with candidates suppressed while both local streams are healthy, to avoid a recognition gap on failure.

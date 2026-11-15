@@ -618,6 +618,8 @@ final class CoreFeatureAcceptanceTests: XCTestCase {
       Welcome everyone tonight. First we cover the quiet opening chapter and some dull background material. \
       Then remarkable Barcelona defensive collapse happened suddenly. Finally thanks for watching today.
       """)
+    store.settings.speechEngine = "apple"
+    store.session.updateSettings(store.settings)
     let session = store.session
     XCTAssertTrue(store.settings.allowsBackwardVoiceTracking)
     let surface = Surface(store: store)

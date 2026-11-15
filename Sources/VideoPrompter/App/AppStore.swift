@@ -41,7 +41,7 @@ private enum PresenterSaveError: LocalizedError {
   @Published var namingNewFolder = false
   /// The script whose Markdown file is being linked or found again.
   @Published var relinkingID: UUID?
-  @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); CameraRecorder.shared.useSettings(settings) } }
+  @Published var settings = PrompterSettings() { didSet { var safe = settings; safe.sanitise(); if safe != settings { settings = safe }; persistSettings(); session.speechModels.select(settings.speechEngine); CameraRecorder.shared.useSettings(settings) } }
   @Published var shootSetupError: String? {
     didSet {
       if let shootSetupError {
@@ -208,6 +208,7 @@ private enum PresenterSaveError: LocalizedError {
     }
     if let savedSettings { settings = savedSettings }
     else { settings.audioDeviceUID = AVCaptureDevice.default(for: .audio)?.uniqueID }
+    session.speechModels.select(settings.speechEngine)
     simpleInterface = savedSimple
     do {
       library = try MarkdownLibrary(rootURL: root)

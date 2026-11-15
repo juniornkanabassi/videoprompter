@@ -13,15 +13,17 @@ actor ParakeetSpeechStream {
   private var source = "parakeet"
   private var operation: UInt64 = 0
 
-  func prepare(directory: URL?, unified: Bool = false, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
+  func prepare(directory: URL?, unified: Bool = false, allowDownload: Bool = true, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
     operation &+= 1
     let current = operation
     source = unified ? "unified" : "parakeet"
     let name = unified ? "Parakeet Unified" : "Parakeet"
     let root = directory ?? ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier,
-      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(unified ? "Models/parakeet-unified-320ms" : "Models/parakeet-eou-160ms")
-    try await ParakeetModel.ensure(at: root, files: unified ? UnifiedModel.files : ParakeetModel.files,
-      baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL, name: name, progress: onPreparation)
+      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(unified ? "Models/" + UnifiedModel.folder : "Models/parakeet-eou-160ms")
+    if allowDownload {
+      try await ParakeetModel.ensure(at: root, files: unified ? UnifiedModel.files : ParakeetModel.files,
+        baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL, name: name, progress: onPreparation)
+    }
     try Task.checkCancellation()
     guard current == operation else { throw CancellationError() }
     await onPreparation("Preparing \(name) on this Mac…")
@@ -29,7 +31,7 @@ actor ParakeetSpeechStream {
     configuration.computeUnits = .cpuAndNeuralEngine
     let loaded: any StreamingAsrManager
     if unified {
-      let model = StreamingUnifiedAsrManager(configuration: configuration, config: .init(chunkFrames: 2, rightFrames: 2))
+      let model = StreamingUnifiedAsrManager(configuration: configuration, config: .init(chunkFrames: UnifiedModel.chunkFrames, rightFrames: UnifiedModel.rightFrames))
       try await model.loadModels(from: root)
       loaded = model
     } else {
@@ -110,6 +112,16 @@ enum ParakeetModel {
     .init(path: "vocab.json", size: 17437, sha256: "83fd42ad33dae1bd3ceee6c0bb6c625f314cf0b2dc8430be441ac1e2643d5c36"),
   ]
   static var size: Int { files.reduce(0) { $0 + $1.size } }
+
+  static func root(unified: Bool) -> URL {
+    ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier,
+      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(
+        unified ? "Models/" + UnifiedModel.folder : "Models/parakeet-eou-160ms")
+  }
+
+  static func ready(at root: URL, files: [File]) -> Bool {
+    files.allSatisfy { (try? valid(root.appendingPathComponent($0.path), file: $0)) == true }
+  }
 
   static func valid(_ url: URL, file: File) throws -> Bool {
     guard FileManager.default.fileExists(atPath: url.path),

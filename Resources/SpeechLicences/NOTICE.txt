@@ -14,4 +14,6 @@ https://creativecommons.org/licenses/by/4.0/
 
 fastcluster, Copyright Daniel Müllner and Google Inc., BSD 2-Clause.
 
-Model weights are downloaded separately on request, never included in the app.
+The default Mac engine runs both models. Weights download separately in the background
+on an unconstrained connection, or on request, and are never included in the app.
+Apple speech is the automatic backup and remains the iPad engine.

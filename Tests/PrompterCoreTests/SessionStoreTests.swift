@@ -699,6 +699,7 @@ final class SessionStoreTests: XCTestCase {
   func testOverlappingEnglishAndFrenchFinalsChooseTheStrongerCandidate() {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
+    settings.speechEngine = "apple"
     let script = ScriptRecord(
       metadata: ScriptMetadata(title: "Test", fileName: "test.md"),
       markdown: "the quick brown fox jumps over the lazy dog")
@@ -720,6 +721,7 @@ final class SessionStoreTests: XCTestCase {
   private func assertWeakerSiblingKeepsAcceptedFrontier(allowsBackward: Bool) {
     let session = SessionStore()
     var settings = PrompterSettings(); settings.mode = "Voice"
+    settings.speechEngine = "apple"
     settings.allowsBackwardVoiceTracking = allowsBackward
     let script = ScriptRecord(
       metadata: ScriptMetadata(title: "Test", fileName: "test.md"),

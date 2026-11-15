@@ -197,17 +197,12 @@ struct SpeechEngineRow: View {
   @ObservedObject var session: SessionStore
   var body: some View {
     VStack(alignment: .leading, spacing: Space.xs) {
-      ReadingChoice(title: "Speech engine", values: ["apple", "parakeet", "both", "unified", "both-unified"],
-        names: ["Apple", "Parakeet", "Both (fastest wins)", "Parakeet Unified", "Apple + Unified"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
-      if store.settings.speechEngine != "apple" {
-        Text(store.settings.speechEngine.contains("unified")
-          ? "Experimental · English only. Downloads 608 MB on first use, then works offline."
-          : "Experimental · English only. Downloads 224 MB on first use, then works offline.")
+      ReadingChoice(title: "Speech engine", values: ["parakeet", "apple"],
+        names: ["Parakeet (recommended)", "Apple (no download)"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
+      if store.settings.speechEngine == "parakeet" {
+        Text("Two English models · 832 MB. Apple backs up other languages and unavailable models.")
           .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-      }
-      if store.settings.speechEngine.hasPrefix("both") {
-        Text("Fastest matching result wins. To reread, move back with the reading controls.")
-          .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        SpeechDownloadRow(models: session.speechModels)
       }
       if !session.speechEngineStatus.isEmpty {
         Text(session.speechEngineStatus).font(.callout).fixedSize(horizontal: false, vertical: true)
@@ -233,5 +228,17 @@ struct PresenterTextSettings: View {
         }
         else { Stepper("\(Int(store.settings.speed)) wpm", value: $store.settings.speed, in: 20...300, step: 10) }
       }))
+  }
+}
+
+private struct SpeechDownloadRow: View {
+  @ObservedObject var models: SpeechModelPrefetch
+  var body: some View {
+    VStack(alignment: .leading, spacing: Space.xs) {
+      if !models.status.isEmpty { Text(models.status).font(.callout) }
+      if models.isDownloading {
+        HStack { ProgressView().controlSize(.small); Button("Cancel") { models.cancel() } }
+      } else if models.needsDownload { Button("Download now") { models.download() } }
+    }
   }
 }
