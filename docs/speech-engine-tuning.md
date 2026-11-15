@@ -84,15 +84,15 @@ The offline pass reconstructs all 24 paced clip traces from the two repeated pai
 
 | Recommended 640 pair | Split | Published | Early | Stuck | Median | p90 |
 |---|---|---:|---:|---:|---:|---:|
-| Baseline window 80 | Tune | 568/576 | 0 | 8 | 143 ms | 617 ms |
-| Window 40 | Tune | 568/576 | 0 | 6 | 143 ms | 639 ms |
-| Window 20 | Tune | 568/576 | 0 | 6 | 167 ms | 681 ms |
-| Baseline window 80 | Held out | 1172/1172 | 0 | 12 | 89 ms | 611 ms |
-| Window 40 or 20 | Held out | 1172/1172 | 0 | 12 | 86 ms | 583 ms |
-| Max advance 4 | Tune | 518/576 | 0 | 8 | 131 ms | 596 ms |
-| Max advance 4 | Held out | 146/1172 | 0 | 16 | 66 ms | 576 ms |
-| Aliases | Tune | 568/576 | 0 | 8 | 131 ms | 591 ms |
-| Aliases | Held out | 1172/1172 | 0 | 12 | 89 ms | 611 ms |
+| Baseline window 80 | Tune | 568/572 | 0 | 8 | 143 ms | 617 ms |
+| Window 40 | Tune | 568/572 | 0 | 6 | 143 ms | 639 ms |
+| Window 20 | Tune | 568/572 | 0 | 6 | 167 ms | 681 ms |
+| Baseline window 80 | Held out | 1172/1176 | 0 | 12 | 89 ms | 611 ms |
+| Window 40 or 20 | Held out | 1172/1176 | 0 | 12 | 86 ms | 583 ms |
+| Max advance 4 | Tune | 518/572 | 0 | 8 | 131 ms | 596 ms |
+| Max advance 4 | Held out | 146/1176 | 0 | 16 | 66 ms | 576 ms |
+| Aliases | Tune | 568/572 | 0 | 8 | 131 ms | 591 ms |
+| Aliases | Held out | 1172/1176 | 0 | 12 | 89 ms | 611 ms |
 
 No matcher change is justified. Narrower windows trade lower held-out p90 for worse tuning p90; hard max-advance 4 destroys coverage. Max-advance 8 and 12 did not improve the recommended pair's paced traces. On the 320 pair, window 20 worsened tuning median/p90, and no tested window or max-advance limit removed its held-out early flag without serious coverage loss. Threshold constants are not exposed as knobs by the current matcher; rather than add product/test-only copies of its internals, the experiment varies its existing forward-window setting and the race's acceptance rule. It does not claim an exhaustive threshold search.
 
