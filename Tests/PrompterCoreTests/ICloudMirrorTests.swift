@@ -7,7 +7,7 @@ import PrompterCore
 @MainActor
 final class ICloudMirrorTests: XCTestCase {
   private var dirs: [URL] = []
-  private let keys = [ICloudScripts.enabledKey, ICloudScripts.mirrorsKey, ICloudScripts.declinedMirrorsKey, ICloudScripts.unlinkPendingKey]
+  private let keys = [ICloudScripts.enabledKey, ICloudScripts.mirrorsKey, ICloudScripts.declinedMirrorsKey, ICloudScripts.unlinkPendingKey, ICloudScripts.deletedOnIPadKey]
 
   override func tearDown() async throws {
     // Stop new passes before removing the disposable cloud directory.
@@ -120,5 +120,31 @@ final class ICloudMirrorTests: XCTestCase {
     XCTAssertNil(ICloudScripts.mirrors[id])
     await pass(store)
     XCTAssertTrue(store.scripts.isEmpty)
+  }
+
+  /// Deleted on the iPad, then put back from its Recently Deleted: the Mac restores the script
+  /// instead of sending the file to the Trash a second time.
+  func testAScriptRestoredOnTheIPadIsRestoredHereNotTrashedAgain() async throws {
+    let (store, _, _, _) = try await mirroredStore()
+    let plain = try await store.library!.create(title: "Plain", markdown: "Kick-off.\n")
+    await store.reload()
+    await pass(store)
+    let file = ICloudScripts.folder.appendingPathComponent("Plain.md")
+    XCTAssertEqual(try text(file), "Kick-off.\n")
+    // The iPad moves it to Recently Deleted: the script goes to the library's Trash.
+    try FileManager.default.removeItem(at: file)
+    await pass(store)
+    XCTAssertFalse(store.scripts.contains { $0.id == plain.id })
+    // ...and restores it to the same place.
+    try Data("Kick-off.\n".utf8).write(to: file)
+    await pass(store)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path), "the restored file is not trashed again")
+    XCTAssertEqual(store.scripts.first { $0.id == plain.id }?.metadata.linkedPath, file.standardizedFileURL.path)
+    XCTAssertFalse(store.trash.contains { $0.metadata.id == plain.id })
+    // Settled: nothing is imported twice or trashed later.
+    await pass(store)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertEqual(store.scripts.filter { $0.metadata.title == "Plain" }.count, 1)
+    XCTAssertTrue(ICloudScripts.deletedOnIPad.isEmpty)
   }
 }

@@ -81,6 +81,13 @@ import SwiftUI
     }
     set { UserDefaults.standard.set(try? JSONEncoder().encode(newValue), forKey: mirrorsKey) }
   }
+  static let deletedOnIPadKey = "iCloudScriptsDeletedOnIPad"
+  /// Scripts sent to the library's Trash because their file went on the iPad, by that file's path.
+  /// A file that comes back there was restored on the iPad, so its script is restored, not trashed again.
+  static var deletedOnIPad: [String: UUID] {
+    get { (UserDefaults.standard.dictionary(forKey: deletedOnIPadKey) as? [String: String] ?? [:]).compactMapValues(UUID.init(uuidString:)) }
+    set { UserDefaults.standard.set(newValue.mapValues(\.uuidString), forKey: deletedOnIPadKey) }
+  }
   /// Scripts whose mirror was deleted on the iPad, so it is not made again.
   static var declinedMirrors: Set<UUID> {
     get { Set((UserDefaults.standard.stringArray(forKey: declinedMirrorsKey) ?? []).compactMap(UUID.init(uuidString:))) }
@@ -288,6 +295,7 @@ extension AppStore {
       case .missing(let path) where ICloudScripts.isInside(path: path):
         // Deleted on the iPad. The script goes to the library's Trash, where it can be restored.
         if !fm.fileExists(atPath: path), (try? await library.delete(metadata.id)) != nil {
+          ICloudScripts.deletedOnIPad[URL(fileURLWithPath: path).standardizedFileURL.path] = metadata.id
           session.forgetScript(metadata.id)
           MacGoogleDocs.links[metadata.id] = nil
           changed = true
@@ -336,6 +344,9 @@ extension AppStore {
     let trash = await library.listTrash()
     let trashed = Set(trash.compactMap(\.metadata.linkedPath)
       .map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+    // Only scripts still in the Trash can be restored; the rest were restored or emptied here.
+    let inTrash = Set(trash.map(\.metadata.id))
+    var deletedOnIPad = ICloudScripts.deletedOnIPad.filter { inTrash.contains($0.value) }
     // A mirrored script deleted here: its mirror goes to the Finder Trash, so the iPad loses it.
     guard keepsScriptsInICloud else { return }
     var mirrors = ICloudScripts.mirrors
@@ -352,6 +363,19 @@ extension AppStore {
     guard keepsScriptsInICloud else { return }
     for url in ICloudScripts.files() where !linked.contains(url.path) {
       guard keepsScriptsInICloud else { return }
+      if let id = deletedOnIPad[url.path] {
+        // Deleted on the iPad and now back: restored there, so the script comes back here too,
+        // linked to the file again. A failure leaves both alone for the next pass.
+        do {
+          _ = try await library.restore(id)
+          _ = try await library.link(id, to: url)
+          deletedOnIPad[url.path] = nil
+          changed = true
+        } catch {
+          errorMessage = "“\(url.deletingPathExtension().lastPathComponent)” was restored on the iPad but could not be restored here yet. \(error.localizedDescription)"
+        }
+        continue
+      }
       if trashed.contains(url.path) {
         // Deleted here: the iPad should lose it too.
         try? fm.trashItem(at: url, resultingItemURL: nil)
@@ -375,6 +399,7 @@ extension AppStore {
         errorMessage = "“\(url.lastPathComponent)” from iCloud Drive could not be added. \(error.localizedDescription)"
       }
     }
+    ICloudScripts.deletedOnIPad = deletedOnIPad
     if keepsScriptsInICloud { syncICloudPresets() }
   }
 
