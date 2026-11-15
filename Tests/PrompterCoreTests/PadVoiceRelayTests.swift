@@ -361,6 +361,9 @@ final class PadVoiceRelayTests: XCTestCase {
     mac.audioDeviceUID = "some-microphone"
     mac.inputGain = 1.5
     mac.mode = "Manual"
+    mac.speechEngine = "apple"
+    mac.usesTalkAndReadWords = false
+    mac.speechLocales = ["French": "fr-CA"]
     let link = FakeLink()
     let relay = makeRelay(link, initial: state(running: true))
     relay.start(script: record, settings: mac)
@@ -371,6 +374,9 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertEqual(settings.allowsBackwardVoiceTracking, mac.allowsBackwardVoiceTracking)
     XCTAssertEqual(settings.audioDeviceUID, mac.audioDeviceUID)
     XCTAssertEqual(settings.inputGain, mac.inputGain)
+    XCTAssertEqual(settings.speechEngine, "apple")
+    XCTAssertFalse(settings.usesTalkAndReadWords)
+    XCTAssertEqual(settings.speechLocales, mac.speechLocales)
     hear(relay, "alpha bravo charlie")
     relay.stop()
     XCTAssertEqual(UserDefaults.standard.data(forKey: "readingPositions"), before)
