@@ -10,8 +10,17 @@ import Speech
 /// The same 16 kHz PCM stream and candidate boundary as Apple. No microphone or matcher lives here.
 actor ParakeetSpeechStream {
   private var manager: (any StreamingAsrManager)?
+  private var poolKey = ""
   private var source = "parakeet"
   private var operation: UInt64 = 0
+  /// `start` owns the manager while it runs; only a manager that finished cleanly goes back to the pool.
+  private var running = false
+  private var failed = false
+
+  deinit {
+    // A preparation cancelled after taking the models drops its stream without `stop`.
+    if let manager, !failed { Task { [poolKey] in await ParakeetModelPool.shared.put(manager, key: poolKey) } }
+  }
 
   func prepare(directory: URL?, unified: Bool = false, allowDownload: Bool = true, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
     operation &+= 1
@@ -26,6 +35,16 @@ actor ParakeetSpeechStream {
     }
     try Task.checkCancellation()
     guard current == operation else { throw CancellationError() }
+    poolKey = "\(unified)|\(root.standardizedFileURL.path)"
+    if let loaded = await ParakeetModelPool.shared.take(poolKey) {
+      guard current == operation, !Task.isCancelled else {
+        await ParakeetModelPool.shared.put(loaded, key: poolKey)
+        throw CancellationError()
+      }
+      manager = loaded
+      await onPreparation("\(name) ready · on-device · English")
+      return
+    }
     await onPreparation("Preparing \(name) on this Mac…")
     let configuration = MLModelConfiguration()
     configuration.computeUnits = .cpuAndNeuralEngine
@@ -50,6 +69,16 @@ actor ParakeetSpeechStream {
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
     guard let manager else { throw SpeechProvider.Error.notPrepared }
     let current = operation
+    running = true
+    defer { running = false }
+    do { try await run(manager, input: input, current: current, generation: generation, onCandidate: onCandidate) }
+    catch is CancellationError { throw CancellationError() }
+    catch { failed = true; throw error }
+  }
+
+  private func run<S: AsyncSequence>(_ manager: any StreamingAsrManager, input: S, current: UInt64, generation: UInt64,
+    onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void
+  ) async throws where S: Sendable, S.Element == AnalyzerInput {
     var previous = ""
     var end = CMTime.zero
     for try await input in input {
@@ -85,7 +114,67 @@ actor ParakeetSpeechStream {
       range: CMTimeRange(start: .zero, end: end), isFinal: false, source: source)
   }
 
-  func stop() { operation &+= 1; manager = nil }
+  func stop() async {
+    operation &+= 1
+    guard let manager else { return }
+    self.manager = nil
+    // Its audio has already ended or been cancelled, so the loop returns within one buffer.
+    for _ in 0..<50 where running { try? await Task.sleep(for: .milliseconds(10)) }
+    // Still running or failed: dropped as before, never reset under a live loop or reused broken.
+    guard !running, !failed else { return }
+    await ParakeetModelPool.shared.put(manager, key: poolKey)
+  }
+}
+
+/// Loaded Parakeet models outlive a stream. Every seek, pause and resume stops the speech provider
+/// and prepares it again; reloading the CoreML models each time left Voice deaf for seconds. A
+/// stopped stream hands its manager back here and the next preparation takes it. They are released
+/// when the session ends or stops using Parakeet, on memory pressure, or after ten idle minutes.
+actor ParakeetModelPool {
+  static let shared = ParakeetModelPool()
+  private var idle: [String: any StreamingAsrManager] = [:]
+  private var expiry: Task<Void, Never>?
+  private let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global(qos: .utility))
+
+  private init() {
+    pressure.setEventHandler { Task { await ParakeetModelPool.shared.releaseAll() } }
+    pressure.activate()
+  }
+
+  func take(_ key: String) -> (any StreamingAsrManager)? { idle.removeValue(forKey: key) }
+
+  func put(_ manager: any StreamingAsrManager, key: String) async {
+    // Same weights, fresh decoding and audio state.
+    do { try await manager.reset() } catch { await manager.cleanup(); return }
+    if let replaced = idle.updateValue(manager, forKey: key) { await replaced.cleanup() }
+    expiry?.cancel()
+    expiry = Task {
+      try? await Task.sleep(for: .seconds(600))
+      guard !Task.isCancelled else { return }
+      await self.releaseAll()
+    }
+  }
+
+  func releaseAll() async {
+    let loaded = Array(idle.values)
+    idle.removeAll()
+    for manager in loaded { await manager.cleanup() }
+  }
+
+  var count: Int { idle.count }
+
+  /// Loads both models in the background so the first Start reading after launch does not wait
+  /// seconds for them (6 to 9 s each when measured cold). Released like any idle model if unused.
+  nonisolated static func warm() {
+    Task.detached(priority: .background) {
+      for unified in [false, true] {
+        let stream = ParakeetSpeechStream()
+        do { try await stream.prepare(directory: ParakeetModel.root(unified: unified), unified: unified, allowDownload: false) { _ in } }
+        catch { continue }
+        await stream.stop()
+      }
+    }
+  }
 }
 
 /// Immutable model revision and byte checks prevent partial or changed downloads being loaded.
