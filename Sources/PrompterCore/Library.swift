@@ -804,13 +804,28 @@ public actor MarkdownLibrary {
   /// system's replace keeps the file's identity (permissions, tags, file ID), so the bookmark
   /// still finds it. shortcut: in a folder that cannot be written the replace is refused, and the
   /// file is then written in place, as before; upgrade if such folders turn out to matter.
-  static func replaceLinked(_ data: Data, at target: URL) throws {
+  static func replaceLinked(
+    _ data: Data, at target: URL,
+    stagingFolder: (URL) throws -> URL = {
+      try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: $0, create: true)
+    }
+  ) throws {
     let fm = FileManager.default
+    let folder: URL
+    let staged: URL
     do {
-      let folder = try fm.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: target, create: true)
-      defer { try? fm.removeItem(at: folder) }
-      let staged = folder.appendingPathComponent(target.lastPathComponent)
-      try data.write(to: staged)
+      folder = try stagingFolder(target)
+      staged = folder.appendingPathComponent(target.lastPathComponent)
+      do { try data.write(to: staged) } catch { try? fm.removeItem(at: folder); throw error }
+    } catch let error as CocoaError where error.code == .fileWriteOutOfSpace {
+      throw error  // the in-place write would fail too, and could leave the real file half written
+    } catch {
+      // Network and FUSE volumes (a Shade drive, say) cannot stage a replacement; write in place there.
+      try data.write(to: target)
+      return
+    }
+    defer { try? fm.removeItem(at: folder) }
+    do {
       _ = try fm.replaceItemAt(target, withItemAt: staged)
     } catch let error as CocoaError where [.fileWriteNoPermission, .fileWriteVolumeReadOnly].contains(error.code) {
       try data.write(to: target)

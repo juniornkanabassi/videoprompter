@@ -48,6 +48,20 @@ final class LinkedWriteTests: XCTestCase {
     XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "saved into a locked folder")
   }
 
+  /// A network or FUSE volume (a Shade drive) offers no staging folder: the save still lands, in place.
+  func testAVolumeThatCannotStageAReplacementIsWrittenInPlace() throws {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("linked-fuse-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: folder) }
+    let file = folder.appendingPathComponent("script.md")
+    try Data("old".utf8).write(to: file)
+    try MarkdownLibrary.replaceLinked(Data("new".utf8), at: file) { _ in throw POSIXError(.ENOTSUP) }
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "new")
+    // A full disk is reported, not retried in place over the real file.
+    XCTAssertThrowsError(try MarkdownLibrary.replaceLinked(Data("newer".utf8), at: file) { _ in throw CocoaError(.fileWriteOutOfSpace) })
+    XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "new")
+  }
+
   func testAFailedReplaceLeavesTheOriginalAndNothingElse() throws {
     let folder = FileManager.default.temporaryDirectory.appendingPathComponent("linked-fail-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
