@@ -35,6 +35,10 @@ public struct PhraseMatcher: Sendable {
     self.minimumBackwardTokens = minimumBackwardTokens
   }
   public var language: ScriptLanguage = .english
+  /// Runs are only started from this many most recent recognised words. `RecognitionTracker` bounds
+  /// it, because Parakeet keeps one revision for a whole reading and trying every start made each
+  /// result cost the square of everything said since Start.
+  public var runStarts = Int.max
   /// Rewrites recognised text before matching; see `HeardWordList`. The one place it is applied is
   /// `RecognitionTracker.consumeCandidates`, which every engine's text passes through.
   public var heardWords: HeardWordList?
@@ -86,7 +90,7 @@ public struct PhraseMatcher: Sendable {
     guard !words.isEmpty, !target.isEmpty else { return nil }
     let start = min(max(0, currentIndex), target.count - 1) + 1
     guard start < target.count else { return nil }
-    for source in 0..<words.count {
+    for source in recentStarts(words.count) {
       let (word, index, _) = follow(words, from: source, along: target, at: start)
       guard word == words.count, index > start,
         target[start..<index].contains(where: continues)
@@ -102,7 +106,7 @@ public struct PhraseMatcher: Sendable {
   ) -> PhraseMatch? {
     let start = current + 1
     guard start < target.count else { return nil }
-    for wordStart in words.indices {
+    for wordStart in recentStarts(words.count) {
       let (source, targetIndex, informative) = follow(words, from: wordStart, along: target, at: start)
       let sourceCount = source - wordStart
       let rest = words[source...]
@@ -131,7 +135,7 @@ public struct PhraseMatcher: Sendable {
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
-    for recognisedStart in 0..<words.count {
+    for recognisedStart in recentStarts(words.count) {
       let evidence = Array(words[recognisedStart...])
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
@@ -236,6 +240,7 @@ public struct PhraseMatcher: Sendable {
     else { return nil }
     return PhraseMatch(tokenIndex: next, score: 0.98, direction: .forward)
   }
+  private func recentStarts(_ count: Int) -> Range<Int> { max(0, count - runStarts)..<count }
   /// Whether `words` are exactly the script tokens ending at `through`.
   private func endsOn(_ words: ArraySlice<String>, target: [String], through: Int) -> Bool {
     var end = through + 1
@@ -347,6 +352,11 @@ public struct RecognitionTracker: Sendable {
   private var minimumSeekAudioStart: TimeInterval?
   private var acceptedAudio: [ClosedRange<TimeInterval>] = []
   private var matcher: PhraseMatcher
+  /// `HeardWordList.scriptWords` for the last script seen. Same-storage arrays compare in O(1), so
+  /// a caller passing one cached token array never refolds the whole script per result.
+  private var scriptWordsCache: (script: [DocumentToken], words: Set<String>)?
+  /// How far back in a revision the matcher starts runs, unless more words than this are new.
+  public static let recentRunStarts = 64
   public init(generation: UInt64 = 0, tokenIndex: Int = 0, matcher: PhraseMatcher = .init()) {
     self.generation = generation
     self.tokenIndex = tokenIndex
@@ -383,7 +393,15 @@ public struct RecognitionTracker: Sendable {
     guard !events.isEmpty else { return .init(status: .held, tokenIndex: tokenIndex) }
     var candidates: [(RecognitionEvent, PhraseMatch)] = []
     var sawFresh = false
-    let scriptWords = matcher.heardWords == nil ? [] : HeardWordList.scriptWords(script)
+    var scriptWords: Set<String> = []
+    if matcher.heardWords != nil {
+      if let cache = scriptWordsCache, cache.script == script {
+        scriptWords = cache.words
+      } else {
+        scriptWords = HeardWordList.scriptWords(script)
+        scriptWordsCache = (script, scriptWords)
+      }
+    }
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
       let text = matcher.heardWords?.rewrite(event.text, avoiding: scriptWords) ?? event.text
@@ -419,6 +437,12 @@ public struct RecognitionTracker: Sendable {
         sawFresh = true
         continue
       }
+      // Runs start among the recent or new words only; eight more before them keep the matcher's
+      // earliest-start penalty and the anchoring words before a run as the whole revision gives.
+      let unchanged = zip(old?.words ?? [], words).prefix { $0 == $1 }.count
+      var matcher = self.matcher
+      matcher.runStarts = max(Self.recentRunStarts, words.count - unchanged)
+      wordsToMatch = Array(wordsToMatch.suffix(matcher.runStarts + 8))
       let appendedWords = old.flatMap { words.starts(with: $0.words) ? Array(words.dropFirst($0.words.count)) : nil }
       let appended = appendedWords.map { $0.count >= matcher.minimumBackwardTokens } ?? false
       revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)
