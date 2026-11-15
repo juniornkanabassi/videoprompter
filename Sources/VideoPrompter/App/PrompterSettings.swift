@@ -51,6 +51,8 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
   var highlightActiveWord = true
   var presenterSnappingEnabled = false
   var allowsBackwardVoiceTracking = true
+  /// Mac only: correct what the recogniser mishears with the Talk & Read word list, when it exists.
+  var usesTalkAndReadWords = true
   init() {}
   func backdropOpacity(withVideo: Bool) -> Double { withVideo ? videoDimming : backgroundOpacity }
   /// The inspector's one Background opacity control edits the value for the mode in use, so it is
@@ -125,6 +127,7 @@ struct PrompterSettings: Codable, Equatable, Identifiable, Sendable {
     highlightActiveWord = c.preference(.highlightActiveWord, default: true)
     presenterSnappingEnabled = c.preference(.presenterSnappingEnabled, default: false)
     allowsBackwardVoiceTracking = c.preference(.allowsBackwardVoiceTracking, default: true)
+    usesTalkAndReadWords = c.preference(.usesTalkAndReadWords, default: true)
     sanitise()
   }
 }
