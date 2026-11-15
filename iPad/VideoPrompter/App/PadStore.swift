@@ -194,8 +194,12 @@ import AVFoundation
   let session = SessionStore()
   let camera = PadCamera()
   let google = GoogleDocs()
-  @Published var selectedID: UUID?
+  @Published var selectedID: UUID? {
+    didSet { if let selectedID { defaults.set(selectedID.uuidString, forKey: "padLastOpenedScript") } }
+  }
   @Published var presentingID: UUID?
+  private(set) var macOpenedPresenter = false
+  private var suppressAutomaticCameraPermission = false
   /// The library editor's unsaved draft, which anything about to change or present a script resolves first.
   let draftFlusher = PadDraftFlusher()
   @Published var errorMessage: String?
@@ -249,6 +253,9 @@ import AVFoundation
     if let data = defaults.data(forKey: Self.presetsKey),
       let saved = try? JSONDecoder().decode([PrompterSettings].self, from: data)
     { presets = saved }
+    if let id = defaults.string(forKey: "padLastOpenedScript").flatMap(UUID.init(uuidString:)), folder.script(id) != nil {
+      selectedID = id
+    }
     refreshMicrophones()
     NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
       .receive(on: DispatchQueue.main)
@@ -383,6 +390,7 @@ import AVFoundation
 
   func present(_ script: FolderScript) {
     guard let record = record(for: script) else { return }
+    macOpenedPresenter = false
     ensureMicrophone()
     session.present(record: record, settings: settings)
     defaults.set(script.id.uuidString, forKey: "padLastOpenedScript")
@@ -412,10 +420,19 @@ import AVFoundation
     session.startReading()
   }
 
+  func restoreBackgroundPresenter(_ saved: String) {
+    if saved == "camera" {
+      presentCamera(requestMacPicture: false)
+      suppressAutomaticCameraPermission = AVCaptureDevice.authorizationStatus(for: .video) != .authorized
+    }
+    else if let id = UUID(uuidString: saved), let script = folder.script(id), script.isDownloaded { present(script) }
+  }
+
   /// The camera on its own, to set up framing, sound and recording before any script. The Mac is
   /// asked for its picture exactly as the Camera button asks; with no Mac, the view uses this iPad's camera.
   func presentCamera(requestMacPicture: Bool = true) {
     guard !isPresenting else { return }
+    suppressAutomaticCameraPermission = false
     scriptVisible = true
     focusMode = false
     presenterSetup = true
@@ -439,12 +456,13 @@ import AVFoundation
 
   /// With no Mac, Camera Only shows this iPad's own camera, which closing switches off again.
   func useOwnCameraWithoutMac() {
-    guard cameraOnly, camera.link.macName == nil, !camera.isOn else { return }
+    guard cameraOnly, camera.link.macName == nil, !camera.isOn, !suppressAutomaticCameraPermission else { return }
     startedLocalCamera = true
     camera.isOn = true
   }
 
   func closePresenter() {
+    macOpenedPresenter = false
     session.pause()
     scriptVisible = true
     focusMode = false
@@ -862,6 +880,7 @@ extension PadStore {
       guard let script = folder.script(id) else { return }
       selectedID = id
       present(script)
+      macOpenedPresenter = isPresenting
     case .mode(let mode):
       if ["Voice", "Manual"].contains(mode) { settings.mode = mode }
     case .speed(let speed):
@@ -872,6 +891,7 @@ extension PadStore {
         if !editing { selectedID = script.id }
         if transfer.present {
           if presentingID != script.id { present(script) } else { revealScript() }
+          macOpenedPresenter = isPresenting
         }
         objectWillChange.send()
       } catch { errorMessage = error.localizedDescription }

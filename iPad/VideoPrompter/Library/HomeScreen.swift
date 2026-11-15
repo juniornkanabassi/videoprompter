@@ -25,7 +25,7 @@ struct HomeScreen: View {
                 .foregroundStyle(LibraryTheme.muted)
               if let script = lastScript {
                 Button { store.selectedID = script.id; showHome = false } label: {
-                  HStack { Text("Continue “\(script.title)”").lineLimit(2); Spacer(); Image(systemName: "chevron.right") }
+                  HStack { Text("Continue “\(script.title)”").lineLimit(2).multilineTextAlignment(.leading); Spacer(); Image(systemName: "chevron.right") }
                     .frame(minHeight: 44)
                 }.foregroundStyle(LibraryTheme.accent).accessibilityHint("Opens this script in the library")
               }
@@ -36,9 +36,10 @@ struct HomeScreen: View {
             }
             MacHomeCard(snapshot: snapshotMac, open: { mac = true })
           }
+          Spacer(minLength: 0)
           Button { settings = true } label: { Label("Settings", systemImage: "gearshape").frame(minHeight: 44) }
             .buttonStyle(.plain)
-        }.padding(32).frame(maxWidth: 1200, alignment: .leading).frame(maxWidth: .infinity)
+        }.padding(32).frame(maxWidth: 1200, minHeight: geometry.size.height, alignment: .topLeading).frame(maxWidth: .infinity)
       }
     }
     .background(LibraryTheme.background.ignoresSafeArea()).foregroundStyle(LibraryTheme.text)
