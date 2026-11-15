@@ -574,7 +574,7 @@ final class LinkReceiver: @unchecked Sendable {
         return
       }
       // A meter reading depends on no state, so it must not push a waiting state out past coalescing.
-      if case .microphoneLevel = message {
+      if case .command(.microphoneLevel) = message {
         connection.send(content: message.encoded(), completion: .idempotent)
         return
       }
