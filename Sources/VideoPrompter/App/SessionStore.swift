@@ -105,6 +105,7 @@ final class SessionStore: ObservableObject {
   private func languageMatcher() -> PhraseMatcher {
     var matcher = PhraseMatcher()
     matcher.language = scriptLanguage
+    matcher.heardWords = wordList
     return matcher
   }
   var readingDetail: String? {
@@ -128,6 +129,7 @@ final class SessionStore: ObservableObject {
   }
 
   private var tracker = RecognitionTracker()
+  private var wordList: HeardWordList?
   private var pairedTrackers: [String: RecognitionTracker] = [:]
   private var runTask: Task<Void, Never>?
   private var latestAudioEnd: TimeInterval = 0
@@ -839,6 +841,7 @@ final class SessionStore: ObservableObject {
     // Also while a start is still preparing: a second one would race it for the recogniser.
     // The single gate for every path (play, a settings change): a relayed session never listens.
     guard !followsRemote, audioCapture == nil, speechTask == nil else { return }
+    reloadWordList()
     if audioDeviceObserver == nil {
       audioDeviceObserver = AudioCapture.inputDeviceObserver { [weak self] in
         guard let self else { return }
@@ -872,7 +875,7 @@ final class SessionStore: ObservableObject {
         }
         let format = try await self.speechProvider.prepare(
           locales: locales,
-          contextualStrings: SpeechProvider.upcomingContext(self.document.spokenTokens, at: self.tokenIndex),
+          contextualStrings: self.speechContext(at: self.tokenIndex),
           engine: selectedEngine, onPreparation: { [weak self] message in
             guard let self, self.lifecycleGeneration == generation else { return }
             self.speechEngineStatus = message
@@ -941,7 +944,7 @@ final class SessionStore: ObservableObject {
     let window = tokenIndex / 24 * 24
     guard contextWindow != window else { return }
     contextWindow = window
-    let strings = SpeechProvider.upcomingContext(document.spokenTokens, at: window)
+    let strings = speechContext(at: window)
     let generation = lifecycleGeneration
     let previous = contextTask
     contextTask = Task { [weak self] in
@@ -955,6 +958,17 @@ final class SessionStore: ObservableObject {
         }
       }
     }
+  }
+
+  /// Talk & Read's pronunciation list (Mac only, nil on the iPad), reloaded at each Start reading so a
+  /// word just added there counts at once. See `HeardWordList`.
+  private func reloadWordList() {
+    wordList = settings.usesTalkAndReadWords ? HeardWordList.talkAndReadURL.flatMap { HeardWordList(contentsOf: $0) } : nil
+  }
+  /// Apple's contextual strings: the script's known names first, then the rolling script context.
+  private func speechContext(at index: Int) -> [String] {
+    let rolling = SpeechProvider.upcomingContext(document.spokenTokens, at: index)
+    return wordList?.addingContext(to: rolling, script: document.spokenTokens, at: index) ?? rolling
   }
 
   var selectedSpeechEngine: SpeechProvider.Engine {

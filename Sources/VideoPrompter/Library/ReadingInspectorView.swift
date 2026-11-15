@@ -199,6 +199,7 @@ struct SpeechEngineRow: View {
     VStack(alignment: .leading, spacing: Space.xs) {
       ReadingChoice(title: "Speech engine", values: ["apple", "parakeet", "both", "unified", "both-unified"],
         names: ["Apple", "Parakeet", "Both (fastest wins)", "Parakeet Unified", "Apple + Unified"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
+      TalkAndReadWordsRow(store: store)
       if store.settings.speechEngine != "apple" {
         Text(store.settings.speechEngine.contains("unified")
           ? "Experimental · English only. Downloads 608 MB on first use, then works offline."

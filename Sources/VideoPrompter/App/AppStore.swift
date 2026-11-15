@@ -873,6 +873,7 @@ private enum PresenterSaveError: LocalizedError {
     compared.id = settings.id; compared.name = settings.name
     compared.audioDeviceUID = settings.audioDeviceUID
     compared.speechEngine = settings.speechEngine
+    compared.usesTalkAndReadWords = settings.usesTalkAndReadWords
     compared.speechLanguage = settings.speechLanguage
     compared.speechLocales = settings.speechLocales
     return compared == settings
@@ -886,6 +887,7 @@ private enum PresenterSaveError: LocalizedError {
     applied.name = settings.name
     applied.audioDeviceUID = settings.audioDeviceUID
     applied.speechEngine = settings.speechEngine
+    applied.usesTalkAndReadWords = settings.usesTalkAndReadWords
     applied.speechLanguage = settings.speechLanguage
     applied.speechLocales = settings.speechLocales
     settings = applied

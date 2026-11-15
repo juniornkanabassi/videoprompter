@@ -35,6 +35,9 @@ public struct PhraseMatcher: Sendable {
     self.minimumBackwardTokens = minimumBackwardTokens
   }
   public var language: ScriptLanguage = .english
+  /// Rewrites recognised text before matching; see `HeardWordList`. The one place it is applied is
+  /// `RecognitionTracker.consumeCandidates`, which every engine's text passes through.
+  public var heardWords: HeardWordList?
   fileprivate var common: Set<String> { language == .english ? commonWords : language.commonWords }
   public func match(recognised: [String], script: [DocumentToken], currentIndex: Int)
     -> PhraseMatch?
@@ -380,9 +383,11 @@ public struct RecognitionTracker: Sendable {
     guard !events.isEmpty else { return .init(status: .held, tokenIndex: tokenIndex) }
     var candidates: [(RecognitionEvent, PhraseMatch)] = []
     var sawFresh = false
+    let scriptWords = matcher.heardWords == nil ? [] : HeardWordList.scriptWords(script)
     for event in events where event.generation == generation {
       let key = "\(event.localeIdentifier)|\(event.replacementID)"
-      let words = PrompterDocument(markdown: event.text, language: matcher.language).spokenTokens.map(\.normalised)
+      let text = matcher.heardWords?.rewrite(event.text, avoiding: scriptWords) ?? event.text
+      let words = PrompterDocument(markdown: text, language: matcher.language).spokenTokens.map(\.normalised)
       let old = revisions[key]
       if old?.words == words && old?.isFinal == event.isFinal { continue }
       var wordsToMatch = words
