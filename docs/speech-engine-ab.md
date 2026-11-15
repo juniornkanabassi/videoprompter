@@ -182,3 +182,12 @@ Final EOU paired shipping-adapter repeat: 171 / 645 ms, one early flag, 288/288;
 - Light/dark snapshot verification was stopped during the first appearance at the lead's request to clear CPU for serial speech benchmarks. Resume this stage before final acceptance.
 - Pair CPU/memory and real microphone recovery were not measured. The benchmark agent owns timed replay. Backup-selection tests cover policy and existing matcher tests cover independent sources; injected real-stream failure and a full downloader/network integration test remain unverified.
 - Downloads resume at verified-file boundaries; an interrupted individual file restarts. Apple is kept warm, with candidates suppressed while both local streams are healthy, to avoid a recognition gap on failure.
+
+
+## Lead review corrections (verification queued)
+
+Warm Apple candidates now maintain their own matcher history while publication is disabled, so enabling backup mid-script does not begin from the generation's starting position. With Follow repeats enabled, two sources must agree on the same earlier word within one second, using audio newer than the published frontier. Apple-only fallback keeps normal single-source repeat handling. Late audio from before a confirmed rewind cannot restore the old position.
+
+The paired path no longer changes the run state to uncertain for held matches. Nil Parakeet conversion output activates Apple backup and skips that buffer. Full model verification is cached by folder and manifest for this launch; subsequent starts check file sizes, and completed downloads refresh verification. Same-size external file changes are detected on the next launch.
+
+Code and regression tests for these corrections are written but NOT RUN. The lead paused all builds/tests for latency measurement; resume is required before focused/full tests, pending snapshots, injected stream-failure verification and pair CPU/RSS measurements.

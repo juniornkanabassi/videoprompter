@@ -14,6 +14,9 @@ public struct SpeechCandidate: Sendable, Hashable {
   /// app reads it; replays measure per-word latency from it.
   public var transcript = AttributedString()
   public var source = "apple"
+  /// Warm backup results maintain matcher history without publishing a position.
+  public var publishesPosition = true
+  public var requiresRewindAgreement = true
 }
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet, both, unified, bothUnified, eou }
@@ -274,7 +277,10 @@ public actor SpeechProvider {
             try Task.checkCancellation()
             if case .dropped = appleInput.continuation.yield(item) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
             if !prepared { try converter.prepareConverter(sampleRate: item.buffer.format.sampleRate); prepared = true }
-            guard let buffer = converter.process(item.buffer)?.buffer else { throw Error.unavailable }
+            guard let buffer = converter.process(item.buffer)?.buffer else {
+              await self.activateBackup(generation: g)
+              continue
+            }
             for target in inputs {
               if case .dropped = target.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: item.bufferStartTime)) {
                 await self.activateBackup(generation: g)
@@ -401,7 +407,10 @@ public actor SpeechProvider {
   }
   private func deliverBackup(_ candidate: SpeechCandidate, generation: UInt64,
     onCandidate: @MainActor @Sendable (SpeechCandidate) -> Void) async {
-    guard generation == self.generation, backupActive else { return }
+    guard generation == self.generation else { return }
+    var candidate = candidate
+    candidate.publishesPosition = backupActive
+    candidate.requiresRewindAgreement = !pairStreams.isEmpty
     await onCandidate(candidate)
   }
   #endif

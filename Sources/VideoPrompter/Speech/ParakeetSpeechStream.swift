@@ -92,7 +92,7 @@ actor ParakeetSpeechStream {
 enum ParakeetModel {
   static let revision = "40a23f4c0b333aa17ad8c0f2ea47ec2347f2f355"
   static let baseURL = "https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml/resolve/\(revision)/160ms/"
-  struct File: Sendable { let path: String; let size: Int; let sha256: String }
+  struct File: Sendable, Hashable { let path: String; let size: Int; let sha256: String }
   static let files: [File] = [
     .init(path: "decoder.mlmodelc/analytics/coremldata.bin", size: 243, sha256: "3996975a8cbc1949159c55605b3132b39b2484f51acbd55d796d93c70de02b49"),
     .init(path: "decoder.mlmodelc/coremldata.bin", size: 497, sha256: "c3ccbff963d8cf07e2be2bd56ea3384a89ea49628922c6bd95ff62e2ae57dc34"),
@@ -119,8 +119,40 @@ enum ParakeetModel {
         unified ? "Models/" + UnifiedModel.folder : "Models/parakeet-eou-160ms")
   }
 
+  private struct VerificationKey: Hashable {
+    let root: URL
+    let files: [File]
+  }
+  private final class VerificationCache: @unchecked Sendable {
+    let lock = NSLock()
+    var results: [VerificationKey: Bool] = [:]
+  }
+  private static let verification = VerificationCache()
+
   static func ready(at root: URL, files: [File]) -> Bool {
-    files.allSatisfy { (try? valid(root.appendingPathComponent($0.path), file: $0)) == true }
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    let key = VerificationKey(root: root.standardizedFileURL, files: files)
+    let sizesMatch = files.allSatisfy {
+      (try? root.appendingPathComponent($0.path).resourceValues(forKeys: [.fileSizeKey]).fileSize) == $0.size
+    }
+    // Same-size external edits are rehashed next launch; downloads refresh this entry immediately.
+    if let verified = verification.results[key] { return verified && sizesMatch }
+    let verified = sizesMatch && files.allSatisfy { (try? valid(root.appendingPathComponent($0.path), file: $0)) == true }
+    verification.results[key] = verified
+    return verified
+  }
+
+  private static func invalidateVerification(at root: URL, files: [File]) {
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    verification.results.removeValue(forKey: VerificationKey(root: root.standardizedFileURL, files: files))
+  }
+
+  private static func recordVerification(at root: URL, files: [File]) {
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    verification.results[VerificationKey(root: root.standardizedFileURL, files: files)] = true
   }
 
   static func valid(_ url: URL, file: File) throws -> Bool {
@@ -134,6 +166,10 @@ enum ParakeetModel {
   }
 
   static func ensure(at root: URL, files: [File] = files, baseURL: String = baseURL, name: String = "Parakeet", progress: @escaping @MainActor @Sendable (String) -> Void) async throws {
+    if ready(at: root, files: files) { return }
+    invalidateVerification(at: root, files: files)
+    var verified = false
+    defer { if !verified { invalidateVerification(at: root, files: files) } }
     let size = files.reduce(0) { $0 + $1.size }
     var completed = 0
     for file in files {
@@ -154,6 +190,8 @@ enum ParakeetModel {
       }
       completed += file.size
     }
+    recordVerification(at: root, files: files)
+    verified = true
   }
 }
 #endif

@@ -87,8 +87,11 @@ import XCTest
     let position = session.tokenIndex
     session.acceptSpeechCandidate(candidate("unmatched", "purple elephants dance slowly", 2))
     XCTAssertEqual(session.tokenIndex, position)
-    XCTAssertEqual(session.readingStatus, "Matching words")
-    XCTAssertEqual(session.visibleReadingState, "Matching words", "The persistent compact label must not claim Following while the matcher is holding the script")
+    XCTAssertEqual(session.readingStatus, "Listening")
+    XCTAssertEqual(session.visibleReadingState, "Following")
+    XCTAssertEqual(session.state, .running, "An unmatched paired result must not change the reading chrome")
+    XCTAssertNil(session.readingDetail)
+    XCTAssertNil(session.anchorNotice)
   }
 
   func testEnablingAnExposureToolWorksAfterTheCompactMasterWasTurnedOff() async throws {

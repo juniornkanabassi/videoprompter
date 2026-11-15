@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import CoreML
+import CryptoKit
 import Darwin
 import FluidAudio
 import Speech
@@ -175,6 +176,94 @@ import PrompterCore
     session.seek(to: 0)
     send("Liverpool won the football match today", "parakeet", 3.2)
     XCTAssertEqual(session.tokenIndex, 0, "An unseen engine must inherit the seek watermark")
+  }
+
+  func testWarmAppleContinuesImmediatelyAfterPairFailsFarIntoScript() throws {
+    let name = "WarmBackup.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    let words = (0..<240).map { "token\($0)" }
+    session.present(record: .init(metadata: .init(title: "Long", fileName: "long.md"),
+      markdown: words.joined(separator: " ")), settings: PrompterSettings())
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    func send(_ start: Int, _ end: Int, _ source: String, publish: Bool) {
+      var candidate = SpeechCandidate(replacementID: "\(source)-\(start)", generation: 1,
+        locale: Locale(identifier: "en-GB"), text: words[start...end].joined(separator: " "),
+        range: .init(start: CMTime(seconds: Double(start), preferredTimescale: 100),
+          end: CMTime(seconds: Double(end + 1), preferredTimescale: 100)), isFinal: false, source: source)
+      candidate.publishesPosition = publish
+      session.acceptSpeechCandidate(candidate)
+    }
+    for start in stride(from: 0, to: 160, by: 8) {
+      send(start, start + 7, "parakeet", publish: true)
+      send(start, start + 7, "apple", publish: false)
+    }
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 159)
+    send(160, 167, "apple", publish: false)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 159, "Warm Apple never publishes while healthy")
+    // The provider flips only publication when a stream fails; Apple's history stays intact.
+    send(168, 175, "apple", publish: true)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 175)
+  }
+
+  func testPairRequiresFreshAgreementToRepeatAndCanAdvanceAgain() throws {
+    for followsRepeats in [true, false] {
+      let name = "PairRepeat.\(UUID())"
+      let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+      defer { TestDefaults.remove(name) }
+      let session = SessionStore(defaults: defaults)
+      var settings = PrompterSettings()
+      settings.allowsBackwardVoiceTracking = followsRepeats
+      let words = (0..<48).map { "token\($0)" }
+      session.present(record: .init(metadata: .init(title: "Repeat", fileName: "repeat.md"),
+        markdown: words.joined(separator: " ")), settings: settings)
+      session.play(captureAudio: false)
+      defer { session.pause() }
+      func send(_ start: Int, _ end: Int, _ source: String, _ time: Double) {
+        session.acceptSpeechCandidate(.init(replacementID: "\(source)-\(time)", generation: 1,
+          locale: Locale(identifier: "en-GB"), text: words[start...end].joined(separator: " "),
+          range: .init(start: CMTime(seconds: time - 0.5, preferredTimescale: 100),
+            end: CMTime(seconds: time, preferredTimescale: 100)), isFinal: false, source: source))
+      }
+      send(0, 7, "parakeet", 1)
+      send(0, 7, "unified", 1.1)
+      send(8, 23, "parakeet", 2)
+      send(8, 23, "unified", 2.1)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23)
+      send(0, 7, "parakeet", 1.5)
+      send(0, 7, "unified", 1.6)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23, "Old audio must not rewind")
+      send(0, 7, "parakeet", 3)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23, "One recogniser cannot rewind the pair")
+      send(0, 7, "unified", 3.1)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, followsRepeats ? 7 : 23)
+      if followsRepeats {
+        send(8, 23, "apple", 2.5)
+        XCTAssertEqual(session.lastConfirmedTokenIndex, 7, "A late pre-rewind result cannot restore the old frontier")
+      }
+      send(24, 31, "parakeet", 4)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 31, "Forward following remains immediate")
+    }
+  }
+
+  func testVerificationCacheUsesSizesAfterFirstSuccessfulHash() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let data = Data("verified".utf8)
+    let file = ParakeetModel.File(path: "test", size: data.count,
+      sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+    let url = root.appendingPathComponent(file.path)
+    try data.write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]))
+    try Data("modified".utf8).write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]), "Same-size changes are checked next launch")
+    try Data("short".utf8).write(to: url)
+    XCTAssertFalse(ParakeetModel.ready(at: root, files: [file]))
+    try data.write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]))
   }
 
   func testModelVerificationRejectsCorruption() throws {
