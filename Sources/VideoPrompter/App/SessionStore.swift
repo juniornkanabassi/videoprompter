@@ -16,11 +16,14 @@ final class SessionStore: ObservableObject {
 
   @Published private(set) var activeRecord: ScriptRecord?
   @Published private(set) var document = PrompterDocument(markdown: "") {
-    // `spokenTokens` flattens the whole script; the positions read this on every display frame.
+    // `document.spokenTokens` flattens the whole script on every read; recognition reads it per
+    // result and the positions per display frame, so it is flattened once per change here.
     didSet {
-      lastToken = Double(max(0, document.spokenTokens.count - 1))
+      spokenTokens = document.spokenTokens
+      lastToken = Double(max(0, spokenTokens.count - 1))
     }
   }
+  private var spokenTokens: [DocumentToken] = []
   private var lastToken = 0.0
   @Published private(set) var anchor: ReadingAnchor?
   /// The most recent word consumed by recognition or automatic playback.
@@ -61,7 +64,7 @@ final class SessionStore: ObservableObject {
   var isCountingDown: Bool { countdownRemaining > 0 }
   func startReading() {
     hasStartedReading = true
-    guard !isCountingDown, !isActivelyRunning, activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    guard !isCountingDown, !isActivelyRunning, activeRecord != nil, !spokenTokens.isEmpty else { return }
     guard isManual, startDelay > 0 else { play(); return }
     countdownRemaining = startDelay
     countdownTask = Task { @MainActor [weak self] in
@@ -128,7 +131,7 @@ final class SessionStore: ObservableObject {
   @Published private(set) var settings = PrompterSettings()
   var activeScriptID: UUID? { activeRecord?.metadata.id }
   var activeToken: DocumentToken? {
-    document.spokenTokens.indices.contains(tokenIndex) ? document.spokenTokens[tokenIndex] : nil
+    spokenTokens.indices.contains(tokenIndex) ? spokenTokens[tokenIndex] : nil
   }
 
   private var tracker = RecognitionTracker()
@@ -148,7 +151,7 @@ final class SessionStore: ObservableObject {
   private var manualStart: TimeInterval = 0
   /// Manual ran off the end. The next Play starts again from the beginning unless a seek came first.
   @Published private(set) var manualCompleted = false
-  var reachedEnd: Bool { manualCompleted || (lastConfirmedTokenIndex == document.spokenTokens.count - 1 && !document.spokenTokens.isEmpty) }
+  var reachedEnd: Bool { manualCompleted || (lastConfirmedTokenIndex == spokenTokens.count - 1 && !spokenTokens.isEmpty) }
   private var voiceEndTask: Task<Void, Never>?
   var voiceEndGrace: Duration = .seconds(3)
   var readingModeName: String { isManual ? "Automatic scroll" : "Voice follow" }
@@ -235,7 +238,7 @@ final class SessionStore: ObservableObject {
       document = PrompterDocument(markdown: record.markdown, language: scriptLanguage)
       let saved = savedAnchors[record.metadata.id]
       let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: $0.markdown)) }
-      var remapped: Int? = saved?.sourceOffset.flatMap { offset in document.spokenTokens.lastIndex { $0.sourceRange.location <= offset } }
+      var remapped: Int? = saved?.sourceOffset.flatMap { offset in spokenTokens.lastIndex { $0.sourceRange.location <= offset } }
       if let saved, let oldDocument, let anchor = saved.anchor,
         anchor.revision != record.metadata.revision
       {
@@ -246,7 +249,7 @@ final class SessionStore: ObservableObject {
           newRevision: record.metadata.revision)
         remapped = result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) }
       }
-      let start = min(max(0, remapped ?? saved?.index ?? 0), max(0, document.spokenTokens.count - 1))
+      let start = min(max(0, remapped ?? saved?.index ?? 0), max(0, spokenTokens.count - 1))
       let confirmed = remapped == nil ? saved?.confirmed ?? start - 1 : start - 1
       lastConfirmedTokenIndex = start > 0 ? min(confirmed, start - 1) : nil
       tokenIndex = start
@@ -299,12 +302,12 @@ final class SessionStore: ObservableObject {
       scriptLanguage = ScriptLanguage.resolve(settings.speechLanguage, text: old.markdown)
       document = PrompterDocument(markdown: old.markdown, previous: old, language: scriptLanguage)
       if let source = old.spokenTokens.indices.contains(tokenIndex) ? old.spokenTokens[tokenIndex].sourceRange.location : nil {
-        tokenIndex = document.spokenTokens.lastIndex { $0.sourceRange.location <= source } ?? 0
+        tokenIndex = spokenTokens.lastIndex { $0.sourceRange.location <= source } ?? 0
       } else { tokenIndex = 0 }
       lastConfirmedTokenIndex = lastConfirmedTokenIndex.flatMap { confirmed in
         guard tokenIndex > 0, old.spokenTokens.indices.contains(confirmed) else { return nil }
         let offset = old.spokenTokens[confirmed].sourceRange.location
-        return min(document.spokenTokens.lastIndex { $0.sourceRange.location <= offset } ?? 0, tokenIndex - 1)
+        return min(spokenTokens.lastIndex { $0.sourceRange.location <= offset } ?? 0, tokenIndex - 1)
       }
       if let record = activeRecord {
         anchor = ReadingAnchorRemapper.makeAnchor(scriptID: record.id, revision: record.metadata.revision,
@@ -373,7 +376,7 @@ final class SessionStore: ObservableObject {
 
   func play(captureAudio: Bool = true) {
     cancelCountdown()
-    guard activeRecord != nil, !document.spokenTokens.isEmpty else { return }
+    guard activeRecord != nil, !spokenTokens.isEmpty else { return }
     stopMicrophoneTest()
     anchorNotice = nil
     if reachedEnd { seek(to: 0) }
@@ -384,7 +387,7 @@ final class SessionStore: ObservableObject {
         // Already running (a second Play) keeps its progress; paused just starts the clock.
         let now = clock()
         if state == .running { syncManualFrontier(at: now) }
-        rebaseManual(to: min(rawManualPosition(at: now), Double(document.spokenTokens.count)), at: now)
+        rebaseManual(to: min(rawManualPosition(at: now), Double(spokenTokens.count)), at: now)
       }
     }
     state = .running
@@ -432,8 +435,8 @@ final class SessionStore: ObservableObject {
     move(to: index, incrementSeekRevision: true)
   }
   private func move(to index: Int, incrementSeekRevision: Bool) {
-    guard let record = activeRecord, !document.spokenTokens.isEmpty else { return }
-    tokenIndex = min(max(0, index), document.spokenTokens.count - 1)
+    guard let record = activeRecord, !spokenTokens.isEmpty else { return }
+    tokenIndex = min(max(0, index), spokenTokens.count - 1)
     if incrementSeekRevision {
       voiceEndTask?.cancel(); voiceEndTask = nil
       rebaseManual(to: Double(tokenIndex))
@@ -463,7 +466,7 @@ final class SessionStore: ObservableObject {
     }
   }
   func nextPassage() {
-    seek(to: passageBoundary(after: tokenIndex) ?? document.spokenTokens.count - 1)
+    seek(to: passageBoundary(after: tokenIndex) ?? spokenTokens.count - 1)
   }
   func previousPassage() { seek(to: passageBoundary(before: tokenIndex) ?? 0) }
   /// A scroll the reader made by hand. In Manual it pauses first, so the seek to the word at the
@@ -505,9 +508,9 @@ final class SessionStore: ObservableObject {
   /// Publishes the whole-token frontier (current word, words read) and finishes at the end. The
   /// timer task calls it a token at a time, also with no presenter open; the fraction is not stored.
   func syncManualFrontier(at time: TimeInterval? = nil) {
-    guard isManual, state == .running, !document.spokenTokens.isEmpty else { return }
+    guard isManual, state == .running, !spokenTokens.isEmpty else { return }
     let raw = rawManualPosition(at: time ?? clock())
-    let count = document.spokenTokens.count
+    let count = spokenTokens.count
     guard raw < Double(count) else { return completeManual() }
     let index = Int(raw)
     guard index != tokenIndex else { return }
@@ -516,7 +519,7 @@ final class SessionStore: ObservableObject {
   }
   /// The last token has been read: confirmed, no longer running, and the next Play starts over.
   private func completeManual() {
-    let last = document.spokenTokens.count - 1
+    let last = spokenTokens.count - 1
     lastConfirmedTokenIndex = last
     move(to: last, incrementSeekRevision: false)
     state = .paused
@@ -635,8 +638,9 @@ final class SessionStore: ObservableObject {
     }
   }
 
+  private static let logsLatency = ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1"
   func acceptSpeechCandidate(_ candidate: SpeechCandidate) {
-    let logsLatency = ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1"
+    let logsLatency = Self.logsLatency
     let started = logsLatency ? ProcessInfo.processInfo.systemUptime : 0
     defer {
       if logsLatency {
@@ -649,7 +653,7 @@ final class SessionStore: ObservableObject {
       candidate.generation >= minimumSpeechGeneration
     else { return }
     if candidate.publishesPosition { hasLiveRecognition = true }
-    let tokens = document.spokenTokens
+    let tokens = spokenTokens
     if speechGeneration != candidate.generation {
       pairedTrackers.removeAll()
       rewindVotes.removeAll()
@@ -747,7 +751,7 @@ final class SessionStore: ObservableObject {
   /// except that backward tracking is not checked again: the Mac already applied its own rule.
   func followRemote(confirmed: Int) {
     guard followsRemote, isActivelyRunning, activeRecord != nil,
-      confirmed >= 0, confirmed < document.spokenTokens.count
+      confirmed >= 0, confirmed < spokenTokens.count
     else { return }
     advance(toConfirmed: confirmed, old: lastConfirmedTokenIndex ?? (tokenIndex - 1))
   }
@@ -755,7 +759,7 @@ final class SessionStore: ObservableObject {
   private func advance(toConfirmed confirmed: Int, old: Int) {
     state = .running
     lastConfirmedTokenIndex = confirmed
-    tokenIndex = min(confirmed + 1, document.spokenTokens.count - 1)
+    tokenIndex = min(confirmed + 1, spokenTokens.count - 1)
     if confirmed > old { acceptedWords += confirmed - old }
     if let record = activeRecord {
       anchor = ReadingAnchorRemapper.makeAnchor(
@@ -764,7 +768,7 @@ final class SessionStore: ObservableObject {
     }
     anchorNotice = nil
     refreshSpeechContext()
-    if confirmed < document.spokenTokens.count - 1 {
+    if confirmed < spokenTokens.count - 1 {
       voiceEndTask?.cancel(); voiceEndTask = nil
     } else if confirmed > old {
       voiceEndTask?.cancel()
@@ -833,7 +837,7 @@ final class SessionStore: ObservableObject {
     audioDeviceObserver = nil
   }
   private func passageBoundary(after index: Int) -> Int? {
-    let tokens = document.spokenTokens
+    let tokens = spokenTokens
     guard tokens.indices.contains(index) else { return nil }
     let block = tokens[index].blockID
     return tokens.indices.first {
@@ -841,7 +845,7 @@ final class SessionStore: ObservableObject {
     }
   }
   private func passageBoundary(before index: Int) -> Int? {
-    let tokens = document.spokenTokens
+    let tokens = spokenTokens
     guard tokens.indices.contains(index) else { return nil }
     let block = tokens[index].blockID
     guard let last = tokens.indices.last(where: {
@@ -983,7 +987,7 @@ final class SessionStore: ObservableObject {
       do { try await self.speechProvider.updateContext(strings) }
       catch {
         // Context is a recognition hint; failure must not stop the microphone or lose words.
-        if ProcessInfo.processInfo.environment["VIDEOPROMPTER_AUDIO_LATENCY"] == "1" {
+        if Self.logsLatency {
           NSLog("Voice context update failed: %@", error.localizedDescription)
         }
       }
@@ -997,8 +1001,8 @@ final class SessionStore: ObservableObject {
   }
   /// Apple's contextual strings: the script's known names first, then the rolling script context.
   private func speechContext(at index: Int) -> [String] {
-    let rolling = SpeechProvider.upcomingContext(document.spokenTokens, at: index)
-    return wordList?.addingContext(to: rolling, script: document.spokenTokens, at: index) ?? rolling
+    let rolling = SpeechProvider.upcomingContext(spokenTokens, at: index)
+    return wordList?.addingContext(to: rolling, script: spokenTokens, at: index) ?? rolling
   }
 
   var selectedSpeechEngine: SpeechProvider.Engine {
