@@ -19,7 +19,8 @@ import VideoToolbox
   /// The picture's size as the Mac encodes it; nil while the Mac sends no camera.
   @Published private(set) var pictureSize: CGSize?
   @Published private(set) var pairingFailure: String?
-  @Published private(set) var lastFrameTime: Date?
+  /// Not published: it changes with every frame, and the monitor polls it.
+  private(set) var lastFrameTime: Date?
   @Published private(set) var framesSkipped = 0
   @Published private(set) var transportKind: String?
 
@@ -402,7 +403,7 @@ import VideoToolbox
         }
         #endif
       }
-      framesSkipped = skipped
+      if framesSkipped != skipped { framesSkipped = skipped }
     case .pairingFailed(let reason): pairingFailure = reason
     case .command(let command):
       onCommand?(command)
@@ -442,6 +443,7 @@ final class LinkReceiver: @unchecked Sendable {
   private var needsKeyFrame = true
   private var framesSkipped = 0
   private var senderFramesSkipped = 0
+  private var outbox = StateOutbox()
 
   init(renderer: AVSampleBufferVideoRenderer, exposure: PadExposure) {
     self.exposure = exposure
@@ -510,6 +512,7 @@ final class LinkReceiver: @unchecked Sendable {
     connection = new
     connectionIsWiFi = overWiFi
     peerVersion = 0
+    outbox = StateOutbox()
     reader = CameraLink.Reader()
     if let decoder { VTDecompressionSessionInvalidate(decoder) }
     decoder = nil
@@ -542,8 +545,20 @@ final class LinkReceiver: @unchecked Sendable {
   func send(_ message: CameraLink.Message) {
     queue.async { [self] in
       guard peerVersion >= 2, let connection else { return }
+      if case .state(let state) = message {
+        if let next = outbox.offer(state, peerVersion: peerVersion) { write(next, on: connection) }
+        return
+      }
       connection.send(content: message.encoded(), completion: .idempotent)
     }
+  }
+
+  /// The completion runs on `queue`, where the connection was started.
+  private func write(_ state: PadRemote.State, on connection: NWConnection) {
+    connection.send(content: CameraLink.Message.state(state).encoded(), completion: .contentProcessed { [weak self] _ in
+      guard let self, connection === self.connection, let next = self.outbox.written(peerVersion: self.peerVersion) else { return }
+      self.write(next, on: connection)
+    })
   }
 
   private func receive(on connection: NWConnection) {

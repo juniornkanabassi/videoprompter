@@ -412,7 +412,9 @@ enum PresenterDisplayMode: String, Codable, CaseIterable, Identifiable {
 
   /// Inventory only: validating a setup must not select a camera or open capture.
   func refreshDevices() {
-    devices = Self.discovered().map { device in var d = device; d.nickname = nicknames[d.uid]; return d }
+    let next = Self.discovered().map { device in var d = device; d.nickname = nicknames[d.uid]; return d }
+    // Reassigning an unchanged list would still redraw every view that shows a camera.
+    if next != devices { devices = next }
     if let selectedUID, !devices.contains(where: { $0.uid == selectedUID }) { watchForReturnedCamera() }
   }
 
