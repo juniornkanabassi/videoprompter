@@ -15,14 +15,18 @@ struct HomeScreen: View {
 
   var body: some View {
     GeometryReader { geometry in
+      let wide = geometry.size.width >= 850
       ScrollView {
         VStack(alignment: .leading, spacing: 28) {
+          if wide { Spacer(minLength: 0) }
           Text("What do you want to do?").font(.largeTitle.bold())
-          let columns = geometry.size.width >= 850 ? 3 : 1
+            .frame(maxWidth: .infinity, alignment: wide ? .center : .leading)
+          let columns = wide ? 3 : 1
           LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: columns), alignment: .leading, spacing: 16) {
             card(icon: "doc.text", title: "Read a script", description: "Your scripts, scrolling as you speak.") {
               let count = store.folder.count(in: .all)
-              Text("\(count) \(count == 1 ? "script" : "scripts") · \(store.folder.count(in: .sentFromMac)) sent from Mac")
+              let sent = store.folder.count(in: .sentFromMac)
+              Text("\(count) \(count == 1 ? "script" : "scripts")" + (sent == 0 ? "" : " · \(sent) sent from Mac"))
                 .foregroundStyle(LibraryTheme.muted)
               if let script = lastScript {
                 Button { store.selectedID = script.id; showHome = false } label: {
@@ -81,9 +85,13 @@ private struct MacHomeCard: View {
     let connection: MacConnection? = { if case let .connected(name, kind) = state { return MacConnection(name: name, kind: kind) }; return nil }()
     let looking: String? = { if case let .looking(name) = state { return name }; return nil }()
     card(icon: "laptopcomputer", title: connection.map { "Connected to \($0.name)" } ?? (looking == nil ? "Connect to Mac" : "Looking for your Mac"), description: "Control this iPad's script and camera from your Mac.") {
-      Text(connection.map { "Connected" + ($0.kind.map { " · \($0)" } ?? "") } ?? (looking == nil ? "Not connected" : "Searching…"))
-        .font(.subheadline.weight(.semibold)).padding(8)
-        .background((connection != nil ? LibraryTheme.good : looking != nil ? LibraryTheme.warn : LibraryTheme.muted).opacity(0.2), in: Capsule())
+      HStack(spacing: 8) {
+        Circle().fill(connection != nil ? LibraryTheme.good : looking != nil ? LibraryTheme.warn : LibraryTheme.muted)
+          .frame(width: 8, height: 8).accessibilityHidden(true)
+        Text(connection.map { "Connected" + ($0.kind.map { " · \($0)" } ?? "") } ?? (looking == nil ? "Not connected" : "Searching…"))
+      }
+      .font(.subheadline.weight(.semibold)).padding(8)
+      .background((connection != nil ? LibraryTheme.good : looking != nil ? LibraryTheme.warn : LibraryTheme.muted).opacity(0.2), in: Capsule())
       if let looking { Text(looking).foregroundStyle(LibraryTheme.muted) }
       action(connection != nil ? "Manage" : looking != nil ? "Troubleshoot" : "Set up", icon: "laptopcomputer", perform: open)
     }
