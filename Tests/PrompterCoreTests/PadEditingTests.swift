@@ -167,6 +167,39 @@ final class PadEditingTests: XCTestCase {
     XCTAssertFalse(library.contains(".onTheFly"), "The library must never take the on-the-fly lock")
   }
 
+  /// Nothing typed is dropped: deleting the open script or switching folders settles the draft
+  /// first, a script that vanished keeps the edit as a new file, an on-the-fly edit is put aside in
+  /// the background, the 15-minute Home return never closes an edit, and a clean draft takes newer saved text.
+  func testUnsavedDraftsSurviveDeleteFolderSwitchVanishingAndBackground() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    func source(_ path: String) throws -> String { try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/" + path), encoding: .utf8) }
+    let editor = try source("Library/ScriptEditor.swift"), library = try source("Library/LibraryScreen.swift")
+    let settings = try source("Settings/SettingsScreen.swift"), store = try source("App/PadStore.swift")
+    let app = try source("App/VideoPrompterPadApp.swift")
+    XCTAssertTrue(library.contains("guard store.draftFlusher.owner != script.id || store.draftFlusher.resolve() else { return }\n    do {\n      let entry = try folder.delete(script)"))
+    XCTAssertTrue(library.contains("store.draftFlusher.resolve() { folder.choose(url) }"))
+    XCTAssertTrue(settings.contains("store.draftFlusher.resolve() { store.folder.choose(url) }"))
+    XCTAssertTrue(settings.contains("if store.draftFlusher.resolve() { store.folder.useLocalFolder() }"))
+    for call in ["ScriptTransfer.createFile(title: record.metadata.title, tag: \" (iPad copy)\"", "return !draft.isDirty || draft.save",
+      "phase == .background, onTheFly { store.keepPendingDraft(", "if onTheFly { store.keepPendingDraft(nil, of: record.metadata) }",
+      ".onReceive(store.folder.$scripts) { adoptLatest($0) }", "guard !draft.isDirty, let latest = try? store.folder.record(for: script)"] {
+      XCTAssertTrue(editor.contains(call), "Missing draft safety: \(call)")
+    }
+    XCTAssertTrue(store.contains("recoverPendingDraft()\n    refreshMicrophones()"))
+    XCTAssertTrue(app.contains("if expired, !store.editing,"))
+  }
+
+  /// A save checks and writes in one coordinated write: an edit made elsewhere since the editor
+  /// read the file goes to a conflict copy, never under it.
+  func testASaveAgainstAChangedFileKeepsBothVersions() throws {
+    let (folder, script) = try fixture()
+    let basis = MarkdownLibrary.fingerprint(try folder.record(for: script).markdown)
+    try Folder.write("changed on the Mac", to: script.url)
+    XCTAssertThrowsError(try folder.save("typed on the iPad", to: script, basis: basis))
+    XCTAssertEqual(try Folder.read(script.url), "changed on the Mac")
+    XCTAssertTrue(folder.scripts.contains { $0.title.hasPrefix("Draft (iPad copy") })
+  }
+
   /// Open presenter reads the folder, so after the autosave it presents the edited text, not the old file.
   func testPresentingAfterAutosaveShowsTheEditedText() throws {
     let (folder, script) = try fixture()

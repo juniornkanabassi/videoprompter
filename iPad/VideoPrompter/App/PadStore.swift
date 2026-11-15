@@ -256,6 +256,7 @@ import AVFoundation
     if let id = defaults.string(forKey: "padLastOpenedScript").flatMap(UUID.init(uuidString:)), folder.script(id) != nil {
       selectedID = id
     }
+    recoverPendingDraft()
     refreshMicrophones()
     NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
       .receive(on: DispatchQueue.main)
@@ -354,6 +355,38 @@ import AVFoundation
       selectedID = script.id
       if let warning = preview.warnings.first { errorMessage = warning }
     } catch { errorMessage = error.localizedDescription }
+  }
+
+  private static let pendingDraftKey = "padPendingOnTheFlyDraft"
+
+  /// The presenter's unsaved on-the-fly edit, put aside while the app is in the background (nil
+  /// clears it). If iPadOS ends the app there, the next launch keeps it as a copy.
+  func keepPendingDraft(_ markdown: String?, of script: ScriptMetadata) {
+    guard let markdown else { return defaults.removeObject(forKey: Self.pendingDraftKey) }
+    defaults.set(["id": script.id.uuidString, "title": script.title, "path": script.fileName, "markdown": markdown], forKey: Self.pendingDraftKey)
+  }
+
+  /// Run at launch: an edit put aside by a presenter that never came back is kept beside its script.
+  private func recoverPendingDraft() {
+    guard let saved = defaults.dictionary(forKey: Self.pendingDraftKey) as? [String: String],
+      let markdown = saved["markdown"], let path = saved["path"] else { return }
+    let script = saved["id"].flatMap(UUID.init(uuidString:)).flatMap(folder.script)
+    do {
+      if let script, (try? ScriptFolder.read(script.url)) == markdown {
+        // It was saved after all.
+      } else {
+        if let script { try folder.saveCopy(markdown, of: script) } else {
+          _ = try ScriptTransfer.createFile(title: saved["title"] ?? "Script", tag: " (iPad copy)", markdown: markdown,
+            in: folder.rootURL.appendingPathComponent(path).deletingLastPathComponent())
+          folder.refresh()
+        }
+        errorMessage = "Your edit could not be saved, so it was kept as a copy beside the script."
+      }
+      defaults.removeObject(forKey: Self.pendingDraftKey)
+    } catch {
+      // Kept for the next launch rather than dropped.
+      errorMessage = error.localizedDescription
+    }
   }
 
   func record(for script: FolderScript) -> ScriptRecord? {

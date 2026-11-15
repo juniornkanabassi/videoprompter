@@ -246,12 +246,15 @@ struct ScriptEditorView: View {
   @State private var command: PadEditorCommand?
   @State private var error: String?
   @State private var draft: PadEditorDraft
+  /// The file date last looked at, so a change made on the Mac or in iCloud is read once.
+  @State private var seenModified: Date
 
   init(record: ScriptRecord, mode: ScriptEditorMode, onDone: @escaping () -> Void) {
     self.record = record; self.mode = mode; self.onDone = onDone
     _markdown = State(initialValue: record.markdown)
     _saved = State(initialValue: record.markdown)
     _draft = State(initialValue: PadEditorDraft(record.markdown))
+    _seenModified = State(initialValue: record.metadata.modifiedAt)
   }
 
   @Environment(\.scenePhase) private var scenePhase
@@ -292,9 +295,25 @@ struct ScriptEditorView: View {
         store.errorMessage = "Your edit could not be saved, so it was kept as a copy beside the script."
       }
       if store.draftFlusher.owner == record.metadata.id { store.draftFlusher.flush = nil; store.draftFlusher.owner = nil }
+      if onTheFly { store.keepPendingDraft(nil, of: record.metadata) }
       draft.endEditing()
     }
-    .onChange(of: scenePhase) { _, phase in if phase != .active, !onTheFly { _ = flush() } }
+    .onChange(of: scenePhase) { _, phase in
+      if phase != .active, !onTheFly { _ = flush() }
+      // On the fly the edit stays unapplied until Save; kept aside so a kill in the background cannot lose it.
+      if phase == .background, onTheFly { store.keepPendingDraft(draft.isDirty ? draft.model.markdown : nil, of: record.metadata) }
+    }
+    .onReceive(store.folder.$scripts) { adoptLatest($0) }
+  }
+
+  /// A clean draft takes a newer saved text (from the Mac or iCloud) as it lands, so later typing
+  /// starts from it. A draft with unsaved typing keeps its own baseline, so Save still judges conflicts from it.
+  private func adoptLatest(_ scripts: [FolderScript]) {
+    guard let script = scripts.first(where: { $0.id == record.metadata.id }), script.isDownloaded,
+      script.modified != seenModified else { return }
+    seenModified = script.modified
+    guard !draft.isDirty, let latest = try? store.folder.record(for: script), latest.markdown != draft.original else { return }
+    draft.adopt(latest.markdown); markdown = latest.markdown; saved = latest.markdown; reload = UUID()
   }
 
   private func textView(inset: Double) -> some View {
@@ -358,7 +377,18 @@ struct ScriptEditorView: View {
   private func flush() -> Bool {
     // Commit any in-progress keyboard composition before reading the draft.
     UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    guard let script = store.folder.script(record.metadata.id) else { error = "This script is no longer in the folder."; return false }
+    guard let script = store.folder.script(record.metadata.id) else {
+      // Deleted or moved elsewhere while open: the edit becomes a new file where it was, never dropped.
+      return !draft.isDirty || draft.save { text in
+        let place = store.folder.rootURL.appendingPathComponent(record.metadata.fileName).deletingLastPathComponent()
+        guard (try? ScriptTransfer.createFile(title: record.metadata.title, tag: " (iPad copy)", markdown: text, in: place)) != nil else {
+          error = "This script is no longer in the folder."; store.errorMessage = error; return false
+        }
+        store.folder.refresh()
+        store.errorMessage = "Your edit could not be saved, so it was kept as a copy beside the script."
+        return true
+      }
+    }
     var keptAsCopy = false
     let written = draft.save { text in
       if text == draft.original { return true }

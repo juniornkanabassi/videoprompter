@@ -38,7 +38,8 @@ struct SettingsScreen: View {
     .toolbar { Button("Done") { dismiss() } }
     .onAppear { microphones = AudioCapture.inputDevices() }
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
-      if case .success(let url) = result { store.folder.choose(url) }
+      // Settled before the switch: the new folder may hold a file at the same path, with the same identity.
+      if case .success(let url) = result, store.draftFlusher.resolve() { store.folder.choose(url) }
     }
   }
 
@@ -172,7 +173,7 @@ struct SettingsScreen: View {
       LabeledContent("Location", value: store.folder.isICloud ? "iCloud Drive › \(store.folder.rootURL.lastPathComponent)" : "On this iPad")
       Button("Choose Folder in iCloud Drive…") { choosingFolder = true }
       if store.folder.rootURL != ScriptFolder.localFolder {
-        Button("Use Scripts on This iPad Only") { store.folder.useLocalFolder() }
+        Button("Use Scripts on This iPad Only") { if store.draftFlusher.resolve() { store.folder.useLocalFolder() } }
       }
     } header: {
       Text("Scripts")

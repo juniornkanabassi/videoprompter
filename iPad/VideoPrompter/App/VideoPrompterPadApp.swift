@@ -43,7 +43,8 @@ import SwiftUI
       switch phase {
       case .active:
         let expired = HomeNavigation.shouldShowHome(backgroundTime: backgroundTime, now: Date().timeIntervalSince1970)
-        if expired, !(store.isPresenting && store.macOpenedPresenter) {
+        // An edit in progress is never closed under the reader; it is saved or cancelled by them.
+        if expired, !store.editing, !(store.isPresenting && store.macOpenedPresenter) {
           if store.isPresenting { store.closePresenter() }
           showHome = true
         }

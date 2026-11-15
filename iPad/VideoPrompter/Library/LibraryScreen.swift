@@ -88,7 +88,8 @@ struct LibraryScreen: View {
     }
     .fileImporter(isPresented: $choosingFolder, allowedContentTypes: [.folder]) { result in
       askedForICloudFolder = true
-      if case .success(let url) = result { folder.choose(url) }
+      // Settled before the switch: the new folder may hold a file at the same path, with the same identity.
+      if case .success(let url) = result, store.draftFlusher.resolve() { folder.choose(url) }
     }
     .sheet(isPresented: $showingSettings) {
       NavigationStack { SettingsScreen() }.environmentObject(store)
@@ -332,6 +333,8 @@ struct LibraryScreen: View {
   // MARK: Delete and undo
 
   private func delete(_ script: FolderScript) {
+    // The open draft is written first, so Recently Deleted holds what was typed; a draft that cannot be written stops the delete.
+    guard store.draftFlusher.owner != script.id || store.draftFlusher.resolve() else { return }
     do {
       let entry = try folder.delete(script)
       store.forgetGoogleLink(script)
