@@ -46,7 +46,7 @@ import VideoToolbox
     if open { startPermissionListener() } else {
       permissionListener?.cancel(); permissionListener = nil
       permissionConnections.forEach { $0.cancel() }; permissionConnections.removeAll()
-      approvePairing(false)
+      approvePairing(false, userChoice: false)
       scannedOffer = nil
     }
   }
@@ -85,10 +85,12 @@ import VideoToolbox
     credentials = next
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
-  func approvePairing(_ allow: Bool) {
+  /// `userChoice` is false when the sheet closes or times out: that refuses this request without the
+  /// three-minute block, which only the "Don't allow" button sets.
+  func approvePairing(_ allow: Bool, userChoice: Bool = true) {
     guard var permission = pendingPermission else { return }
     pendingPermission = nil
-    if !allow { pairingAvailability.decline() }
+    if !allow && userChoice { pairingAvailability.decline() }
     let connection = permission.connection
     guard pairingAvailability.allowsRequest(), permission.consent.consume(allow: allow) else { connection.cancel(); return }
     Task {
@@ -130,7 +132,7 @@ import VideoToolbox
             confirmationCode: PairingExchange.confirmationCode(shared))
           Task { @MainActor in
             try? await Task.sleep(for: .seconds(55))
-            if self.pendingPermission?.connection === connection { self.approvePairing(false) }
+            if self.pendingPermission?.connection === connection { self.approvePairing(false, userChoice: false) }
           }
         } catch { connection.cancel() }
       }
@@ -333,7 +335,7 @@ import VideoToolbox
     startPermissionListener()
     if !allowsWiFi {
       permissionListener?.cancel(); permissionListener = nil
-      approvePairing(false)
+      approvePairing(false, userChoice: false)
       wifi?.cancel()
       wifi = nil
       // Turning Wi-Fi off also ends a Mac already sending over it; USB-C carries on.
