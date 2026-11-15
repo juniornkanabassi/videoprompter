@@ -33,7 +33,8 @@ struct LibraryStartView: View {
             Button("Help") { store.showWelcomeScript(); guide() }
             Button("Import file…") { importing = true }
           }.buttonStyle(.borderless).font(.system(size: 16)).foregroundStyle(.secondary)
-        }.frame(maxWidth: 1200).frame(maxWidth: .infinity)
+        }.frame(maxWidth: 1200, minHeight: geometry.size.height < 560 ? nil : max(0, geometry.size.height - 2 * Space.margin))
+          .frame(maxWidth: .infinity)
           .padding(geometry.size.height < 560 ? Space.md : Space.margin)
       }
     }
@@ -42,12 +43,17 @@ struct LibraryStartView: View {
   @ViewBuilder private func cards(width: CGFloat?) -> some View {
     card("Read a script", symbol: "doc.text", description: "Paste it or start a new one. It scrolls as you speak.") {
       if let lastTitle, !store.scripts.isEmpty {
-        Button("Continue “\(lastTitle)”", action: continueScript).buttonStyle(.link)
+        Button(action: continueScript) {
+          HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+            Text("Continue “\(lastTitle)”").lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "chevron.right").accessibilityHidden(true)
+          }
+        }.buttonStyle(.plain).foregroundStyle(AlphaStyle.accent)
       }
-      if !store.scripts.isEmpty {
-        Button("Open scripts", action: openScripts).buttonStyle(AlphaPrimaryButtonStyle())
-      }
-      WrapLayout(spacing: Space.sm) {
+      WrapLayout(spacing: Space.sm, leading: true) {
+        if !store.scripts.isEmpty {
+          Button("Open scripts", action: openScripts).buttonStyle(AlphaPrimaryButtonStyle())
+        }
         if store.scripts.isEmpty {
           Button("Paste script") { store.importClipboard() }.buttonStyle(AlphaPrimaryButtonStyle())
         } else {
@@ -62,8 +68,11 @@ struct LibraryStartView: View {
     }
     .frame(width: width)
     card("iPad Control", symbol: "ipad", description: "Use your iPad as the prompter or camera, run from this Mac.") {
-      Text(Self.iPadStatus(link.iPadState, transport: link.transport))
-        .font(.caption).padding(Space.sm).background(Color.primary.opacity(0.08), in: Capsule())
+      HStack(spacing: Space.xs) {
+        Circle().fill(link.iPadState == nil ? Color.gray : Color.green)
+          .frame(width: Space.sm, height: Space.sm).accessibilityHidden(true)
+        Text(Self.iPadStatus(link.iPadState, transport: link.transport))
+      }.font(.caption).padding(Space.sm).background(Color.primary.opacity(0.08), in: Capsule())
       Button(link.iPadState == nil ? "Connect an iPad" : "Open iPad Control") { openWindow(id: "ipad-remote") }
         .buttonStyle(AlphaSecondaryButtonStyle())
     }
@@ -93,8 +102,8 @@ struct LibraryStartView: View {
 private struct AlphaPrimaryButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.onAccent)
-      .padding(.horizontal, Space.lg).frame(minHeight: 32)
+      .font(.system(size: 14, weight: .semibold)).foregroundStyle(AlphaStyle.onAccent)
+      .padding(.horizontal, Space.md).frame(minHeight: 32)
       .background(AlphaStyle.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: Space.md))
   }
 }
@@ -102,8 +111,8 @@ private struct AlphaPrimaryButtonStyle: ButtonStyle {
 private struct AlphaSecondaryButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
-      .padding(.horizontal, Space.lg).frame(minHeight: 32)
+      .font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+      .padding(.horizontal, Space.md).frame(minHeight: 32)
       .background(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.1), in: RoundedRectangle(cornerRadius: Space.md))
   }
 }
