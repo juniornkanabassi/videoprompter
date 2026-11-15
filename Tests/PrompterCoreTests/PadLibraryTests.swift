@@ -268,6 +268,44 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertEqual(again.recentlyDeleted, [entry])
   }
 
+  // MARK: Folder safety
+
+  func testACaseOnlyRenameKeepsTheScriptAndItsIdentity() throws {
+    let (folder, root) = try folder()
+    let script = try add("arsenal", "Kick-off", in: folder)
+    try folder.rename(script, to: "Arsenal")
+    let renamed = try XCTUnwrap(folder.scripts.first)
+    XCTAssertEqual(folder.scripts.count, 1)
+    XCTAssertEqual(renamed.relativePath, "Arsenal.md")
+    XCTAssertEqual(renamed.id, script.id)
+    XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: root.path), ["Arsenal.md"])
+    XCTAssertEqual(try Folder.read(renamed.url), "Kick-off")
+    // A different script's name is still refused.
+    let other = try add("Chelsea", "x", in: folder)
+    XCTAssertThrowsError(try folder.rename(other, to: "ARSENAL"))
+  }
+
+  /// A listing that fails keeps the last good list, so nothing reads it as every script deleted.
+  func testAFolderThatCannotBeListedKeepsItsLastListAndSaysSo() throws {
+    let (folder, root) = try folder()
+    try add("Kept", "text", in: folder)
+    XCTAssertTrue(folder.isListed)
+    try FileManager.default.removeItem(at: root)
+    folder.refresh()
+    XCTAssertFalse(folder.isListed)
+    XCTAssertEqual(folder.scripts.map(\.title), ["Kept"])
+  }
+
+  func testAFolderBookmarkThatNoLongerResolvesIsReportedNotSilentlyReplaced() throws {
+    let local = try scratch()
+    let defaults = freshDefaults("PadLibraryTests")
+    defaults.set(Data("not a bookmark".utf8), forKey: "scriptFolderBookmark")
+    let folder = Folder(defaults: defaults, local: local)
+    XCTAssertEqual(folder.rootURL, local)
+    XCTAssertNotNil(folder.errorMessage)
+    XCTAssertNotNil(defaults.data(forKey: "scriptFolderBookmark"), "the bookmark is kept for a later launch")
+  }
+
   // MARK: The pairing key's reveal
 
   func testTheKeyShowsFor30SecondsThenHidesItself() {

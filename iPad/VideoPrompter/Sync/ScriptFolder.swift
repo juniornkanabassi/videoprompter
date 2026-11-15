@@ -101,9 +101,15 @@ enum ScriptFolderError: LocalizedError {
       .compactMapValues(UUID.init(uuidString:))
     sent = defaults.dictionary(forKey: Self.sentKey) as? [String: String] ?? [:]
     rootURL = local
-    if let data = defaults.data(forKey: Self.bookmarkKey), let url = Self.resolve(data) {
-      use(url)
+    if let data = defaults.data(forKey: Self.bookmarkKey), let resolved = Self.resolve(data) {
+      use(resolved.url)
+      // A stale bookmark still resolves today but may not after the next move or restore.
+      if resolved.stale, let fresh = try? resolved.url.bookmarkData() { defaults.set(fresh, forKey: Self.bookmarkKey) }
     } else {
+      if defaults.data(forKey: Self.bookmarkKey) != nil {
+        // The bookmark is kept, so choosing the folder again (or a later launch) can still reach it.
+        errorMessage = "Video Prompter cannot reach your scripts folder, so it is showing the scripts on this iPad. Choose the folder again in Settings."
+      }
       try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
     }
     refresh()
@@ -113,9 +119,10 @@ enum ScriptFolderError: LocalizedError {
     URL.documentsDirectory.appendingPathComponent("Scripts", isDirectory: true)
   }
 
-  private static func resolve(_ data: Data) -> URL? {
+  private static func resolve(_ data: Data) -> (url: URL, stale: Bool)? {
     var stale = false
-    return try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)
+    guard let url = try? URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale) else { return nil }
+    return (url, stale)
   }
 
   /// A folder the document picker returned. Its access lasts as long as the bookmark does.
@@ -137,6 +144,7 @@ enum ScriptFolderError: LocalizedError {
     accessing?.stopAccessingSecurityScopedResource()
     accessing = nil
     fingerprints = [:]
+    scripts = []  // the old folder's files must never stand in for the new one's
     rootURL = localURL
     isICloud = false
     try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -148,6 +156,7 @@ enum ScriptFolderError: LocalizedError {
     accessing = url.startAccessingSecurityScopedResource() ? url : nil
     // Ids are shared by path across folders, so a cached fingerprint is only good for one folder.
     fingerprints = [:]
+    scripts = []  // the old folder's files must never stand in for the new one's
     rootURL = url
     isICloud = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
       || url.path.contains("/Mobile Documents/")
@@ -168,31 +177,40 @@ enum ScriptFolderError: LocalizedError {
     pollTask = nil
   }
 
+  /// False while the last look at the folder failed: its list is then the last good one, and an
+  /// empty or partial listing must not be read as scripts deleted.
+  private(set) var isListed = false
+
   func refresh() {
     var found: [FolderScript] = []
     var seen = Set<String>()
-    collect(in: rootURL, prefix: "", depth: 0, into: &found, seen: &seen)
+    isListed = collect(in: rootURL, prefix: "", depth: 0, into: &found, seen: &seen)
+    guard isListed else { updateRecentlyDeleted(); return }
     found.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     if found != scripts { scripts = found }
     updateRecentlyDeleted()
   }
 
-  private func collect(in directory: URL, prefix: String, depth: Int, into found: inout [FolderScript], seen: inout Set<String>) {
+  /// False when a folder (or one of its subfolders) could not be listed.
+  private func collect(in directory: URL, prefix: String, depth: Int, into found: inout [FolderScript], seen: inout Set<String>) -> Bool {
     let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey, .ubiquitousItemDownloadingStatusKey]
     let coordinator = NSFileCoordinator()
     var listing: [URL] = []
     var error: NSError?
+    var listed = false
     coordinator.coordinate(readingItemAt: directory, options: [.immediatelyAvailableMetadataOnly], error: &error) { url in
-      listing = (try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys)) ?? []
+      if let entries = try? FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys) {
+        listing = entries; listed = true
+      }
     }
+    guard listed, error == nil else { return false }
     for url in listing {
       var name = url.lastPathComponent
       let values = try? url.resourceValues(forKeys: Set(keys))
       if values?.isDirectory == true {
         // One level of subfolders, the same depth as the Mac library's folders.
-        if depth == 0, !name.hasPrefix(".") {
-          collect(in: url, prefix: prefix + name + "/", depth: depth + 1, into: &found, seen: &seen)
-        }
+        if depth == 0, !name.hasPrefix("."),
+          !collect(in: url, prefix: prefix + name + "/", depth: depth + 1, into: &found, seen: &seen) { listed = false }
         continue
       }
       // An iCloud file not yet on this iPad is a hidden ".Name.md.icloud" placeholder.
@@ -212,6 +230,7 @@ enum ScriptFolderError: LocalizedError {
         id: id(for: path), relativePath: path, url: real,
         modified: values?.contentModificationDate ?? .distantPast, isDownloaded: downloaded))
     }
+    return listed
   }
 
   // shortcut: identities are by relative path, so two folders with a file at the same path share
@@ -340,7 +359,10 @@ enum ScriptFolderError: LocalizedError {
     {
       throw ScriptFolderError.changedElsewhere(conflictCopy: try saveCopy(markdown, of: script))
     }
-    try Self.write(markdown, to: script.url)
+    // Checked and written in one coordinated write, so a sync that lands after the read above is never overwritten.
+    if current != markdown, try !Self.replace(current, with: markdown, at: script.url) {
+      throw ScriptFolderError.changedElsewhere(conflictCopy: try saveCopy(markdown, of: script))
+    }
     if current != markdown, editedHere.insert(script.id).inserted { saveEditedHere() }
     refresh()
     return try record(for: self.script(script.id) ?? script)
@@ -369,13 +391,25 @@ enum ScriptFolderError: LocalizedError {
   func rename(_ script: FolderScript, to title: String) throws {
     let destination = script.url.deletingLastPathComponent().appendingPathComponent(Self.fileName(for: title))
     guard destination != script.url else { return }
-    guard !FileManager.default.fileExists(atPath: destination.path) else { throw ScriptFolderError.nameTaken(title) }
+    // "arsenal" to "Arsenal": the same file to a case-insensitive volume, so it is not a name clash.
+    let caseOnly = destination.path.caseInsensitiveCompare(script.url.path) == .orderedSame
+    guard caseOnly || !FileManager.default.fileExists(atPath: destination.path) else { throw ScriptFolderError.nameTaken(title) }
     var error: NSError?
     var failure: Error?
     NSFileCoordinator().coordinate(
       writingItemAt: script.url, options: .forMoving, writingItemAt: destination, options: .forReplacing, error: &error
     ) { from, to in
-      do { try FileManager.default.moveItem(at: from, to: to) } catch { failure = error }
+      do {
+        if caseOnly {
+          // Through a hidden name, which the library never lists, since a direct move can see the target as taken.
+          let between = from.deletingLastPathComponent().appendingPathComponent(".\(UUID().uuidString).md")
+          try FileManager.default.moveItem(at: from, to: between)
+          do { try FileManager.default.moveItem(at: between, to: to) } catch {
+            try? FileManager.default.moveItem(at: between, to: from)
+            throw error
+          }
+        } else { try FileManager.default.moveItem(at: from, to: to) }
+      } catch { failure = error }
     }
     if let failure = failure ?? error { throw failure }
     // The reading position follows the file to its new name.

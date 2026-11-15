@@ -512,8 +512,8 @@ import AVFoundation
   /// the folder itself is unreachable, when an empty list means nothing.
   private func forgetRemoved(_ scripts: [FolderScript]) {
     let root = folder.rootURL.standardizedFileURL.path
-    // An unreachable folder lists nothing, which says nothing about what was deleted.
-    guard FileManager.default.fileExists(atPath: root) else { return }
+    // A folder that could not be listed (unreachable, iCloud busy) says nothing about what was deleted.
+    guard folder.isListed else { return }
     var current = Set(scripts.map(\.id))
     // Each folder is compared only with its own last listing: choosing another folder is not
     // deleting the old one's scripts.
