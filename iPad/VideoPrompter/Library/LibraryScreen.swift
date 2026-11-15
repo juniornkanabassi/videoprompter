@@ -259,7 +259,7 @@ struct LibraryScreen: View {
     }
     .listStyle(.plain)
     .scrollContentBackground(.hidden)
-    .refreshable { folder.refresh() }
+    .refreshable { await folder.refreshInBackground() }
     .overlay {
       if folder.scripts.isEmpty {
         ContentUnavailableView(
