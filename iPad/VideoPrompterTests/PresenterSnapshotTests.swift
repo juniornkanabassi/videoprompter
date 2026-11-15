@@ -31,6 +31,65 @@ import XCTest
     Finally, the one result nobody saw coming. We will take it apart, minute by minute, and ask what it means for the run in.
     """
 
+  func testHomeNavigationTiming() {
+    XCTAssertTrue(HomeNavigation.initiallyShowsHome)
+    XCTAssertFalse(HomeNavigation.shouldShowHome(backgroundTime: 0, now: 1000))
+    XCTAssertFalse(HomeNavigation.shouldShowHome(backgroundTime: 100, now: 999))
+    XCTAssertTrue(HomeNavigation.shouldShowHome(backgroundTime: 100, now: 1000))
+  }
+
+  func testSelectionRestoredAfterRelaunch() throws {
+    let defaults = UserDefaults(suiteName: "home-relaunch-\(UUID().uuidString)")!
+    let first = PadStore(defaults: defaults, discoverMicrophones: { [] })
+    let script = try first.folder.create(title: "Relaunch \(UUID().uuidString)", markdown: Self.script)
+    first.selectedID = script.id
+    let relaunched = PadStore(defaults: defaults, discoverMicrophones: { [] })
+    XCTAssertEqual(relaunched.selectedID, script.id)
+  }
+
+  func testBackgroundPresenterRestoration() throws {
+    let store = PadStore(defaults: UserDefaults(suiteName: "home-presenter-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    let script = try store.folder.create(title: "Resume \(UUID().uuidString)", markdown: Self.script)
+    store.restoreBackgroundPresenter(script.id.uuidString)
+    XCTAssertEqual(store.presentingID, script.id)
+    store.closePresenter()
+    store.restoreBackgroundPresenter("camera")
+    XCTAssertTrue(store.cameraOnly)
+    store.closePresenter()
+    store.restoreBackgroundPresenter("missing")
+    XCTAssertFalse(store.isPresenting)
+  }
+
+  func testMacPresentSelectsScriptFromHome() throws {
+    let store = PadStore(defaults: UserDefaults(suiteName: "home-takeover-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    let script = try store.folder.create(title: "Takeover \(UUID().uuidString)", markdown: Self.script)
+    store.perform(.present(script.id))
+    XCTAssertTrue(store.isPresenting)
+    XCTAssertTrue(store.macOpenedPresenter)
+    XCTAssertEqual(store.presentingID, script.id)
+    XCTAssertEqual(store.selectedID, script.id)
+    store.closePresenter()
+    XCTAssertFalse(store.macOpenedPresenter)
+    XCTAssertEqual(store.selectedID, script.id)
+  }
+
+  func testHomeAndLibraryShots() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    let store = PadStore(defaults: UserDefaults(suiteName: "home-shots-\(UUID().uuidString)")!, discoverMicrophones: { [] })
+    let last = try store.folder.create(title: "198 — 2026 PSG and 2011 Barcelona, a longer script title", markdown: Self.script)
+    UserDefaults.standard.set(last.id.uuidString, forKey: "padLastOpenedScript")
+    defer { UserDefaults.standard.removeObject(forKey: "padLastOpenedScript") }
+    let states: [(String, HomeMacState)] = [("off", .off), ("searching", .looking("MacBook Pro")), ("connected", .connected("MacBook Pro", "USB-C"))]
+    for (name, size) in Self.sizes {
+      for (stateName, state) in states {
+        _ = try await render(HomeScreen(showHome: .constant(true), snapshotMac: state).environmentObject(store), size: size,
+          name: "ipad-home-\(stateName)-\(name)", directory: directory, beforeDraw: {})
+      }
+      _ = try await render(LibraryScreen(folder: store.folder, showHome: .constant(false)).environmentObject(store), size: size,
+        name: "ipad-library-\(name)", directory: directory, beforeDraw: {})
+    }
+  }
+
   func testTextPanel() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let store = PadStore(defaults: UserDefaults(suiteName: "text-panel-\(UUID().uuidString)")!, discoverMicrophones: { [] })
