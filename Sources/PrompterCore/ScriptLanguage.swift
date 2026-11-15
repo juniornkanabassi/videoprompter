@@ -59,20 +59,32 @@ public enum ScriptLanguage: String, CaseIterable, Codable, Sendable {
     if let name = Self.setting(setting), let manual = Self(rawValue: name) { return manual }
     return detect(text)
   }
-  private static let detections = Mutex<[String: ScriptLanguage]>([:])
+  /// A sample's language, or nil for a sample with too little speech, which is read further.
+  private static let detections = Mutex<[String: ScriptLanguage?]>([:])
   /// Detection reads only the start of a script: 4,000 characters is hundreds of words, plenty to
   /// tell the language, and edits further down then cost nothing (the cache key is the sample).
+  /// A start that is mostly notes (a long callout) is read further, until half of that is speech.
   static let detectionSampleLimit = 4_000
   static var detectionCacheCount: Int { detections.withLock { $0.count } }
   public static func detect(_ markdown: String) -> ScriptLanguage {
-    let sample = String(markdown.prefix(detectionSampleLimit))
-    return detections.withLock { cache in
-      if let cached = cache[sample] { return cached }
-      let spoken = PrompterDocument(markdown: sample).spokenTokens.map(\.text).joined(separator: " ")
-      let result = detectSpoken(spoken)
-      if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
-      cache[sample] = result
-      return result
+    var limit = detectionSampleLimit
+    while true {
+      let end = markdown.index(markdown.startIndex, offsetBy: limit, limitedBy: markdown.endIndex) ?? markdown.endIndex
+      let sample = String(markdown[..<end])
+      let found: ScriptLanguage?? = detections.withLock { cache in
+        if let cached = cache[sample] { return cached }
+        let spoken = PrompterDocument(markdown: sample).spokenTokens.map(\.text).joined(separator: " ")
+        if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
+        if end != markdown.endIndex, spoken.count < detectionSampleLimit / 2 {
+          cache.updateValue(nil, forKey: sample)
+          return .some(nil)
+        }
+        let result = detectSpoken(spoken)
+        cache[sample] = result
+        return result
+      }
+      if case .some(.some(let language)) = found { return language }
+      limit *= 2
     }
   }
   private static func detectSpoken(_ text: String) -> ScriptLanguage {

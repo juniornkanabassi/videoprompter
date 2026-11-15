@@ -27,6 +27,17 @@ final class ScriptLanguageTests: XCTestCase {
     XCTAssertEqual(ScriptLanguage.detect(script + "A new last line typed at the end."), .spanish)
     XCTAssertEqual(ScriptLanguage.detectionCacheCount, cached, "an edit past the sample must not run detection again")
   }
+  /// An introductory note longer than the sample is not speech: the script under it decides.
+  func testALongNoteAtTheStartDoesNotHideTheScriptsLanguage() {
+    let note = "> [!info] Production notes\n" + String(repeating: "> " + paragraphs[0].1 + "\n", count: 50)
+    XCTAssertGreaterThan(note.count, ScriptLanguage.detectionSampleLimit)
+    let script = note + "\n" + String(repeating: paragraphs[1].1 + " ", count: 60)
+    XCTAssertEqual(ScriptLanguage.detect(script), .spanish)
+    let cached = ScriptLanguage.detectionCacheCount
+    XCTAssertEqual(ScriptLanguage.detect(script + "Una línea nueva al final."), .spanish)
+    XCTAssertEqual(ScriptLanguage.detectionCacheCount, cached, "an edit past the sample still hits the cache")
+    XCTAssertEqual(ScriptLanguage.detect(note), .english, "all notes and no speech is the English fallback")
+  }
   func testRegionalChoice() {
     XCTAssertEqual(ScriptLanguage.spanish.preferredLocale(system: Locale(identifier: "en-MX"), supported: [Locale(identifier: "es-ES"), Locale(identifier: "es-MX")])?.region?.identifier, "MX")
     XCTAssertEqual(ScriptLanguage.spanish.preferredLocale(system: Locale(identifier: "en-GB"), supported: [Locale(identifier: "es-MX"), Locale(identifier: "es-ES")])?.region?.identifier, "ES")
