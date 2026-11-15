@@ -80,6 +80,7 @@ final class SpeechModelPrefetch: ObservableObject {
           try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         }
         guard self?.revision == current else { return }
+        ParakeetModelPool.warm()
         self?.status = "Models ready · used next time you start reading"
       } catch is CancellationError { return }
       catch { guard self?.revision == current else { return }; self?.status = "Download paused · Apple is available"; self?.needsDownload = true }

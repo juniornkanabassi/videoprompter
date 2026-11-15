@@ -162,6 +162,19 @@ actor ParakeetModelPool {
   }
 
   var count: Int { idle.count }
+
+  /// Loads both models in the background so the first Start reading after launch does not wait
+  /// seconds for them (6 to 9 s each when measured cold). Released like any idle model if unused.
+  nonisolated static func warm() {
+    Task.detached(priority: .background) {
+      for unified in [false, true] {
+        let stream = ParakeetSpeechStream()
+        do { try await stream.prepare(directory: ParakeetModel.root(unified: unified), unified: unified, allowDownload: false) { _ in } }
+        catch { continue }
+        await stream.stop()
+      }
+    }
+  }
 }
 
 /// Immutable model revision and byte checks prevent partial or changed downloads being loaded.
