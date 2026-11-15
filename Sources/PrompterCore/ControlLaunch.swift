@@ -23,7 +23,7 @@ public enum ControlLaunch {
     var args = ["-g"]
     if let appPath { args += ["-a", appPath] } else { args += ["-b", bundleID] }
     args += ["--args", "--headless"]
-    if bundleID != ControlProtocol.bundleID { args += ["--agent-screen"] }
+    if !ControlProtocol.interactiveBundleIDs.contains(bundleID) { args += ["--agent-screen"] }
     return args
   }
 }

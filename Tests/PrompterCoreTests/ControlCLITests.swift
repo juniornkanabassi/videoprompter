@@ -227,5 +227,11 @@ extension ControlCLITests {
     let real = try ControlLaunch.arguments(appPath: "/Applications/JuniorOS Apps/Video Prompter.app", bundleID: ControlProtocol.bundleID, dataDirectory: nil)
     XCTAssertTrue(real.contains("--headless"))
     XCTAssertFalse(real.contains("--agent-screen"))
+    // The Alpha and Beta are launched by their own CLI and MCP; they must open as normal visible apps.
+    for channel in [".alpha", ".beta"] {
+      let args = try ControlLaunch.arguments(appPath: nil, bundleID: ControlProtocol.bundleID + channel, dataDirectory: nil)
+      XCTAssertFalse(args.contains("--agent-screen"), channel)
+    }
+    XCTAssertTrue(try ControlLaunch.arguments(appPath: nil, bundleID: ControlProtocol.bundleID + ".development", dataDirectory: nil).contains("--agent-screen"))
   }
 }
