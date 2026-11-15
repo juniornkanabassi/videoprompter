@@ -19,6 +19,20 @@ public enum CameraLink {
   public static let protocolVersion = 3
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
+  /// A version 3 Mac sends its status many times a second, so this long without a word means it has gone
+  /// (slept, lost Wi-Fi, cable stalled) even if the socket never closes.
+  public static let idleTimeout: TimeInterval = 8
+
+  /// What the iPad acts on from a connected Mac: nothing before its hello. The USB-C port is plain
+  /// loopback with no pairing key, so a Mac from before version 3 cannot push scripts or rename the iPad over it.
+  public static func iPadAccepts(_ message: Message, greeted: Bool, peerVersion: Int, overWiFi: Bool) -> Bool {
+    if case .hello = message { return true }
+    guard greeted else { return false }
+    switch message {
+    case .command(.sendScript), .command(.rename): return overWiFi || peerVersion >= 3
+    default: return true
+    }
+  }
 
   public enum Message: Equatable, Sendable {
     /// First on every connection: the Mac's name, shown on the iPad, and the protocol version.

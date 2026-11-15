@@ -108,12 +108,14 @@ import XCTest
     view.frame = CGRect(x: 0, y: 0, width: 800, height: 600)
     let exposure = PadExposure()
     exposure.update(.init(zebras: true, zebraLevel: 80))
+    exposure.select(.linked)
     let receiver = LinkReceiver(renderer: layer.sampleBufferRenderer, exposure: exposure)
     let decoded = expectation(description: "Mac sensor frame decoded by iPad receiver")
     receiver.onEvent = { event in
       if case .frame(let time, _) = event, time != nil { decoded.fulfill() }
     }
-    receiver.queue.sync { for message in messages { receiver.handle(message) } }
+    // The receiver acts on nothing before the Mac's hello.
+    receiver.queue.sync { for message in [.hello(name: "Mac", version: CameraLink.protocolVersion)] + messages { receiver.handle(message) } }
     await fulfillment(of: [decoded], timeout: 5)
     for _ in 0..<100 where exposure.frame.zebraMask == nil { try await Task.sleep(for: .milliseconds(50)) }
     let mask = try XCTUnwrap(exposure.frame.zebraMask, "The real decoder must deliver sensor pixels")

@@ -12,6 +12,19 @@ final class PadExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
   private var settings = CameraExposure.Settings()
   @MainActor private(set) var frame = CameraExposure.Frame()
   static let changed = Notification.Name("VideoPrompter.padExposureChanged")
+  /// The iPad's own camera and a Mac's linked picture can both be running; only the chosen one is analysed.
+  enum Source: Sendable { case local, linked }
+  private var source = Source.local
+  @MainActor private var shownSource = Source.local
+
+  /// Called when the chosen picture changes: the other source's frames, and results already on the way, are dropped.
+  @MainActor func select(_ value: Source) {
+    guard value != shownSource else { return }
+    shownSource = value
+    queue.async { self.source = value }
+    frame = .init()
+    NotificationCenter.default.post(name: Self.changed, object: self)
+  }
 
   func update(_ value: CameraExposure.Settings) {
     queue.async {
@@ -19,24 +32,25 @@ final class PadExposure: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
       if !value.isOn { self.publish(.init()) }
     }
   }
-  private func publish(_ frame: CameraExposure.Frame, releaseSlot: Bool = false) {
+  private func publish(_ frame: CameraExposure.Frame, releaseSlot: Bool = false, from origin: Source? = nil) {
     Task { @MainActor in
       defer { if releaseSlot { self.slot.signal() } }
+      if let origin, origin != self.shownSource { return }
       self.frame = frame
       NotificationCenter.default.post(name: Self.changed, object: self)
     }
   }
-  func receive(_ pixels: CVPixelBuffer) {
+  func receive(_ pixels: CVPixelBuffer, from origin: Source) {
     guard slot.wait(timeout: .now()) == .success else { return }
     queue.async {
-      guard self.settings.isOn else { self.slot.signal(); return }
+      guard self.settings.isOn, origin == self.source else { self.slot.signal(); return }
       // Full-range Y' is the Mac's exact input; Core Image normalises other decoded formats.
       let frame = self.processor.processDecoded(pixels, settings: self.settings)
-      self.publish(frame, releaseSlot: true)
+      self.publish(frame, releaseSlot: true, from: origin)
     }
   }
   func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-    if let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) { receive(pixels) }
+    if let pixels = CMSampleBufferGetImageBuffer(sampleBuffer) { receive(pixels, from: .local) }
   }
 }
 

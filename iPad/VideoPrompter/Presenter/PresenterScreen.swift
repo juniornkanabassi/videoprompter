@@ -252,7 +252,8 @@ struct PresenterScreen: View {
       Group {
       if let referencePicture {
         ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides)
-      } else if macConnected {
+      } else if camera.isShowingMac {
+        // The picture the user chose: a connected Mac does not override the iPad's own camera.
         if store.cameraOn { LinkPreview(camera: camera, link: camera.link) }
       } else if camera.isOn {
         CameraPreview(camera: camera)
