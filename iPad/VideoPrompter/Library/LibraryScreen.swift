@@ -31,7 +31,7 @@ struct MacConnection: Equatable {
 extension PadStore {
   var macConnection: MacConnection? {
     guard let name = camera.link.macName else { return nil }
-    return MacConnection(name: macStatus.displayName ?? name, kind: macStatus.connectionKind)
+    return MacConnection(name: macStatus.displayName ?? name, kind: macStatus.connectionKind ?? camera.link.transportKind)
   }
 }
 
@@ -39,6 +39,7 @@ extension PadStore {
 struct LibraryScreen: View {
   @EnvironmentObject private var store: PadStore
   @ObservedObject var folder: ScriptFolder
+  @Binding var showHome: Bool
   @State private var scope = LibraryScope.all
   @State private var search = ""
   @State private var importing = false
@@ -69,7 +70,7 @@ struct LibraryScreen: View {
         }
         if !wide && showingSidebar {
           Color.black.opacity(0.5).ignoresSafeArea().onTapGesture { showingSidebar = false }
-          sidebar.frame(width: 280).transition(.move(edge: .leading))
+          sidebar.frame(width: 280).transition(.opacity)
         }
       }
       .animation(.snappy(duration: 0.2), value: showingSidebar)
@@ -105,6 +106,9 @@ struct LibraryScreen: View {
 
   private var sidebar: some View {
     VStack(spacing: 4) {
+      Button { if store.draftFlusher.resolve() { showHome = true } } label: {
+        Label("Home", systemImage: "house").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+      }.foregroundStyle(LibraryTheme.accent).buttonStyle(.plain)
       HStack {
         Text("Scripts").font(.title.weight(.semibold))
         Spacer()
@@ -150,10 +154,13 @@ struct LibraryScreen: View {
         }
       }
       scopeRow(.recentlyDeleted, "Recently Deleted")
-      Button { showingSettings = true; showingSidebar = false } label: {
-        Text("Settings").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).padding(.horizontal, 12)
+      Divider().overlay(LibraryTheme.line)
+      HStack {
+        Button { showingSettings = true; showingSidebar = false } label: {
+          Label("Settings", systemImage: "gearshape").frame(maxWidth: .infinity, minHeight: 44)
+        }.buttonStyle(.plain).background(LibraryTheme.card2, in: RoundedRectangle(cornerRadius: 12))
+        MacTile()
       }
-      .buttonStyle(.plain)
     }
     .font(.body)
     .padding(.horizontal, 16)
@@ -166,6 +173,7 @@ struct LibraryScreen: View {
     let selected = scope == row
     return Button { if store.draftFlusher.resolve() { scope = row; showingSidebar = false } } label: {
       HStack {
+        Image(systemName: row == .all ? "doc.on.doc" : row == .sentFromMac ? "tray.and.arrow.down" : row == .recentlyDeleted ? "trash" : "folder")
         Text(title).lineLimit(1)
         Spacer()
         Text("\(folder.count(in: row))").foregroundStyle(selected ? LibraryTheme.text : LibraryTheme.muted)
@@ -196,9 +204,9 @@ struct LibraryScreen: View {
         }
         Text(listHeader).font(.subheadline).foregroundStyle(LibraryTheme.muted)
         Spacer(minLength: 0)
-        // Reachable with no script chosen and with an empty library.
-        MacConnectButton(showsTitle: false)
-        CameraOnlyButton(showsTitle: false)
+        if showingMenu {
+          Button { if store.draftFlusher.resolve() { showHome = true } } label: { Label("Home", systemImage: "house").frame(minHeight: 44) }
+        }
       }
       .padding(.horizontal, 20)
       .padding(.bottom, 12)
@@ -406,7 +414,7 @@ private struct CameraOnlyButton: View {
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Camera Only")
-    .accessibilityHint("Check framing or record without a script")
+    .accessibilityHint("Check framing without a script")
   }
 }
 
@@ -478,7 +486,7 @@ private struct ScriptDetail: View {
       Text(script.title).font(.title2.weight(.semibold)).lineLimit(1)
       Spacer(minLength: 12)
       MacConnectButton(showsTitle: true)
-      CameraOnlyButton(showsTitle: back == nil)
+      CameraOnlyButton(showsTitle: true)
       Button {
         // Present what is on screen: an unsaved draft is written first, and a failed save stops here.
         if store.draftFlusher.resolve() { store.present(script) }

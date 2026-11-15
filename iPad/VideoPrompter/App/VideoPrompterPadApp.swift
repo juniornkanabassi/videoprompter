@@ -3,14 +3,16 @@ import SwiftUI
 
 @main struct VideoPrompterPadApp: App {
   @StateObject private var store = PadStore()
-  @AppStorage("hasSuggestedMacConnection") private var suggested = false
-  @State private var suggestConnection = false
-  @State private var scan = false
+  @AppStorage("padShowHome") private var showHome = true
+  @AppStorage("padBackgroundTime") private var backgroundTime = 0.0
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
     WindowGroup {
-      LibraryScreen(folder: store.folder)
+      Group {
+        if showHome { HomeScreen(showHome: $showHome) }
+        else { LibraryScreen(folder: store.folder, showHome: $showHome) }
+      }
         .environmentObject(store)
         .fullScreenCover(isPresented: Binding(
           get: { store.isPresenting },
@@ -27,20 +29,11 @@ import SwiftUI
         } message: {
           Text(store.errorMessage ?? store.folder.errorMessage ?? "")
         }
-        .onChange(of: store.isPresenting) { _, value in store.camera.link.setPresenting(value) }
-        .sheet(isPresented: $suggestConnection) {
-          VStack(spacing: 24) {
-            Text("Connect to a Mac").font(.largeTitle.bold())
-            Text("Use a USB-C cable for an automatic connection, or scan the code in the Mac’s iPad Remote window.")
-            Button("Scan the code") { suggestConnection = false; scan = true }
-            Button("Not now") { suggestConnection = false }
-          }.padding(40).presentationDetents([.medium])
+        .onChange(of: store.isPresenting) { _, value in
+          store.camera.link.setPresenting(value)
         }
-        .fullScreenCover(isPresented: $scan) { PairingScanner(link: store.camera.link) }
-        .task {
-          #if !targetEnvironment(simulator)
-          if !suggested { suggested = true; suggestConnection = true }
-          #endif
+        .onChange(of: store.presentingID) { _, id in
+          if id != nil { showHome = false }
         }
         .preferredColorScheme(.dark)
         .tint(AlphaStyle.accent)
@@ -48,15 +41,28 @@ import SwiftUI
     .onChange(of: scenePhase) { _, phase in
       switch phase {
       case .active:
+        if HomeNavigation.shouldShowHome(backgroundTime: backgroundTime, now: Date().timeIntervalSince1970), !store.session.followsRemote {
+          if store.isPresenting { store.closePresenter() }
+          showHome = true
+        }
+        backgroundTime = 0
         store.folder.refresh()
         store.folder.startWatching()
         store.camera.link.start()
       case .background:
+        backgroundTime = Date().timeIntervalSince1970
         store.folder.stopWatching()
         // iPadOS stops the microphone in the background; pausing keeps the place cleanly.
         if store.session.isActivelyRunning { store.session.pause() }
       default: break
       }
     }
+  }
+}
+
+// A missing timestamp is the first open, or a foreground transition without a background.
+enum HomeNavigation {
+  static func shouldShowHome(backgroundTime: Double, now: Double) -> Bool {
+    backgroundTime > 0 && now - backgroundTime >= 900
   }
 }

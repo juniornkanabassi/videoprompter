@@ -20,7 +20,7 @@ struct PairingScanner: View {
         }.ignoresSafeArea()
       }
       VStack(spacing: 24) {
-        Text("Point at the code in the Mac’s iPad Remote window").font(.title2).padding(24)
+        Text("Point at the code in the Mac’s iPad Control window").font(.title2).padding(24)
           .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
         Spacer()
         if scanned || permissionFailed {

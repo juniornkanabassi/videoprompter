@@ -385,6 +385,7 @@ import AVFoundation
     guard let record = record(for: script) else { return }
     ensureMicrophone()
     session.present(record: record, settings: settings)
+    defaults.set(script.id.uuidString, forKey: "padLastOpenedScript")
     presentedModified = script.modified
     if cameraOnly {
       // The script comes up over the camera rather than hiding it; the saved picture mode returns on close.
@@ -483,6 +484,7 @@ import AVFoundation
       let record = try? folder.record(for: script),
       record.markdown != session.activeRecord?.markdown
     else { return }
+    defaults.set(script.id.uuidString, forKey: "padLastOpenedScript")
     presentedModified = script.modified
     session.applyEditedRecord(record)
   }

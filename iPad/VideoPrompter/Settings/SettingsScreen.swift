@@ -310,7 +310,7 @@ struct MacControlScreen: View {
         ways
         if let failure = failure ?? link.pairingFailure { notice(failure, colour: LibraryTheme.bad) }
         if connection == nil {
-          notice("Plug in a USB-C cable, or scan the code in the Mac’s iPad Remote window.", colour: LibraryTheme.warn)
+          notice("Plug in a USB-C cable, or scan the code in the Mac’s iPad Control window.", colour: LibraryTheme.warn)
         }
         if !macs.isEmpty { pairedMacs }
         ForEach(link.pairedMacs, id: \.id) { mac in
@@ -379,7 +379,7 @@ struct MacControlScreen: View {
       Toggle(isOn: $link.allowsWiFi) {
         VStack(alignment: .leading, spacing: 4) {
           Text("Same Wi-Fi")
-          Text("Scan the code in the Mac’s iPad Remote window. Known Macs reconnect automatically.")
+          Text("Scan the code in the Mac’s iPad Control window. Known Macs reconnect automatically.")
             .font(.subheadline).foregroundStyle(LibraryTheme.muted)
         }
       }
