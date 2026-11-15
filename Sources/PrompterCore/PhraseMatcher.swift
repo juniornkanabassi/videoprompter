@@ -35,10 +35,15 @@ public struct PhraseMatcher: Sendable {
     self.minimumBackwardTokens = minimumBackwardTokens
   }
   public var language: ScriptLanguage = .english
-  /// Runs are only started from this many most recent recognised words. `RecognitionTracker` bounds
-  /// it, because Parakeet keeps one revision for a whole reading and trying every start made each
-  /// result cost the square of everything said since Start.
+  /// Continuation runs (`forwardExtension`, the local forward match) only start from this many most
+  /// recent recognised words. `RecognitionTracker` bounds it, because Parakeet keeps one revision for
+  /// a whole reading and trying every start made each result cost the square of everything said
+  /// since Start.
   public var runStarts = Int.max
+  /// The longest evidence the general forward search can use. At most one word per window token can
+  /// match, so longer evidence covers under 0.63 of itself: below the 0.68 threshold less the 0.05
+  /// runner margin, it can neither win nor block a winner, and skipping it changes no result.
+  public var forwardEvidenceLimit: Int { Int(Double(backwardWindow + forwardWindow + 1) / 0.63) }
   /// Rewrites recognised text before matching; see `HeardWordList`. The one place it is applied is
   /// `RecognitionTracker.consumeCandidates`, which every engine's text passes through.
   public var heardWords: HeardWordList?
@@ -135,7 +140,7 @@ public struct PhraseMatcher: Sendable {
     let lo = max(0, current - backwardWindow)
     let hi = min(target.count, current + forwardWindow + 1)
     var destinationScores: [Int: Double] = [:]
-    for recognisedStart in recentStarts(words.count) {
+    for recognisedStart in max(0, words.count - forwardEvidenceLimit)..<words.count {
       let evidence = Array(words[recognisedStart...])
       guard evidence.count >= min(2, words.count) else { continue }
       let informativeCount = evidence.filter { $0.count > 2 && !common.contains($0) }.count
@@ -437,12 +442,13 @@ public struct RecognitionTracker: Sendable {
         sawFresh = true
         continue
       }
-      // Runs start among the recent or new words only; eight more before them keep the matcher's
-      // earliest-start penalty and the anchoring words before a run as the whole revision gives.
+      // Continuation runs start among the recent or new words only. The matcher gets every word any
+      // of its searches can start from, plus eight more so its earliest-start penalty and the
+      // anchoring words before a run come out as on the whole revision.
       let unchanged = zip(old?.words ?? [], words).prefix { $0 == $1 }.count
       var matcher = self.matcher
       matcher.runStarts = max(Self.recentRunStarts, words.count - unchanged)
-      wordsToMatch = Array(wordsToMatch.suffix(matcher.runStarts + 8))
+      wordsToMatch = Array(wordsToMatch.suffix(max(matcher.runStarts, matcher.forwardEvidenceLimit) + 8))
       let appendedWords = old.flatMap { words.starts(with: $0.words) ? Array(words.dropFirst($0.words.count)) : nil }
       let appended = appendedWords.map { $0.count >= matcher.minimumBackwardTokens } ?? false
       revisions[key] = .init(words: words, isFinal: event.isFinal, advanced: old?.advanced ?? false)

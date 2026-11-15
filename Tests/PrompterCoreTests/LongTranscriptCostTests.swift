@@ -43,6 +43,7 @@ final class LongTranscriptCostTests: XCTestCase {
     // Ten times the words. Re-parsing the text is linear; the old full-transcript search was about
     // twenty times slower here (12 ms to 268 ms a result in a debug build).
     let ratio = median(around: 2000) / median(around: 200)
+    print("COST 200 words \(median(around: 200) * 1000) ms, 2,000 words \(median(around: 2000) * 1000) ms")
     XCTAssertLessThan(ratio, 8, "A result at 2,000 words cost \(ratio)× one at 200")
   }
 }
