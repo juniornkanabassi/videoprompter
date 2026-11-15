@@ -609,6 +609,34 @@ final class CameraLinkTests: XCTestCase {
     XCTAssertEqual(old.written(peerVersion: 3)?.markdown, "One")
   }
 
+  /// State A is writing, the reader opens script B, then picks the Mac's mic: the wire must read
+  /// A, B, mic, never A, mic, B. States still coalesce between commands, and text is still left out.
+  func testACommandNeverOvertakesAStateOfferedBeforeIt() throws {
+    enum Wire: Equatable { case state(Int, Bool), command }
+    func state(_ word: Int) -> PadRemote.State {
+      .init(scripts: [], presenting: UUID(), running: false, mode: "Voice", speed: 100, word: word, words: 9,
+        fingerprint: MarkdownLibrary.fingerprint("One two"), markdown: "One two")
+    }
+    var outbox = StateOutbox()
+    var wire: [Wire] = []
+    func put(_ sent: PadRemote.State?) { if let sent { wire.append(.state(sent.word, sent.markdown != nil)) } }
+    func command() { put(outbox.beforeCommand(peerVersion: 4)); wire.append(.command) }
+    put(outbox.offer(state(1), peerVersion: 4))
+    put(outbox.offer(state(2), peerVersion: 4))
+    put(outbox.offer(state(3), peerVersion: 4))
+    command()
+    command()
+    put(outbox.offer(state(4), peerVersion: 4))
+    put(outbox.written(peerVersion: 4))
+    XCTAssertTrue(wire.count == 4, "state 3 is still being processed, so 4 waits")
+    put(outbox.written(peerVersion: 4))
+    XCTAssertNil(outbox.written(peerVersion: 4))
+    XCTAssertEqual(wire, [.state(1, true), .state(3, false), .command, .command, .state(4, false)])
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let link = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Camera/MacLink.swift"), encoding: .utf8)
+    XCTAssertTrue(link.contains("if let pending = outbox.beforeCommand(peerVersion: peerVersion) { write(pending, on: connection) }\n      connection.send(content: message.encoded()"))
+  }
+
   func testMeterAloneDoesNotMakeANewIPadState() {
     var state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Voice", speed: 100, word: 0, words: 0, micLevelDB: -30)
     var louder = state

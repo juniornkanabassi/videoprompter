@@ -573,6 +573,7 @@ final class LinkReceiver: @unchecked Sendable {
         if let next = outbox.offer(state, peerVersion: peerVersion) { write(next, on: connection) }
         return
       }
+      if let pending = outbox.beforeCommand(peerVersion: peerVersion) { write(pending, on: connection) }
       connection.send(content: message.encoded(), completion: .idempotent)
     }
   }

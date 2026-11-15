@@ -525,29 +525,39 @@ extension PadRemote.State {
 
 /// The iPad's states to the Mac: one written at a time, only the newest waits, so a slow Wi-Fi
 /// link never builds a backlog of old ones; and to a protocol 4 Mac the script text goes only
-/// when it differs from the text last written. A new connection starts a new outbox.
+/// when it differs from the text last written. A command is never written ahead of a state
+/// offered before it (`beforeCommand`). A new connection starts a new outbox.
 public struct StateOutbox: Sendable {
-  private var writing = false
+  /// States written and not yet processed: more than one only after a command sent the waiting one early.
+  private var inFlight = 0
   private var waiting: PadRemote.State?
   private var lastText: String?
   public init() {}
 
   /// The state to write now, or nil while a write is under way: it then waits, replacing an older one.
   public mutating func offer(_ state: PadRemote.State, peerVersion: Int) -> PadRemote.State? {
-    guard !writing else { waiting = state; return nil }
+    guard inFlight == 0 else { waiting = state; return nil }
     return start(state, peerVersion: peerVersion)
   }
 
-  /// The last write finished (or failed); the waiting state to write next, if any.
-  public mutating func written(peerVersion: Int) -> PadRemote.State? {
-    writing = false
+  /// Call before writing a command: the waiting state, to write first, so the Mac acts on the
+  /// command against the state the iPad had when it sent it (a Mac microphone after a script change).
+  public mutating func beforeCommand(peerVersion: Int) -> PadRemote.State? {
     guard let next = waiting else { return nil }
     waiting = nil
     return start(next, peerVersion: peerVersion)
   }
 
+  /// A state write finished (or failed); the waiting state to write next, if any.
+  public mutating func written(peerVersion: Int) -> PadRemote.State? {
+    inFlight = max(0, inFlight - 1)
+    guard inFlight == 0, let next = waiting else { return nil }
+    waiting = nil
+    return start(next, peerVersion: peerVersion)
+  }
+
   private mutating func start(_ state: PadRemote.State, peerVersion: Int) -> PadRemote.State {
-    writing = true
+    inFlight += 1
     var state = state
     if peerVersion >= 4, state.markdown != nil, state.markdown == lastText { state.markdown = nil }
     else { lastText = state.markdown }
