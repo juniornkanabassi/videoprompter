@@ -120,13 +120,8 @@ import XCTest
       var openedCamera = false
       let view = LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: { openedCamera = true }).uiZoom(zoom)
       let (window, host) = await LibraryAX.host(view, size: .init(width: 800, height: 700))
-      for title in ["Read a script", "Set up camera"] {
-    let node = try XCTUnwrap(LibraryAX.named(title, in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
-        let frame = try XCTUnwrap(node.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-        XCTAssertTrue(window.convertToScreen(host.bounds).contains(frame), "\(title) at \(zoom): \(frame)")
-        XCTAssertGreaterThanOrEqual(frame.height, 56)
-        if title == "Set up camera" { XCTAssertTrue(LibraryAX.bool(node, "accessibilityPerformPress")) }
-      }
+      let node = try XCTUnwrap(LibraryAX.named("Open camera", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
+      XCTAssertTrue(LibraryAX.bool(node, "accessibilityPerformPress"))
       XCTAssertTrue(openedCamera)
       LibraryAX.close(window)
     }

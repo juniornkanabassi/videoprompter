@@ -234,7 +234,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     let alpha = try await store.library!.create(title: "Alpha title", markdown: "**Alpha** body", tags: ["alpha-tag"])
     let beta = try await store.library!.create(title: "Beta title", markdown: "**Beta** body", tags: ["beta-tag"])
     await store.reload()
-    store.selectedID = alpha.id
+    store.editorScriptRequest = alpha.id
     let host = NSHostingView(rootView: LibraryView(store: store))
     let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1132, height: 750), styleMask: [.titled], backing: .buffered, defer: true)
     window.contentView = host
@@ -287,7 +287,7 @@ private func accessibilityObjects(_ element: Any) -> [NSObject] {
     store.uiZoom = zoom
     for _ in 0..<8 { host.layoutSubtreeIfNeeded(); try? await Task.sleep(for: .milliseconds(30)) }
     let rendered = labels(host).joined(separator: "|")
-    let actions = zoom == 1 ? ["Paste script", "New script", "Choose camera"] : ["Read a script", "Set up camera"]
+    let actions = ["Paste script", "New script", "Open camera"]
     for text in ["What do you want to do?", "Import file", "Practice with an example script"] + actions {
       XCTAssertTrue(rendered.contains(text), "Missing first-use guidance: \(text)")
     }

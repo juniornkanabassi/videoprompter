@@ -14,6 +14,8 @@ struct LibraryView: View {
   @State private var selection = Set<UUID>()
   @State private var showsDeleted = false
   @State private var showsPractice = false
+  @State private var homeVisible = false
+  @State private var lastScriptID: UUID?
   @AppStorage("readingTipHidden") private var readingTipHidden = false
   @SceneStorage("library.selectedScript") private var savedScriptID = ""
   @SceneStorage("library.scope") private var savedScope = "all"
@@ -97,7 +99,7 @@ struct LibraryView: View {
                 .listRowSeparator(.hidden)
                 .contextMenu { scriptActions(script) }
                 .draggable(ScriptFile(script: script))
-                .simultaneousGesture(TapGesture().onEnded { showsPractice = true })
+                .simultaneousGesture(TapGesture().onEnded { showsPractice = true; homeVisible = false })
             }
           }
         }.listStyle(.inset).accessibilityLabel("Scripts")
@@ -122,8 +124,13 @@ struct LibraryView: View {
       }
       .task {
         await store.waitForInitialLoad()
+        await store.waitForWelcomeScript()
         if !restoredScene {
           restoreScene()
+          lastScriptID = UUID(uuidString: savedScriptID).flatMap { id in store.scripts.contains(where: { $0.id == id }) ? id : nil } ?? store.selectedID
+          homeVisible = !store.homeWasShownThisSession && !Headless.shared.active && store.editorScriptRequest == nil
+          store.homeWasShownThisSession = true
+          if homeVisible { store.selectedID = nil }
           applyEditorRequest()
           restoredScene = true
           selection = showsStart ? [] : store.selectedID.map { [$0] } ?? []
@@ -134,11 +141,11 @@ struct LibraryView: View {
       }
       .onChange(of: selection) { _, value in
         store.selectedIDs = value
-        if let id = value.first { showsPractice = true; store.selectedID = id }
+        if let id = value.first { showsPractice = true; homeVisible = false; store.selectedID = id }
       }
       .onChange(of: store.selectedID) { _, id in
-        if id != nil { showsDeleted = false }
-        if restoredScene { savedScriptID = id?.uuidString ?? "" }
+        if let id { showsDeleted = false; lastScriptID = id; if restoredScene { homeVisible = false } }
+        if restoredScene, let id { savedScriptID = id.uuidString }
         if let id, !selection.contains(id) { selection = [id] } else if id == nil { selection.removeAll() }
       }
       .uiZoom(store.uiZoom)
@@ -158,16 +165,21 @@ struct LibraryView: View {
             .accessibilityAddTraits(.updatesFrequently)
         }
         Group {
-        if showsDeleted {
+        if showsStart {
+          LibraryStartView(store: store, importing: $importing, practice: {
+            homeVisible = false; showsPractice = true
+            Task { await PracticeReading.present(store: store) }
+          }, camera: { PresenterController.shared.presentCamera(store: store) },
+            guide: { homeVisible = false; showsPractice = true },
+            openScripts: { homeVisible = false; showsDeleted = false; store.selectedID = nil; selection = []; columnVisibility = .all },
+            continueScript: {
+              guard let id = lastScriptID, store.scripts.contains(where: { $0.id == id }) else { return }
+              homeVisible = false; showsDeleted = false; store.selectedFolderID = nil
+              store.selectedID = id; selection = [id]
+            }, lastTitle: store.scripts.first(where: { $0.id == lastScriptID })?.metadata.title)
+        } else if showsDeleted {
           ContentUnavailableView("Recently Deleted", systemImage: "trash",
             description: Text("Choose Restore Script to return a deleted script to your library."))
-        } else if showsStart {
-          LibraryStartView(store: store, importing: $importing, practice: {
-            showsPractice = true
-            Task { await PracticeReading.present(store: store) }
-          },
-            camera: { PresenterController.shared.presentCamera(store: store) },
-            guide: { showsPractice = true })
         } else if !store.search.isEmpty && store.visible.isEmpty {
           ContentUnavailableView.search(text: store.search)
         } else if let script = store.selected {
@@ -189,11 +201,12 @@ struct LibraryView: View {
       }.uiZoom(store.uiZoom)
     }
     .navigationSplitViewStyle(.balanced)
-    .navigationTitle(showsStart ? "Get Started" : showsDeleted ? "Recently Deleted" : "Scripts")
+    .navigationTitle(showsStart ? "Home" : showsDeleted ? "Recently Deleted" : "Scripts")
     .navigationSubtitle(store.search.isEmpty ? "" : "\(store.visible.count) scripts")
     .searchable(text: $store.search, placement: .toolbar, prompt: "Search scripts")
     .toolbar {
       ToolbarItemGroup(placement: .navigation) {
+        Button { showHome() } label: { Label("Home", systemImage: "house") }
         Menu {
           Button("New Script") { store.create() }
             .keyboardShortcut(ScriptShortcuts.newScript)
@@ -226,6 +239,7 @@ struct LibraryView: View {
     } message: {
       Text(store.errorMessage ?? "Unknown error")
     }
+    .onReceive(NotificationCenter.default.publisher(for: .videoPrompterHome)) { _ in showHome() }
     .onReceive(NotificationCenter.default.publisher(for: .videoPrompterImport)) { _ in importing = true }
     .fileImporter(isPresented: $importing, allowedContentTypes: [.plainText, UTType(filenameExtension: "md")!, .rtf, .pdf, UTType(filenameExtension: "docx")!]) { result in
       guard case .success(let url) = result else {
@@ -321,6 +335,7 @@ struct LibraryView: View {
     store.editorScriptRequest = nil
     guard store.scripts.contains(where: { $0.id == id }) else { return }
     showsDeleted = false
+    homeVisible = false
     showsPractice = true
     store.selectedFolderID = nil
     store.search = ""
@@ -362,14 +377,17 @@ struct LibraryView: View {
     min(220, CGFloat((count + 2) * 28) + Space.lg, availableHeight * 0.3 / zoom)
   }
 
-  private var showsStart: Bool {
-    store.libraryAvailable && !showsPractice && (store.scripts.isEmpty ||
-      (store.scripts.count == 1 && store.selected?.metadata.title == WelcomeScript.title && store.selected?.markdown == WelcomeScript.markdown))
+  private var showsStart: Bool { store.libraryAvailable && homeVisible }
+
+  private func showHome() {
+    if let id = store.selectedID { lastScriptID = id }
+    homeVisible = true
   }
 
   private var scopeSelection: Binding<LibraryScope?> {
     Binding(get: { showsDeleted ? .deleted : store.selectedFolderID.map(LibraryScope.folder) ?? .all }, set: { scope in
       guard let scope else { return }
+      homeVisible = false
       showsDeleted = scope == .deleted
       switch scope {
       case .all: store.selectFolder(nil)

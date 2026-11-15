@@ -5,6 +5,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension Notification.Name {
+  static let videoPrompterHome = Notification.Name("VideoPrompter.home")
   static let videoPrompterImport = Notification.Name("VideoPrompter.import")
 }
 
@@ -74,6 +75,9 @@ enum ScriptShortcuts {
         }
         CommandGroup(replacing: .newItem) { FileItems(store: store) }
         CommandGroup(before: .toolbar) {
+          Button("Home") { NotificationCenter.default.post(name: .videoPrompterHome, object: nil) }
+            .keyboardShortcut("h", modifiers: [.command, .shift])
+          Divider()
           Button("Zoom In") { store.stepUIZoom(in: true) }.keyboardShortcut("+", modifiers: .command)
             .disabled(store.uiZoom >= AppStore.uiZoomSteps.last!)
           Button("Zoom Out") { store.stepUIZoom(in: false) }.keyboardShortcut("-", modifiers: .command)

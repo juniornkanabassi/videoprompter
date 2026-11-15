@@ -1,63 +1,87 @@
 import PrompterCore
 import SwiftUI
 
-/// First launch, as mockup 07: two yellow-accented choices and one quiet line of extras.
 struct LibraryStartView: View {
   @ObservedObject var store: AppStore
+  @ObservedObject private var link = IPadCameraSender.shared
+  @Environment(\.openWindow) private var openWindow
   @Binding var importing: Bool
   let practice: () -> Void
   let camera: () -> Void
   var guide: () -> Void = {}
+  var openScripts: () -> Void = {}
+  var continueScript: () -> Void = {}
+  var lastTitle: String? = nil
 
   var body: some View {
     GeometryReader { geometry in
-    ScrollView {
-      VStack(spacing: geometry.size.height < 560 ? Space.sm : Space.xxl) {
-        VStack(spacing: Space.sm) {
-          Text("What do you want to do?").font(geometry.size.height < 560 ? .title2.bold() : .largeTitle.bold())
-          Text("Video Prompter Alpha is for reading your script and checking your camera. It does not record.")
-            .font(.system(size: 16)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        if geometry.size.height < 560 {
+      ScrollView {
+        VStack(spacing: geometry.size.height < 560 ? Space.sm : Space.xxl) {
           VStack(spacing: Space.sm) {
-            Button { store.create() } label: { Label("Read a script", systemImage: "doc.text").frame(maxWidth: .infinity, minHeight: 56) }
-              .buttonStyle(AlphaPrimaryButtonStyle())
-            Button(action: camera) { Label("Set up camera", systemImage: "video").frame(maxWidth: .infinity, minHeight: 56) }
-              .buttonStyle(AlphaSecondaryButtonStyle())
+            Text("What do you want to do?").font(geometry.size.height < 560 ? .title2.bold() : .largeTitle.bold())
+            Text("Video Prompter Alpha is for reading your script and checking your camera. It does not record.")
+              .font(.system(size: 16)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+              .fixedSize(horizontal: false, vertical: true)
           }
-        } else {
-        ViewThatFits(in: .horizontal) {
-          HStack(alignment: .top, spacing: Space.md) { cards }
-          VStack(spacing: Space.md) { cards }
-        }
-        }
-        IPadButton().buttonStyle(AlphaSecondaryButtonStyle())
-        WrapLayout(spacing: Space.md) {
-          Button(action: practice) { Text("Practice with an example script").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
-          Button { store.showWelcomeScript(); guide() } label: { Text("Help").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
-          Button { importing = true } label: { Text("Import file…").frame(minHeight: AlphaStyle.minTarget).contentShape(Rectangle()) }
-        }.buttonStyle(.borderless).controlSize(.large).font(.system(size: 16)).foregroundStyle(.secondary)
-      }.frame(maxWidth: 1000).frame(maxWidth: .infinity)
-        .padding(geometry.size.height < 560 ? Space.md : Space.margin)
-    }
-  }
-
-  }
-
-  @ViewBuilder private var cards: some View {
-    card("Read a script", symbol: "doc.text", description: "Paste it or start a new one. It scrolls as you speak.") {
-      WrapLayout(spacing: Space.sm) {
-        Button { store.importClipboard() } label: { Label("Paste script", systemImage: "doc.on.clipboard") }
-          .buttonStyle(AlphaPrimaryButtonStyle())
-        Button { store.create() } label: { Label("New script", systemImage: "plus") }
-          .buttonStyle(AlphaSecondaryButtonStyle())
+          ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: Space.md) { cards(width: max(280, (min(1200, geometry.size.width - 2 * (geometry.size.height < 560 ? Space.md : Space.margin)) - 2 * Space.md) / 3)) }
+              .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: Space.md) { cards(width: nil) }
+          }
+          WrapLayout(spacing: Space.md) {
+            if store.scripts.isEmpty { Button("Practice with an example script", action: practice) }
+            Button("Help") { store.showWelcomeScript(); guide() }
+            Button("Import file…") { importing = true }
+          }.buttonStyle(.borderless).font(.system(size: 16)).foregroundStyle(.secondary)
+        }.frame(maxWidth: 1200, minHeight: geometry.size.height < 560 ? nil : max(0, geometry.size.height - 2 * Space.margin))
+          .frame(maxWidth: .infinity)
+          .padding(geometry.size.height < 560 ? Space.md : Space.margin)
       }
     }
-    card("Set up camera", symbol: "video", description: "Pick your camera, turn it upright and check your exposure.") {
-      Button(action: camera) { Label("Choose camera", systemImage: "video") }
+  }
+
+  @ViewBuilder private func cards(width: CGFloat?) -> some View {
+    card("Read a script", symbol: "doc.text", description: "Paste it or start a new one. It scrolls as you speak.") {
+      if let lastTitle, !store.scripts.isEmpty {
+        Button(action: continueScript) {
+          HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+            Text("Continue “\(lastTitle)”").lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            Image(systemName: "chevron.right").accessibilityHidden(true)
+          }
+        }.buttonStyle(.plain).foregroundStyle(AlphaStyle.accent)
+      }
+      WrapLayout(spacing: Space.sm, leading: true) {
+        if !store.scripts.isEmpty {
+          Button("Open scripts", action: openScripts).buttonStyle(AlphaPrimaryButtonStyle())
+        }
+        if store.scripts.isEmpty {
+          Button("Paste script") { store.importClipboard() }.buttonStyle(AlphaPrimaryButtonStyle())
+        } else {
+          Button("Paste script") { store.importClipboard() }.buttonStyle(AlphaSecondaryButtonStyle())
+        }
+        Button("New script") { store.create() }.buttonStyle(AlphaSecondaryButtonStyle())
+      }
+    }
+    .frame(width: width)
+    card("Camera only", symbol: "video", description: "See yourself and check framing, focus and exposure. No script needed.") {
+      Button("Open camera", action: camera).buttonStyle(AlphaSecondaryButtonStyle())
+    }
+    .frame(width: width)
+    card("iPad Control", symbol: "ipad", description: "Use your iPad as the prompter or camera, run from this Mac.") {
+      HStack(spacing: Space.xs) {
+        Circle().fill(link.iPadState == nil ? Color.gray : Color.green)
+          .frame(width: Space.sm, height: Space.sm).accessibilityHidden(true)
+        Text(Self.iPadStatus(link.iPadState, transport: link.transport))
+      }.font(.caption).padding(Space.sm).background(Color.primary.opacity(0.08), in: Capsule())
+      Button(link.iPadState == nil ? "Connect an iPad" : "Open iPad Control") { openWindow(id: "ipad-remote") }
         .buttonStyle(AlphaSecondaryButtonStyle())
     }
+    .frame(width: width)
+  }
+
+  static func iPadStatus(_ state: PadRemote.State?, transport: String?) -> String {
+    guard let state else { return "No iPad connected" }
+    return ["Connected", state.deviceName ?? "iPad", transport].compactMap { $0 }.joined(separator: " · ")
   }
 
   private func card<Content: View>(_ title: String, symbol: String, description: String, @ViewBuilder content: () -> Content) -> some View {
@@ -66,8 +90,9 @@ struct LibraryStartView: View {
         .frame(height: 40, alignment: .leading).accessibilityHidden(true)
       Text(title).font(.title.bold())
       Text(description).font(.system(size: 16)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+      Spacer(minLength: 0)
       content()
-    }.padding(Space.xl).frame(maxWidth: .infinity, alignment: .topLeading)
+    }.padding(Space.xl).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: AlphaStyle.cardCorner))
       .overlay(RoundedRectangle(cornerRadius: AlphaStyle.cardCorner).stroke(Color.primary.opacity(0.15)))
   }
@@ -77,8 +102,8 @@ struct LibraryStartView: View {
 private struct AlphaPrimaryButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(AlphaStyle.onAccent)
-      .padding(.horizontal, Space.lg).frame(minHeight: AlphaStyle.minTarget)
+      .font(.system(size: 14, weight: .semibold)).foregroundStyle(AlphaStyle.onAccent)
+      .padding(.horizontal, Space.md).frame(minHeight: 32)
       .background(AlphaStyle.accent.opacity(configuration.isPressed ? 0.8 : 1), in: RoundedRectangle(cornerRadius: Space.md))
   }
 }
@@ -86,8 +111,8 @@ private struct AlphaPrimaryButtonStyle: ButtonStyle {
 private struct AlphaSecondaryButtonStyle: ButtonStyle {
   func makeBody(configuration: Configuration) -> some View {
     configuration.label
-      .font(.system(size: 17, weight: .semibold)).foregroundStyle(.primary)
-      .padding(.horizontal, Space.lg).frame(minHeight: AlphaStyle.minTarget)
+      .font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
+      .padding(.horizontal, Space.md).frame(minHeight: 32)
       .background(Color.primary.opacity(configuration.isPressed ? 0.16 : 0.1), in: RoundedRectangle(cornerRadius: Space.md))
   }
 }

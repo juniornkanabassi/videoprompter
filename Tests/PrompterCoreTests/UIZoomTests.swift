@@ -118,7 +118,7 @@ final class UIZoomTests: XCTestCase {
     let record = try await store.library!.create(
       title: "Zoom", markdown: (1...30).map { "Passage \($0) with several readable words." }.joined(separator: "\n\n"))
     await store.reload()
-    store.selectedID = record.id
+    store.editorScriptRequest = record.id
     let window = hosting(LibraryView(store: store), size: NSSize(width: 1400, height: 900))
     var rowHeightAtActualSize: CGFloat = 0
     // What a click on each control and across the editor reaches at actual size, which every
@@ -183,7 +183,7 @@ final class UIZoomTests: XCTestCase {
   func testTheNarrowestLibraryWindowKeepsTheEditorAtEveryZoom() async throws {
     let record = try await store.library!.create(title: "Small", markdown: "A short script.")
     await store.reload()
-    store.selectedID = record.id
+    store.editorScriptRequest = record.id
     store.inspector = false
     let controller = NSHostingController(rootView: LibraryView(store: store))
     controller.sizingOptions = [.minSize]

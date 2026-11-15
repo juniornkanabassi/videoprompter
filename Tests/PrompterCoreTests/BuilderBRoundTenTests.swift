@@ -40,7 +40,7 @@ import XCTest
     let (store, camera) = fixture()
     let markdown = "# My heading stays\n\nThe script is the main event."
     let script = try await store.createScript(title: "My heading stays", markdown: markdown)
-    store.selectedID = script.id
+    store.editorScriptRequest = script.id
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1200, height: 900))

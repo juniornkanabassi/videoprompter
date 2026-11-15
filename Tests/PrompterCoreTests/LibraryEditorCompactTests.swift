@@ -22,7 +22,7 @@ import XCTest
     let (store, camera) = fixture()
     let markdown = "Read these words.\n\nSecond line of the script.\n\nThird line of the script."
     let script = try await store.createScript(title: "An opening with a long title that wraps in a narrow window", markdown: markdown)
-    store.selectedID = script.id
+    store.editorScriptRequest = script.id
     store.uiZoom = 2
     let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 840, height: 700))
     defer { LibraryAX.close(window) }

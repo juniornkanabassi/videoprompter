@@ -18,7 +18,7 @@ import XCTest
     addTeardownBlock { try? FileManager.default.removeItem(at: url) }
     try "# Keep my heading\n\nThe script stays intact.".write(to: url, atomically: true, encoding: .utf8)
     let record = try await store.createScript(title: "Keep my heading", markdown: "# Keep my heading\n\nThe script stays intact.", linkTo: url)
-    store.selectedID = record.id
+    store.editorScriptRequest = record.id
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1000, height: 800))
@@ -92,7 +92,7 @@ import XCTest
   func testRealLibraryTextPopoverRestoresFocusAfterEscape() async throws {
     let (store, camera) = fixture()
     let script = try await store.createScript(title: "Focus check", markdown: "My script stays unchanged.")
-    store.selectedID = script.id
+    store.editorScriptRequest = script.id
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1000, height: 800))
