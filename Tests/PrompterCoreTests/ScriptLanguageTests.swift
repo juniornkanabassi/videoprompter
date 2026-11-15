@@ -33,6 +33,7 @@ final class ScriptLanguageTests: XCTestCase {
     XCTAssertGreaterThan(note.count, ScriptLanguage.detectionSampleLimit)
     let script = note + "\n" + String(repeating: paragraphs[1].1 + " ", count: 60)
     XCTAssertEqual(ScriptLanguage.detect(script), .spanish)
+    _ = ScriptLanguage.detect(script)  // the full cache may have been cleared part way through the first
     let cached = ScriptLanguage.detectionCacheCount
     XCTAssertEqual(ScriptLanguage.detect(script + "Una línea nueva al final."), .spanish)
     XCTAssertEqual(ScriptLanguage.detectionCacheCount, cached, "an edit past the sample still hits the cache")
