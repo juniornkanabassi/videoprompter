@@ -395,7 +395,7 @@ final class CameraLinkTests: XCTestCase {
     let sent = commands.map(CameraLink.Message.command) + [.state(state)]
     var reader = CameraLink.Reader()
     XCTAssertEqual(try reader.append(sent.reduce(into: Data()) { $0.append($1.encoded()) }), sent)
-    XCTAssertEqual(CameraLink.protocolVersion, 3)
+    XCTAssertEqual(CameraLink.protocolVersion, 4)
   }
 
   /// Frozen from what a version 2 Mac and iPad wrote: they must keep decoding as version 3.
@@ -561,10 +561,10 @@ final class CameraLinkTests: XCTestCase {
     let pipe = Stalled(name: "test")
     pipe.send(CameraLink.Message.frame(time: 1, keyFrame: true, data: Data()).encoded())
     pipe.send(CameraLink.Message.frame(time: 2, keyFrame: false, data: Data()).encoded())
-    pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -40))).encoded())
-    pipe.send(CameraLink.Message.command(.macStatus(.init(cameraOn: true))).encoded())
-    pipe.send(CameraLink.Message.command(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0))).encoded())
-    pipe.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: -10))).encoded())
+    pipe.send(.macStatus(.init(micLevelDB: -40)))
+    pipe.send(.macStatus(.init(cameraOn: true)))
+    pipe.send(.follow(.init(confirmed: 3, fingerprint: "f", seekRevision: 0)))
+    pipe.send(.macStatus(.init(micLevelDB: -10)))
     for _ in 0..<5 { pipe.advance() }
     var reader = CameraLink.Reader()
     let messages = try reader.append(pipe.writes.reduce(into: Data()) { $0.append($1) })
@@ -576,6 +576,60 @@ final class CameraLinkTests: XCTestCase {
       .frame(time: 2, keyFrame: false, data: Data())
     ])
     XCTAssertEqual(pipe.pendingBytes, 0)
+  }
+
+  func testIPadStatesWaitOneAtATimeAndSkipUnchangedText() {
+    func state(_ word: Int, _ text: String?) -> PadRemote.State {
+      .init(scripts: [], presenting: text == nil ? nil : UUID(), running: false, mode: "Voice", speed: 100, word: word, words: 9,
+        fingerprint: text.map { MarkdownLibrary.fingerprint($0) }, markdown: text)
+    }
+    var outbox = StateOutbox()
+    var wire: [PadRemote.State] = []
+    func written() { if let next = outbox.written(peerVersion: 4) { wire.append(next) } }
+    wire.append(outbox.offer(state(1, "One two"), peerVersion: 4)!)
+    // A slow link: only the newest of the states sent meanwhile waits.
+    XCTAssertNil(outbox.offer(state(2, "One two"), peerVersion: 4))
+    XCTAssertNil(outbox.offer(state(3, "One two"), peerVersion: 4))
+    written()
+    written()
+    for (word, text) in [(4, "One two three"), (5, "One two three"), (0, nil), (6, "One two three")] {
+      if let now = outbox.offer(state(word, text), peerVersion: 4) { wire.append(now) }
+      written()
+    }
+    XCTAssertEqual(wire.map(\.word), [1, 3, 4, 5, 0, 6])
+    XCTAssertEqual(wire.map { $0.markdown != nil }, [true, false, true, false, false, true], "text only when it changed")
+    var last: String?
+    let received = wire.map { sent -> String? in var state = sent; state.restoreText(&last); return state.markdown }
+    XCTAssertEqual(received, ["One two", "One two", "One two three", "One two three", nil, "One two three"])
+
+    // A Mac before protocol 4 always gets the text.
+    var old = StateOutbox()
+    _ = old.offer(state(1, "One"), peerVersion: 3)
+    XCTAssertNil(old.offer(state(2, "One"), peerVersion: 3))
+    XCTAssertEqual(old.written(peerVersion: 3)?.markdown, "One")
+  }
+
+  func testMeterAloneDoesNotMakeANewIPadState() {
+    var state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "Voice", speed: 100, word: 0, words: 0, micLevelDB: -30)
+    var louder = state
+    louder.micLevelDB = -5
+    XCTAssertTrue(louder.sameIgnoringMeter(state))
+    XCTAssertFalse(state.sameIgnoringMeter(nil))
+    state.speed = 120
+    XCTAssertFalse(louder.sameIgnoringMeter(state))
+  }
+
+  func testRawCommandBytesAreNeverCoalesced() {
+    final class Stalled: LinkPipe, @unchecked Sendable {
+      var writes: [Data] = []
+      override func write(_ data: Data, done: @escaping @Sendable () -> Void) { writes.append(data) }
+    }
+    let pipe = Stalled(name: "test")
+    pipe.send(CameraLink.Message.frame(time: 1, keyFrame: true, data: Data()).encoded())
+    let raw = CameraLink.Message.command(.macStatus(.init(micLevelDB: -40))).encoded()
+    pipe.send(raw)
+    pipe.send(raw)
+    XCTAssertEqual(pipe.pendingBytes, CameraLink.Message.frame(time: 1, keyFrame: true, data: Data()).encoded().count + 2 * raw.count)
   }
 
   @MainActor

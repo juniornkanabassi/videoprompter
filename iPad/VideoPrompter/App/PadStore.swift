@@ -646,7 +646,7 @@ extension PadStore {
       .sink { [weak self] _ in
         guard let self, link.macName != nil else { return }
         let state = remoteState
-        if state != lastSent { link.send(state) }
+        if !state.sameIgnoringMeter(lastSent) { link.send(state) }
         lastSent = state
       }.store(in: &bag)
     link.$macName.receive(on: DispatchQueue.main).sink { [weak self] name in

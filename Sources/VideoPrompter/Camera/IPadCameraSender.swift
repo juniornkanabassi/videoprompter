@@ -148,6 +148,12 @@ import VideoToolbox
   private let setupMeter = InputMeter()
   private var macName = "Mac"
   private var microphones: [PadRemote.Source] = []
+  /// Asked of AVFoundation and CoreAudio on the once-a-second tick or after a choice, never on the
+  /// 15 Hz tick: each lookup lists every device, on the main thread.
+  private var cameraList: (devices: [CameraDevice], sources: [PadRemote.Source]) = ([], [])
+  private var chosenInput: AudioInputDevice?
+  private var shownInputID: String?
+  private var inputChannel = ""
   private weak var sampledMeter: InputMeter?
   private var meterSubscription: AnyCancellable?
   private var meterLinkSubscription: AnyCancellable?
@@ -166,10 +172,21 @@ import VideoToolbox
 
   private func refreshSources() {
     CameraModel.shared.refreshDevices()
+    cameraList.devices = []  // formats can change with the same devices
     microphones = AudioCapture.inputDevices().map { .init(id: $0.uid, name: $0.name, connection: $0.connection, channels: $0.channels, sampleRate: $0.sampleRate) }
   }
-  private func publishMacStatus() {
+  private func refreshInput() {
+    let saved = AppStore.shared.settings.audioDeviceUID
+    chosenInput = AudioCapture.resolvedInput(saved)
+    let shown = relay.session?.settings.audioDeviceUID ?? saved
+    shownInputID = shown == saved ? chosenInput?.uid : AudioCapture.resolvedInput(shown)?.uid
+    inputChannel = AudioChannel.load(chosenInput?.uid ?? "", defaults: AppStore.preferences()).rawValue
+  }
+  /// A choice or the once-a-second tick reads the devices again and always sends; the 15 Hz tick
+  /// (`fromTick`) reuses what was read and sends only a change.
+  private func publishMacStatus(fromTick: Bool = false) {
     guard pipe != nil else { return }
+    if !fromTick { refreshInput() }
     if consoleMeterRequested != controlsIPad {
       consoleMeterRequested = controlsIPad
       send(.microphoneMeter(controlsIPad))
@@ -182,26 +199,32 @@ import VideoToolbox
     updateSetupMeter(needed: (iPadState?.cameraOnly == true || pickerMeter || (controlsIPad && iPadState?.voiceSource != "iPad")) && macMicOn && activeMeter == nil)
     let meter = activeMeter ?? (meterCapture != nil ? setupMeter : AppStore.shared.session.meter)
     sampleMicLevel(meter)
-    let next = PadRemote.MacStatus(
-      cameras: camera.devices.map { device in
+    if cameraList.devices != camera.devices {
+      cameraList = (camera.devices, camera.devices.map { device in
         let info = AVCaptureDevice(uniqueID: device.uid).map { CameraSourceInfo(device: $0, displayName: device.name) }
         return .init(id: device.uid, name: device.name, connection: info?.connectionDescription,
           width: info?.width, height: info?.height, fps: info?.nominalFrameRate)
-      },
+      })
+    }
+    let next = PadRemote.MacStatus(
+      cameras: cameraList.sources,
       selectedCamera: camera.selectedUID, cameraOn: isOn,
       microphones: microphones,
-      selectedMicrophone: AudioCapture.resolvedInput(relay.session?.settings.audioDeviceUID ?? AppStore.shared.settings.audioDeviceUID)?.uid,
+      selectedMicrophone: shownInputID,
       micOn: macMicOn, recording: recorder.isRecording ? .recording : .standby,
       displayName: macName, connectionKind: pipe?.name, framesSkipped: encoder.framesSkipped, supportsMicSelection: true,
-      microphoneChannel: AudioChannel.load(AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)?.uid ?? "", defaults: AppStore.preferences()).rawValue,
+      microphoneChannel: inputChannel,
       cameraRotation: camera.guides.rotation.rawValue, cameraMirrored: camera.mirrored)
-    if next != macStatus { macStatus = next }
+    let changed = next != macStatus
+    if changed { macStatus = next }
+    // The meter goes on its own (`micMeter` sink); unchanged sources wait for the next second.
+    guard changed || !fromTick else { return }
     var update = next
     update.micLevelDB = micMeter.levelDB
-    pipe?.send(CameraLink.Message.command(.macStatus(update)).encoded())
+    pipe?.send(.macStatus(update))
   }
   private func updateSetupMeter(needed: Bool) {
-    let device = AudioCapture.resolvedInput(AppStore.shared.settings.audioDeviceUID)
+    let device = chosenInput
     if !needed || meterCapture?.selectedDevice.uid != device?.uid {
       meterCapture?.stop()
       meterCapture = nil
@@ -524,7 +547,7 @@ import VideoToolbox
     refusedLegacyIDs = Set(defaults.stringArray(forKey: "forgottenWiFiIPads") ?? [])
     meterLinkSubscription = micMeter.$levelDB.dropFirst()
       .sink { [weak self] level in
-        self?.pipe?.send(CameraLink.Message.command(.macStatus(.init(micLevelDB: level))).encoded())
+        self?.pipe?.send(.macStatus(.init(micLevelDB: level)))
       }
   }
 
@@ -561,7 +584,7 @@ import VideoToolbox
 
   /// Drives the iPad's presenter. Nothing happens unless an iPad is connected.
   func send(_ command: PadRemote.Command) {
-    pipe?.send(CameraLink.Message.command(command).encoded())
+    pipe?.send(command)
   }
 
   /// Keeps the link open for `body`, as the window does while it is open.
@@ -876,7 +899,7 @@ import VideoToolbox
           }
           self.statusTicks += 1
           if self.statusTicks % 15 == 0 { self.refreshSources() }
-          self.publishMacStatus()
+          self.publishMacStatus(fromTick: self.statusTicks % 15 != 0)
         }
       }
     if relayActive { pipe.videoLimit.store(256_000, ordering: .relaxed) }
@@ -884,6 +907,8 @@ import VideoToolbox
     pipe.onClose = { [weak self, weak pipe] in
       Task { @MainActor in if let pipe { self?.lost(pipe) } }
     }
+    // The script text last received on this connection.
+    let lastText = Mutex<String?>(nil)
     pipe.onMessage = { [weak self, weak pipe] message in
       if case .goodbye = message {
         Task { @MainActor in
@@ -900,6 +925,7 @@ import VideoToolbox
         return
       }
       guard case .state(var state) = message else { return }
+      lastText.withLock { state.restoreText(&$0) }
       // Whatever the iPad says, the window's slider and the CLI get sane numbers.
       state.words = min(max(state.words, 0), 10_000_000)
       state.word = min(max(state.word, 0), state.words)
@@ -1218,11 +1244,18 @@ class LinkPipe: @unchecked Sendable {
   func close() {}
   func startReading() {}
 
-  final func send(_ data: Data) {
+  /// Commands sent this way carry their coalescing key, so nothing is decoded again to find it.
+  final func send(_ command: PadRemote.Command) {
+    send(CameraLink.Message.command(command).encoded(), key: Self.coalescingKey(command))
+  }
+
+  /// Raw messages never replace one another.
+  final func send(_ data: Data) { send(data, key: 0) }
+
+  private func send(_ data: Data, key: UInt8) {
     queued(data.count)
     // Length, then the kind byte: format (2) and frame (3) are the picture, the rest is control.
     let kind = data.count > 4 ? data[data.startIndex + 4] : 0
-    let key = kind == 5 ? Self.coalescingKey(data) : 0
     let replaced = backlog.withLock { backlog -> Int? in
       if kind == 2 || kind == 3 { backlog.video.append(data); return nil }
       // A word still waiting is out of date once a newer one arrives. The newer one goes to the
@@ -1238,9 +1271,7 @@ class LinkPipe: @unchecked Sendable {
     pump()
   }
 
-  private static func coalescingKey(_ message: Data) -> UInt8 {
-    guard let command = try? JSONDecoder().decode(PadRemote.Command.self, from: message.dropFirst(5))
-    else { return 0 }
+  private static func coalescingKey(_ command: PadRemote.Command) -> UInt8 {
     switch command {
     case .follow: return 1
     case .macStatus(let status):

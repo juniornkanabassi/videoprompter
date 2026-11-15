@@ -16,7 +16,9 @@ public enum CameraLink {
   /// 2 added `command` and `state`. An iPad sends `state` only to a Mac that said 2 or more.
   /// 3 added script transfer, look, presets, countdown and the Mac voice relay; every new field
   /// is Optional or a new command, so a v2 Mac and a v3 iPad (or the reverse) still talk.
-  public static let protocolVersion = 3
+  /// 4: an iPad leaves an unchanged script text out of `state` for a Mac that said 4 or more
+  /// (`StateOutbox`, `State.restoreText`).
+  public static let protocolVersion = 4
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
 
@@ -483,6 +485,54 @@ extension Data {
   }
   fileprivate func readUInt64(at index: Index) -> UInt64 {
     self[index..<(index + 8)].reduce(0) { $0 << 8 | UInt64($1) }
+  }
+}
+
+extension PadRemote.State {
+  /// The same state as far as the Mac is concerned: the meter also travels on its own, as `.microphoneLevel`.
+  public func sameIgnoringMeter(_ other: PadRemote.State?) -> Bool {
+    var mine = self, theirs = other
+    mine.micLevelDB = nil
+    theirs?.micLevelDB = nil
+    return mine == theirs
+  }
+
+  /// On the Mac: a protocol 4 iPad leaves out the text it already sent on this connection.
+  /// `last` is the text last received on it; an open script always has a fingerprint.
+  public mutating func restoreText(_ last: inout String?) {
+    if markdown == nil, fingerprint != nil { markdown = last } else { last = markdown }
+  }
+}
+
+/// The iPad's states to the Mac: one written at a time, only the newest waits, so a slow Wi-Fi
+/// link never builds a backlog of old ones; and to a protocol 4 Mac the script text goes only
+/// when it differs from the text last written. A new connection starts a new outbox.
+public struct StateOutbox: Sendable {
+  private var writing = false
+  private var waiting: PadRemote.State?
+  private var lastText: String?
+  public init() {}
+
+  /// The state to write now, or nil while a write is under way: it then waits, replacing an older one.
+  public mutating func offer(_ state: PadRemote.State, peerVersion: Int) -> PadRemote.State? {
+    guard !writing else { waiting = state; return nil }
+    return start(state, peerVersion: peerVersion)
+  }
+
+  /// The last write finished (or failed); the waiting state to write next, if any.
+  public mutating func written(peerVersion: Int) -> PadRemote.State? {
+    writing = false
+    guard let next = waiting else { return nil }
+    waiting = nil
+    return start(next, peerVersion: peerVersion)
+  }
+
+  private mutating func start(_ state: PadRemote.State, peerVersion: Int) -> PadRemote.State {
+    writing = true
+    var state = state
+    if peerVersion >= 4, state.markdown != nil, state.markdown == lastText { state.markdown = nil }
+    else { lastText = state.markdown }
+    return state
   }
 }
 

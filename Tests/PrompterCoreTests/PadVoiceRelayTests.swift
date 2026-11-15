@@ -631,8 +631,8 @@ final class PadVoiceRelayTests: XCTestCase {
     if case .frame(let time, _, _) = message { return Int(time) }
     return nil
   }
-  private static func follow(_ index: Int) -> Data {
-    CameraLink.Message.command(.follow(.init(confirmed: index, fingerprint: "f", seekRevision: 1))).encoded()
+  private static func follow(_ index: Int) -> PadRemote.Command {
+    .follow(.init(confirmed: index, fingerprint: "f", seekRevision: 1))
   }
 
   func testControlMessagesAreWrittenBeforeQueuedVideoInExactOrder() throws {
@@ -657,7 +657,7 @@ final class PadVoiceRelayTests: XCTestCase {
     pipe.send(Self.numbered(0))
     for index in 0..<20 { pipe.send(Self.follow(index)) }
     let queuedBytes = pipe.pendingBytes
-    XCTAssertEqual(queuedBytes, Self.numbered(0).count + Self.follow(19).count, "replaced ones no longer count as queued")
+    XCTAssertEqual(queuedBytes, Self.numbered(0).count + CameraLink.Message.command(Self.follow(19)).encoded().count, "replaced ones no longer count as queued")
     pipe.send(CameraLink.Message.command(.pause).encoded())
     for _ in 0..<3 { pipe.finishOne() }
     let messages = pipe.messages
