@@ -64,6 +64,8 @@ enum ScriptFolderError: LocalizedError {
   @Published private(set) var rootURL: URL
   @Published private(set) var isICloud = false
   @Published var errorMessage: String?
+  /// Moves when script texts finish loading, so the list's word counts and search catch up.
+  @Published private(set) var textsLoaded = 0
 
   /// Each file's last-read fingerprint, the baseline a save compares against.
   private var baselines: [UUID: String] = [:]
@@ -72,6 +74,8 @@ enum ScriptFolderError: LocalizedError {
   private let localURL: URL
   private var accessing: URL?
   private var pollTask: Task<Void, Never>?
+  private var listingGeneration = 0
+  private var textLoad: Task<Void, Never>?
   private static let bookmarkKey = "scriptFolderBookmark"
   private static let idsKey = "scriptFolderIDs"
   private static let sentKey = "scriptFolderMacLinks"
@@ -157,6 +161,7 @@ enum ScriptFolderError: LocalizedError {
     // Ids are shared by path across folders, so a cached fingerprint is only good for one folder.
     fingerprints = [:]
     scripts = []  // the old folder's files must never stand in for the new one's
+    listingGeneration += 1
     rootURL = url
     isICloud = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
       || url.path.contains("/Mobile Documents/")
@@ -168,7 +173,7 @@ enum ScriptFolderError: LocalizedError {
     pollTask = Task { [weak self] in
       while !Task.isCancelled {
         try? await Task.sleep(for: .seconds(3))
-        self?.refresh()
+        await self?.refreshInBackground()
       }
     }
   }
@@ -181,18 +186,50 @@ enum ScriptFolderError: LocalizedError {
   /// empty or partial listing must not be read as scripts deleted.
   private(set) var isListed = false
 
+  /// Lists the folder and publishes at once: for callers that just changed it and need to see the result.
   func refresh() {
-    var found: [FolderScript] = []
-    var seen = Set<String>()
-    isListed = collect(in: rootURL, prefix: "", depth: 0, into: &found, seen: &seen)
-    guard isListed else { updateRecentlyDeleted(); return }
+    listingGeneration += 1
+    apply(Self.listing(of: rootURL))
+  }
+
+  /// The same, with the coordinated listing (which waits while iCloud writes) off the main actor.
+  /// A listing started before a `refresh()` or a folder change is dropped, so it never undoes either.
+  func refreshInBackground() async {
+    let generation = listingGeneration, root = rootURL
+    let entries = await Task.detached(priority: .utility) { Self.listing(of: root) }.value
+    guard generation == listingGeneration, root == rootURL else { return }
+    apply(entries)
+  }
+
+  /// nil when the folder (or a subfolder) could not be listed.
+  private func apply(_ entries: [Entry]?) {
+    isListed = entries != nil
+    guard let entries else { updateRecentlyDeleted(); return }
+    var found = entries.map {
+      FolderScript(id: id(for: $0.path), relativePath: $0.path, url: $0.url, modified: $0.modified, isDownloaded: $0.downloaded)
+    }
     found.sort { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     if found != scripts { scripts = found }
     updateRecentlyDeleted()
+    if textLoad == nil, !scriptsMissingText().isEmpty { textLoad = Task { await loadTexts(); textLoad = nil } }
+  }
+
+  /// One file found in the listing, before it has an identity.
+  private struct Entry: Sendable {
+    let path: String
+    let url: URL
+    let modified: Date
+    let downloaded: Bool
+  }
+
+  private nonisolated static func listing(of root: URL) -> [Entry]? {
+    var found: [Entry] = []
+    var seen = Set<String>()
+    return collect(in: root, prefix: "", depth: 0, into: &found, seen: &seen) ? found : nil
   }
 
   /// False when a folder (or one of its subfolders) could not be listed.
-  private func collect(in directory: URL, prefix: String, depth: Int, into found: inout [FolderScript], seen: inout Set<String>) -> Bool {
+  private nonisolated static func collect(in directory: URL, prefix: String, depth: Int, into found: inout [Entry], seen: inout Set<String>) -> Bool {
     let keys: [URLResourceKey] = [.isDirectoryKey, .contentModificationDateKey, .ubiquitousItemDownloadingStatusKey]
     let coordinator = NSFileCoordinator()
     var listing: [URL] = []
@@ -226,9 +263,7 @@ enum ScriptFolderError: LocalizedError {
       let status = values?.ubiquitousItemDownloadingStatus
       let downloaded = !placeholder && (status == nil || status == .current || status == .downloaded)
       if !downloaded { try? FileManager.default.startDownloadingUbiquitousItem(at: real) }
-      found.append(FolderScript(
-        id: id(for: path), relativePath: path, url: real,
-        modified: values?.contentModificationDate ?? .distantPast, isDownloaded: downloaded))
+      found.append(Entry(path: path, url: real, modified: values?.contentModificationDate ?? .distantPast, downloaded: downloaded))
     }
     return listed
   }
@@ -538,12 +573,26 @@ enum ScriptFolderError: LocalizedError {
     scope == .recentlyDeleted ? recentlyDeleted.count : scripts(in: scope).count
   }
 
-  /// A script's text, read again only when its file changed. Nil while it is still downloading.
+  /// A script's text if it has been loaded and its file has not changed since; never reads a file.
+  /// Nil while it is downloading or not yet loaded (`loadTexts` fills it in off the main thread).
   func text(of script: FolderScript) -> String? {
-    if let cached = texts[script.id], cached.modified == script.modified { return cached.text }
-    guard script.isDownloaded, let text = try? Self.read(script.url) else { return nil }
-    texts[script.id] = (script.modified, text)
-    return text
+    guard let cached = texts[script.id], cached.modified == script.modified else { return nil }
+    return cached.text
+  }
+
+  private func scriptsMissingText() -> [FolderScript] {
+    scripts.filter { $0.isDownloaded && text(of: $0) == nil }
+  }
+
+  /// Reads every downloaded script whose text is missing or out of date, off the main thread.
+  func loadTexts() async {
+    let todo = scriptsMissingText()
+    guard !todo.isEmpty else { return }
+    let loaded = await Task.detached(priority: .utility) {
+      todo.compactMap { script in (try? Self.read(script.url)).map { (script, $0) } }
+    }.value
+    for (script, text) in loaded { texts[script.id] = (script.modified, text) }
+    textsLoaded += 1
   }
 
   func wordCount(of script: FolderScript) -> Int? { text(of: script).map(Self.wordCount) }
@@ -668,7 +717,7 @@ enum ScriptFolderError: LocalizedError {
     return formatter.string(from: Date())
   }
 
-  static func read(_ url: URL) throws -> String {
+  nonisolated static func read(_ url: URL) throws -> String {
     var error: NSError?
     var result: Result<String, Error> = .failure(CocoaError(.fileReadUnknown))
     NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { url in

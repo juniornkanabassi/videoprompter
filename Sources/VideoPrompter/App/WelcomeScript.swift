@@ -16,11 +16,11 @@ enum WelcomeScript {
     > [!note] Start here
     > Click **Open presenter**, then **Start reading**, and read this out loud. Voice follow is on, so the script moves when you speak.
 
-    Hi, hello, this is Junior. [Look at the camera.]
+    Hi, hello, and welcome. [Look at the camera.]
 
-    Thank you for using Video Prompter. Everything on this Mac is set up and ready to go.
+    Thank you for using Video Prompter. This short script is your first read.
 
-    I stayed up until about midnight finishing this version, so I hope you enjoy it. This script shows you how everything works. Just read it out loud and it will follow you.
+    I hope you enjoy it. This script shows you how everything works. Just read it out loud and it will follow you.
 
     ## Reading
 

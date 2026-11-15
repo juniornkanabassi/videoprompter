@@ -45,10 +45,12 @@ final class PadLibraryTests: XCTestCase {
 
   // MARK: Search
 
-  func testSearchFindsTitlesAndScriptTextIgnoringCaseAndAccents() throws {
+  func testSearchFindsTitlesAndScriptTextIgnoringCaseAndAccents() async throws {
     let (folder, _) = try folder()
     let title = try add("Title race", "Welcome back to the studio.", in: folder)
     let body = try add("Bench goals", "Eleven goals from substitutes. Café culture.", in: folder)
+    XCTAssertEqual(folder.search("substitutes", in: folder.scripts), [], "texts load off the main thread, so nothing is read by a search")
+    await folder.loadTexts()
     XCTAssertEqual(folder.search("TITLE", in: folder.scripts), [title])
     XCTAssertEqual(folder.search("substitutes", in: folder.scripts), [body])
     XCTAssertEqual(folder.search("cafe", in: folder.scripts), [body], "accents do not matter")
@@ -56,22 +58,45 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertTrue(folder.search("nothing like this", in: folder.scripts).isEmpty)
   }
 
-  func testEveryWordOfASearchMustMatchSomewhereInTheScript() throws {
+  func testEveryWordOfASearchMustMatchSomewhereInTheScript() async throws {
     let (folder, _) = try folder()
     let match = try add("Bench goals", "Eleven goals from substitutes.", in: folder)
     try add("Podcast intro", "Goals again.", in: folder)
+    await folder.loadTexts()
     XCTAssertEqual(folder.search("bench substitutes", in: folder.scripts), [match])
     XCTAssertEqual(folder.search("bench nonsense", in: folder.scripts), [])
   }
 
-  func testSearchSeesAnEditAfterTheFileChanges() throws {
+  func testSearchSeesAnEditAfterTheFileChanges() async throws {
     let (folder, _) = try folder()
     let script = try add("Notes", "alpha", in: folder, at: Date(timeIntervalSince1970: 1_000))
+    await folder.loadTexts()
     XCTAssertEqual(folder.search("beta", in: folder.scripts), [])
     try Folder.write("alpha beta", to: script.url)
     try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000)], ofItemAtPath: script.url.path)
     folder.refresh()
+    XCTAssertEqual(folder.search("beta", in: folder.scripts), [], "the old text is not trusted once the file changed")
+    await folder.loadTexts()
     XCTAssertEqual(folder.search("beta", in: folder.scripts).map(\.id), [script.id])
+  }
+
+  func testBackgroundListingFindsNewFilesAndNeverOverwritesANewerRefresh() async throws {
+    let (folder, _) = try folder()
+    let first = try add("First", "one two", in: folder)
+    try Folder.write("three", to: folder.rootURL.appendingPathComponent("Second.md"))
+    await folder.refreshInBackground()
+    XCTAssertEqual(folder.scripts.map(\.title), ["First", "Second"])
+    XCTAssertEqual(folder.scripts.first?.id, first.id, "a script keeps its identity")
+
+    // A listing that started before a synchronous refresh is dropped, so it cannot undo it.
+    let stale = Task { await folder.refreshInBackground() }
+    try FileManager.default.removeItem(at: folder.rootURL.appendingPathComponent("Second.md"))
+    folder.refresh()
+    await stale.value
+    XCTAssertEqual(folder.scripts.map(\.title), ["First"])
+
+    await folder.loadTexts()
+    XCTAssertEqual(folder.wordCount(of: first), 2)
   }
 
   // MARK: Scopes and counts
@@ -113,12 +138,13 @@ final class PadLibraryTests: XCTestCase {
 
   // MARK: Sent from Mac and the iPad copy
 
-  func testAScriptSentFromTheMacIsNotedAndAKeptEditReadsEditedOnIPad() throws {
+  func testAScriptSentFromTheMacIsNotedAndAKeptEditReadsEditedOnIPad() async throws {
     let (folder, _) = try folder()
     let mac = UUID()
     let sent = try XCTUnwrap(folder.receive(.init(macID: mac, title: "194 Short", markdown: "Title race", basis: nil, present: false)))
     XCTAssertEqual(folder.origin(of: sent), .fromMac)
     XCTAssertEqual(folder.listLabel(for: sent).note, "Sent from Mac")
+    await folder.loadTexts()
     XCTAssertTrue(folder.metaLine(for: sent).hasSuffix("2 words · Sent from Mac"), folder.metaLine(for: sent))
     XCTAssertTrue(folder.copyLabel(for: sent).hasPrefix("Mac’s copy from "))
 
@@ -189,9 +215,10 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertEqual(try Folder.read(XCTUnwrap(folder.scripts.first { $0.relativePath == second }).url), "second draft")
   }
 
-  func testAFileOfTheUsersOwnIsLabelledByWhereItIsSaved() throws {
+  func testAFileOfTheUsersOwnIsLabelledByWhereItIsSaved() async throws {
     let (folder, _) = try folder()
     let own = try add("Mine", "words here", in: folder)
+    await folder.loadTexts()
     XCTAssertEqual(folder.origin(of: own), .own)
     XCTAssertNil(folder.listLabel(for: own).note)
     XCTAssertEqual(folder.copyLabel(for: own), "Saved on this iPad")

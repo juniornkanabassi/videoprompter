@@ -60,13 +60,18 @@ public enum ScriptLanguage: String, CaseIterable, Codable, Sendable {
     return detect(text)
   }
   private static let detections = Mutex<[String: ScriptLanguage]>([:])
+  /// Detection reads only the start of a script: 4,000 characters is hundreds of words, plenty to
+  /// tell the language, and edits further down then cost nothing (the cache key is the sample).
+  static let detectionSampleLimit = 4_000
+  static var detectionCacheCount: Int { detections.withLock { $0.count } }
   public static func detect(_ markdown: String) -> ScriptLanguage {
-    detections.withLock { cache in
-      if let cached = cache[markdown] { return cached }
-      let spoken = PrompterDocument(markdown: markdown).spokenTokens.map(\.text).joined(separator: " ")
+    let sample = String(markdown.prefix(detectionSampleLimit))
+    return detections.withLock { cache in
+      if let cached = cache[sample] { return cached }
+      let spoken = PrompterDocument(markdown: sample).spokenTokens.map(\.text).joined(separator: " ")
       let result = detectSpoken(spoken)
       if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
-      cache[markdown] = result
+      cache[sample] = result
       return result
     }
   }
