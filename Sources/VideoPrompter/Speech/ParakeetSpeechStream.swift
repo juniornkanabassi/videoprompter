@@ -130,16 +130,16 @@ enum ParakeetModel {
   private static let verification = VerificationCache()
 
   static func ready(at root: URL, files: [File]) -> Bool {
-    verification.lock.lock()
-    defer { verification.lock.unlock() }
     let key = VerificationKey(root: root.standardizedFileURL, files: files)
     let sizesMatch = files.allSatisfy {
       (try? root.appendingPathComponent($0.path).resourceValues(forKeys: [.fileSizeKey]).fileSize) == $0.size
     }
     // Same-size external edits are rehashed next launch; downloads refresh this entry immediately.
-    if let verified = verification.results[key] { return verified && sizesMatch }
+    if let verified = verification.lock.withLock({ verification.results[key] }) { return verified && sizesMatch }
+    // Hash ~830 MB outside the lock so Start never waits behind the launch prefetch's check.
     let verified = sizesMatch && files.allSatisfy { (try? valid(root.appendingPathComponent($0.path), file: $0)) == true }
-    verification.results[key] = verified
+    // A download that recorded its result meanwhile is newer than this hash.
+    verification.lock.withLock { if verification.results[key] == nil { verification.results[key] = verified } }
     return verified
   }
 
