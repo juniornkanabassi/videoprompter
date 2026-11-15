@@ -21,7 +21,8 @@ struct HomeScreen: View {
           let columns = geometry.size.width >= 850 ? 3 : 1
           LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: columns), alignment: .leading, spacing: 16) {
             card(icon: "doc.text", title: "Read a script", description: "Your scripts, scrolling as you speak.") {
-              Text("\(store.folder.count(in: .all)) scripts · \(store.folder.count(in: .sentFromMac)) sent from Mac")
+              let count = store.folder.count(in: .all)
+              Text("\(count) \(count == 1 ? "script" : "scripts") · \(store.folder.count(in: .sentFromMac)) sent from Mac")
                 .foregroundStyle(LibraryTheme.muted)
               if let script = lastScript {
                 Button { store.selectedID = script.id; showHome = false } label: {
@@ -49,16 +50,16 @@ struct HomeScreen: View {
 }
 
 private func card<Content: View>(icon: String, title: String, description: String, @ViewBuilder content: () -> Content) -> some View {
-  VStack(alignment: .leading, spacing: 14) {
+  VStack(alignment: .leading, spacing: 16) {
     Image(systemName: icon).font(.title2).foregroundStyle(LibraryTheme.accent)
-      .frame(width: 50, height: 50).background(LibraryTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+      .frame(width: 48, height: 48).background(LibraryTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
     Text(title).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
     Text(description).foregroundStyle(LibraryTheme.muted).fixedSize(horizontal: false, vertical: true)
     Spacer(minLength: 12)
     content()
-  }.padding(22).frame(maxWidth: .infinity, minHeight: 310, alignment: .topLeading)
-    .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 18))
-    .overlay(RoundedRectangle(cornerRadius: 18).stroke(LibraryTheme.line))
+  }.padding(24).frame(maxWidth: .infinity, minHeight: 320, alignment: .topLeading)
+    .background(LibraryTheme.card, in: RoundedRectangle(cornerRadius: 16))
+    .overlay(RoundedRectangle(cornerRadius: 16).stroke(LibraryTheme.line))
 }
 
 private func action(_ title: String, icon: String, primary: Bool = false, perform: @escaping () -> Void) -> some View {
@@ -95,10 +96,10 @@ struct MacTile: View {
   var body: some View {
     let connection = store.macConnection
     Button { open = true } label: {
-      VStack(spacing: 3) {
+      VStack(spacing: 4) {
         Label("Mac", systemImage: "laptopcomputer")
-        HStack(spacing: 4) { Circle().fill(connection == nil ? LibraryTheme.muted : LibraryTheme.good).frame(width: 7, height: 7); Text(connection == nil ? "Off" : "Connected").font(.caption) }
-      }.frame(maxWidth: .infinity, minHeight: 54)
+        HStack(spacing: 4) { Circle().fill(connection == nil ? LibraryTheme.muted : LibraryTheme.good).frame(width: 8, height: 8); Text(connection == nil ? "Off" : "Connected").font(.caption) }
+      }.frame(maxWidth: .infinity, minHeight: 56)
     }.buttonStyle(.plain).background(LibraryTheme.card2, in: RoundedRectangle(cornerRadius: 12))
       .accessibilityLabel("Mac").accessibilityValue(connection.map { "Connected to \($0.name)" } ?? "Off")
       .sheet(isPresented: $open) { NavigationStack { MacControlScreen(link: store.camera.link, failure: store.camera.link.pairingFailure) }.environmentObject(store) }
