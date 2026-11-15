@@ -235,13 +235,25 @@ final class SessionStore: ObservableObject {
       document = PrompterDocument(markdown: record.markdown, language: scriptLanguage)
       let saved = savedAnchors[record.metadata.id]
       let oldDocument = saved.map { PrompterDocument(markdown: $0.markdown, language: ScriptLanguage.resolve(settings.speechLanguage, text: $0.markdown)) }
-      var remapped: Int? = saved?.sourceOffset.flatMap { offset in document.spokenTokens.lastIndex { $0.sourceRange.location <= offset } }
+      // A number read as several words (2024 in Spanish) gives each word its offset; keep the saved word, not the last.
+      let savedOrdinal: Int? = saved.flatMap { saved in
+        guard let old = oldDocument?.spokenTokens, old.indices.contains(saved.index),
+          old[saved.index].sourceRange.location == saved.sourceOffset else { return nil }
+        return old[..<saved.index].reversed().prefix { $0.sourceRange.location == saved.sourceOffset }.count
+      }
+      func restoredIndex(_ tokens: [DocumentToken], _ offset: Int) -> Int? {
+        guard let last = tokens.lastIndex(where: { $0.sourceRange.location <= offset }) else { return nil }
+        guard tokens[last].sourceRange.location == offset, let savedOrdinal else { return last }
+        let first = last - tokens[..<last].reversed().prefix { $0.sourceRange.location == offset }.count
+        return min(first + savedOrdinal, last)
+      }
+      var remapped: Int? = saved?.sourceOffset.flatMap { restoredIndex(document.spokenTokens, $0) }
       if let saved, let oldDocument, let anchor = saved.anchor,
         anchor.revision != record.metadata.revision
       {
         let sourceAnchor = ReadingAnchorRemapper.makeAnchor(
           scriptID: anchor.scriptID, revision: anchor.revision, document: oldDocument,
-          globalTokenIndex: saved.sourceOffset.flatMap { offset in oldDocument.spokenTokens.lastIndex { $0.sourceRange.location <= offset } } ?? saved.index, guideFraction: anchor.guideFraction) ?? anchor
+          globalTokenIndex: saved.sourceOffset.flatMap { restoredIndex(oldDocument.spokenTokens, $0) } ?? saved.index, guideFraction: anchor.guideFraction) ?? anchor
         let result = ReadingAnchorRemapper.remap(sourceAnchor, from: oldDocument, to: document,
           newRevision: record.metadata.revision)
         remapped = result.anchor.flatMap { ReadingAnchorRemapper.globalIndex(of: $0, in: document) }

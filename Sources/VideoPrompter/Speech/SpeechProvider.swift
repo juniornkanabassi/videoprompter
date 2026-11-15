@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Speech
+import Synchronization
 import PrompterCore
 
 public struct SpeechCandidate: Sendable, Hashable {
@@ -17,6 +18,16 @@ public struct SpeechCandidate: Sendable, Hashable {
   /// Warm backup results maintain matcher history without publishing a position.
   public var publishesPosition = true
   public var requiresRewindAgreement = true
+}
+/// The recognisers of one reading that can still hear the reader. A rewind needs a second live one
+/// to agree; once the others fail, the last one may follow a re-read alone.
+final class LiveRecognisers: Sendable {
+  static let apple = -1
+  private let live: Mutex<Set<Int>>
+  init(_ live: Set<Int>) { self.live = Mutex(live) }
+  /// True when nothing is left to follow the reader.
+  func fail(_ id: Int) -> Bool { live.withLock { $0.remove(id); return $0.isEmpty } }
+  func needsAgreement(_ id: Int) -> Bool { live.withLock { $0.contains { $0 != id } } }
 }
 public actor SpeechProvider {
   public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet, both, unified, bothUnified, eou }
@@ -99,9 +110,15 @@ public actor SpeechProvider {
     parakeet = nil
     if engine == .parakeet {
       let apple = SpeechProvider()
-      pairedProviders = [apple]
-      let format = try await apple.prepare(locales: requested, naturalFormat: naturalFormat,
-        contextualStrings: contextualStrings, engine: .dictation)
+      // Apple is the backup: missing dictation files offline must not stop working local models.
+      var appleFormat: AVAudioFormat?, appleError: Swift.Error?
+      do {
+        appleFormat = try await apple.prepare(locales: requested, naturalFormat: naturalFormat,
+          contextualStrings: contextualStrings, engine: .dictation)
+        pairedProviders = [apple]
+      } catch is CancellationError { throw CancellationError() }
+      catch { appleError = error; await apple.stop() }
+      try checkCurrent(op)
       pairStatus = onPreparation
       pairStreams = []
       if requested.allSatisfy({ $0.language.languageCode?.identifier == "en" }) {
@@ -122,12 +139,13 @@ public actor SpeechProvider {
           }
         }
       }
+      if let appleError, pairStreams.isEmpty { throw appleError }
       backupActive = Self.needsAppleBackup(english: requested.allSatisfy { $0.language.languageCode?.identifier == "en" },
         eouReady: pairStreams.count == 2, unifiedReady: pairStreams.count == 2)
-      await onPreparation(backupActive ? "Apple backup active · Parakeet available when ready" : "Parakeet pair ready · on-device")
+      await onPreparation(backupActive && appleFormat != nil ? "Apple backup active · Parakeet available when ready" : "Parakeet pair ready · on-device")
       try checkCurrent(op)
       self.engine = engine
-      return format
+      return appleFormat ?? AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
     }
     if (engine == .both || engine == .bothUnified) {
       let apple = SpeechProvider(), local = SpeechProvider()
@@ -252,35 +270,60 @@ public actor SpeechProvider {
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
     #if os(macOS)
     if engine == .parakeet {
-      guard let apple = pairedProviders.first else { throw Error.notPrepared }
+      // Apple is absent when its dictation could not prepare; the local models then follow alone.
+      let apple = pairedProviders.first
+      guard apple != nil || !pairStreams.isEmpty else { throw Error.notPrepared }
       generation = externalGeneration ?? (generation &+ 1)
       let g = generation
       let streams = pairStreams
       let failureAfter = localStreamFailureAfter
+      let live = LiveRecognisers(Set(streams.indices).union(apple == nil ? [] : [LiveRecognisers.apple]))
       let appleInput = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1024))
-      let inputs = streams.map { _ in AsyncThrowingStream<AnalyzerInput, Swift.Error>.makeStream(bufferingPolicy: .bufferingNewest(32)) }
+      // About 2.7 s of 256-frame taps, so a brief stall in one model never drops its audio.
+      let inputs = streams.map { _ in AsyncThrowingStream<AnalyzerInput, Swift.Error>.makeStream(bufferingPolicy: .bufferingNewest(512)) }
       let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
       let converter = AudioCapture(device: .init(id: 0, uid: "pair", name: "Speech pair"), outputFormat: format)
       try await withThrowingTaskGroup(of: Void.self) { group in
-        group.addTask {
-          try await apple.start(input: appleInput.stream, generation: g) { candidate in
-            Task { await self.deliverBackup(candidate, generation: g, onCandidate: onCandidate) }
+        if let apple {
+          group.addTask {
+            do {
+              try await apple.start(input: appleInput.stream, generation: g) { candidate in
+                Task { await self.deliverBackup(candidate, generation: g, live: live, onCandidate: onCandidate) }
+              }
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+              appleInput.continuation.finish()
+              if live.fail(LiveRecognisers.apple) { throw error }
+            }
           }
         }
-        for (stream, input) in zip(streams, inputs) {
+        for (index, (stream, input)) in zip(streams, inputs).enumerated() {
           group.addTask {
-            do { try await stream.start(input: input.stream, generation: g, onCandidate: onCandidate) }
-            catch is CancellationError { throw CancellationError() }
-            catch { await self.activateBackup(generation: g); await stream.stop() }
+            do {
+              try await stream.start(input: input.stream, generation: g) { candidate in
+                var candidate = candidate
+                candidate.requiresRewindAgreement = live.needsAgreement(index)
+                onCandidate(candidate)
+              }
+            } catch is CancellationError { throw CancellationError() }
+            catch {
+              await stream.stop()
+              if live.fail(index) { throw error }
+              await self.activateBackup(generation: g)
+            }
           }
         }
         group.addTask {
           defer { appleInput.continuation.finish(); inputs.forEach { $0.continuation.finish() } }
           var prepared = false
           var injected = false
+          var overflowed = false
           for try await item in input {
             try Task.checkCancellation()
-            if case .dropped = appleInput.continuation.yield(item) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
+            if case .dropped = appleInput.continuation.yield(item) {
+              appleInput.continuation.finish()
+              if live.fail(LiveRecognisers.apple) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
+            }
             if !injected, let failureAfter, (item.bufferStartTime?.seconds ?? 0) >= failureAfter,
               let target = inputs.first {
               target.continuation.finish(throwing: Error.analysisFailed("Injected stream failure"))
@@ -292,9 +335,11 @@ public actor SpeechProvider {
               continue
             }
             for target in inputs {
-              if case .dropped = target.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: item.bufferStartTime)) {
+              // A model that lags loses its oldest audio but keeps following; Apple covers it meanwhile.
+              if case .dropped = target.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: item.bufferStartTime)),
+                !overflowed {
+                overflowed = true
                 await self.activateBackup(generation: g)
-                target.continuation.finish(throwing: Error.analysisFailed("Parakeet fell behind"))
               }
             }
           }
@@ -302,7 +347,7 @@ public actor SpeechProvider {
         do { while try await group.next() != nil {} }
         catch {
           appleInput.continuation.finish(); inputs.forEach { $0.continuation.finish() }
-          group.cancelAll(); await apple.stop()
+          group.cancelAll(); await apple?.stop()
           for stream in streams { await stream.stop() }
           throw error
         }
@@ -415,12 +460,12 @@ public actor SpeechProvider {
     backupActive = Self.needsAppleBackup(english: true, eouReady: true, unifiedReady: true, streamFailed: true)
     await pairStatus("Apple backup active · continuing reading")
   }
-  private func deliverBackup(_ candidate: SpeechCandidate, generation: UInt64,
+  private func deliverBackup(_ candidate: SpeechCandidate, generation: UInt64, live: LiveRecognisers,
     onCandidate: @MainActor @Sendable (SpeechCandidate) -> Void) async {
     guard generation == self.generation else { return }
     var candidate = candidate
     candidate.publishesPosition = backupActive
-    candidate.requiresRewindAgreement = !pairStreams.isEmpty
+    candidate.requiresRewindAgreement = live.needsAgreement(LiveRecognisers.apple)
     await onCandidate(candidate)
   }
   #endif
