@@ -28,6 +28,25 @@ import XCTest
     }
   }
 
+  func testHomeOffersLibraryAndContinueForExistingScript() async throws {
+    let (store, _) = fixture()
+    let script = try await store.createScript(title: "Last script", markdown: "Words")
+    var opened = false
+    var continued = false
+    let view = LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {},
+      openScripts: { opened = true }, continueScript: { continued = true }, lastTitle: script.metadata.title)
+    let (window, host) = await LibraryAX.host(view, size: .init(width: 1400, height: 900))
+    defer { LibraryAX.close(window) }
+    let open = try XCTUnwrap(LibraryAX.named("Open scripts", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(open, "accessibilityPerformPress"))
+    XCTAssertTrue(opened)
+    let resume = try XCTUnwrap(LibraryAX.named("Continue “Last script”", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(resume, "accessibilityPerformPress"))
+    XCTAssertTrue(continued)
+    XCTAssertTrue(LibraryAX.named("Practice with an example script", in: host).isEmpty)
+    XCTAssertFalse(LibraryAX.named("No iPad connected", in: host).isEmpty)
+  }
+
   func testSmallFolderListFitsItsRowsAndLeavesSpaceForScripts() async throws {
     let (store, camera) = fixture()
     for zoom in [1.0, 1.5, 2.0] {
