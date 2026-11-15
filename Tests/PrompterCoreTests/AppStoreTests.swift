@@ -969,6 +969,20 @@ final class AppStoreTests: XCTestCase {
     XCTAssertEqual(Set(store.scripts.map(\.metadata.title)), Set([WelcomeScript.title]))
   }
 
+  func testTwoQuickHelpClicksAddOneWelcomeScript() async throws {
+    let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let defaults = freshDefaults("AppStoreTests")
+    defaults.set(true, forKey: WelcomeScript.offeredKey)
+    let store = flushedAtTeardown(AppStore(arguments: ["test", "--data-directory", root.path], defaults: defaults, offersWelcomeScript: true))
+    await store.waitForWelcomeScript()
+    store.showWelcomeScript()
+    store.showWelcomeScript()
+    try await waitUntil { store.selected?.metadata.title == WelcomeScript.title }
+    try await Task.sleep(for: .milliseconds(200))
+    XCTAssertEqual(store.scripts.map(\.metadata.title), [WelcomeScript.title])
+  }
+
   func testAnEmptyLibraryAlreadyOfferedTheWelcomeScriptStaysEmpty() async throws {
     let root = URL(fileURLWithPath: "/private/tmp/vpw-\(UUID().uuidString.prefix(8))")
     defer { try? FileManager.default.removeItem(at: root) }

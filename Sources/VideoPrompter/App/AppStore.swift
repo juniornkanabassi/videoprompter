@@ -330,10 +330,14 @@ private enum PresenterSaveError: LocalizedError {
       self?.selectWelcomeScript()
     }
   }
+  /// The Help click in progress: a second quick click joins it rather than adding a second copy.
+  private var welcomeSelection: Task<Void, Never>?
   private func selectWelcomeScript() {
     selectedFolderID = nil
     search = ""
-    Task {
+    guard welcomeSelection == nil else { return }
+    welcomeSelection = Task {
+      defer { welcomeSelection = nil }
       do {
         if let existing = scripts.first(where: { $0.metadata.title == WelcomeScript.title }) {
           selectedID = existing.id
@@ -342,7 +346,6 @@ private enum PresenterSaveError: LocalizedError {
         }
       } catch { errorMessage = "The welcome scripts could not be added. \(error)" }
     }
-
   }
   /// Runs a library change on the main actor; a failure shows in the error alert.
   private func withLibrary(_ work: @escaping @MainActor (MarkdownLibrary) async throws -> Void) {
