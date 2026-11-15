@@ -20,7 +20,9 @@ extension AppearanceSnapshotTests {
       store.session.acceptSpeechCandidate(SpeechCandidate(replacementID: id, generation: 1, locale: Locale(identifier: "en-GB"), text: text,
         range: CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 100), duration: CMTime(seconds: 1, preferredTimescale: 100)), isFinal: false))
     }
-    XCTAssertEqual(store.session.visibleReadingState, "Matching words")
+    XCTAssertEqual(store.session.visibleReadingState, "Following")
+    XCTAssertNil(store.session.readingDetail)
+    XCTAssertNil(store.session.anchorNotice)
     let camera = CameraModel(defaults: defaults)
     camera.displayMode = .prompterWithVideo; camera.recordingReadyOverride = true
     let recorder = CameraRecorder(defaults: defaults)

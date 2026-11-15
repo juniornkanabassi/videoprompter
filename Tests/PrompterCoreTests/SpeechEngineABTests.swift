@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import CoreML
+import CryptoKit
 import Darwin
 import FluidAudio
 import Speech
@@ -11,31 +12,69 @@ import PrompterCore
 @MainActor final class SpeechEngineABTests: XCTestCase {
   func testSettingDefaultRoundTripAndRouting() throws {
     var settings = try JSONDecoder().decode(PrompterSettings.self, from: Data("{}".utf8))
-    XCTAssertEqual(settings.speechEngine, "apple")
+    XCTAssertEqual(settings.speechEngine, "parakeet")
     let name = "SpeechEngineAB.\(UUID())"
     let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
     defer { TestDefaults.remove(name) }
     let session = SessionStore(defaults: defaults)
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .dictation)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "parakeet"
     settings = try JSONDecoder().decode(PrompterSettings.self, from: JSONEncoder().encode(settings))
     session.updateSettings(settings)
     XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "both"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .both)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "unified"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .unified)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "both-unified"
     session.updateSettings(settings)
-    XCTAssertEqual(session.selectedSpeechEngine, .bothUnified)
+    XCTAssertEqual(session.selectedSpeechEngine, .parakeet)
     settings.speechEngine = "bad"
     settings.sanitise()
     XCTAssertEqual(settings.speechEngine, "apple")
     let command = try XCTUnwrap(ControlProtocol.command(action: "settings_set"))
     XCTAssertTrue(command.params.contains { $0.name == "speechEngine" && $0.accepts("parakeet") && !$0.accepts("bad") })
+  }
+
+  func testLegacyEngineMigration() throws {
+    for legacy in ["both", "unified", "both-unified"] {
+      let value = try JSONDecoder().decode(PrompterSettings.self,
+        from: Data("{\"speechEngine\":\"\(legacy)\"}".utf8))
+      XCTAssertEqual(value.speechEngine, "parakeet")
+    }
+    let command = try XCTUnwrap(ControlProtocol.command(action: "settings_set"))
+    let parameter = try XCTUnwrap(command.params.first { $0.name == "speechEngine" })
+    XCTAssertTrue(parameter.accepts("apple"))
+    XCTAssertFalse(parameter.accepts("both"))
+  }
+
+  func testAutomaticBackupSelection() {
+    XCTAssertFalse(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: false, eouReady: true, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: false, unifiedReady: false))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: false))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: false, unifiedReady: true))
+    XCTAssertTrue(SpeechProvider.needsAppleBackup(english: true, eouReady: true, unifiedReady: true, streamFailed: true))
+  }
+
+  func testPrefetchGuardsAndAppleCancellation() {
+    XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [], environment: [:], underTest: true))
+    for argument in ["--agent-screen", "--list-camera-ids"] {
+      XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [argument], environment: [:], underTest: false))
+    }
+    XCTAssertFalse(SpeechModelPrefetch.allowed(arguments: [], environment: ["VIDEOPROMPTER_SNAPSHOTS": "1"], underTest: false))
+    XCTAssertTrue(SpeechModelPrefetch.allowed(arguments: [], environment: [:], underTest: false))
+    XCTAssertFalse(SpeechModelPrefetch.shouldDownload(engine: "parakeet", constrained: true))
+    XCTAssertFalse(SpeechModelPrefetch.shouldDownload(engine: "apple", constrained: false))
+    XCTAssertTrue(SpeechModelPrefetch.shouldDownload(engine: "parakeet", constrained: false))
+    let prefetch = SpeechModelPrefetch()
+    prefetch.select("parakeet")
+    XCTAssertFalse(prefetch.isDownloading, "Tests must never touch real model storage")
+    prefetch.select("apple")
+    XCTAssertFalse(prefetch.isDownloading)
   }
 
   func testCumulativeCandidateSharesMatcherAndRejectsDuplicate() throws {
@@ -90,7 +129,7 @@ import PrompterCore
         range: .init(start: .zero, end: CMTime(seconds: end, preferredTimescale: 16000)),
         isFinal: false, source: source))
     }
-    send("Liverpool won the football", "parakeet")
+    send("Liverpool won the football", "unified")
     let first = session.tokenIndex
     send("Liverpool won the football", "apple")
     XCTAssertEqual(session.tokenIndex, first, "Second engine must not double-credit repeated text")
@@ -139,6 +178,94 @@ import PrompterCore
     XCTAssertEqual(session.tokenIndex, 0, "An unseen engine must inherit the seek watermark")
   }
 
+  func testWarmAppleContinuesImmediatelyAfterPairFailsFarIntoScript() throws {
+    let name = "WarmBackup.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    let words = (0..<240).map { "token\($0)" }
+    session.present(record: .init(metadata: .init(title: "Long", fileName: "long.md"),
+      markdown: words.joined(separator: " ")), settings: PrompterSettings())
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    func send(_ start: Int, _ end: Int, _ source: String, publish: Bool) {
+      var candidate = SpeechCandidate(replacementID: "\(source)-\(start)", generation: 1,
+        locale: Locale(identifier: "en-GB"), text: words[start...end].joined(separator: " "),
+        range: .init(start: CMTime(seconds: Double(start), preferredTimescale: 100),
+          end: CMTime(seconds: Double(end + 1), preferredTimescale: 100)), isFinal: false, source: source)
+      candidate.publishesPosition = publish
+      session.acceptSpeechCandidate(candidate)
+    }
+    for start in stride(from: 0, to: 160, by: 8) {
+      send(start, start + 7, "parakeet", publish: true)
+      send(start, start + 7, "apple", publish: false)
+    }
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 159)
+    send(160, 167, "apple", publish: false)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 159, "Warm Apple never publishes while healthy")
+    // The provider flips only publication when a stream fails; Apple's history stays intact.
+    send(168, 175, "apple", publish: true)
+    XCTAssertEqual(session.lastConfirmedTokenIndex, 175)
+  }
+
+  func testPairRequiresFreshAgreementToRepeatAndCanAdvanceAgain() throws {
+    for followsRepeats in [true, false] {
+      let name = "PairRepeat.\(UUID())"
+      let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+      defer { TestDefaults.remove(name) }
+      let session = SessionStore(defaults: defaults)
+      var settings = PrompterSettings()
+      settings.allowsBackwardVoiceTracking = followsRepeats
+      let words = (0..<48).map { "token\($0)" }
+      session.present(record: .init(metadata: .init(title: "Repeat", fileName: "repeat.md"),
+        markdown: words.joined(separator: " ")), settings: settings)
+      session.play(captureAudio: false)
+      defer { session.pause() }
+      func send(_ start: Int, _ end: Int, _ source: String, _ time: Double) {
+        session.acceptSpeechCandidate(.init(replacementID: "\(source)-\(time)", generation: 1,
+          locale: Locale(identifier: "en-GB"), text: words[start...end].joined(separator: " "),
+          range: .init(start: CMTime(seconds: time - 0.5, preferredTimescale: 100),
+            end: CMTime(seconds: time, preferredTimescale: 100)), isFinal: false, source: source))
+      }
+      send(0, 7, "parakeet", 1)
+      send(0, 7, "unified", 1.1)
+      send(8, 23, "parakeet", 2)
+      send(8, 23, "unified", 2.1)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23)
+      send(0, 7, "parakeet", 1.5)
+      send(0, 7, "unified", 1.6)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23, "Old audio must not rewind")
+      send(0, 7, "parakeet", 3)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 23, "One recogniser cannot rewind the pair")
+      send(0, 7, "unified", 3.1)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, followsRepeats ? 7 : 23)
+      if followsRepeats {
+        send(8, 23, "apple", 2.5)
+        XCTAssertEqual(session.lastConfirmedTokenIndex, 7, "A late pre-rewind result cannot restore the old frontier")
+      }
+      send(24, 31, "parakeet", 4)
+      XCTAssertEqual(session.lastConfirmedTokenIndex, 31, "Forward following remains immediate")
+    }
+  }
+
+  func testVerificationCacheUsesSizesAfterFirstSuccessfulHash() throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let data = Data("verified".utf8)
+    let file = ParakeetModel.File(path: "test", size: data.count,
+      sha256: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined())
+    let url = root.appendingPathComponent(file.path)
+    try data.write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]))
+    try Data("modified".utf8).write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]), "Same-size changes are checked next launch")
+    try Data("short".utf8).write(to: url)
+    XCTAssertFalse(ParakeetModel.ready(at: root, files: [file]))
+    try data.write(to: url)
+    XCTAssertTrue(ParakeetModel.ready(at: root, files: [file]))
+  }
+
   func testModelVerificationRejectsCorruption() throws {
     let file = ParakeetModel.files.first { $0.path == "vocab.json" }!
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -146,7 +273,7 @@ import PrompterCore
     try Data(repeating: 0, count: file.size).write(to: root)
     XCTAssertFalse(try ParakeetModel.valid(root, file: file))
     XCTAssertEqual(ParakeetModel.size, 224047838)
-    XCTAssertEqual(UnifiedModel.size, 608328567)
+    XCTAssertEqual(UnifiedModel.size, 608529377)
   }
 
   /// Opt-in file replay. No audio devices, windows, or permissions are requested.
@@ -263,6 +390,88 @@ import PrompterCore
       try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: out)
       print("SPEECH_AB \(result.filter { !["transcript", "candidates", "segments", "publishedTimes", "wordLatencySamples"].contains($0.key) })")
       XCTAssertGreaterThan(published.compactMap { $0 }.count, 0)
+    }
+  }
+
+  /// Opt-in actual managers and Apple, file input only; no capture devices or playback.
+  func testRealPairStreamFailureAndResourceUse() async throws {
+    let env = ProcessInfo.processInfo.environment
+    try XCTSkipUnless(env["VP_PAIR_LIVE"] == "1")
+    let root = URL(fileURLWithPath: try XCTUnwrap(env["VP_PAIR_MODELS"]))
+    let audio = URL(fileURLWithPath: try XCTUnwrap(env["VP_PAIR_AUDIO"]))
+    let script = try String(contentsOfFile: XCTUnwrap(env["VP_PAIR_SCRIPT"]), encoding: .utf8)
+    let failureAfter = env["VP_PAIR_FAIL_AFTER"].flatMap(Double.init)
+    let provider = failureAfter.map { SpeechProvider(localStreamFailureAfter: $0) } ?? SpeechProvider()
+    let name = "PairReal.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    session.voiceEndGrace = .seconds(120)
+    session.present(record: .init(metadata: .init(title: "Replay", fileName: "replay.md"), markdown: script), settings: PrompterSettings())
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    var status = ""
+    let file = try AVAudioFile(forReading: audio)
+    let format = try await provider.prepare(locales: [.init(identifier: "en-GB")], naturalFormat: file.processingFormat,
+      contextualStrings: SpeechProvider.contextualPhrases(from: script), engine: .parakeet,
+      modelDirectory: root, onPreparation: { status = $0 })
+    XCTAssertTrue(status.contains("pair ready"), status)
+    let converter = AudioCapture(device: .init(id: 0, uid: "pair-file", name: "Pair file"), outputFormat: format)
+    try converter.prepareConverter(sampleRate: file.processingFormat.sampleRate)
+    let input = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .unbounded)
+    var usageStart = rusage()
+    getrusage(RUSAGE_SELF, &usageStart)
+    let start = ProcessInfo.processInfo.systemUptime
+    let duration = env["VP_PAIR_SECONDS"].flatMap(Double.init) ?? 35
+    var localSources = Set<String>()
+    var backupAdvanced = false
+    var positionAtFailure = 0
+    let producer = Task {
+      defer { input.continuation.finish() }
+      var outputFrames: Int64 = 0
+      while file.framePosition < file.length {
+        let time = Double(file.framePosition) / file.processingFormat.sampleRate
+        if time >= duration { break }
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+          frameCapacity: AVAudioFrameCount(file.processingFormat.sampleRate / 30))!
+        try file.read(into: buffer)
+        guard let output = converter.process(buffer)?.buffer else { continue }
+        let wait = start + time - ProcessInfo.processInfo.systemUptime
+        if wait > 0 { try await Task.sleep(for: .seconds(wait)) }
+        input.continuation.yield(.init(buffer: output,
+          bufferStartTime: CMTime(value: outputFrames, timescale: CMTimeScale(format.sampleRate))))
+        outputFrames += Int64(output.frameLength)
+      }
+    }
+    do {
+      try await provider.start(input: input.stream) { candidate in
+        let old = session.tokenIndex
+        session.acceptSpeechCandidate(candidate)
+        if candidate.source != "apple" { localSources.insert(candidate.source) }
+        if let failureAfter, candidate.range.end.seconds < failureAfter { positionAtFailure = session.tokenIndex }
+        if candidate.source == "apple", candidate.publishesPosition, session.tokenIndex > old {
+          backupAdvanced = true
+        }
+      }
+      try await producer.value
+    } catch {
+      print("PAIR_RUNTIME_FAILURE \(error) status=\(status)")
+      producer.cancel(); input.continuation.finish(); await provider.stop(); throw error
+    }
+    await provider.stop()
+    var usage = rusage()
+    getrusage(RUSAGE_SELF, &usage)
+    func cpu(_ u: rusage) -> Double {
+      Double(u.ru_utime.tv_sec + u.ru_stime.tv_sec) + Double(u.ru_utime.tv_usec + u.ru_stime.tv_usec) / 1_000_000
+    }
+    let elapsed = ProcessInfo.processInfo.systemUptime - start
+    print("PAIR_RESOURCE seconds=\(elapsed) cpuPercent=\((cpu(usage) - cpu(usageStart)) / elapsed * 100) peakRSSBytes=\(usage.ru_maxrss) sources=\(localSources.sorted()) position=\(session.tokenIndex) failurePosition=\(positionAtFailure) status=\(status)")
+    XCTAssertEqual(localSources, Set(["parakeet", "unified"]))
+    XCTAssertGreaterThan(session.tokenIndex, 0)
+    if failureAfter != nil {
+      XCTAssertTrue(status.contains("backup active"), status)
+      XCTAssertTrue(backupAdvanced, "Actual Apple results must advance after the local stream fails")
+      XCTAssertGreaterThan(session.tokenIndex, positionAtFailure)
     }
   }
 

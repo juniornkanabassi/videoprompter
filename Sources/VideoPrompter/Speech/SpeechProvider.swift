@@ -14,9 +14,12 @@ public struct SpeechCandidate: Sendable, Hashable {
   /// app reads it; replays measure per-word latency from it.
   public var transcript = AttributedString()
   public var source = "apple"
+  /// Warm backup results maintain matcher history without publishing a position.
+  public var publishesPosition = true
+  public var requiresRewindAgreement = true
 }
 public actor SpeechProvider {
-  public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet, both, unified, bothUnified }
+  public enum Engine: Sendable, Equatable { case transcription, dictation, parakeet, both, unified, bothUnified, eou }
   public enum Error: Swift.Error, Sendable, LocalizedError {
     case unavailable, notPrepared, reservationLimit
     case analysisFailed(String)
@@ -30,6 +33,9 @@ public actor SpeechProvider {
     }
   }
   #if os(macOS)
+  private var pairStreams: [ParakeetSpeechStream] = []
+  private var backupActive = false
+  private var pairStatus: @MainActor @Sendable (String) -> Void = { _ in }
   private var parakeet: ParakeetSpeechStream?
   private var pairedProviders: [SpeechProvider] = []
   #endif
@@ -41,7 +47,13 @@ public actor SpeechProvider {
   private var generation: UInt64 = 0
   private var resultTasks: [Task<Void, Swift.Error>] = []
   private var operation: UInt64 = 0
-  public init() {}
+  private let localStreamFailureAfter: TimeInterval?
+  public init() { localStreamFailureAfter = nil }
+  // Deterministic replay fault; production always uses the public initializer.
+  init(localStreamFailureAfter: TimeInterval) { self.localStreamFailureAfter = localStreamFailureAfter }
+  static func needsAppleBackup(english: Bool, eouReady: Bool, unifiedReady: Bool, streamFailed: Bool = false) -> Bool {
+    !english || !eouReady || !unifiedReady || streamFailed
+  }
   public static func contextualPhrases(from script: String) -> [String] {
     let words = PrompterDocument(markdown: script).spokenTokens.prefix(48).map(\.text)
     var phrases: [String] = []
@@ -56,7 +68,7 @@ public actor SpeechProvider {
 
   public func updateContext(_ strings: [String]) async throws {
     #if os(macOS)
-    if (engine == .both || engine == .bothUnified) { try await pairedProviders.first?.updateContext(strings); return }
+    if engine == .parakeet || engine == .both || engine == .bothUnified { try await pairedProviders.first?.updateContext(strings); return }
     #endif
     guard engine == .dictation, let analyzer else { return }
     let context = AnalysisContext()
@@ -78,11 +90,45 @@ public actor SpeechProvider {
     resultTasks = []
     analyzer = nil
     #if os(macOS)
+    for stream in pairStreams { await stream.stop() }
+    pairStreams = []
     for provider in pairedProviders { await provider.stop() }
     pairedProviders = []
     await parakeet?.stop()
     try checkCurrent(op)
     parakeet = nil
+    if engine == .parakeet {
+      let apple = SpeechProvider()
+      pairedProviders = [apple]
+      let format = try await apple.prepare(locales: requested, naturalFormat: naturalFormat,
+        contextualStrings: contextualStrings, engine: .dictation)
+      pairStatus = onPreparation
+      pairStreams = []
+      if requested.allSatisfy({ $0.language.languageCode?.identifier == "en" }) {
+        for unified in [false, true] {
+          let root = modelDirectory.map { $0.appendingPathComponent(unified ? UnifiedModel.folder : "parakeet-eou-160ms") }
+            ?? ParakeetModel.root(unified: unified)
+          let files = unified ? UnifiedModel.files : ParakeetModel.files
+          let ready = await Task.detached(priority: .utility) { ParakeetModel.ready(at: root, files: files) }.value
+          try checkCurrent(op)
+          if ready {
+            let stream = ParakeetSpeechStream()
+            do {
+              try await stream.prepare(directory: root, unified: unified, allowDownload: false, onPreparation: { _ in })
+              try checkCurrent(op)
+              pairStreams.append(stream)
+            } catch is CancellationError { throw CancellationError() }
+            catch { await stream.stop() }
+          }
+        }
+      }
+      backupActive = Self.needsAppleBackup(english: requested.allSatisfy { $0.language.languageCode?.identifier == "en" },
+        eouReady: pairStreams.count == 2, unifiedReady: pairStreams.count == 2)
+      await onPreparation(backupActive ? "Apple backup active · Parakeet available when ready" : "Parakeet pair ready · on-device")
+      try checkCurrent(op)
+      self.engine = engine
+      return format
+    }
     if (engine == .both || engine == .bothUnified) {
       let apple = SpeechProvider(), local = SpeechProvider()
       pairedProviders = [apple, local]
@@ -90,7 +136,7 @@ public actor SpeechProvider {
         let format = try await apple.prepare(locales: requested, naturalFormat: naturalFormat,
           contextualStrings: contextualStrings, engine: .dictation)
         try checkCurrent(op)
-        _ = try await local.prepare(locales: requested, engine: engine == .bothUnified ? .unified : .parakeet,
+        _ = try await local.prepare(locales: requested, engine: engine == .bothUnified ? .unified : .eou,
           modelDirectory: modelDirectory, onPreparation: onPreparation)
         try checkCurrent(op)
         self.engine = engine
@@ -100,7 +146,7 @@ public actor SpeechProvider {
         throw error
       }
     }
-    if (engine == .parakeet || engine == .unified) {
+    if (engine == .eou || engine == .unified) {
       guard requested.allSatisfy({ $0.language.languageCode?.identifier == "en" }) else { throw Error.unavailable }
       let stream = ParakeetSpeechStream()
       try await stream.prepare(directory: modelDirectory, unified: engine == .unified, onPreparation: onPreparation)
@@ -111,14 +157,14 @@ public actor SpeechProvider {
       return AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
     }
     #else
-    if (engine == .parakeet || engine == .unified) || (engine == .both || engine == .bothUnified) { throw Error.unavailable }
+    if (engine == .eou || engine == .unified) || (engine == .both || engine == .bothUnified) { throw Error.unavailable }
     #endif
     var newModules: [SpeechTranscriber] = []
     var newDictationModules: [DictationTranscriber] = []
     var newLocales: [Locale] = []
     for requestedLocale in requested {
       let supported: Locale? = switch engine {
-      case .parakeet, .both, .unified, .bothUnified: nil
+      case .parakeet, .both, .unified, .bothUnified, .eou: nil
       case .transcription:
         await SpeechTranscriber.supportedLocale(equivalentTo: requestedLocale)
       case .dictation:
@@ -128,7 +174,7 @@ public actor SpeechProvider {
       guard let supported
       else { throw Error.unavailable }
       switch engine {
-      case .parakeet, .both, .unified, .bothUnified: break
+      case .parakeet, .both, .unified, .bothUnified, .eou: break
       case .transcription:
         newModules.append(
           SpeechTranscriber(locale: supported, preset: .timeIndexedProgressiveTranscription))
@@ -141,7 +187,7 @@ public actor SpeechProvider {
     }
     let activeModules: [any SpeechModule]
     switch engine {
-    case .parakeet, .both, .unified, .bothUnified: activeModules = []
+    case .parakeet, .both, .unified, .bothUnified, .eou: activeModules = []
     case .transcription: activeModules = newModules
     case .dictation: activeModules = newDictationModules
     }
@@ -205,6 +251,64 @@ public actor SpeechProvider {
     onCandidate: @escaping @MainActor @Sendable (SpeechCandidate) -> Void
   ) async throws where S: Sendable, S.Element == AnalyzerInput {
     #if os(macOS)
+    if engine == .parakeet {
+      guard let apple = pairedProviders.first else { throw Error.notPrepared }
+      generation = externalGeneration ?? (generation &+ 1)
+      let g = generation
+      let streams = pairStreams
+      let failureAfter = localStreamFailureAfter
+      let appleInput = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1024))
+      let inputs = streams.map { _ in AsyncThrowingStream<AnalyzerInput, Swift.Error>.makeStream(bufferingPolicy: .bufferingNewest(32)) }
+      let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
+      let converter = AudioCapture(device: .init(id: 0, uid: "pair", name: "Speech pair"), outputFormat: format)
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask {
+          try await apple.start(input: appleInput.stream, generation: g) { candidate in
+            Task { await self.deliverBackup(candidate, generation: g, onCandidate: onCandidate) }
+          }
+        }
+        for (stream, input) in zip(streams, inputs) {
+          group.addTask {
+            do { try await stream.start(input: input.stream, generation: g, onCandidate: onCandidate) }
+            catch is CancellationError { throw CancellationError() }
+            catch { await self.activateBackup(generation: g); await stream.stop() }
+          }
+        }
+        group.addTask {
+          defer { appleInput.continuation.finish(); inputs.forEach { $0.continuation.finish() } }
+          var prepared = false
+          var injected = false
+          for try await item in input {
+            try Task.checkCancellation()
+            if case .dropped = appleInput.continuation.yield(item) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
+            if !injected, let failureAfter, (item.bufferStartTime?.seconds ?? 0) >= failureAfter,
+              let target = inputs.first {
+              target.continuation.finish(throwing: Error.analysisFailed("Injected stream failure"))
+              injected = true
+            }
+            if !prepared { try converter.prepareConverter(sampleRate: item.buffer.format.sampleRate); prepared = true }
+            guard let buffer = converter.process(item.buffer)?.buffer else {
+              await self.activateBackup(generation: g)
+              continue
+            }
+            for target in inputs {
+              if case .dropped = target.continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: item.bufferStartTime)) {
+                await self.activateBackup(generation: g)
+                target.continuation.finish(throwing: Error.analysisFailed("Parakeet fell behind"))
+              }
+            }
+          }
+        }
+        do { while try await group.next() != nil {} }
+        catch {
+          appleInput.continuation.finish(); inputs.forEach { $0.continuation.finish() }
+          group.cancelAll(); await apple.stop()
+          for stream in streams { await stream.stop() }
+          throw error
+        }
+      }
+      return
+    }
     if (engine == .both || engine == .bothUnified) {
       guard pairedProviders.count == 2 else { throw Error.notPrepared }
       generation = externalGeneration ?? (generation &+ 1)
@@ -246,7 +350,7 @@ public actor SpeechProvider {
       }
       return
     }
-    if (engine == .parakeet || engine == .unified) {
+    if (engine == .eou || engine == .unified) {
       guard let parakeet else { throw Error.notPrepared }
       generation = externalGeneration ?? (generation &+ 1)
       try await parakeet.start(input: input, generation: generation, onCandidate: onCandidate)
@@ -262,7 +366,7 @@ public actor SpeechProvider {
     let dictationModules = dictationModules
     let locales = locales
     switch engine {
-    case .parakeet, .both, .unified, .bothUnified: throw Error.unavailable
+    case .parakeet, .both, .unified, .bothUnified, .eou: throw Error.unavailable
     case .transcription:
       for (i, module) in modules.enumerated() {
         resultTasks.append(
@@ -305,9 +409,26 @@ public actor SpeechProvider {
       throw Error.analysisFailed(error.localizedDescription)
     }
   }
+  #if os(macOS)
+  private func activateBackup(generation: UInt64) async {
+    guard generation == self.generation else { return }
+    backupActive = Self.needsAppleBackup(english: true, eouReady: true, unifiedReady: true, streamFailed: true)
+    await pairStatus("Apple backup active · continuing reading")
+  }
+  private func deliverBackup(_ candidate: SpeechCandidate, generation: UInt64,
+    onCandidate: @MainActor @Sendable (SpeechCandidate) -> Void) async {
+    guard generation == self.generation else { return }
+    var candidate = candidate
+    candidate.publishesPosition = backupActive
+    candidate.requiresRewindAgreement = !pairStreams.isEmpty
+    await onCandidate(candidate)
+  }
+  #endif
   public func stop() async {
     operation &+= 1
     #if os(macOS)
+    for stream in pairStreams { await stream.stop() }
+    pairStreams = []
     for provider in pairedProviders { await provider.stop() }
     pairedProviders = []
     await parakeet?.stop()

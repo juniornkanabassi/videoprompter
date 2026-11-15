@@ -47,11 +47,13 @@ extension AppearanceSnapshotTests {
     let record = try await store.createScript(title: "Complete labels", markdown: "# Complete labels\n\n" + String(repeating: "Read these words at your own pace. ", count: 100))
     let camera = CameraModel(defaults: defaults); camera.recordingReadyOverride = true; camera.displayMode = .prompterWithVideo
     let recorder = CameraRecorder(defaults: defaults)
+    var speechGeneration: UInt64 = 0
     for (appearance, scheme) in [("light", ColorScheme.light), ("dark", .dark)] {
       if let requested = ProcessInfo.processInfo.environment["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"], requested != appearance { continue }
       for zoom in [1.0, 1.5, 2.0] {
         store.uiZoom = zoom
         for state in ["idle", "countdown", "retake", "editing", "voice-listening", "voice-following", "voice-paused", "monitor-key"] {
+          speechGeneration += 1
           camera.guides.zebras = state == "monitor-key"; camera.guides.falseColour = state == "monitor-key"
           store.session.pause(); store.settings.mode = state.hasPrefix("voice") ? "Voice" : "Manual"
           store.settings.audioDeviceUID = "fixture"; store.session.present(record: record, settings: store.settings)
@@ -63,7 +65,7 @@ extension AppearanceSnapshotTests {
           if state == "countdown" { store.session.startReading() }
           if state == "voice-listening" || state == "voice-following" { store.session.play(captureAudio: false) }
           if state == "voice-following" {
-            store.session.acceptSpeechCandidate(SpeechCandidate(replacementID: "fixture", generation: 1,
+            store.session.acceptSpeechCandidate(SpeechCandidate(replacementID: "fixture", generation: speechGeneration,
               locale: Locale(identifier: "en-GB"), text: "Complete labels read these words",
               range: CMTimeRange(start: .zero, duration: CMTime(seconds: 1, preferredTimescale: 1)), isFinal: false))
             XCTAssertEqual(store.session.visibleReadingState, "Following")

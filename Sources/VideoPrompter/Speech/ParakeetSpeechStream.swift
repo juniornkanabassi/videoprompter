@@ -13,15 +13,17 @@ actor ParakeetSpeechStream {
   private var source = "parakeet"
   private var operation: UInt64 = 0
 
-  func prepare(directory: URL?, unified: Bool = false, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
+  func prepare(directory: URL?, unified: Bool = false, allowDownload: Bool = true, onPreparation: @escaping @MainActor @Sendable (String) -> Void) async throws {
     operation &+= 1
     let current = operation
     source = unified ? "unified" : "parakeet"
     let name = unified ? "Parakeet Unified" : "Parakeet"
     let root = directory ?? ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier,
-      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(unified ? "Models/parakeet-unified-320ms" : "Models/parakeet-eou-160ms")
-    try await ParakeetModel.ensure(at: root, files: unified ? UnifiedModel.files : ParakeetModel.files,
-      baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL, name: name, progress: onPreparation)
+      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(unified ? "Models/" + UnifiedModel.folder : "Models/parakeet-eou-160ms")
+    if allowDownload {
+      try await ParakeetModel.ensure(at: root, files: unified ? UnifiedModel.files : ParakeetModel.files,
+        baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL, name: name, progress: onPreparation)
+    }
     try Task.checkCancellation()
     guard current == operation else { throw CancellationError() }
     await onPreparation("Preparing \(name) on this Mac…")
@@ -29,7 +31,7 @@ actor ParakeetSpeechStream {
     configuration.computeUnits = .cpuAndNeuralEngine
     let loaded: any StreamingAsrManager
     if unified {
-      let model = StreamingUnifiedAsrManager(configuration: configuration, config: .init(chunkFrames: 2, rightFrames: 2))
+      let model = StreamingUnifiedAsrManager(configuration: configuration, config: .init(chunkFrames: UnifiedModel.chunkFrames, rightFrames: UnifiedModel.rightFrames))
       try await model.loadModels(from: root)
       loaded = model
     } else {
@@ -90,7 +92,7 @@ actor ParakeetSpeechStream {
 enum ParakeetModel {
   static let revision = "40a23f4c0b333aa17ad8c0f2ea47ec2347f2f355"
   static let baseURL = "https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml/resolve/\(revision)/160ms/"
-  struct File: Sendable { let path: String; let size: Int; let sha256: String }
+  struct File: Sendable, Hashable { let path: String; let size: Int; let sha256: String }
   static let files: [File] = [
     .init(path: "decoder.mlmodelc/analytics/coremldata.bin", size: 243, sha256: "3996975a8cbc1949159c55605b3132b39b2484f51acbd55d796d93c70de02b49"),
     .init(path: "decoder.mlmodelc/coremldata.bin", size: 497, sha256: "c3ccbff963d8cf07e2be2bd56ea3384a89ea49628922c6bd95ff62e2ae57dc34"),
@@ -111,6 +113,48 @@ enum ParakeetModel {
   ]
   static var size: Int { files.reduce(0) { $0 + $1.size } }
 
+  static func root(unified: Bool) -> URL {
+    ControlProtocol.dataRoot(bundleIdentifier: Bundle.main.bundleIdentifier,
+      arguments: ProcessInfo.processInfo.arguments).appendingPathComponent(
+        unified ? "Models/" + UnifiedModel.folder : "Models/parakeet-eou-160ms")
+  }
+
+  private struct VerificationKey: Hashable {
+    let root: URL
+    let files: [File]
+  }
+  private final class VerificationCache: @unchecked Sendable {
+    let lock = NSLock()
+    var results: [VerificationKey: Bool] = [:]
+  }
+  private static let verification = VerificationCache()
+
+  static func ready(at root: URL, files: [File]) -> Bool {
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    let key = VerificationKey(root: root.standardizedFileURL, files: files)
+    let sizesMatch = files.allSatisfy {
+      (try? root.appendingPathComponent($0.path).resourceValues(forKeys: [.fileSizeKey]).fileSize) == $0.size
+    }
+    // Same-size external edits are rehashed next launch; downloads refresh this entry immediately.
+    if let verified = verification.results[key] { return verified && sizesMatch }
+    let verified = sizesMatch && files.allSatisfy { (try? valid(root.appendingPathComponent($0.path), file: $0)) == true }
+    verification.results[key] = verified
+    return verified
+  }
+
+  private static func invalidateVerification(at root: URL, files: [File]) {
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    verification.results.removeValue(forKey: VerificationKey(root: root.standardizedFileURL, files: files))
+  }
+
+  private static func recordVerification(at root: URL, files: [File]) {
+    verification.lock.lock()
+    defer { verification.lock.unlock() }
+    verification.results[VerificationKey(root: root.standardizedFileURL, files: files)] = true
+  }
+
   static func valid(_ url: URL, file: File) throws -> Bool {
     guard FileManager.default.fileExists(atPath: url.path),
       try url.resourceValues(forKeys: [.fileSizeKey]).fileSize == file.size else { return false }
@@ -122,6 +166,10 @@ enum ParakeetModel {
   }
 
   static func ensure(at root: URL, files: [File] = files, baseURL: String = baseURL, name: String = "Parakeet", progress: @escaping @MainActor @Sendable (String) -> Void) async throws {
+    if ready(at: root, files: files) { return }
+    invalidateVerification(at: root, files: files)
+    var verified = false
+    defer { if !verified { invalidateVerification(at: root, files: files) } }
     let size = files.reduce(0) { $0 + $1.size }
     var completed = 0
     for file in files {
@@ -142,6 +190,8 @@ enum ParakeetModel {
       }
       completed += file.size
     }
+    recordVerification(at: root, files: files)
+    verified = true
   }
 }
 #endif
