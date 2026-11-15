@@ -148,7 +148,9 @@ enum ScriptFolderError: LocalizedError {
     accessing?.stopAccessingSecurityScopedResource()
     accessing = nil
     fingerprints = [:]
+    texts = [:]
     scripts = []  // the old folder's files must never stand in for the new one's
+    isListed = false
     rootURL = localURL
     isICloud = false
     try? FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
@@ -160,7 +162,9 @@ enum ScriptFolderError: LocalizedError {
     accessing = url.startAccessingSecurityScopedResource() ? url : nil
     // Ids are shared by path across folders, so a cached fingerprint is only good for one folder.
     fingerprints = [:]
+    texts = [:]
     scripts = []  // the old folder's files must never stand in for the new one's
+    isListed = false
     listingGeneration += 1
     rootURL = url
     isICloud = (try? url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
@@ -185,6 +189,11 @@ enum ScriptFolderError: LocalizedError {
   /// False while the last look at the folder failed: its list is then the last good one, and an
   /// empty or partial listing must not be read as scripts deleted.
   private(set) var isListed = false
+
+  /// True only for the list the last successful look at this folder published. A listener that
+  /// runs later must check it: the empty list a folder switch publishes, or an older folder's,
+  /// says nothing about what was deleted.
+  func isCurrentListing(_ list: [FolderScript]) -> Bool { isListed && list == scripts }
 
   /// Lists the folder and publishes at once: for callers that just changed it and need to see the result.
   func refresh() {
@@ -591,7 +600,8 @@ enum ScriptFolderError: LocalizedError {
     let loaded = await Task.detached(priority: .utility) {
       todo.compactMap { script in (try? Self.read(script.url)).map { (script, $0) } }
     }.value
-    for (script, text) in loaded { texts[script.id] = (script.modified, text) }
+    // A folder switch while reading: ids are shared by path, so only files still listed are kept.
+    for (script, text) in loaded where self.script(script.id)?.url == script.url { texts[script.id] = (script.modified, text) }
     textsLoaded += 1
   }
 

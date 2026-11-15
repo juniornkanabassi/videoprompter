@@ -323,6 +323,45 @@ final class PadLibraryTests: XCTestCase {
     XCTAssertEqual(folder.scripts.map(\.title), ["Kept"])
   }
 
+  /// A folder switch publishes an empty list before the new folder's; a listener that runs later
+  /// must not take it as every script deleted, and no text read from the old folder may stand in
+  /// for a file at the same path in the new one.
+  func testAFolderSwitchIsNeverReadAsDeletionsNorShowsTheOldFoldersText() async throws {
+    let (folder, _) = try folder()
+    let same = Date(timeIntervalSince1970: 1_000)
+    let old = try add("Same", "alpha", in: folder, at: same)
+    let other = try scratch()
+    try Folder.write("beta gamma", to: other.appendingPathComponent("Same.md"))
+    try FileManager.default.setAttributes([.modificationDate: same], ofItemAtPath: other.appendingPathComponent("Same.md").path)
+    var published: [[FolderScript]] = []
+    let watch = folder.$scripts.dropFirst().sink { published.append($0) }
+    defer { watch.cancel() }
+
+    let before = folder.textsLoaded
+    await Task.yield()  // the load the listing started is now reading the old folder's file
+    folder.choose(other)
+    for _ in 0..<400 where folder.textsLoaded == before { try await Task.sleep(for: .milliseconds(5)) }
+    let moved = try XCTUnwrap(folder.scripts.first)
+    XCTAssertEqual(moved.id, old.id, "ids are shared by path across folders")
+    XCTAssertNil(folder.text(of: moved), "the old folder's text is never this file's")
+    await folder.loadTexts()
+    XCTAssertEqual(folder.text(of: moved), "beta gamma")
+
+    XCTAssertEqual(published.map { $0.map(\.title) }, [[], ["Same"]])
+    XCTAssertFalse(folder.isCurrentListing([]), "the switch's empty list is not a listing")
+    XCTAssertFalse(folder.isCurrentListing([old]), "nor is the old folder's")
+    XCTAssertTrue(folder.isCurrentListing(folder.scripts))
+
+    folder.useLocalFolder()
+    XCTAssertNil(folder.text(of: try XCTUnwrap(folder.scripts.first)))
+    XCTAssertFalse(folder.isCurrentListing([]))
+    XCTAssertTrue(folder.isCurrentListing([old]))
+
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let store = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/App/PadStore.swift"), encoding: .utf8)
+    XCTAssertTrue(store.contains("guard folder.isCurrentListing(scripts) else { return }"), "forgetRemoved acts only on the current listing")
+  }
+
   func testAFolderBookmarkThatNoLongerResolvesIsReportedNotSilentlyReplaced() throws {
     let local = try scratch()
     let defaults = freshDefaults("PadLibraryTests")
