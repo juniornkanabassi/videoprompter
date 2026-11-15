@@ -28,29 +28,53 @@ final class SpeechModelPrefetch: ObservableObject {
   func select(_ engine: String) {
     guard selected != engine else { return }
     selected = engine
-    cancel()
+    stop()
     cancelled = false
     guard engine == "parakeet", Self.allowed(arguments: ProcessInfo.processInfo.arguments,
       environment: ProcessInfo.processInfo.environment, underTest: NSClassFromString("XCTestCase") != nil) else { return }
     monitor.pathUpdateHandler = { [weak self] path in
-      let restricted = path.isConstrained || path.status != .satisfied
+      // No 833 MB download over Low Data Mode, a phone hotspot or no connection.
+      let restricted = path.isConstrained || path.isExpensive || path.status != .satisfied
       Task { @MainActor in
         guard let self else { return }
         self.constrained = restricted
-        if restricted { let wasCancelled = self.cancelled; self.cancel(); self.cancelled = wasCancelled; self.status = "Download models when you are ready"; self.needsDownload = true }
+        if restricted {
+          let wasCancelled = self.cancelled; self.stop(); self.cancelled = wasCancelled
+          self.offerIfMissing("Download models when you are ready")
+        }
         else if Self.shouldDownload(engine: self.selected, constrained: restricted), self.task == nil, !self.cancelled { self.download() }
       }
     }
-    guard !started else { if !constrained { download() }; return }
+    guard !started else { if constrained { offerIfMissing("Download models when you are ready") } else { download() }; return }
     started = true
     monitor.start(queue: DispatchQueue(label: "speech-model-network", qos: .utility))
   }
 
-  func cancel() {
+  func cancel() { stop(); offerIfMissing("") }
+
+  private func stop() {
     cancelled = true
     revision += 1
     task?.cancel(); task = nil; isDownloading = false
-    needsDownload = selected == "parakeet"
+    status = ""
+    needsDownload = false
+  }
+
+  /// Offers Download now only when the models are missing; the check hashes them off the main thread.
+  private func offerIfMissing(_ message: String) {
+    guard selected == "parakeet" else { return }
+    guard Self.allowed(arguments: ProcessInfo.processInfo.arguments, environment: ProcessInfo.processInfo.environment,
+      underTest: NSClassFromString("XCTestCase") != nil) else { status = message; needsDownload = true; return }
+    let current = revision
+    Task { [weak self] in
+      let installed = await Task.detached(priority: .utility) {
+        ParakeetModel.ready(at: ParakeetModel.root(unified: false), files: ParakeetModel.files)
+          && ParakeetModel.ready(at: ParakeetModel.root(unified: true), files: UnifiedModel.files)
+      }.value
+      guard let self, !installed, self.revision == current, self.task == nil else { return }
+      self.status = message
+      self.needsDownload = true
+    }
   }
 
   func download() {
@@ -67,7 +91,7 @@ final class SpeechModelPrefetch: ObservableObject {
         for unified in [false, true] {
           try Task.checkCancellation()
           let root = ParakeetModel.root(unified: unified)
-          let work = Task.detached(priority: .background) {
+          let work = Task.detached(priority: .utility) {
             try await ParakeetModel.ensure(at: root,
               files: unified ? UnifiedModel.files : ParakeetModel.files,
               baseURL: unified ? UnifiedModel.baseURL : ParakeetModel.baseURL,

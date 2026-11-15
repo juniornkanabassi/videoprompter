@@ -211,6 +211,9 @@ import PrompterCore
     var relaySettings = PrompterSettings()
     relaySettings.mode = "Voice"
     relaySettings.speechLanguage = settings.speechLanguage
+    relaySettings.speechLocales = settings.speechLocales
+    relaySettings.speechEngine = settings.speechEngine
+    relaySettings.usesTalkAndReadWords = settings.usesTalkAndReadWords
     relaySettings.allowsBackwardVoiceTracking = settings.allowsBackwardVoiceTracking
     relaySettings.audioDeviceUID = settings.audioDeviceUID
     relaySettings.inputGain = settings.inputGain
