@@ -28,7 +28,7 @@ final class PadCameraOnlyTests: XCTestCase {
     for call in ["guard isPresenting, cameraOnly || pictureMode != .off,\n      camera.link.macName != nil, macStatus.cameraOn == false, !startedMacCamera else { return }",
       "if camera.isShowingMac { camera.isOn = false }\n      setCameraOn(false)",
       "if startedLocalCamera { startedLocalCamera = false; camera.isOn = false }",
-      "guard cameraOnly, camera.link.macName == nil, !camera.isOn else { return }\n    startedLocalCamera = true",
+      "guard cameraOnly, camera.link.macName == nil, !camera.isOn, !suppressAutomaticCameraPermission else { return }\n    startedLocalCamera = true",
       "// Whatever this connection switched on is gone with it, and never belongs to the next Mac.\n        startedMacCamera = false",
       "if firstCameraStatus { askMacForPicture() }"] {
       XCTAssertTrue(store.contains(call), "Missing Camera Only ownership rule: \(call)")
