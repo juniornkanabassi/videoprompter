@@ -5,6 +5,7 @@ struct LibraryStartView: View {
   @ObservedObject var store: AppStore
   @ObservedObject private var link = IPadCameraSender.shared
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.colorScheme) private var colorScheme
   @Binding var importing: Bool
   let practice: () -> Void
   let camera: () -> Void
@@ -48,7 +49,8 @@ struct LibraryStartView: View {
             Text("Continue “\(lastTitle)”").lineLimit(2).fixedSize(horizontal: false, vertical: true)
             Image(systemName: "chevron.right").accessibilityHidden(true)
           }
-        }.buttonStyle(.plain).foregroundStyle(AlphaStyle.accent)
+        // Yellow text is too faint on a light card, so light mode uses the primary text colour.
+        }.buttonStyle(.plain).foregroundStyle(colorScheme == .dark ? AlphaStyle.accent : Color.primary)
       }
       WrapLayout(spacing: Space.sm, leading: true) {
         if !store.scripts.isEmpty {
