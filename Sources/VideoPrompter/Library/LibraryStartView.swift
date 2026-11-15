@@ -14,13 +14,15 @@ struct LibraryStartView: View {
   var continueScript: () -> Void = {}
   var lastTitle: String? = nil
 
+  private static let appName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Video Prompter"
+
   var body: some View {
     GeometryReader { geometry in
       ScrollView {
         VStack(spacing: geometry.size.height < 560 ? Space.sm : Space.xxl) {
           VStack(spacing: Space.sm) {
             Text("What do you want to do?").font(geometry.size.height < 560 ? .title2.bold() : .largeTitle.bold())
-            Text("Video Prompter Alpha is for reading your script and checking your camera. It does not record.")
+            Text("\(Self.appName) is for reading your script and checking your camera. It does not record.")
               .font(.system(size: 16)).foregroundStyle(.secondary).multilineTextAlignment(.center)
               .fixedSize(horizontal: false, vertical: true)
           }

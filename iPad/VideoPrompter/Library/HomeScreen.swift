@@ -57,6 +57,7 @@ private func card<Content: View>(icon: String, title: String, description: Strin
   VStack(alignment: .leading, spacing: 16) {
     Image(systemName: icon).font(.title2).foregroundStyle(LibraryTheme.accent)
       .frame(width: 48, height: 48).background(LibraryTheme.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
+      .accessibilityHidden(true)
     Text(title).font(.title2.bold()).fixedSize(horizontal: false, vertical: true)
     Text(description).foregroundStyle(LibraryTheme.muted).fixedSize(horizontal: false, vertical: true)
     Spacer(minLength: 12)
