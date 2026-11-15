@@ -335,6 +335,9 @@ final class SessionStore: ObservableObject {
     } else if isActivelyRunning, speedChanged {
       restartModeTask()
     }
+    if modeChanged, value.mode != "Voice" || selectedSpeechEngine == .dictation || scriptLanguage != .english {
+      releaseSpeechModels()
+    }
   }
 
   func applyEditedRecord(_ record: ScriptRecord) {
@@ -421,6 +424,7 @@ final class SessionStore: ObservableObject {
   func stop() {
     if let id = activeRecord?.metadata.id { forgetPosition(for: id) }
     stopTasks()
+    releaseSpeechModels()
     activeRecord = nil
     document = PrompterDocument(markdown: "")
     anchor = nil
@@ -835,6 +839,17 @@ final class SessionStore: ObservableObject {
     meter.reset()
     isTestingMicrophone = false
     audioDeviceObserver = nil
+  }
+  /// Parakeet's models stay loaded across a seek, pause or resume (`ParakeetModelPool`); they are
+  /// dropped here, after the pending stop has handed them back, once this session stops using them.
+  private func releaseSpeechModels() {
+    #if os(macOS)
+    let previousStop = providerStopTask
+    providerStopTask = Task {
+      await previousStop?.value
+      await ParakeetModelPool.shared.releaseAll()
+    }
+    #endif
   }
   private func passageBoundary(after index: Int) -> Int? {
     let tokens = spokenTokens
