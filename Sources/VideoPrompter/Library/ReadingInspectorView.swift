@@ -200,7 +200,7 @@ struct SpeechEngineRow: View {
       ReadingChoice(title: "Speech engine", values: ["parakeet", "apple"],
         names: ["Parakeet (recommended)", "Apple (no download)"], selection: $store.settings.speechEngine, zoom: store.uiZoom)
       if store.settings.speechEngine == "parakeet" {
-        Text("Two English models · 832 MB. Apple backs up other languages and unavailable models.")
+        Text("Two English models · 833 MB. Apple backs up other languages and unavailable models.")
           .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         SpeechDownloadRow(models: session.speechModels)
       }

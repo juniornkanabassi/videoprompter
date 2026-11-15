@@ -47,7 +47,10 @@ public actor SpeechProvider {
   private var generation: UInt64 = 0
   private var resultTasks: [Task<Void, Swift.Error>] = []
   private var operation: UInt64 = 0
-  public init() {}
+  private let localStreamFailureAfter: TimeInterval?
+  public init() { localStreamFailureAfter = nil }
+  // Deterministic replay fault; production always uses the public initializer.
+  init(localStreamFailureAfter: TimeInterval) { self.localStreamFailureAfter = localStreamFailureAfter }
   static func needsAppleBackup(english: Bool, eouReady: Bool, unifiedReady: Bool, streamFailed: Bool = false) -> Bool {
     !english || !eouReady || !unifiedReady || streamFailed
   }
@@ -253,6 +256,7 @@ public actor SpeechProvider {
       generation = externalGeneration ?? (generation &+ 1)
       let g = generation
       let streams = pairStreams
+      let failureAfter = localStreamFailureAfter
       let appleInput = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .bufferingNewest(1024))
       let inputs = streams.map { _ in AsyncThrowingStream<AnalyzerInput, Swift.Error>.makeStream(bufferingPolicy: .bufferingNewest(32)) }
       let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true)!
@@ -273,9 +277,15 @@ public actor SpeechProvider {
         group.addTask {
           defer { appleInput.continuation.finish(); inputs.forEach { $0.continuation.finish() } }
           var prepared = false
+          var injected = false
           for try await item in input {
             try Task.checkCancellation()
             if case .dropped = appleInput.continuation.yield(item) { throw Error.analysisFailed("Apple speech fell behind the audio.") }
+            if !injected, let failureAfter, (item.bufferStartTime?.seconds ?? 0) >= failureAfter,
+              let target = inputs.first {
+              target.continuation.finish(throwing: Error.analysisFailed("Injected stream failure"))
+              injected = true
+            }
             if !prepared { try converter.prepareConverter(sampleRate: item.buffer.format.sampleRate); prepared = true }
             guard let buffer = converter.process(item.buffer)?.buffer else {
               await self.activateBackup(generation: g)

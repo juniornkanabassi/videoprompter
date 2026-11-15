@@ -163,7 +163,7 @@ import XCTest
     for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
     XCTAssertEqual(store.selected?.markdown, "Keep me")
     undo.undo()
-    for _ in 0..<100 where store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
+    for _ in 0..<100 where !store.trash.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }
     XCTAssertTrue(store.trash.contains { $0.id == record.id })
     undo.redo()
     for _ in 0..<100 where !store.scripts.contains(where: { $0.id == record.id }) { try await Task.sleep(for: .milliseconds(10)) }

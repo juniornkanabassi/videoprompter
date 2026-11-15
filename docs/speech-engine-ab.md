@@ -1,10 +1,10 @@
 # Default Mac speech engine (14 November 2026)
 
-The Mac now defaults to **Parakeet (recommended)**: EOU 160 ms and Unified 320 ms run on the same mono 16 kHz input using CPU + Neural Engine. Each retains its own matcher history; the first matching forward position wins. Apple (no download) is the only alternative. Legacy `both`, `unified` and `both-unified` settings migrate to `parakeet`. iPad continues using Apple.
+The Mac now defaults to **Parakeet (recommended)**: EOU 160 ms and Unified 640 ms run on the same mono 16 kHz input using CPU + Neural Engine. Each retains its own matcher history; the first matching forward position wins. Apple (no download) is the only alternative. Legacy `both`, `unified` and `both-unified` settings migrate to `parakeet`. iPad continues using Apple.
 
 Apple stays warm as a silent backup. It contributes results for non-English scripts, while either verified model is missing or fails to load, and after either stream errors or overflows its bounded input queue. A short status explains backup use. Model failures do not pause the script. Completed downloads take effect on the next Start reading.
 
-Background preparation starts shortly after launch, runs one model at a time at background priority and reuses individually SHA-256 verified files. Cancel and choosing Apple stop the download. Low Data Mode blocks automatic downloads and offers Download now. Tests, snapshots, agent-screen and camera-list child processes never prefetch. All files remain under the app data root in Models/parakeet-eou-160ms and Models/parakeet-unified-320ms.
+Background preparation starts shortly after launch, runs one model at a time at background priority and reuses individually SHA-256 verified files. Cancel and choosing Apple stop the download. Low Data Mode blocks automatic downloads and offers Download now. Tests, snapshots, agent-screen and camera-list child processes never prefetch. All files remain under the app data root in Models/parakeet-eou-160ms and Models/parakeet-unified-640ms.
 
 Unified's chunk setting and pinned export are kept together in `UnifiedModel.swift`. A different tier requires the corresponding verified encoder manifest; changing runtime chunk size alone is not safe. Existing measurements below are historical single-engine/Apple-pair experiments, not measurements of the new default pair.
 
@@ -191,3 +191,17 @@ Warm Apple candidates now maintain their own matcher history while publication i
 The paired path no longer changes the run state to uncertain for held matches. Nil Parakeet conversion output activates Apple backup and skips that buffer. Full model verification is cached by folder and manifest for this launch; subsequent starts check file sizes, and completed downloads refresh verification. Same-size external file changes are detected on the next launch.
 
 Code and regression tests for these corrections are written but NOT RUN. The lead paused all builds/tests for latency measurement; resume is required before focused/full tests, pending snapshots, injected stream-failure verification and pair CPU/RSS measurements.
+
+
+## Selected production tier (15 November 2026)
+
+The final tuning decision is EOU160 plus Unified 640 ms int8 [70,7,1], retaining the stock matcher and VoiceGlide. Unified contains 608,529,377 bytes; combined weights total 832,577,215 bytes (833 MB rounded). The 13 exact files in `speech-engine-unified-model-manifest.json` are copied from commit `da87e53`, `docs/speech-engine-tuning-results.json`, models entries containing tier 640, revision `d32e972dd4315f1dc3f6be28fb2aab0ab3e80358`. The runtime tier and pinned manifest selection remain together in `UnifiedModel.tier`. Earlier 320 ms results above are historical.
+
+
+## Final 640 ms verification (15 November 2026)
+
+- Focused speech: 16 tests, two opt-in tests skipped, zero failures. Full XCTest: 1,180 tests, 99 skipped, zero failures. Light and dark snapshot runs: 67 tests each, one skipped each, zero failures. Grid passes on 121 Swift source files. Generic iPad simulator build succeeds with signing disabled; no simulator reset or visible launch.
+- Actual EOU160 + Unified640 managers and warm Apple ran from a file for 35 seconds. Healthy pair: 21.18% of one CPU core, peak process RSS 739,606,528 bytes. Injected EOU input failure at 16 seconds: Apple continued from script position 43 to 98; 16.92% CPU, peak RSS 737,918,976 bytes. Both local sources published, and the failure run ended successfully with Apple backup active.
+- Debug build, simultaneous work by other agents, no camera encoding, no microphone or playback. CPU is process user+system time divided by wall time; Apple service CPU and ANE utilisation are excluded. Peak RSS includes preparation. These are recovery/resource checks, not isolated latency benchmarks.
+- Evidence: `/tmp/vp-pair-640-focused-final.log`, `/tmp/vp-pair-640-final.log`, `/tmp/vp-pair-640-snapshots-final.log`, `/tmp/vp-pair-640-ipad.log`, `/tmp/vp-pair-runtime/healthy640.log`, `/tmp/vp-pair-runtime/failure640.log`.
+- Fixed test fixtures exposed by the new default: the undo check now waits for Trash to populate; snapshot sessions use fresh speech generations; paired unmatched-speech snapshots assert unchanged reading chrome. Earlier failed snapshot attempts are superseded by both passing final appearances. No matcher or VoiceGlide tuning was introduced.

@@ -8,7 +8,7 @@ Licensed by NVIDIA Corporation under the NVIDIA Open Model License.
 https://huggingface.co/FluidInference/parakeet-realtime-eou-120m-coreml
 
 Parakeet Unified EN 0.6B, NVIDIA, Core ML conversion by Fluid Inference.
-CC BY 4.0. The 320 ms streaming export is downloaded without modifications.
+CC BY 4.0. The 640 ms streaming export is downloaded without modifications.
 https://huggingface.co/FluidInference/parakeet-unified-en-0.6b-coreml
 https://creativecommons.org/licenses/by/4.0/
 

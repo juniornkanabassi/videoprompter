@@ -273,7 +273,7 @@ import PrompterCore
     try Data(repeating: 0, count: file.size).write(to: root)
     XCTAssertFalse(try ParakeetModel.valid(root, file: file))
     XCTAssertEqual(ParakeetModel.size, 224047838)
-    XCTAssertEqual(UnifiedModel.size, 608328567)
+    XCTAssertEqual(UnifiedModel.size, 608529377)
   }
 
   /// Opt-in file replay. No audio devices, windows, or permissions are requested.
@@ -390,6 +390,88 @@ import PrompterCore
       try JSONSerialization.data(withJSONObject: result, options: [.prettyPrinted, .sortedKeys]).write(to: out)
       print("SPEECH_AB \(result.filter { !["transcript", "candidates", "segments", "publishedTimes", "wordLatencySamples"].contains($0.key) })")
       XCTAssertGreaterThan(published.compactMap { $0 }.count, 0)
+    }
+  }
+
+  /// Opt-in actual managers and Apple, file input only; no capture devices or playback.
+  func testRealPairStreamFailureAndResourceUse() async throws {
+    let env = ProcessInfo.processInfo.environment
+    try XCTSkipUnless(env["VP_PAIR_LIVE"] == "1")
+    let root = URL(fileURLWithPath: try XCTUnwrap(env["VP_PAIR_MODELS"]))
+    let audio = URL(fileURLWithPath: try XCTUnwrap(env["VP_PAIR_AUDIO"]))
+    let script = try String(contentsOfFile: XCTUnwrap(env["VP_PAIR_SCRIPT"]), encoding: .utf8)
+    let failureAfter = env["VP_PAIR_FAIL_AFTER"].flatMap(Double.init)
+    let provider = failureAfter.map { SpeechProvider(localStreamFailureAfter: $0) } ?? SpeechProvider()
+    let name = "PairReal.\(UUID())"
+    let defaults = try XCTUnwrap(TestDefaults.suite(named: name))
+    defer { TestDefaults.remove(name) }
+    let session = SessionStore(defaults: defaults)
+    session.voiceEndGrace = .seconds(120)
+    session.present(record: .init(metadata: .init(title: "Replay", fileName: "replay.md"), markdown: script), settings: PrompterSettings())
+    session.play(captureAudio: false)
+    defer { session.pause() }
+    var status = ""
+    let file = try AVAudioFile(forReading: audio)
+    let format = try await provider.prepare(locales: [.init(identifier: "en-GB")], naturalFormat: file.processingFormat,
+      contextualStrings: SpeechProvider.contextualPhrases(from: script), engine: .parakeet,
+      modelDirectory: root, onPreparation: { status = $0 })
+    XCTAssertTrue(status.contains("pair ready"), status)
+    let converter = AudioCapture(device: .init(id: 0, uid: "pair-file", name: "Pair file"), outputFormat: format)
+    try converter.prepareConverter(sampleRate: file.processingFormat.sampleRate)
+    let input = AsyncStream<AnalyzerInput>.makeStream(bufferingPolicy: .unbounded)
+    var usageStart = rusage()
+    getrusage(RUSAGE_SELF, &usageStart)
+    let start = ProcessInfo.processInfo.systemUptime
+    let duration = env["VP_PAIR_SECONDS"].flatMap(Double.init) ?? 35
+    var localSources = Set<String>()
+    var backupAdvanced = false
+    var positionAtFailure = 0
+    let producer = Task {
+      defer { input.continuation.finish() }
+      var outputFrames: Int64 = 0
+      while file.framePosition < file.length {
+        let time = Double(file.framePosition) / file.processingFormat.sampleRate
+        if time >= duration { break }
+        let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat,
+          frameCapacity: AVAudioFrameCount(file.processingFormat.sampleRate / 30))!
+        try file.read(into: buffer)
+        guard let output = converter.process(buffer)?.buffer else { continue }
+        let wait = start + time - ProcessInfo.processInfo.systemUptime
+        if wait > 0 { try await Task.sleep(for: .seconds(wait)) }
+        input.continuation.yield(.init(buffer: output,
+          bufferStartTime: CMTime(value: outputFrames, timescale: CMTimeScale(format.sampleRate))))
+        outputFrames += Int64(output.frameLength)
+      }
+    }
+    do {
+      try await provider.start(input: input.stream) { candidate in
+        let old = session.tokenIndex
+        session.acceptSpeechCandidate(candidate)
+        if candidate.source != "apple" { localSources.insert(candidate.source) }
+        if let failureAfter, candidate.range.end.seconds < failureAfter { positionAtFailure = session.tokenIndex }
+        if candidate.source == "apple", candidate.publishesPosition, session.tokenIndex > old {
+          backupAdvanced = true
+        }
+      }
+      try await producer.value
+    } catch {
+      print("PAIR_RUNTIME_FAILURE \(error) status=\(status)")
+      producer.cancel(); input.continuation.finish(); await provider.stop(); throw error
+    }
+    await provider.stop()
+    var usage = rusage()
+    getrusage(RUSAGE_SELF, &usage)
+    func cpu(_ u: rusage) -> Double {
+      Double(u.ru_utime.tv_sec + u.ru_stime.tv_sec) + Double(u.ru_utime.tv_usec + u.ru_stime.tv_usec) / 1_000_000
+    }
+    let elapsed = ProcessInfo.processInfo.systemUptime - start
+    print("PAIR_RESOURCE seconds=\(elapsed) cpuPercent=\((cpu(usage) - cpu(usageStart)) / elapsed * 100) peakRSSBytes=\(usage.ru_maxrss) sources=\(localSources.sorted()) position=\(session.tokenIndex) failurePosition=\(positionAtFailure) status=\(status)")
+    XCTAssertEqual(localSources, Set(["parakeet", "unified"]))
+    XCTAssertGreaterThan(session.tokenIndex, 0)
+    if failureAfter != nil {
+      XCTAssertTrue(status.contains("backup active"), status)
+      XCTAssertTrue(backupAdvanced, "Actual Apple results must advance after the local stream fails")
+      XCTAssertGreaterThan(session.tokenIndex, positionAtFailure)
     }
   }
 
