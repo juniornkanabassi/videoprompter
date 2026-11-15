@@ -311,6 +311,8 @@ final class SessionStore: ObservableObject {
           document: document, globalTokenIndex: tokenIndex, guideFraction: settings.guideFraction)
       }
       tracker = RecognitionTracker(generation: tracker.generation, tokenIndex: tokenIndex, matcher: languageMatcher())
+      // Word numbers now count the new language's tokens: positions stamped before this are stale.
+      seekRevision &+= 1
     }
     if modeSwitched || languageChanged {
       let fraction = modeSwitched ? 0 : position - floor(position)

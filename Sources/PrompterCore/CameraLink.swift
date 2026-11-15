@@ -452,6 +452,9 @@ public enum PadRemote {
     public var guides: Guides?
     public var micLevelDB: Double?
     public var linkHeartbeat: Bool?
+    /// The open script's resolved `ScriptLanguage` raw value: word numbers count tokens in that language
+    /// (numbers expand differently), so the Mac must parse the text the same way. Nil from older iPads.
+    public var language: String?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
       version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil, countdownRemaining: Int? = nil,
@@ -463,8 +466,10 @@ public enum PadRemote {
       cameraOnly: Bool? = nil, linkHeartbeat: Bool? = nil, markdown: String? = nil,
       guides: Guides? = nil, micLevelDB: Double? = nil,
       localCameras: [Source]? = nil, localMicrophones: [Source]? = nil,
-      localCameraID: String? = nil, localCameraOn: Bool? = nil, cameraUsesMac: Bool? = nil
+      localCameraID: String? = nil, localCameraOn: Bool? = nil, cameraUsesMac: Bool? = nil,
+      language: String? = nil
     ) {
+      self.language = language
       self.localCameras = localCameras; self.localMicrophones = localMicrophones
       self.localCameraID = localCameraID; self.localCameraOn = localCameraOn
       self.cameraUsesMac = cameraUsesMac

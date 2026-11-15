@@ -12,7 +12,7 @@ struct IPadReplicaView: View {
   init(state: PadRemote.State, onSeek: @escaping (Int) -> Void) {
     self.state = state
     self.onSeek = onSeek
-    _script = StateObject(wrappedValue: ReplicaScript(markdown: state.markdown ?? ""))
+    _script = StateObject(wrappedValue: ReplicaScript(markdown: state.markdown ?? "", language: state.language))
   }
 
   var body: some View {
@@ -57,15 +57,21 @@ struct IPadReplicaView: View {
       }
     }
     .background(state.pictureMode == .behindScript || state.activeCleanLook == .pictureAndScript ? Color.clear : Color.black)
-    .onChange(of: state.markdown) { _, markdown in
-      script.document = PrompterDocument(markdown: markdown ?? "")
+    .onChange(of: [state.markdown, state.language]) {
+      script.document = Self.document(state.markdown ?? "", language: state.language)
     }
+  }
+}
+extension IPadReplicaView {
+  /// The iPad's word numbers count tokens in its script language; an older iPad sends none and parses as English.
+  static func document(_ markdown: String, language: String?) -> PrompterDocument {
+    PrompterDocument(markdown: markdown, language: language.flatMap(ScriptLanguage.init(rawValue:)) ?? .english)
   }
 }
 /// Parse once per script change, rather than on every live position update.
 private final class ReplicaScript: ObservableObject {
   @Published var document: PrompterDocument
-  init(markdown: String) { document = PrompterDocument(markdown: markdown) }
+  init(markdown: String, language: String?) { document = IPadReplicaView.document(markdown, language: language) }
 }
 #endif
 

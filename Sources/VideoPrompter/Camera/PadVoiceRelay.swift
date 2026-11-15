@@ -150,6 +150,14 @@ import PrompterCore
       return
     }
     if micPaused { resumeForMic(); return }
+    // A new language on the iPad renumbers its words and bumps its revision, adopted just below.
+    if let language = Self.language(of: state), let session, session.settings.speechLanguage != language {
+      var changed = session.settings
+      changed.speechLanguage = language
+      movingSession = true
+      session.updateSettings(changed)
+      movingSession = false
+    }
     // Only a seek on the iPad moves the relay; its word changing as it follows us does not. The iPad
     // checks each follow against its current revision and states arrive in order, so any change
     // (the counter wraps) is a seek to adopt, and a follow stamped earlier is already stale.
@@ -210,7 +218,8 @@ import PrompterCore
     guard let defaults = UserDefaults(suiteName: suiteName) else { return finish("Could not start the relay", pausingIPad: false) }
     var relaySettings = PrompterSettings()
     relaySettings.mode = "Voice"
-    relaySettings.speechLanguage = settings.speechLanguage
+    // The iPad's word numbers count tokens in its resolved language; an older iPad sends none.
+    relaySettings.speechLanguage = Self.language(of: state) ?? settings.speechLanguage
     relaySettings.allowsBackwardVoiceTracking = settings.allowsBackwardVoiceTracking
     relaySettings.audioDeviceUID = settings.audioDeviceUID
     relaySettings.inputGain = settings.inputGain
@@ -274,6 +283,10 @@ import PrompterCore
     wantsRunning = false
     session?.pause()
     status = "Paused with the iPad"
+  }
+
+  static func language(of state: PadRemote.State) -> String? {
+    state.language.flatMap(ScriptLanguage.init(rawValue:))?.rawValue
   }
 
   private func move(to index: Int) {

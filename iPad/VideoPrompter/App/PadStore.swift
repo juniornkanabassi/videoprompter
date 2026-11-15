@@ -755,7 +755,8 @@ extension PadStore {
         rotation: camera.guides.rotation.rawValue),
       micLevelDB: micOn ? micMeter.levelDB : -60,
       localCameras: localCameras, localMicrophones: localMicrophones,
-      localCameraID: camera.isShowingMac ? nil : camera.selectedID, localCameraOn: camera.isOn, cameraUsesMac: camera.isShowingMac)
+      localCameraID: camera.isShowingMac ? nil : camera.selectedID, localCameraOn: camera.isOn, cameraUsesMac: camera.isShowingMac,
+      language: open ? session.scriptLanguage.rawValue : nil)
   }
 
   func perform(_ command: PadRemote.Command) {

@@ -90,6 +90,31 @@ final class PadVoiceRelayTests: XCTestCase {
     XCTAssertNil(relay.session)
   }
 
+  func testRelayParsesTheScriptInTheIPadsLanguageAndFollowsAChange() async throws {
+    let text = "uno 35 dos tres cuatro"
+    let spanish = PrompterDocument(markdown: text, language: .spanish).spokenTokens.count
+    let english = PrompterDocument(markdown: text, language: .english).spokenTokens.count
+    XCTAssertNotEqual(spanish, english, "numbers expand differently, so word numbers differ")
+    var current = state(text: text)
+    current.markdown = text
+    current.scripts = [.init(id: padID, title: "Hecho en iPad")]
+    current.language = "Spanish"
+    let relay = makeRelay(FakeLink(), initial: current)
+    var mac = PrompterSettings()
+    mac.speechLanguage = "English"
+    relay.startFromIPad(settings: mac)
+    try await until("relay session") { relay.session != nil }
+    XCTAssertEqual(relay.session?.document.spokenTokens.count, spanish, "the iPad's language wins over the Mac's")
+    current.language = "English"
+    current.seekRevision = 5
+    relay.iPadStateChanged(current)
+    XCTAssertEqual(relay.session?.document.spokenTokens.count, english)
+    XCTAssertTrue(relay.isRelaying)
+    relay.stop()
+    XCTAssertEqual(IPadReplicaView.document(text, language: "Spanish").spokenTokens.count, spanish, "the replica counts words as the iPad does")
+    XCTAssertEqual(IPadReplicaView.document(text, language: nil).spokenTokens.count, english, "an older iPad keeps today's parse")
+  }
+
   func testIPadInitiatedRelayRejectsMismatchedText() {
     var current = state()
     current.markdown = "different text"
