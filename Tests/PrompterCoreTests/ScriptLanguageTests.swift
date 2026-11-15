@@ -18,6 +18,15 @@ final class ScriptLanguageTests: XCTestCase {
     for (language, text) in paragraphs { XCTAssertEqual(ScriptLanguage.detect(text), language, text) }
     for text in ["", "Hola", "12345", "Bonjour mon ami"] { XCTAssertEqual(ScriptLanguage.detect(text), .english) }
   }
+  func testDetectionReadsOnlyTheStartSoLaterEditsHitTheCache() {
+    let spanish = paragraphs[1].1 + " "
+    let script = String(repeating: spanish, count: 60)
+    XCTAssertGreaterThan(script.count, ScriptLanguage.detectionSampleLimit)
+    XCTAssertEqual(ScriptLanguage.detect(script), .spanish)
+    let cached = ScriptLanguage.detectionCacheCount
+    XCTAssertEqual(ScriptLanguage.detect(script + "A new last line typed at the end."), .spanish)
+    XCTAssertEqual(ScriptLanguage.detectionCacheCount, cached, "an edit past the sample must not run detection again")
+  }
   func testRegionalChoice() {
     XCTAssertEqual(ScriptLanguage.spanish.preferredLocale(system: Locale(identifier: "en-MX"), supported: [Locale(identifier: "es-ES"), Locale(identifier: "es-MX")])?.region?.identifier, "MX")
     XCTAssertEqual(ScriptLanguage.spanish.preferredLocale(system: Locale(identifier: "en-GB"), supported: [Locale(identifier: "es-MX"), Locale(identifier: "es-ES")])?.region?.identifier, "ES")
