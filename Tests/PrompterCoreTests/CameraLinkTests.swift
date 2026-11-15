@@ -635,6 +635,7 @@ final class CameraLinkTests: XCTestCase {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
     let link = try String(contentsOf: root.appendingPathComponent("iPad/VideoPrompter/Camera/MacLink.swift"), encoding: .utf8)
     XCTAssertTrue(link.contains("if let pending = outbox.beforeCommand(peerVersion: peerVersion) { write(pending, on: connection) }\n      connection.send(content: message.encoded()"))
+    XCTAssertTrue(link.contains("if case .microphoneLevel = message {\n        connection.send(content: message.encoded(), completion: .idempotent)\n        return"))
   }
 
   func testMeterAloneDoesNotMakeANewIPadState() {

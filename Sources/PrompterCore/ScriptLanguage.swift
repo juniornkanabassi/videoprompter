@@ -71,16 +71,18 @@ public enum ScriptLanguage: String, CaseIterable, Codable, Sendable {
     while true {
       let end = markdown.index(markdown.startIndex, offsetBy: limit, limitedBy: markdown.endIndex) ?? markdown.endIndex
       let sample = String(markdown[..<end])
+      // A whole script and an unfinished prefix with the same text must not share an entry.
+      let key = (end == markdown.endIndex ? "=" : "+") + sample
       let found: ScriptLanguage?? = detections.withLock { cache in
-        if let cached = cache[sample] { return cached }
+        if let cached = cache[key] { return cached }
         let spoken = PrompterDocument(markdown: sample).spokenTokens.map(\.text).joined(separator: " ")
         if cache.count >= 8 { cache.removeAll(keepingCapacity: true) }
         if end != markdown.endIndex, spoken.count < detectionSampleLimit / 2 {
-          cache.updateValue(nil, forKey: sample)
+          cache.updateValue(nil, forKey: key)
           return .some(nil)
         }
         let result = detectSpoken(spoken)
-        cache[sample] = result
+        cache[key] = result
         return result
       }
       if case .some(.some(let language)) = found { return language }

@@ -573,6 +573,11 @@ final class LinkReceiver: @unchecked Sendable {
         if let next = outbox.offer(state, peerVersion: peerVersion) { write(next, on: connection) }
         return
       }
+      // A meter reading depends on no state, so it must not push a waiting state out past coalescing.
+      if case .microphoneLevel = message {
+        connection.send(content: message.encoded(), completion: .idempotent)
+        return
+      }
       if let pending = outbox.beforeCommand(peerVersion: peerVersion) { write(pending, on: connection) }
       connection.send(content: message.encoded(), completion: .idempotent)
     }

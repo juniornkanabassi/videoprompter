@@ -38,6 +38,9 @@ final class ScriptLanguageTests: XCTestCase {
     XCTAssertEqual(ScriptLanguage.detect(script + "Una línea nueva al final."), .spanish)
     XCTAssertEqual(ScriptLanguage.detectionCacheCount, cached, "an edit past the sample still hits the cache")
     XCTAssertEqual(ScriptLanguage.detect(note), .english, "all notes and no speech is the English fallback")
+    // The prefix cached as "read further" must not be reused when that prefix is the whole script (it once looped).
+    XCTAssertEqual(ScriptLanguage.detect(script), .spanish)
+    XCTAssertEqual(ScriptLanguage.detect(String(script.prefix(ScriptLanguage.detectionSampleLimit))), .english)
   }
   func testRegionalChoice() {
     XCTAssertEqual(ScriptLanguage.spanish.preferredLocale(system: Locale(identifier: "en-MX"), supported: [Locale(identifier: "es-ES"), Locale(identifier: "es-MX")])?.region?.identifier, "MX")
