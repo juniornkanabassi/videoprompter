@@ -61,7 +61,7 @@ import XCTest
     let (store, camera) = fixture()
     let folder = try await store.createLibraryFolder(named: "Drafts")
     let script = try await store.createScript(title: "My opening", markdown: "Read these words.")
-    store.selectedID = script.id
+    store.editorScriptRequest = script.id
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1440, height: 900))

@@ -18,6 +18,7 @@ extension AppearanceSnapshotTests {
     let scheme: ColorScheme = env["VIDEOPROMPTER_SNAPSHOT_APPEARANCE"] == "dark" ? .dark : .light
     let mode = scheme == .dark ? "dark" : "light"
     try await snapshot(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}, lastTitle: "Example"), name: "alpha-first-launch-\(mode)", size: .init(width: 1200, height: 800), scheme: scheme, destination: destination)
+    try await snapshot(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}, lastTitle: "Example"), name: "home-extra-wide-\(mode)", size: .init(width: 1600, height: 800), scheme: scheme, destination: destination)
     try await snapshot(LibraryStartView(store: store, importing: .constant(false), practice: {}, camera: {}, lastTitle: "Example"), name: "home-short-\(mode)", size: .init(width: 1200, height: 500), scheme: scheme, destination: destination)
     for tab in SettingsTab.allCases {
       try await snapshot(AppSettingsView(store: store, selectedTab: tab), name: "alpha-settings-\(tab.label)-\(mode)", size: .init(width: 1000, height: 800), scheme: scheme, destination: destination)

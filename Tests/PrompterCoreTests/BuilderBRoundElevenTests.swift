@@ -15,7 +15,7 @@ import XCTest
     let camera = CameraModel(defaults: defaults)
     for zoom in [1.0, 1.5, 2.0] {
       defaults.set(false, forKey: "readingTipHidden")
-      store.selectedID = first.id
+      store.editorScriptRequest = first.id
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1440, height: 1000))
       defer { LibraryAX.close(window) }

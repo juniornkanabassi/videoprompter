@@ -124,11 +124,13 @@ struct LibraryView: View {
       }
       .task {
         await store.waitForInitialLoad()
+        await store.waitForWelcomeScript()
         if !restoredScene {
           restoreScene()
-          lastScriptID = store.selectedID
+          lastScriptID = UUID(uuidString: savedScriptID).flatMap { id in store.scripts.contains(where: { $0.id == id }) ? id : nil } ?? store.selectedID
           homeVisible = !store.homeWasShownThisSession && !Headless.shared.active && store.editorScriptRequest == nil
           store.homeWasShownThisSession = true
+          if homeVisible { store.selectedID = nil }
           applyEditorRequest()
           restoredScene = true
           selection = showsStart ? [] : store.selectedID.map { [$0] } ?? []

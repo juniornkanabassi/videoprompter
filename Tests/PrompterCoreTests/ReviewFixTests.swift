@@ -179,6 +179,7 @@ private final class ReviewSlowWriter: @unchecked Sendable {
     XCTAssertTrue(store.linkedSyncStatus?.contains("Waiting for busy.md") == true)
     XCTAssertFalse(store.linkedSyncStatus?.contains("Save or close") == true)
     // Avoid showing the existing real error alert while inspecting the inline status.
+    store.editorScriptRequest = record.id
     store.errorMessage = nil
     let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: CameraModel(defaults: defaults)))
     defer { LibraryAX.close(window) }

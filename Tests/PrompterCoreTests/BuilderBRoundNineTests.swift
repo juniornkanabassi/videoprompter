@@ -1,4 +1,5 @@
 import AppKit
+import PrompterCore
 import SwiftUI
 import XCTest
 @testable import VideoPrompter
@@ -45,6 +46,33 @@ import XCTest
     XCTAssertTrue(continued)
     XCTAssertTrue(LibraryAX.named("Practice with an example script", in: host).isEmpty)
     XCTAssertFalse(LibraryAX.named("No iPad connected", in: host).isEmpty)
+  }
+
+  func testHomeNavigationKeepsAndReopensLastScript() async throws {
+    let (store, camera) = fixture()
+    let script = try await store.createScript(title: "Resume me", markdown: "Words")
+    let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1600, height: 900))
+    defer { LibraryAX.close(window) }
+    let resume = try XCTUnwrap(LibraryAX.named("Continue “Resume me”", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(resume, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertEqual(store.selectedID, script.id)
+    XCTAssertTrue(LibraryAX.named("Continue “Resume me”", in: host).isEmpty)
+    NotificationCenter.default.post(name: .videoPrompterHome, object: nil)
+    try await Task.sleep(for: .milliseconds(150))
+    let open = try XCTUnwrap(LibraryAX.named("Open scripts", in: host).first)
+    XCTAssertTrue(LibraryAX.bool(open, "accessibilityPerformPress"))
+    try await Task.sleep(for: .milliseconds(150))
+    XCTAssertNil(store.selectedID)
+    XCTAssertFalse(LibraryAX.named("Scripts", in: host).isEmpty)
+  }
+
+  func testHomeIPadStatusIncludesNameAndTransport() {
+    XCTAssertEqual(LibraryStartView.iPadStatus(nil, transport: nil), "No iPad connected")
+    let state = PadRemote.State(scripts: [], presenting: nil, running: false, mode: "", speed: 0, word: 0, words: 0, deviceName: "Junior's iPad")
+    for transport in ["USB-C", "Wi-Fi"] {
+      XCTAssertEqual(LibraryStartView.iPadStatus(state, transport: transport), "Connected · Junior's iPad · \(transport)")
+    }
   }
 
   func testSmallFolderListFitsItsRowsAndLeavesSpaceForScripts() async throws {

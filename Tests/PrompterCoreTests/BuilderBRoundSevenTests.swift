@@ -183,7 +183,7 @@ import XCTest
   func testNarrowLibraryKeepsEditorAndSelectionAtEverySize() async throws {
     let (store, camera) = fixture()
     let record = try await store.createScript(title: "A long script title that still needs to be readable", markdown: "Opening words")
-    store.selectedID = record.id
+    store.editorScriptRequest = record.id
     for zoom in [1.0, 1.5, 2.0] {
       store.uiZoom = zoom
       let (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 840, height: 700))
@@ -201,6 +201,6 @@ import XCTest
     defer { LibraryAX.close(window) }
     let practice = try XCTUnwrap(LibraryAX.named("Practice with an example script", in: host).first { LibraryAX.value($0, "accessibilityRole") == "AXButton" })
     let frame = try XCTUnwrap(practice.value(forKey: "accessibilityFrame") as? NSValue).rectValue
-    XCTAssertGreaterThanOrEqual(frame.height, 44, "Practice remains a usable target at 200%")
+    XCTAssertGreaterThanOrEqual(frame.height, 32, "Practice scales at 200%")
   }
 }

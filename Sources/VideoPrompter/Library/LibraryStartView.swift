@@ -24,9 +24,9 @@ struct LibraryStartView: View {
               .fixedSize(horizontal: false, vertical: true)
           }
           ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: Space.md) { cards }
+            HStack(alignment: .top, spacing: Space.md) { cards(width: max(280, (min(1200, geometry.size.width - 2 * (geometry.size.height < 560 ? Space.md : Space.margin)) - 2 * Space.md) / 3)) }
               .fixedSize(horizontal: false, vertical: true)
-            VStack(spacing: Space.md) { cards }
+            VStack(spacing: Space.md) { cards(width: nil) }
           }
           WrapLayout(spacing: Space.md) {
             if store.scripts.isEmpty { Button("Practice with an example script", action: practice) }
@@ -39,7 +39,7 @@ struct LibraryStartView: View {
     }
   }
 
-  @ViewBuilder private var cards: some View {
+  @ViewBuilder private func cards(width: CGFloat?) -> some View {
     card("Read a script", symbol: "doc.text", description: "Paste it or start a new one. It scrolls as you speak.") {
       if let lastTitle, !store.scripts.isEmpty {
         Button("Continue “\(lastTitle)”", action: continueScript).buttonStyle(.link)
@@ -56,15 +56,23 @@ struct LibraryStartView: View {
         Button("New script") { store.create() }.buttonStyle(AlphaSecondaryButtonStyle())
       }
     }
+    .frame(width: width)
     card("Camera only", symbol: "video", description: "See yourself and check framing, focus and exposure. No script needed.") {
       Button("Open camera", action: camera).buttonStyle(AlphaSecondaryButtonStyle())
     }
+    .frame(width: width)
     card("iPad Control", symbol: "ipad", description: "Use your iPad as the prompter or camera, run from this Mac.") {
-      Text(link.iPadState == nil ? "No iPad connected" : "Connected · \(link.iPadState?.deviceName ?? "iPad") · \(link.transport ?? "USB-C")")
+      Text(Self.iPadStatus(link.iPadState, transport: link.transport))
         .font(.caption).padding(Space.sm).background(Color.primary.opacity(0.08), in: Capsule())
       Button(link.iPadState == nil ? "Connect an iPad" : "Open iPad Control") { openWindow(id: "ipad-remote") }
         .buttonStyle(AlphaSecondaryButtonStyle())
     }
+    .frame(width: width)
+  }
+
+  static func iPadStatus(_ state: PadRemote.State?, transport: String?) -> String {
+    guard let state else { return "No iPad connected" }
+    return ["Connected", state.deviceName ?? "iPad", transport].compactMap { $0 }.joined(separator: " · ")
   }
 
   private func card<Content: View>(_ title: String, symbol: String, description: String, @ViewBuilder content: () -> Content) -> some View {

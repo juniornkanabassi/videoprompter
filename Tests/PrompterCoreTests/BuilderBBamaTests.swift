@@ -172,7 +172,8 @@ import XCTest
 
   func testTipDismissalSurvivesViewRecreationAndGuideRestoresIt() async throws {
     let store = await fixture()
-    _ = try await store.createScript(title: "Words", markdown: "Read these words")
+    let script = try await store.createScript(title: "Words", markdown: "Read these words")
+    store.editorScriptRequest = script.id
     let camera = CameraModel(defaults: store.defaults)
     var (window, host) = await LibraryAX.host(LibraryView(store: store, camera: camera), size: .init(width: 1440, height: 1000))
     let dismiss = try XCTUnwrap(LibraryAX.named("Got it", in: host).first)
