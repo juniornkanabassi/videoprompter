@@ -57,6 +57,8 @@ public struct ControlCommand: Sendable {
 }
 public enum ControlProtocol {
   public static let bundleID = "com.juniornkanabassi.VidPrompt"
+  /// The release, Alpha and Beta apps are real interactive apps; any other ID is an agent copy and stays hidden.
+  public static let interactiveBundleIDs: Set<String> = [bundleID, bundleID + ".alpha", bundleID + ".beta"]
   public static let maxRequestBytes = 65_536
   // A 20 MiB import can expand sixfold when JSON escapes control characters.
   public static let maxResponseBytes = 128 * 1024 * 1024

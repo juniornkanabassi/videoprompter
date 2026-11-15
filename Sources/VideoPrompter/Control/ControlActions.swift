@@ -451,10 +451,12 @@ import Speech
       if before.editing == true && action == "ipad_send" { return .error("ipad_editing", before.rejectionReason ?? "Finish editing on the iPad first") }
       var command: PadRemote.Command
       var confirmed: (PadRemote.State) -> Bool = { _ in true }
+      var sentRecord: ScriptRecord?
       switch action {
       case "ipad_send":
         let (record, error) = choose(params["script"]!, in: store.scripts, id: { $0.id.uuidString }, title: { $0.metadata.title }, kind: "script", list: "script list")
         guard let record else { return error! }
+        sentRecord = record
         guard record.markdown.utf8.count <= PadRemote.Transfer.maximumMarkdownBytes, record.metadata.title.count <= PadRemote.Transfer.maximumTitleLength else { return .error("invalid_params", "Script is too large to send to the iPad.") }
         let fingerprint = MarkdownLibrary.fingerprint(record.markdown)
         let sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
@@ -493,7 +495,7 @@ import Speech
       guard let state = link.iPadState else { return .error("ipad_not_found", "The iPad disconnected.") }
       if let reason = state.rejectionReason { return .error("ipad_rejected", reason) }
       guard confirmed(state) else { return .error("ipad_unconfirmed", "The iPad did not confirm the change.") }
-      if action == "ipad_send", let name = params["script"], let record = store.scripts.first(where: { $0.id.uuidString == name || $0.metadata.title == name }) {
+      if let record = sentRecord {
         var sent = UserDefaults.standard.dictionary(forKey: "padRelaySentFingerprints") as? [String: String] ?? [:]
         sent[record.id.uuidString] = MarkdownLibrary.fingerprint(record.markdown)
         UserDefaults.standard.set(sent, forKey: "padRelaySentFingerprints")

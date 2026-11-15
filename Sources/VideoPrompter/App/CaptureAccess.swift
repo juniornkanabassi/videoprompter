@@ -12,7 +12,7 @@ enum AgentMode {
   static let isOn = rule(arguments: CommandLine.arguments, bundleID: Bundle.main.bundleIdentifier,
     underTest: NSClassFromString("XCTestCase") != nil)
   static func rule(arguments: [String], bundleID: String?, underTest: Bool) -> Bool {
-    !underTest && (arguments.contains("--agent-screen") || (bundleID != realBundleID && bundleID != alphaBundleID && bundleID != betaBundleID))
+    !underTest && (arguments.contains("--agent-screen") || !ControlProtocol.interactiveBundleIDs.contains(bundleID ?? ""))
   }
 }
 

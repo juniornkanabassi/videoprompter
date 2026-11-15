@@ -36,10 +36,11 @@ struct ConfidenceMonitorView: View {
   private var orientationX: CGFloat { store.mirror ? -1 : 1 }
   private var orientationY: CGFloat { store.flip ? -1 : 1 }
   private var source: String {
-    store.cameraSources.first(where: { $0.id == store.selectedCamera })?.name ?? "Mac"
+    if !camera.isShowingMac, let local = camera.devices.first(where: { $0.id == camera.selectedID }) { return local.name }
+    return store.cameraSources.first(where: { $0.id == store.selectedCamera })?.name ?? "Mac"
   }
   private var resolution: String {
-    guard let size = camera.link.pictureSize else { return "No picture" }
+    guard let size = camera.pictureSize else { return "No picture" }
     return size.height > 720 ? "1080p" : "720p"
   }
 
@@ -66,7 +67,9 @@ struct ConfidenceMonitorView: View {
             let size = fitSize(in: area.size, fill: fill)
             Group {
               if let referencePicture { ExposureReferencePicture(image: referencePicture, guides: camera.previewGuides) }
-              else { LinkPreview(fill: fill, camera: camera, link: camera.link) }
+              // The picture the user chose: a connected Mac does not override the iPad's own camera.
+              else if camera.isShowingMac { LinkPreview(fill: fill, camera: camera, link: camera.link) }
+              else if camera.isOn { CameraPreview(camera: camera) }
             }
               .frame(width: size.width, height: size.height)
               .overlay {
@@ -77,7 +80,7 @@ struct ConfidenceMonitorView: View {
               .overlay(alignment: .bottomLeading) {
                 TimelineView(.periodic(from: .now, by: 0.1)) { context in
                   let age = context.date.timeIntervalSince(link.lastFrameTime ?? .distantPast)
-                  let paused = age > 0.3
+                  let paused = camera.isShowingMac ? age > 0.3 : !camera.isOn
                   let status = paused ? "Picture paused · last frame \(link.lastFrameTime == nil ? "unknown" : "\(Int(max(0, age))) s ago")"
                     : link.transportKind == "Wi-Fi" && link.framesSkipped > 0 ? "Wi-Fi · \(link.framesSkipped) frames skipped" : "Live"
                   chip(status, colour: paused ? amber : Color(white: 0.15))
@@ -101,7 +104,7 @@ struct ConfidenceMonitorView: View {
   }
 
   private func fitSize(in area: CGSize, fill: Bool) -> CGSize {
-    let sensor = camera.link.pictureSize ?? CGSize(width: 16, height: 9)
+    let sensor = camera.pictureSize ?? CGSize(width: 16, height: 9)
     let ratio = camera.guides.rotation.swapsAxes ? sensor.height / sensor.width : sensor.width / sensor.height
     let width = fill ? max(area.width, area.height * ratio) : min(area.width, area.height * ratio)
     return CGSize(width: width, height: width / ratio)

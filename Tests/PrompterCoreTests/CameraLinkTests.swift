@@ -705,3 +705,37 @@ final class CameraLinkSecurityTests: XCTestCase {
     XCTAssertNil(CameraLinkSecurity.normalised("123456"))
   }
 }
+
+extension CameraLinkTests {
+  @MainActor
+  func testGoodbyeHoldsAnAutomaticLinkUntilTheUserActs() async throws {
+    for controlling in [false, true] {
+      let sender = IPadCameraSender(defaults: freshDefaults())
+      sender.searchesForIPad = false
+      sender.capturesCamera = false
+      sender.relay.captureAudio = false
+      sender.controlsIPad = controlling
+      let pipe = LinkPipe(name: "USB-C")
+      sender.use(pipe)
+      pipe.onMessage?(.goodbye)
+      try await Task.sleep(for: .milliseconds(20))
+      XCTAssertNil(sender.pipe)
+      // Only an automatic link waits; an open iPad window or CLI call still reconnects.
+      XCTAssertEqual(sender.waitsAfterGoodbye, !controlling)
+      sender.controlsIPad = true
+      XCTAssertFalse(sender.waitsAfterGoodbye, "a choice on the Mac ends the wait")
+      sender.disconnect()
+    }
+  }
+
+  func testIPadIgnoresAMacUntilItsHelloAndLimitsOldUSBPeers() {
+    let rename = CameraLink.Message.command(.rename("Hijacked"))
+    XCTAssertTrue(CameraLink.iPadAccepts(.hello(name: "Mac", version: 3), greeted: false, peerVersion: 0, overWiFi: false))
+    XCTAssertFalse(CameraLink.iPadAccepts(.command(.play), greeted: false, peerVersion: 0, overWiFi: false))
+    XCTAssertFalse(CameraLink.iPadAccepts(.goodbye, greeted: false, peerVersion: 0, overWiFi: true))
+    XCTAssertTrue(CameraLink.iPadAccepts(.command(.play), greeted: true, peerVersion: 2, overWiFi: false))
+    XCTAssertFalse(CameraLink.iPadAccepts(rename, greeted: true, peerVersion: 2, overWiFi: false))
+    XCTAssertTrue(CameraLink.iPadAccepts(rename, greeted: true, peerVersion: 2, overWiFi: true))
+    XCTAssertTrue(CameraLink.iPadAccepts(rename, greeted: true, peerVersion: 3, overWiFi: false))
+  }
+}

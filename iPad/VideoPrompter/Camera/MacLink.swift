@@ -47,7 +47,7 @@ import VideoToolbox
     if open { startPermissionListener() } else {
       permissionListener?.cancel(); permissionListener = nil
       permissionConnections.forEach { $0.cancel() }; permissionConnections.removeAll()
-      approvePairing(false)
+      approvePairing(false, userChoice: false)
       scannedOffer = nil
     }
   }
@@ -86,10 +86,12 @@ import VideoToolbox
     credentials = next
     wifi?.cancel(); wifi = nil; restartWiFi()
   }
-  func approvePairing(_ allow: Bool) {
+  /// `userChoice` is false when the sheet closes or times out: that refuses this request without the
+  /// three-minute block, which only the "Don't allow" button sets.
+  func approvePairing(_ allow: Bool, userChoice: Bool = true) {
     guard var permission = pendingPermission else { return }
     pendingPermission = nil
-    if !allow { pairingAvailability.decline() }
+    if !allow && userChoice { pairingAvailability.decline() }
     let connection = permission.connection
     guard pairingAvailability.allowsRequest(), permission.consent.consume(allow: allow) else { connection.cancel(); return }
     Task {
@@ -131,7 +133,7 @@ import VideoToolbox
             confirmationCode: PairingExchange.confirmationCode(shared))
           Task { @MainActor in
             try? await Task.sleep(for: .seconds(55))
-            if self.pendingPermission?.connection === connection { self.approvePairing(false) }
+            if self.pendingPermission?.connection === connection { self.approvePairing(false, userChoice: false) }
           }
         } catch { connection.cancel() }
       }
@@ -334,7 +336,7 @@ import VideoToolbox
     startPermissionListener()
     if !allowsWiFi {
       permissionListener?.cancel(); permissionListener = nil
-      approvePairing(false)
+      approvePairing(false, userChoice: false)
       wifi?.cancel()
       wifi = nil
       // Turning Wi-Fi off also ends a Mac already sending over it; USB-C carries on.
@@ -437,6 +439,10 @@ final class LinkReceiver: @unchecked Sendable {
   private var connectionIsWiFi = false
   /// The connected Mac's protocol version, from its hello.
   private var peerVersion = 0
+  private var greeted = false
+  /// Uptime of the last message from the current Mac, for the idle check.
+  private var lastMessage = DispatchTime.now()
+  private var idleCheck: DispatchSourceTimer?
   private var reader = CameraLink.Reader()
   private var format: CMVideoFormatDescription?
   /// After a connection or a decoder failure, frames wait for the next key frame.
@@ -450,7 +456,7 @@ final class LinkReceiver: @unchecked Sendable {
     self.renderer = renderer
   }
 
-  deinit { if let decoder { VTDecompressionSessionInvalidate(decoder) } }
+  deinit { idleCheck?.cancel(); if let decoder { VTDecompressionSessionInvalidate(decoder) } }
 
   /// Connections still in their handshake, and whether each came over Wi-Fi.
   private var pending: [(connection: NWConnection, wifi: Bool)] = []
@@ -503,7 +509,8 @@ final class LinkReceiver: @unchecked Sendable {
     // Dropped while it shook hands: Wi-Fi was turned off or the pairing code changed.
     guard pending.contains(where: { $0.connection === new }) else { return }
     pending.removeAll { $0.connection === new }
-    connection?.cancel()
+    // Goodbye first, so a Mac that only linked automatically waits instead of taking the iPad back.
+    if let old = connection { old.send(content: CameraLink.Message.goodbye.encoded(), completion: .contentProcessed { _ in old.cancel() }) }
     // The Mac that replaces it is a different sender: a disconnect first, so anything tied to the
     // old one (the Mac's voice relay) ends, and it may send no picture.
     if connection != nil { onEvent?(.replaced) }
@@ -513,6 +520,9 @@ final class LinkReceiver: @unchecked Sendable {
     connectionIsWiFi = overWiFi
     peerVersion = 0
     outbox = StateOutbox()
+    greeted = false
+    lastMessage = .now()
+    startIdleCheck()
     reader = CameraLink.Reader()
     if let decoder { VTDecompressionSessionInvalidate(decoder) }
     decoder = nil
@@ -520,6 +530,20 @@ final class LinkReceiver: @unchecked Sendable {
     needsKeyFrame = true
     renderer.flush(removingDisplayedImage: true, completionHandler: nil)
     receive(on: new)
+  }
+
+  /// A version 3 Mac that falls silent is dropped, so reading it drove pauses and the iPad's own mic takes over.
+  private func startIdleCheck() {
+    guard idleCheck == nil else { return }
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    timer.schedule(deadline: .now() + 2, repeating: 2)
+    timer.setEventHandler { [weak self] in
+      guard let self, let connection = self.connection, self.peerVersion >= 3 else { return }
+      let silent = Double(DispatchTime.now().uptimeNanoseconds - self.lastMessage.uptimeNanoseconds) / 1e9
+      if silent > CameraLink.idleTimeout { connection.cancel() }
+    }
+    timer.resume()
+    idleCheck = timer
   }
 
   func disconnect() {
@@ -566,6 +590,7 @@ final class LinkReceiver: @unchecked Sendable {
       guard let self, connection === self.connection else { return }
       if let data, !data.isEmpty {
         do {
+          self.lastMessage = .now()
           for message in try self.reader.append(data) { self.handle(message) }
         } catch {
           connection.cancel()
@@ -591,8 +616,10 @@ final class LinkReceiver: @unchecked Sendable {
   }
 
   func handle(_ message: CameraLink.Message) {
+    guard CameraLink.iPadAccepts(message, greeted: greeted, peerVersion: peerVersion, overWiFi: connectionIsWiFi) else { return }
     switch message {
     case .hello(let name, let version):
+      greeted = true
       peerVersion = version
       onEvent?(.connected(name, connectionIsWiFi ? "Wi-Fi" : "USB-C"))
     case .format(let width, let height, let sets):
@@ -649,7 +676,7 @@ final class LinkReceiver: @unchecked Sendable {
     let status = VTDecompressionSessionDecodeFrame(decoder, sampleBuffer: sample, flags: [],
       infoFlagsOut: nil) { [renderer, exposure] status, _, pixels, _, _ in
         guard status == noErr, let pixels else { return }
-        exposure.receive(pixels)
+        exposure.receive(pixels, from: .linked)
         var description: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
           imageBuffer: pixels, formatDescriptionOut: &description)

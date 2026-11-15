@@ -353,6 +353,7 @@ import VideoToolbox
       defaults.set(selectedWiFiID, forKey: "selectedWiFiIPad")
       generation += 1
       oldIPad = false
+      waitsAfterGoodbye = false
       if let old = pipe, old.name == "Wi-Fi" {
         old.send(CameraLink.Message.goodbye.encoded())
         old.close()
@@ -569,6 +570,10 @@ import VideoToolbox
   private var retryDelay = 2.0
   private var linkOn = false
   private var automaticallyLinks = false
+  /// The iPad said goodbye (its Disconnect, or another Mac took it over) while this Mac only linked
+  /// automatically: wait for a choice here or a cable instead of taking it back every few seconds.
+  private(set) var waitsAfterGoodbye = false
+  private var linksOnlyAutomatically: Bool { !isOn && !controlsIPad && calls == 0 }
 
   /// Discovery is independent of camera capture and the Remote window.
   func startDiscovering() {
@@ -611,8 +616,10 @@ import VideoToolbox
   var searchesForIPad = true
 
   private func updateLink() {
+    let resumed = waitsAfterGoodbye && !linksOnlyAutomatically
+    if resumed { waitsAfterGoodbye = false }
     let wanted = searchesForIPad && (automaticallyLinks || isOn || controlsIPad || calls > 0)
-    guard wanted != linkOn else { return }
+    guard wanted != linkOn else { if resumed { connectIfNeeded() }; return }
     linkOn = wanted
     wanted ? startLink() : stopLink()
   }
@@ -628,6 +635,18 @@ import VideoToolbox
       return
     }
     oldIPad = false
+    // First use: an input made before the grant stays black, so ask first and attach once allowed,
+    // if the camera is still wanted then. Agent and test runs are never asked and stay not determined.
+    if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+      updateLink()
+      Task { [weak self] in
+        _ = await CaptureAccess.request(.video)
+        guard let self, self.isOn, !self.cameraRetained,
+          AVCaptureDevice.authorizationStatus(for: .video) != .notDetermined else { return }
+        self.startCamera()
+      }
+      return
+    }
     let camera = CameraModel.shared
     camera.refresh()
     camera.start()
@@ -754,7 +773,7 @@ import VideoToolbox
 
   private func usbChanged(_ devices: [Int]) {
     // A plugged or swapped iPad may be an updated one.
-    if devices != usbDevices { oldIPad = false; if !devices.isEmpty { wifiPicked = false } }
+    if devices != usbDevices { oldIPad = false; if !devices.isEmpty { wifiPicked = false; waitsAfterGoodbye = false } }
     usbDevices = devices
     if !wifiPicked, !devices.isEmpty, let old = pipe, old.name == "Wi-Fi" { old.close(); lost(old) }
     connectIfNeeded()
@@ -815,7 +834,7 @@ import VideoToolbox
   /// Tries each USB-C device, then each iPad on Wi-Fi, until one answers. An iPhone, or an iPad
   /// without Video Prompter open, refuses the port and the next is tried.
   private func connectIfNeeded() {
-    guard linkOn, pipe == nil, !connecting, isOn || !oldIPad else { return }
+    guard linkOn, pipe == nil, !connecting, isOn || !oldIPad, !(waitsAfterGoodbye && linksOnlyAutomatically) else { return }
     connecting = true
     let usb = usbDevices
     let wifiFirst = wifiPicked
@@ -913,6 +932,7 @@ import VideoToolbox
       if case .goodbye = message {
         Task { @MainActor in
           guard let self, let pipe, self.pipe === pipe else { return }
+          if self.linksOnlyAutomatically { self.waitsAfterGoodbye = true }
           pipe.close()
           self.lost(pipe)
         }

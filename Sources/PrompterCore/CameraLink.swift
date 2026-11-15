@@ -21,6 +21,20 @@ public enum CameraLink {
   public static let protocolVersion = 4
   /// Nothing legitimate comes close: a 1080p key frame is well under 2 MB.
   public static let maximumMessage = 16 * 1024 * 1024
+  /// A version 3 Mac sends its status many times a second, so this long without a word means it has gone
+  /// (slept, lost Wi-Fi, cable stalled) even if the socket never closes.
+  public static let idleTimeout: TimeInterval = 8
+
+  /// What the iPad acts on from a connected Mac: nothing before its hello. The USB-C port is plain
+  /// loopback with no pairing key, so a Mac from before version 3 cannot push scripts or rename the iPad over it.
+  public static func iPadAccepts(_ message: Message, greeted: Bool, peerVersion: Int, overWiFi: Bool) -> Bool {
+    if case .hello = message { return true }
+    guard greeted else { return false }
+    switch message {
+    case .command(.sendScript), .command(.rename): return overWiFi || peerVersion >= 3
+    default: return true
+    }
+  }
 
   public enum Message: Equatable, Sendable {
     /// First on every connection: the Mac's name, shown on the iPad, and the protocol version.
@@ -440,6 +454,9 @@ public enum PadRemote {
     public var guides: Guides?
     public var micLevelDB: Double?
     public var linkHeartbeat: Bool?
+    /// The open script's resolved `ScriptLanguage` raw value: word numbers count tokens in that language
+    /// (numbers expand differently), so the Mac must parse the text the same way. Nil from older iPads.
+    public var language: String?
     public init(
       scripts: [Script], presenting: UUID?, running: Bool, mode: String, speed: Int, word: Int, words: Int,
       version: Int? = nil, look: Look? = nil, presets: [String]? = nil, startDelay: Int? = nil, countdownRemaining: Int? = nil,
@@ -451,8 +468,10 @@ public enum PadRemote {
       cameraOnly: Bool? = nil, linkHeartbeat: Bool? = nil, markdown: String? = nil,
       guides: Guides? = nil, micLevelDB: Double? = nil,
       localCameras: [Source]? = nil, localMicrophones: [Source]? = nil,
-      localCameraID: String? = nil, localCameraOn: Bool? = nil, cameraUsesMac: Bool? = nil
+      localCameraID: String? = nil, localCameraOn: Bool? = nil, cameraUsesMac: Bool? = nil,
+      language: String? = nil
     ) {
+      self.language = language
       self.localCameras = localCameras; self.localMicrophones = localMicrophones
       self.localCameraID = localCameraID; self.localCameraOn = localCameraOn
       self.cameraUsesMac = cameraUsesMac

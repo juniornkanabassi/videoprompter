@@ -8,7 +8,10 @@ import UIKit
 @MainActor final class PadCamera: ObservableObject {
   @Published var isOn = false { didSet { isOn ? start() : stop() } }
   @Published private(set) var devices: [Device] = []
-  @Published var selectedID: String? { didSet { if isOn, selectedID != oldValue { start() } } }
+  @Published var selectedID: String? { didSet {
+    link.exposure.select(isShowingMac ? .linked : .local)
+    if isOn, selectedID != oldValue { start() }
+  } }
   @Published var mirrored = false { didSet { UserDefaults.standard.set(mirrored, forKey: "cameraMirrored") } }
   @Published var guides = CameraGuides() { didSet {
     guideStore.set(guides, for: selectedID)
@@ -54,6 +57,12 @@ import UIKit
   nonisolated let capture = CaptureBox()
   let link = MacLink()
   var isShowingMac: Bool { selectedID == Self.macLinkID }
+  /// The selected picture's size: what the Mac encodes, or the local camera's own format when known.
+  var pictureSize: CGSize? {
+    if isShowingMac { return link.pictureSize }
+    guard let device = devices.first(where: { $0.id == selectedID }), let width = device.width, let height = device.height else { return nil }
+    return CGSize(width: width, height: height)
+  }
   private let guideStore = CameraGuideStore()
   private var tokens: [NSObjectProtocol] = []
 
