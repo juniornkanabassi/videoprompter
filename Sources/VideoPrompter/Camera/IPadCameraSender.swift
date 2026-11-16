@@ -1240,8 +1240,11 @@ class LinkPipe: @unchecked Sendable {
   /// Queued bytes above which the encoder drops a frame. Lower while the voice relay runs, so its
   /// word messages are never far behind.
   let videoLimit = Atomic<Int>(3_000_000)
-  private let closeHandler = Mutex<(@Sendable () -> Void)?>(nil)
-  private let messageHandler = Mutex<(@Sendable (CameraLink.Message) -> Void)?>(nil)
+  // Not Mutex: its inout access to a closure re-wraps the stored value on every read, so after
+  // thousands of reads (one per received chunk) calling it overflowed the stack.
+  private let handlerLock = NSLock()
+  private var closeHandler: (@Sendable () -> Void)?
+  private var messageHandler: (@Sendable (CameraLink.Message) -> Void)?
   private let reader = Mutex(CameraLink.Reader())
   var pendingBytes: Int { pending.load(ordering: .relaxed) }
   /// Frames queued and not yet being written.
@@ -1249,13 +1252,13 @@ class LinkPipe: @unchecked Sendable {
     backlog.withLock { $0.video.reduce(0) { $0 + ($1.count > 4 && $1[$1.startIndex + 4] == 3 ? 1 : 0) } }
   }
   var onClose: (@Sendable () -> Void)? {
-    get { closeHandler.withLock { $0 } }
-    set { closeHandler.withLock { $0 = newValue } }
+    get { handlerLock.withLock { closeHandler } }
+    set { handlerLock.withLock { closeHandler = newValue } }
   }
   /// What the iPad sends back, from `startReading` on.
   var onMessage: (@Sendable (CameraLink.Message) -> Void)? {
-    get { messageHandler.withLock { $0 } }
-    set { messageHandler.withLock { $0 = newValue } }
+    get { handlerLock.withLock { messageHandler } }
+    set { handlerLock.withLock { messageHandler = newValue } }
   }
 
   init(name: String) { self.name = name }
@@ -1328,7 +1331,7 @@ class LinkPipe: @unchecked Sendable {
 
   func queued(_ count: Int) { pending.add(count, ordering: .relaxed) }
   func sent(_ count: Int) { pending.subtract(count, ordering: .relaxed) }
-  func closed() { closeHandler.withLock { $0 }?() }
+  func closed() { onClose?() }
 }
 
 /// The usbmuxd tunnel: a plain socket written from one serial queue and read on its own thread.

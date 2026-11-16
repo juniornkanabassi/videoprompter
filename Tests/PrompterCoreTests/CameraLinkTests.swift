@@ -736,6 +736,23 @@ final class CameraLinkSecurityTests: XCTestCase {
 }
 
 extension CameraLinkTests {
+  /// Each received chunk reads `onMessage`. That once wrapped the stored closure deeper on every
+  /// read, until a call overflowed the Wi-Fi thread's stack about half an hour into a session.
+  func testReadingTheMessageHandlerNeverDeepensIt() {
+    let pipe = LinkPipe(name: "Wi-Fi")
+    let calls = Atomic<Int>(0)
+    pipe.onMessage = { _ in calls.add(1, ordering: .relaxed) }
+    let goodbye = CameraLink.Message.goodbye.encoded()
+    for _ in 0..<50_000 { XCTAssertTrue(pipe.received(goodbye)) }
+    // A small stack, like a dispatch worker's: thousands of nested wrappers would not fit.
+    let done = expectation(description: "called on a small stack")
+    let thread = Thread { pipe.onMessage?(.goodbye); done.fulfill() }
+    thread.stackSize = 64 * 1024
+    thread.start()
+    wait(for: [done], timeout: 5)
+    XCTAssertEqual(calls.load(ordering: .relaxed), 50_001)
+  }
+
   @MainActor
   func testGoodbyeHoldsAnAutomaticLinkUntilTheUserActs() async throws {
     for controlling in [false, true] {
