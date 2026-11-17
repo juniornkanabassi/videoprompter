@@ -90,7 +90,10 @@ enum ScriptShortcuts {
           Divider()
           PresenterVideoItems()
           ExposureMenuItems()
-          Button("Full screen") { PresenterController.shared.toggleFullScreen() }
+          Button("Full screen") {
+            if let window = IPadWindowConfigurator.fullScreenTarget(key: NSApp.keyWindow) { window.toggleFullScreen(nil) }
+            else { PresenterController.shared.toggleFullScreen() }
+          }
             .keyboardShortcut("f", modifiers: [.shift, .control, .command])
         }
         CommandMenu("Format") {

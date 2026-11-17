@@ -399,7 +399,14 @@ struct IPadButton: View {
 #if os(macOS)
 /// Opt the console into AppKit's standard green-button, View menu and Globe-F actions.
 struct IPadWindowConfigurator: NSViewRepresentable {
+  @MainActor static weak var window: NSWindow?
+  /// View > Full screen acts on iPad Control while it is in front; otherwise it stays the presenter's.
+  @MainActor static func fullScreenTarget(key: NSWindow?) -> NSWindow? {
+    guard let key, key === window else { return nil }
+    return key
+  }
   static func configure(_ window: NSWindow) {
+    Self.window = window
     window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
     window.collectionBehavior.insert(.fullScreenPrimary)
     window.styleMask.remove(.nonactivatingPanel)

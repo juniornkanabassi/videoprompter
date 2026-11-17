@@ -29,6 +29,14 @@ final class IPadWindowTests: XCTestCase {
     XCTAssertEqual(window.standardWindowButton(.zoomButton)?.action, #selector(NSWindow.toggleFullScreen(_:)))
     XCTAssertFalse(window.styleMask.contains(.fullScreen))
   }
+  @MainActor func testFullScreenMenuTargetsIPadControlWhenItIsInFront() {
+    let console = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+    let other = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: true)
+    IPadWindowConfigurator.configure(console)
+    XCTAssertTrue(IPadWindowConfigurator.fullScreenTarget(key: console) === console)
+    XCTAssertNil(IPadWindowConfigurator.fullScreenTarget(key: other), "Other windows keep the presenter's full screen")
+    XCTAssertNil(IPadWindowConfigurator.fullScreenTarget(key: nil))
+  }
   @MainActor func testSecondMonitorUsesNormalWindowAndPreservesExplicitAlwaysOnTop() {
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 480),
       styleMask: [.titled, .closable], backing: .buffered, defer: true)
