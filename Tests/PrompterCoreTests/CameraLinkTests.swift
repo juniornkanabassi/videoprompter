@@ -20,6 +20,13 @@ final class CameraLinkTests: XCTestCase {
     let partial = try JSONDecoder().decode(PadRemote.Guides.self, from: Data(#"{"zebras":true}"#.utf8))
     XCTAssertEqual(partial.zebras, true)
     XCTAssertNil(partial.falseColour)
+    XCTAssertNil(partial.zebraPurpose)
+    XCTAssertNil(partial.skinLevel)
+    let exposure = PadRemote.Guides(zebraPurpose: "faceReference", zebraLevel: 45, zebraRange: 2,
+      skinTone: "Deep", skinLevel: 45, skinRange: 2, greyCardCheck: false)
+    XCTAssertEqual(try JSONDecoder().decode(PadRemote.Guides.self, from: JSONEncoder().encode(exposure)), exposure)
+    var reader = CameraLink.Reader()
+    XCTAssertEqual(try reader.append(CameraLink.Message.command(.cameraGuides(exposure)).encoded()), [.command(.cameraGuides(exposure))])
   }
 
   func testReplicaStateAndSeekAreCompatibleWithOlderPeers() throws {

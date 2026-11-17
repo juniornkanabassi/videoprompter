@@ -786,7 +786,12 @@ extension PadStore {
       guides: .init(zebras: camera.guides.zebras, falseColour: camera.guides.falseColour,
         thirds: camera.guides.thirds, centre: camera.guides.axes, marker: camera.guides.marker?.label ?? "Off",
         exposureKey: defaults.object(forKey: "presenterExposureKey") as? Bool ?? true,
-        rotation: camera.guides.rotation.rawValue),
+        rotation: camera.guides.rotation.rawValue,
+        zebraPurpose: camera.guides.validatedZebraPurpose.rawValue,
+        zebraLevel: camera.guides.zebraLevel, zebraRange: camera.guides.zebraRange,
+        skinTone: camera.guides.skinTone.rawValue,
+        skinLevel: camera.guides.skinReference.level, skinRange: camera.guides.skinReference.range,
+        greyCardCheck: camera.guides.greyCardCheck),
       micLevelDB: micOn ? micMeter.levelDB : -60,
       localCameras: localCameras, localMicrophones: localMicrophones,
       localCameraID: camera.isShowingMac ? nil : camera.selectedID, localCameraOn: camera.isOn, cameraUsesMac: camera.isShowingMac,
@@ -830,6 +835,7 @@ extension PadStore {
       var guides = camera.guides
       if let value = update.zebras { guides.changeExposure { $0.zebras = value } }
       if let value = update.falseColour { guides.changeExposure { $0.falseColour = value } }
+      guides.applyExposure(update)
       if let value = update.thirds { guides.thirds = value }
       if let value = update.centre { guides.axes = value }
       if let value = update.marker {

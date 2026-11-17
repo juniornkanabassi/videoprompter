@@ -217,10 +217,24 @@ public enum PadRemote {
     public var marker: String?
     public var exposureKey: Bool?
     public var rotation: Int?
+    /// Exposure settings (raw values of `CameraGuides`' enums). Level and skin level 0...100,
+    /// zebra range 0...10 (0 is "Limit": the level and above), skin range 1...10. The receiver clamps.
+    public var zebraPurpose: String?
+    public var zebraLevel: Int?
+    public var zebraRange: Int?
+    public var skinTone: String?
+    public var skinLevel: Int?
+    public var skinRange: Int?
+    public var greyCardCheck: Bool?
     public init(zebras: Bool? = nil, falseColour: Bool? = nil, thirds: Bool? = nil,
-      centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil, rotation: Int? = nil) {
+      centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil, rotation: Int? = nil,
+      zebraPurpose: String? = nil, zebraLevel: Int? = nil, zebraRange: Int? = nil,
+      skinTone: String? = nil, skinLevel: Int? = nil, skinRange: Int? = nil, greyCardCheck: Bool? = nil) {
       self.zebras = zebras; self.falseColour = falseColour; self.thirds = thirds
       self.centre = centre; self.marker = marker; self.exposureKey = exposureKey; self.rotation = rotation
+      self.zebraPurpose = zebraPurpose; self.zebraLevel = zebraLevel; self.zebraRange = zebraRange
+      self.skinTone = skinTone; self.skinLevel = skinLevel; self.skinRange = skinRange
+      self.greyCardCheck = greyCardCheck
     }
   }
 

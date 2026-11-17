@@ -18,6 +18,13 @@ final class PadRemoteReadinessTests: XCTestCase {
     XCTAssertTrue(app.contains("get: { store.isPresenting }"))
   }
 
+  func testExposureSettingsAreReportedAndApplied() throws {
+    let store = try source("iPad/VideoPrompter/App/PadStore.swift")
+    XCTAssertTrue(store.contains("guides.applyExposure(update)"))
+    for field in ["zebraPurpose: camera.guides.validatedZebraPurpose.rawValue", "skinTone: camera.guides.skinTone.rawValue",
+      "greyCardCheck: camera.guides.greyCardCheck"] { XCTAssertTrue(store.contains(field), field) }
+  }
+
   func testLocalCameraNeverRequestsOrAcceptsMacPicture() throws {
     let store = try source("iPad/VideoPrompter/App/PadStore.swift")
     let start = try XCTUnwrap(store.range(of: "case .selectCamera(let id, let onIPad):"))

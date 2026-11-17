@@ -374,6 +374,42 @@ extension CameraGuides {
   }
 }
 
+extension CameraGuides {
+  /// The exposure fields of a Mac update, from outside the trust boundary: numbers are clamped and
+  /// unknown names ignored. Order matters for the `didSet` rules: a check ends first, skin before
+  /// the zebra band it feeds, and a new check starts last so it records the finished settings.
+  mutating func applyExposure(_ update: PadRemote.Guides) {
+    if update.greyCardCheck == false { greyCardCheck = false }
+    // Without an edit, an update about something else must not end a running check.
+    let edits = update.zebraPurpose != nil || update.skinTone != nil || update.skinLevel != nil
+      || update.skinRange != nil || update.zebraRange != nil || update.zebraLevel != nil
+    if edits {
+      changeExposure { guides in
+        if let purpose = update.zebraPurpose.flatMap(ZebraPurpose.init(rawValue:)) {
+          if purpose == .custom { guides.zebraPurpose = .custom } else { guides.useZebraPreset(purpose) }
+        }
+        if let tone = update.skinTone.flatMap(SkinTone.init(rawValue:)) {
+          if let reference = tone.reference { guides.skinReference = reference }
+          guides.selectedSkinTone = tone
+        }
+        if update.skinLevel != nil || update.skinRange != nil {
+          if let level = update.skinLevel { guides.skinReference.level = min(100, max(0, level)) }
+          if let range = update.skinRange { guides.skinReference.range = min(10, max(1, range)) }
+          guides.selectedSkinTone = .custom
+        }
+        // Moving between Limit and a band goes through `zebraRangeMode` so each keeps its saved level.
+        if let range = update.zebraRange {
+          let range = min(10, max(0, range))
+          if (range > 0) != guides.zebraRangeMode { guides.zebraRangeMode = range > 0 }
+          guides.zebraRange = range
+        }
+        if let level = update.zebraLevel { guides.zebraLevel = min(100, max(0, level)) }
+      }
+    }
+    if update.greyCardCheck == true { greyCardCheck = true }
+  }
+}
+
 extension Binding where Value == CameraGuides {
   func manualExposure<T>(_ key: WritableKeyPath<CameraGuides, T>) -> Binding<T> {
     Binding<T>(get: { wrappedValue[keyPath: key] }, set: { value in
