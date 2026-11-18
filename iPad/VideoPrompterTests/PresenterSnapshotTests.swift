@@ -97,6 +97,24 @@ import XCTest
       size: CGSize(width: 440, height: 680), name: "ipad-presenter-text", directory: directory, beforeDraw: {})
   }
 
+  /// The two Adjust popovers the Zebras and False colour buttons open on press and hold.
+  func testExposureAdjustPanels() async throws {
+    guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
+    var guides = CameraGuides()
+    guides.zebras = true
+    guides.falseColour = true
+    let size = CGSize(width: 460, height: 760)
+    _ = try await render(PadAdjustPanel { ZebraAdjustView(guides: .init(get: { guides }, set: { guides = $0 })) },
+      size: size, name: "ipad-adjust-zebras", directory: directory, beforeDraw: {})
+    _ = try await render(PadAdjustPanel { FalseColourAdjustView(guides: .init(get: { guides }, set: { guides = $0 })) },
+      size: size, name: "ipad-adjust-false-colour", directory: directory, beforeDraw: {})
+    guides.selectedSkinTone = .custom
+    _ = try await render(PadAdjustPanel { FalseColourAdjustView(guides: .init(get: { guides }, set: { guides = $0 })) },
+      size: size, name: "ipad-adjust-false-colour-custom", directory: directory, beforeDraw: {})
+    _ = try await render(PadAdjustPanel { ZebraAdjustView(guides: .init(get: { guides }, set: { guides = $0 })) }.dynamicTypeSize(.accessibility3),
+      size: size, name: "ipad-adjust-zebras-large-text", directory: directory, beforeDraw: {})
+  }
+
   func testLinkedSensorFrameMatchesMacPreview() async throws {
     guard let directory = ProcessInfo.processInfo.environment["VP_SHOTS_DIR"] else { throw XCTSkip("Set VP_SHOTS_DIR") }
     let url = URL(fileURLWithPath: directory)
