@@ -186,9 +186,10 @@ extension AppearanceSnapshotTests {
   }
 
   func testOnlyTeamlessMacBuildsKeepPairingKeysInPreferences() {
-    XCTAssertEqual(PairingKeyStore.fallback(teamIdentifier: "ABCDE12345"), .loginKeychain, "A notarised release uses the login keychain")
-    XCTAssertEqual(PairingKeyStore.fallback(teamIdentifier: nil), .preferences)
-    XCTAssertEqual(PairingKeyStore.fallback(teamIdentifier: ""), .preferences)
-    XCTAssertNil(PairingKeyStore.ownTeamIdentifier(), "Test builds are signed without a team")
+    XCTAssertEqual(PairingKeyStore.fallback(for: .team("ABCDE12345")), .loginKeychain, "A notarised release uses the login keychain")
+    XCTAssertEqual(PairingKeyStore.fallback(for: .teamless), .preferences)
+    XCTAssertEqual(PairingKeyStore.fallback(for: .unknown), .unavailable, "An unreadable signature never falls back to plain text")
+    XCTAssertEqual(PairingKeyStore.fallback(for: .team("")), .unavailable)
+    if case .team = PairingKeyStore.ownSigning() { XCTFail("Test builds are signed without a team") }
   }
 }

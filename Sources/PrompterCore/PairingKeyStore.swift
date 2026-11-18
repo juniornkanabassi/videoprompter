@@ -37,8 +37,9 @@ public final class PairingKeyStore {
       if let data = copy(key, dataProtection: true) { return data }
       #if os(macOS)
       switch Self.macFallback {
-      case .loginKeychain: return copy(key, dataProtection: false)
+      case .loginKeychain: return Self.loginKeychainIsUnlocked() ? copy(key, dataProtection: false) : nil
       case .preferences: return UserDefaults.standard.data(forKey: fallbackKey(key))
+      case .unavailable: return nil
       }
       #else
       return nil
@@ -49,8 +50,9 @@ public final class PairingKeyStore {
       #if os(macOS)
       if result == errSecMissingEntitlement {
         switch Self.macFallback {
-        case .loginKeychain: result = store(key, data, dataProtection: false)
+        case .loginKeychain: result = Self.loginKeychainIsUnlocked() ? store(key, data, dataProtection: false) : errSecInteractionNotAllowed
         case .preferences: UserDefaults.standard.set(data, forKey: fallbackKey(key)); return true
+        case .unavailable: return false
         }
       }
       #endif
@@ -58,19 +60,36 @@ public final class PairingKeyStore {
     }
   }
   #if os(macOS)
-  public enum MacFallback: Equatable, Sendable { case loginKeychain, preferences }
-  /// Where keys go when the data-protection keychain is refused: only a build signed without a team uses preferences.
-  public static func fallback(teamIdentifier: String?) -> MacFallback {
-    (teamIdentifier?.isEmpty == false) ? .loginKeychain : .preferences
+  public enum Signing: Equatable, Sendable { case team(String), teamless, unknown }
+  public enum MacFallback: Equatable, Sendable { case loginKeychain, preferences, unavailable }
+  /// Where keys go when the data-protection keychain is refused. Only a build confirmed to have no team uses
+  /// preferences; if the signature cannot be read, nothing is kept rather than risk plain text in a release.
+  public static func fallback(for signing: Signing) -> MacFallback {
+    switch signing {
+    case .team(let id): id.isEmpty ? .unavailable : .loginKeychain
+    case .teamless: .preferences
+    case .unknown: .unavailable
+    }
   }
-  static let macFallback = fallback(teamIdentifier: ownTeamIdentifier())
-  static func ownTeamIdentifier() -> String? {
+  static let macFallback = fallback(for: ownSigning())
+  static func ownSigning() -> Signing {
     var code: SecCode?, staticCode: SecStaticCode?, info: CFDictionary?
     guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
       SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
-      SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess
-    else { return nil }
-    return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+      SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+      let info = info as? [String: Any]
+    else { return .unknown }
+    if let team = info[kSecCodeInfoTeamIdentifier as String] as? String { return .team(team) }
+    return .teamless
+  }
+  /// The legacy keychain ignores kSecUseAuthenticationUIFail, so a locked login keychain would ask for the
+  /// password, possibly during launch. It is used only while unlocked; otherwise the keys count as unavailable.
+  static func loginKeychainIsUnlocked() -> Bool {
+    var keychain: SecKeychain?
+    var status: SecKeychainStatus = 0
+    guard SecKeychainCopyDefault(&keychain) == errSecSuccess, let keychain,
+      SecKeychainGetStatus(keychain, &status) == errSecSuccess else { return false }
+    return status & SecKeychainStatus(kSecUnlockStateStatus) != 0
   }
   #endif
   public init(read: @escaping (String) -> Data?, write: @escaping (String, Data) -> Bool) {
