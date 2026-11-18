@@ -21,10 +21,13 @@ enum ExposureMenuLogic {
   }
   static func levelUpdate(_ level: Int) -> PadRemote.Guides { .init(zebras: true, zebraLevel: clamp(level)) }
   static func widthUpdate(_ width: Int) -> PadRemote.Guides { .init(zebras: true, zebraRange: min(10, max(1, width))) }
-  /// "A level and brighter" is range 0. "Near a level" needs a width: the state carries only the skin
-  /// width, so the stripes start as wide as the skin reference and the receiver keeps its own level.
+  /// "A level and brighter" or "Near a level": the mode alone, so the receiver restores that mode's own saved level and width.
   static func modeUpdate(near: Bool, state: PadRemote.Guides) -> PadRemote.Guides {
-    .init(zebras: true, zebraRange: near ? max(1, state.skinRange ?? 1) : 0)
+    .init(zebras: true, zebraRangeMode: near)
+  }
+  /// Custom… selects the custom tone (keeping the current numbers) before Adjust opens on its steppers.
+  static func customSkinUpdate(_ state: PadRemote.Guides) -> PadRemote.Guides {
+    .init(falseColour: true, skinLevel: state.skinLevel)
   }
   static func skinToneUpdate(_ tone: CameraGuides.SkinTone) -> PadRemote.Guides {
     .init(falseColour: true, skinTone: tone.rawValue)
@@ -116,8 +119,11 @@ enum ExposureMenuLogic {
       update.zebraPurpose = after.rawValue
     } else if !(before == .faceReference && after == .faceReference) {
       if after != before { update.zebraPurpose = after.rawValue }
-      if new.zebraRange != old.zebraRange { update.zebraRange = new.zebraRange }
-      if new.zebraLevel != old.zebraLevel && (new.zebraRange > 0) == (old.zebraRange > 0) { update.zebraLevel = new.zebraLevel }
+      if new.zebraRangeMode != old.zebraRangeMode { update.zebraRangeMode = new.zebraRangeMode }
+      else {
+        if new.zebraRange != old.zebraRange { update.zebraRange = new.zebraRange }
+        if new.zebraLevel != old.zebraLevel { update.zebraLevel = new.zebraLevel }
+      }
     }
     let skinChanged = new.skinReference != old.skinReference
     if skinChanged || new.skinTone != old.skinTone {
@@ -219,7 +225,7 @@ struct FalseColourMenuContent: View {
               on: guides.skinTone == tone.rawValue) { send(ExposureMenuLogic.skinToneUpdate(tone)) }
           }
         }
-        choice("Custom…", on: guides.skinTone == CameraGuides.SkinTone.custom.rawValue, action: adjust)
+        choice("Custom…", on: guides.skinTone == CameraGuides.SkinTone.custom.rawValue) { send(ExposureMenuLogic.customSkinUpdate(guides)); adjust() }
       }.disabled(!enabled || checking)
       Divider()
       if checking {

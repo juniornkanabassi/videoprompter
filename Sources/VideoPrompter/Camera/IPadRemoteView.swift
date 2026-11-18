@@ -18,6 +18,7 @@ struct IPadRemoteView: View {
   @State private var newName = ""
   @State private var selectedMac: UUID?
   @State private var dragging: Double?
+  @State private var pendingGuides: (guides: CameraGuides, at: Date)?
   @State private var textOpen = false
   @State private var zebraAdjustOpen = false
   @State private var colourAdjustOpen = false
@@ -119,10 +120,17 @@ struct IPadRemoteView: View {
   }
 
   /// The iPad's exposure settings for the Adjust panels: a change goes out as only the fields that changed.
+  /// Edits made before the iPad's next report (sent at most every 200 ms) build on each other, not on the old report.
   private var remoteGuides: Binding<CameraGuides> {
-    Binding(get: { ExposureMenuLogic.guides(from: currentState?.guides ?? .init()) }, set: { new in
-      let update = ExposureMenuLogic.update(from: ExposureMenuLogic.guides(from: currentState?.guides ?? .init()), to: new)
-      if update != PadRemote.Guides() { link.send(.cameraGuides(update)) }
+    func shown() -> CameraGuides {
+      if let pending = pendingGuides, Date().timeIntervalSince(pending.at) < 0.75 { return pending.guides }
+      return ExposureMenuLogic.guides(from: currentState?.guides ?? .init())
+    }
+    return Binding(get: shown, set: { new in
+      let update = ExposureMenuLogic.update(from: shown(), to: new)
+      guard update != PadRemote.Guides() else { return }
+      pendingGuides = (new, Date())
+      link.send(.cameraGuides(update))
     })
   }
 

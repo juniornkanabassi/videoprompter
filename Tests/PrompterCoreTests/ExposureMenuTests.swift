@@ -71,8 +71,9 @@ import XCTest
     XCTAssertEqual(Logic.skinToneUpdate(.brown), PadRemote.Guides(falseColour: true, skinTone: "Brown"))
     XCTAssertEqual(Logic.greyCardUpdate(true), PadRemote.Guides(greyCardCheck: true))
     let near = PadRemote.Guides(zebraRange: 2, skinRange: 3)
-    XCTAssertEqual(Logic.modeUpdate(near: false, state: near), PadRemote.Guides(zebras: true, zebraRange: 0))
-    XCTAssertEqual(Logic.modeUpdate(near: true, state: near), PadRemote.Guides(zebras: true, zebraRange: 3))
+    XCTAssertEqual(Logic.modeUpdate(near: false, state: near), PadRemote.Guides(zebras: true, zebraRangeMode: false))
+    XCTAssertEqual(Logic.modeUpdate(near: true, state: near), PadRemote.Guides(zebras: true, zebraRangeMode: true))
+    XCTAssertEqual(Logic.customSkinUpdate(PadRemote.Guides(skinLevel: 45)), PadRemote.Guides(falseColour: true, skinLevel: 45))
   }
 
   func testLevelAndBrighterThenNearALevelOnTheMac() {
@@ -81,6 +82,25 @@ import XCTest
     XCTAssertEqual(camera.guides.zebraRange, 0)
     Logic.apply(Logic.modeUpdate(near: true, state: Logic.state(from: camera.guides)), to: camera)
     XCTAssertEqual(camera.guides.zebraRange, 2)
+  }
+
+  func testSwitchingModesKeepsACustomWidth() {
+    let camera = model()
+    Logic.apply(Logic.widthUpdate(5), to: camera)
+    Logic.apply(Logic.levelUpdate(60), to: camera)
+    Logic.apply(Logic.modeUpdate(near: false, state: Logic.state(from: camera.guides)), to: camera)
+    Logic.apply(Logic.modeUpdate(near: true, state: Logic.state(from: camera.guides)), to: camera)
+    XCTAssertEqual([camera.guides.zebraLevel, camera.guides.zebraRange], [60, 5])
+    Logic.apply(Logic.modeUpdate(near: true, state: Logic.state(from: camera.guides)), to: camera)
+    XCTAssertEqual([camera.guides.zebraLevel, camera.guides.zebraRange], [60, 5], "Choosing the ticked mode again changes nothing")
+  }
+
+  func testCustomSkinSelectsTheCustomToneKeepingItsNumbers() {
+    let camera = model()
+    Logic.apply(Logic.skinToneUpdate(.deep), to: camera)
+    Logic.apply(Logic.customSkinUpdate(Logic.state(from: camera.guides)), to: camera)
+    XCTAssertEqual(camera.guides.skinTone, .custom)
+    XCTAssertEqual([camera.guides.skinReference.level, camera.guides.skinReference.range], [45, 2])
   }
 
   func testSummaries() {
@@ -142,11 +162,11 @@ import XCTest
     XCTAssertEqual(remote(state) { $0.skinReference.range = 5; $0.selectedSkinTone = .custom }, PadRemote.Guides(skinRange: 5))
   }
 
-  func testLimitAndRangeSwitchSendsOnlyTheWidth() {
+  func testLimitAndRangeSwitchSendsOnlyTheMode() {
     var state = base
     state.zebraPurpose = "brightAreas"; state.zebraLevel = 95; state.zebraRange = 0
-    XCTAssertEqual(remote(state) { $0.zebraRangeMode = true }, PadRemote.Guides(zebraPurpose: "custom", zebraRange: 2))
-    XCTAssertEqual(remote(base) { $0.zebraRangeMode = false }, PadRemote.Guides(zebraPurpose: "custom", zebraRange: 0))
+    XCTAssertEqual(remote(state) { $0.zebraRangeMode = true }, PadRemote.Guides(zebraPurpose: "custom", zebraRangeMode: true))
+    XCTAssertEqual(remote(base) { $0.zebraRangeMode = false }, PadRemote.Guides(zebraPurpose: "custom", zebraRangeMode: false))
   }
 
   func testGreyCardStartsAndFinishesWithoutSideEffects() {

@@ -226,15 +226,18 @@ public enum PadRemote {
     public var skinLevel: Int?
     public var skinRange: Int?
     public var greyCardCheck: Bool?
+    /// Switch between a band (true) and Limit (false) alone, so the receiver restores that mode's saved values.
+    public var zebraRangeMode: Bool?
     public init(zebras: Bool? = nil, falseColour: Bool? = nil, thirds: Bool? = nil,
       centre: Bool? = nil, marker: String? = nil, exposureKey: Bool? = nil, rotation: Int? = nil,
       zebraPurpose: String? = nil, zebraLevel: Int? = nil, zebraRange: Int? = nil,
-      skinTone: String? = nil, skinLevel: Int? = nil, skinRange: Int? = nil, greyCardCheck: Bool? = nil) {
+      skinTone: String? = nil, skinLevel: Int? = nil, skinRange: Int? = nil, greyCardCheck: Bool? = nil,
+      zebraRangeMode: Bool? = nil) {
       self.zebras = zebras; self.falseColour = falseColour; self.thirds = thirds
       self.centre = centre; self.marker = marker; self.exposureKey = exposureKey; self.rotation = rotation
       self.zebraPurpose = zebraPurpose; self.zebraLevel = zebraLevel; self.zebraRange = zebraRange
       self.skinTone = skinTone; self.skinLevel = skinLevel; self.skinRange = skinRange
-      self.greyCardCheck = greyCardCheck
+      self.greyCardCheck = greyCardCheck; self.zebraRangeMode = zebraRangeMode
     }
   }
 

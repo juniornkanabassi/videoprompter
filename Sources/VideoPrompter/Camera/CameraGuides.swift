@@ -382,7 +382,7 @@ extension CameraGuides {
     if update.greyCardCheck == false { greyCardCheck = false }
     // Without an edit, an update about something else must not end a running check.
     let edits = update.zebraPurpose != nil || update.skinTone != nil || update.skinLevel != nil
-      || update.skinRange != nil || update.zebraRange != nil || update.zebraLevel != nil
+      || update.skinRange != nil || update.zebraRange != nil || update.zebraLevel != nil || update.zebraRangeMode != nil
     if edits {
       changeExposure { guides in
         if let purpose = update.zebraPurpose.flatMap(ZebraPurpose.init(rawValue:)) {
@@ -397,6 +397,7 @@ extension CameraGuides {
           if let range = update.skinRange { guides.skinReference.range = min(10, max(1, range)) }
           guides.selectedSkinTone = .custom
         }
+        if let mode = update.zebraRangeMode, mode != guides.zebraRangeMode { guides.zebraRangeMode = mode }
         // Moving between Limit and a band goes through `zebraRangeMode` so each keeps its saved level.
         if let range = update.zebraRange {
           let range = min(10, max(0, range))
