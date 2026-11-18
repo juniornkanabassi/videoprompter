@@ -19,6 +19,8 @@ struct IPadRemoteView: View {
   @State private var selectedMac: UUID?
   @State private var dragging: Double?
   @State private var textOpen = false
+  @State private var zebraAdjustOpen = false
+  @State private var colourAdjustOpen = false
   @State private var pendingSend: (UUID, String)?
   @State private var message: String?
   private let yellow = AlphaStyle.accent
@@ -116,6 +118,14 @@ struct IPadRemoteView: View {
     }
   }
 
+  /// The iPad's exposure settings for the Adjust panels: a change goes out as only the fields that changed.
+  private var remoteGuides: Binding<CameraGuides> {
+    Binding(get: { ExposureMenuLogic.guides(from: currentState?.guides ?? .init()) }, set: { new in
+      let update = ExposureMenuLogic.update(from: ExposureMenuLogic.guides(from: currentState?.guides ?? .init()), to: new)
+      if update != PadRemote.Guides() { link.send(.cameraGuides(update)) }
+    })
+  }
+
   private func leaveClean() {
     link.send(.look(.init(focusMode: false)))
     link.setCleanScreen(false)
@@ -151,11 +161,23 @@ struct IPadRemoteView: View {
       }
     } tools: {
       BarGroup(label: "Picture tools", raised: false) {
-        BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: state.guides?.zebras ?? false) {
+        BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: state.guides?.zebras ?? false,
+          help: "Zebra stripes on the iPad's picture. Right-click for choices.") {
           link.send(.cameraGuides(.init(zebras: !(state.guides?.zebras ?? false))))
+        }.contextMenu {
+          ZebraMenuContent(guides: state.guides ?? .init(), title: state.deviceName, enabled: link.iPadState != nil || stateOverride != nil,
+            send: { link.send(.cameraGuides($0)) }, adjust: { zebraAdjustOpen = true })
+        }.popover(isPresented: $zebraAdjustOpen) {
+          ScrollView { ZebraAdjustView(guides: remoteGuides).padding(Space.lg) }.frame(width: 460, height: 560).uiZoom(store.uiZoom)
         }
-        BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: state.guides?.falseColour ?? false) {
+        BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: state.guides?.falseColour ?? false,
+          help: "False colour on the iPad's picture. Right-click for choices.") {
           link.send(.cameraGuides(.init(falseColour: !(state.guides?.falseColour ?? false))))
+        }.contextMenu {
+          FalseColourMenuContent(guides: state.guides ?? .init(), title: state.deviceName, enabled: link.iPadState != nil || stateOverride != nil,
+            send: { link.send(.cameraGuides($0)) }, adjust: { colourAdjustOpen = true })
+        }.popover(isPresented: $colourAdjustOpen) {
+          ScrollView { FalseColourAdjustView(guides: remoteGuides).padding(Space.lg) }.frame(width: 460, height: 560).uiZoom(store.uiZoom)
         }
         BarToggle(title: "Guides", symbol: "squareshape.split.3x3", isOn: state.guides?.thirds == true || state.guides?.centre == true) {
           let on = state.guides?.thirds != true && state.guides?.centre != true

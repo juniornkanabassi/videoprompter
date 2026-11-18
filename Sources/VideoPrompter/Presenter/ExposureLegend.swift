@@ -123,6 +123,7 @@ struct ExposureLegend: View {
   var zoom = 1.0
   var respectsPresenterCleanView = true
   @State private var showsHelp = false
+  @State private var adjusting: AdjustTab?
   static func zebraTitle(for purpose: CameraGuides.ZebraPurpose) -> String {
     switch purpose {
     case .brightAreas: "Zebras · Highlights"
@@ -163,6 +164,18 @@ struct ExposureLegend: View {
           ExposureKeyPanel(model: model, zoom: zoom).popoverEntryFocus()
         }
       }.font(.callout).foregroundStyle(.primary)
+        .contextMenu {
+          let state = ExposureMenuLogic.state(from: model.guides)
+          Button("Show key") { showsHelp = true }
+          Menu("Zebras (\(ExposureMenuLogic.zebraSummary(state)))") { ZebraMenuContent(model: model) { adjusting = .zebras } }
+          Menu("False colour (\(ExposureMenuLogic.colourSummary(state)))") { FalseColourMenuContent(model: model) { adjusting = .falseColour } }
+        }
+        .popover(isPresented: Binding(get: { adjusting != nil }, set: { if !$0 { adjusting = nil } })) {
+          ScrollView {
+            if adjusting == .falseColour { FalseColourAdjustView(model: model) } else { ZebraAdjustView(model: model) }
+          }.padding(Space.lg).frame(width: 460, height: 560)
+            .background(Surfaces.presenterPanel).environment(\.colorScheme, .dark).uiZoom(zoom)
+        }
         .padding(.horizontal, Space.sm)
         .background(Surfaces.presenterPanel, in: .rect(cornerRadius: 12))
         .environment(\.colorScheme, .dark)

@@ -590,10 +590,12 @@ struct PresenterView: View {
     let snug = false
     return BarGroup(label: "Picture tools", raised: false) {
       tool("Zebras", "rectangle.pattern.checkered", tab: .zebras, on: live && camera.effectiveZebras, snug: snug,
-           help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Press and hold to adjust.") { toggleExposure(\.zebras) }
+           help: live ? "Zebra stripes on the brightest areas (⌥⌘Z). Right-click for choices, press and hold to adjust." : "Zebra stripes, once there is a camera picture (⌥⌘Z). Right-click for choices, press and hold to adjust.",
+           menu: { AnyView(ZebraMenuContent(model: camera) { adjustOpener = "Zebras"; shell.adjustTab = .zebras }) }) { toggleExposure(\.zebras) }
         .opacity(live ? 1 : 0.45)
       tool("False colour", "circle.lefthalf.filled", tab: .falseColour, on: live && camera.effectiveFalseColour, snug: snug,
-           help: live ? "False colour exposure (⌥⌘X). Press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Press and hold to adjust.") { toggleExposure(\.falseColour) }
+           help: live ? "False colour exposure (⌥⌘X). Right-click for choices, press and hold to adjust." : "False colour exposure, once there is a camera picture (⌥⌘X). Right-click for choices, press and hold to adjust.",
+           menu: { AnyView(FalseColourMenuContent(model: camera) { adjustOpener = "False colour"; shell.adjustTab = .falseColour }) }) { toggleExposure(\.falseColour) }
         .opacity(live ? 1 : 0.45)
       tool("Guides", "squareshape.split.3x3", tab: .guides, on: live && camera.framingIsVisible, snug: snug,
            help: "Framing guides. Press and hold to adjust.") { camera.toggleFramingGuides() }
@@ -615,15 +617,17 @@ struct PresenterView: View {
     }
   }
 
-  /// A picture tool: tapping toggles it, pressing and holding (or the context menu) opens its Adjust tab.
+  /// A picture tool: tapping toggles it, pressing and holding opens its Adjust tab, and the context menu is `menu` or an Adjust item.
   private func tool(_ title: String, _ symbol: String, tab: AdjustTab, on: Bool, shortTitle: String? = nil, snug: Bool = false, adjustable: Bool = true,
                     help: String, traits: AccessibilityTraits = .isToggle, value: String? = nil,
-                    action: @escaping () -> Void) -> some View {
+                    menu: (() -> AnyView)? = nil, action: @escaping () -> Void) -> some View {
     BarToggle(title: title, symbol: symbol, isOn: on, displayTitle: shortTitle, snug: snug, help: help, traits: traits, value: value) {
       adjustOpener = title; action()
     }
     .restoringPopoverFocus(isPresented: Binding(get: { shell.adjustTab != nil && adjustOpener == title }, set: { if !$0 { shell.adjustTab = nil } }), identifier: "adjust-opener-\(title)")
-    .contextMenu { if adjustable { Button("Adjust \(title)") { adjustOpener = title; shell.adjustTab = tab } } }
+    .contextMenu {
+      if let menu { menu() } else if adjustable { Button("Adjust \(title)") { adjustOpener = title; shell.adjustTab = tab } }
+    }
     .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in if adjustable { adjustOpener = title; shell.adjustTab = tab } })
   }
 
