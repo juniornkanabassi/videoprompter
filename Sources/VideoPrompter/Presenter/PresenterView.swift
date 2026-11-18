@@ -153,6 +153,12 @@ struct PresenterView: View {
             if keyVisible {
           PresenterExposureKey(guides: camera.guides, expanded: $keyExpanded, zoom: controlZoom)
             .accessibilityIdentifier("presenter-exposure-legend")
+            .contextMenu {
+              let state = ExposureMenuLogic.state(from: camera.guides)
+              Button(keyExpanded ? "Hide key" : "Show key") { keyExpanded.toggle() }
+              Menu("Zebras (\(ExposureMenuLogic.zebraSummary(state)))") { ZebraMenuContent(model: camera) { adjustOpener = "Zebras"; shell.adjustTab = .zebras } }
+              Menu("False colour (\(ExposureMenuLogic.colourSummary(state)))") { FalseColourMenuContent(model: camera) { adjustOpener = "False colour"; shell.adjustTab = .falseColour } }
+            }
             }
             sourceStatus.fixedSize(horizontal: false, vertical: true)
               .accessibilityIdentifier("presenter-source-status")
