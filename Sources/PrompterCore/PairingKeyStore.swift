@@ -12,32 +12,38 @@ public final class PairingKeyStore {
     // password after every rebuild, freezing launch, so only such builds keep keys in their own preferences.
     // shortcut: plain preferences for teamless test builds only; never for a team-signed release.
     let fallbackKey = { (key: String) in "\(service).\(key)" }
-    func query(_ key: String, dataProtection: Bool) -> [String: Any] {
+    // `keychain` (legacy macOS only) confines the search to the one keychain already checked as unlocked.
+    func query(_ key: String, dataProtection: Bool, keychain: AnyObject? = nil) -> [String: Any] {
       var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
         kSecAttrService as String: service, kSecAttrAccount as String: key]
       if dataProtection { query[kSecUseDataProtectionKeychain as String] = true }
+      if let keychain { query[kSecMatchSearchList as String] = [keychain] }
       return query
     }
-    func copy(_ key: String, dataProtection: Bool) -> Data? {
-      var request = query(key, dataProtection: dataProtection)
+    func copy(_ key: String, dataProtection: Bool, keychain: AnyObject? = nil) -> Data? {
+      var request = query(key, dataProtection: dataProtection, keychain: keychain)
       request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
       request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
       var value: CFTypeRef?
       return SecItemCopyMatching(request as CFDictionary, &value) == errSecSuccess ? value as? Data : nil
     }
-    func store(_ key: String, _ data: Data, dataProtection: Bool) -> OSStatus {
-      let request = query(key, dataProtection: dataProtection)
+    func store(_ key: String, _ data: Data, dataProtection: Bool, keychain: AnyObject? = nil) -> OSStatus {
+      let request = query(key, dataProtection: dataProtection, keychain: keychain)
       var attributes: [String: Any] = [kSecValueData as String: data]
       if dataProtection { attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
       var result = SecItemUpdate(request as CFDictionary, attributes as CFDictionary)
-      if result == errSecItemNotFound { result = SecItemAdd(request.merging(attributes) { _, new in new } as CFDictionary, nil) }
+      if result == errSecItemNotFound {
+        var add = query(key, dataProtection: dataProtection).merging(attributes) { _, new in new }
+        if let keychain { add[kSecUseKeychain as String] = keychain }
+        result = SecItemAdd(add as CFDictionary, nil)
+      }
       return result
     }
     read = { key in
       if let data = copy(key, dataProtection: true) { return data }
       #if os(macOS)
       switch Self.macFallback {
-      case .loginKeychain: return Self.loginKeychainIsUnlocked() ? copy(key, dataProtection: false) : nil
+      case .loginKeychain: return Self.withUnlockedLoginKeychain { copy(key, dataProtection: false, keychain: $0) } ?? nil
       case .preferences: return UserDefaults.standard.data(forKey: fallbackKey(key))
       case .unavailable: return nil
       }
@@ -50,7 +56,7 @@ public final class PairingKeyStore {
       #if os(macOS)
       if result == errSecMissingEntitlement {
         switch Self.macFallback {
-        case .loginKeychain: result = Self.loginKeychainIsUnlocked() ? store(key, data, dataProtection: false) : errSecInteractionNotAllowed
+        case .loginKeychain: result = Self.withUnlockedLoginKeychain { store(key, data, dataProtection: false, keychain: $0) } ?? errSecInteractionNotAllowed
         case .preferences: UserDefaults.standard.set(data, forKey: fallbackKey(key)); return true
         case .unavailable: return false
         }
@@ -83,13 +89,19 @@ public final class PairingKeyStore {
     return .teamless
   }
   /// The legacy keychain ignores kSecUseAuthenticationUIFail, so a locked login keychain would ask for the
-  /// password, possibly during launch. It is used only while unlocked; otherwise the keys count as unavailable.
-  static func loginKeychainIsUnlocked() -> Bool {
+  /// password, possibly during launch. The work runs only on the default keychain while it is unlocked, with
+  /// keychain interaction switched off for the call, so a lock in between fails instead of prompting.
+  static func withUnlockedLoginKeychain<T>(_ body: (SecKeychain) -> T) -> T? {
     var keychain: SecKeychain?
     var status: SecKeychainStatus = 0
     guard SecKeychainCopyDefault(&keychain) == errSecSuccess, let keychain,
-      SecKeychainGetStatus(keychain, &status) == errSecSuccess else { return false }
-    return status & SecKeychainStatus(kSecUnlockStateStatus) != 0
+      SecKeychainGetStatus(keychain, &status) == errSecSuccess,
+      status & SecKeychainStatus(kSecUnlockStateStatus) != 0 else { return nil }
+    var allowed = DarwinBoolean(true)
+    SecKeychainGetUserInteractionAllowed(&allowed)
+    SecKeychainSetUserInteractionAllowed(false)
+    defer { SecKeychainSetUserInteractionAllowed(allowed.boolValue) }
+    return body(keychain)
   }
   #endif
   public init(read: @escaping (String) -> Data?, write: @escaping (String, Data) -> Bool) {
