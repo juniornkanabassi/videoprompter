@@ -34,7 +34,9 @@ public final class PairingKeyStore {
       var result = SecItemUpdate(request as CFDictionary, attributes as CFDictionary)
       if result == errSecItemNotFound {
         var add = query(key, dataProtection: dataProtection).merging(attributes) { _, new in new }
+        #if os(macOS)
         if let keychain { add[kSecUseKeychain as String] = keychain }
+        #endif
         result = SecItemAdd(add as CFDictionary, nil)
       }
       return result
