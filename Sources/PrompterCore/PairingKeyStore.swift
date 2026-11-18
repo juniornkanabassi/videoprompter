@@ -6,39 +6,73 @@ public final class PairingKeyStore {
   private let read: (String) -> Data?
   private let write: (String, Data) -> Bool
   public init(service: String) {
-    // A Mac build signed without a team (the locally signed Alpha) is refused the data-protection
-    // keychain (errSecMissingEntitlement), and the login keychain asks for the password after every
-    // rebuild, freezing launch. Such builds keep keys in their own preferences instead.
-    // shortcut: plain preferences for teamless test builds only; team-signed releases never get here.
+    // A notarised Developer ID release has no provisioning profile, so the data-protection keychain refuses
+    // it (errSecMissingEntitlement); it then uses the login keychain, which trusts the same team-signed app
+    // across updates. A build signed without a team (the locally signed Alpha) would be asked for the login
+    // password after every rebuild, freezing launch, so only such builds keep keys in their own preferences.
+    // shortcut: plain preferences for teamless test builds only; never for a team-signed release.
     let fallbackKey = { (key: String) in "\(service).\(key)" }
-    read = { key in
+    func query(_ key: String, dataProtection: Bool) -> [String: Any] {
       var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service, kSecAttrAccount as String: key,
-        kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-        kSecUseDataProtectionKeychain as String: true]
-      query[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        kSecAttrService as String: service, kSecAttrAccount as String: key]
+      if dataProtection { query[kSecUseDataProtectionKeychain as String] = true }
+      return query
+    }
+    func copy(_ key: String, dataProtection: Bool) -> Data? {
+      var request = query(key, dataProtection: dataProtection)
+      request[kSecReturnData as String] = true; request[kSecMatchLimit as String] = kSecMatchLimitOne
+      request[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
       var value: CFTypeRef?
-      if SecItemCopyMatching(query as CFDictionary, &value) == errSecSuccess, let data = value as? Data { return data }
+      return SecItemCopyMatching(request as CFDictionary, &value) == errSecSuccess ? value as? Data : nil
+    }
+    func store(_ key: String, _ data: Data, dataProtection: Bool) -> OSStatus {
+      let request = query(key, dataProtection: dataProtection)
+      var attributes: [String: Any] = [kSecValueData as String: data]
+      if dataProtection { attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
+      var result = SecItemUpdate(request as CFDictionary, attributes as CFDictionary)
+      if result == errSecItemNotFound { result = SecItemAdd(request.merging(attributes) { _, new in new } as CFDictionary, nil) }
+      return result
+    }
+    read = { key in
+      if let data = copy(key, dataProtection: true) { return data }
       #if os(macOS)
-      return UserDefaults.standard.data(forKey: fallbackKey(key))
+      switch Self.macFallback {
+      case .loginKeychain: return copy(key, dataProtection: false)
+      case .preferences: return UserDefaults.standard.data(forKey: fallbackKey(key))
+      }
       #else
       return nil
       #endif
     }
     write = { key, data in
-      let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: service, kSecAttrAccount as String: key,
-        kSecUseDataProtectionKeychain as String: true]
-      let attributes: [String: Any] = [kSecValueData as String: data,
-        kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
-      var result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-      if result == errSecItemNotFound { result = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) }
+      var result = store(key, data, dataProtection: true)
       #if os(macOS)
-      if result == errSecMissingEntitlement { UserDefaults.standard.set(data, forKey: fallbackKey(key)); return true }
+      if result == errSecMissingEntitlement {
+        switch Self.macFallback {
+        case .loginKeychain: result = store(key, data, dataProtection: false)
+        case .preferences: UserDefaults.standard.set(data, forKey: fallbackKey(key)); return true
+        }
+      }
       #endif
       return result == errSecSuccess
     }
   }
+  #if os(macOS)
+  public enum MacFallback: Equatable, Sendable { case loginKeychain, preferences }
+  /// Where keys go when the data-protection keychain is refused: only a build signed without a team uses preferences.
+  public static func fallback(teamIdentifier: String?) -> MacFallback {
+    (teamIdentifier?.isEmpty == false) ? .loginKeychain : .preferences
+  }
+  static let macFallback = fallback(teamIdentifier: ownTeamIdentifier())
+  static func ownTeamIdentifier() -> String? {
+    var code: SecCode?, staticCode: SecStaticCode?, info: CFDictionary?
+    guard SecCodeCopySelf([], &code) == errSecSuccess, let code,
+      SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode,
+      SecCodeCopySigningInformation(staticCode, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess
+    else { return nil }
+    return (info as? [String: Any])?[kSecCodeInfoTeamIdentifier as String] as? String
+  }
+  #endif
   public init(read: @escaping (String) -> Data?, write: @escaping (String, Data) -> Bool) {
     self.read = read; self.write = write
   }
