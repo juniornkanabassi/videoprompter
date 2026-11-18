@@ -43,6 +43,8 @@ struct PresenterScreen: View {
     nonmutating set { store.scriptVisible = newValue }
   }
   @State private var showingLook = false
+  @State private var adjustingZebras = false
+  @State private var adjustingFalseColour = false
   @State private var keyExpanded = true
   private var falseColour: Bool { camera.guides.falseColour }
   private var focusActive: Bool { store.cleanScreen && store.cleanLook == .scriptOnly }
@@ -605,8 +607,10 @@ struct PresenterScreen: View {
 
   private var pictureTools: some View {
     BarGroup(label: "Picture tools", raised: false) {
-      BarToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras.wrappedValue) { zebras.wrappedValue.toggle() }
-      BarToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour) { camera.guides.changeExposure { $0.falseColour.toggle() } }
+      PadAdjustToggle(title: "Zebras", symbol: "rectangle.pattern.checkered", isOn: zebras.wrappedValue, adjusting: $adjustingZebras,
+        toggle: { zebras.wrappedValue.toggle() }) { ZebraAdjustView(guides: $camera.guides) }
+      PadAdjustToggle(title: "False colour", symbol: "circle.lefthalf.filled", isOn: falseColour, adjusting: $adjustingFalseColour,
+        toggle: { camera.guides.changeExposure { $0.falseColour.toggle() } }) { FalseColourAdjustView(guides: $camera.guides) }
       BarToggle(title: "Guides", symbol: "squareshape.split.3x3", isOn: guides.wrappedValue) { guides.wrappedValue.toggle() }
     }
   }
@@ -909,6 +913,36 @@ struct DevicePickerCards: View {
     Button(label) { store.setPictureMode(mode) }.font(.callout)
       .frame(maxWidth: .infinity, minHeight: 44)
       .background(store.pictureMode == mode ? Color.yellow.opacity(0.2) : Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+  }
+}
+
+/// The Mac's Zebras and False colour panel behind a bar button: a tap toggles, a press and hold (or the
+/// VoiceOver action "Adjust") opens the panel in a popover, and the hold does not also toggle.
+struct PadAdjustToggle<Panel: View>: View {
+  let title: String
+  let symbol: String
+  let isOn: Bool
+  @Binding var adjusting: Bool
+  let toggle: () -> Void
+  @ViewBuilder let panel: () -> Panel
+  @State private var held = false
+  var body: some View {
+    BarToggle(title: title, symbol: symbol, isOn: isOn) { if held { held = false } else { toggle() } }
+      .onLongPressGesture(minimumDuration: 0.5, pressing: { if $0 { held = false } }, perform: { held = true; adjusting = true })
+      .accessibilityAction(named: "Adjust") { adjusting = true }
+      .popover(isPresented: $adjusting) { PadAdjustPanel(content: panel) }
+  }
+}
+
+/// Scrolls at large text sizes; dark like the bar, so it reads over any picture.
+struct PadAdjustPanel<Content: View>: View {
+  @ViewBuilder let content: () -> Content
+  var body: some View {
+    ScrollView { content().padding(Space.lg) }
+      .frame(idealWidth: 460, maxWidth: 460, idealHeight: 760, maxHeight: 760)
+      .background(Surfaces.presenterPanel)
+      .environment(\.colorScheme, .dark)
+      .presentationCompactAdaptation(.popover)
   }
 }
 

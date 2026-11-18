@@ -35,6 +35,8 @@
 		0B978BAEBBC52A9AB11062D1 /* Poppins-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 5B8DF0B42741BF48970004C6 /* Poppins-Bold.ttf */; };
 		33A0D94F35A91E953EAA9C23 /* Poppins-OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = EEA09623DA93374459EEE66C /* Poppins-OFL.txt */; };
 		61F091657DB0F3C13808A406 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = E3E411F3C648B2ABAC8CCBA6 /* OFL.txt */; };
+		C5A0E1000000000000000001 /* ExposureAdjustViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A0E1000000000000000002 /* ExposureAdjustViews.swift */; };
+		C5A0E1000000000000000003 /* SkinTones in Resources */ = {isa = PBXBuildFile; fileRef = C5A0E1000000000000000004 /* SkinTones */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -67,6 +69,8 @@
 		5B8DF0B42741BF48970004C6 /* Poppins-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Poppins-Bold.ttf"; sourceTree = "<group>"; };
 		EEA09623DA93374459EEE66C /* Poppins-OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Poppins-OFL.txt"; sourceTree = "<group>"; };
 		E3E411F3C648B2ABAC8CCBA6 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = file; path = "OFL.txt"; sourceTree = "<group>"; };
+		C5A0E1000000000000000002 /* ExposureAdjustViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/ExposureAdjustViews.swift; sourceTree = "<group>"; };
+		C5A0E1000000000000000004 /* SkinTones */ = {isa = PBXFileReference; lastKnownFileType = folder; name = SkinTones; path = ../Resources/SkinTones; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -101,6 +105,7 @@
 				7A1B2C3D4E5F60718293A4B7 /* VideoPrompterTests */,
 				429461E971936A1CC87DA17D /* Shared with the Mac app */,
 				863E78993B57209C9A5B482C /* Fonts */,
+				C5A0E1000000000000000004 /* SkinTones */,
 				FA685967BAA69CB4A9C14425 /* Info.plist */,
 				0A2C978E52A76F0AA9F68BB5 /* Products */,
 			);
@@ -129,6 +134,7 @@
 				CB0512639610DBC42A9C6994 /* MeterZones.swift */,
 				4B8C814094E81EFFABA6D7F5 /* PresenterControls.swift */,
 				F4E97043B1774B2D8FDD0012 /* CameraExposure.swift */,
+				C5A0E1000000000000000002 /* ExposureAdjustViews.swift */,
 			);
 			name = "Shared with the Mac app";
 			path = ../Sources/VideoPrompter;
@@ -277,6 +283,7 @@
 				91CA210B2AC7CE0306F2F114 /* Poppins-Regular.ttf in Resources */,
 				DD4C36B842AA15B066FF4E1F /* LexendDeca-Variable.ttf in Resources */,
 				932B66FBA0F63A68B7B66FE6 /* Lexend-Variable.ttf in Resources */,
+				C5A0E1000000000000000003 /* SkinTones in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -297,6 +304,7 @@
 				5686F7AB3365F44837A8D184 /* MeterZones.swift in Sources */,
 				59CE54BD36F351C652A90B96 /* PresenterControls.swift in Sources */,
 				F4E97043B1774B2D8FDD0011 /* CameraExposure.swift in Sources */,
+				C5A0E1000000000000000001 /* ExposureAdjustViews.swift in Sources */,
 				4830156AF00383E7BA4AE0C7 /* PrompterSettings.swift in Sources */,
 				7C1A0E5D2B9F4A6381D05E71 /* AudioChannel.swift in Sources */,
 				4A220FD9D035C1525A858F02 /* SpeechProvider.swift in Sources */,
